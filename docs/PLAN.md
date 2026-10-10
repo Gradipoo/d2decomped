@@ -727,9 +727,10 @@ leftovers (act1-gaps.md) and hosting a game wait.
    (Vendor; town-npcs.md "Act 2's town AIs"). Jerhyn and the palace
    guard come from a2q4's two marker objects (quests-act2.md); the palace
    door leads into Harem Level 1 (level 50: tiles 10/10, units 10/10).
-   Left: JarJar's think, the act 2 town's thinks diffed
-   against game.exe (npcs.py runs the camp only), the stock and offers
-   checked against game.exe.
+   The town's thinks match game.exe (`diff_drlg.py 1-20 40 npcs`, 20/20).
+   Left: JarJar's think, the stock and offers checked against game.exe,
+   Lut Gholein's container drops (`LEVELS=40 diff_drlg.py 1-1 0 game`
+   differs only there).
 3. The desert (LevelType 16: 41–46): the outdoor generator with act 2's
    border and exit rules (drlg.md: exits in pairs from 0x6f112c, columns
    2 / 3 of 0x6f0630), its LvlSub / presets. *Built (2026-10-10):*

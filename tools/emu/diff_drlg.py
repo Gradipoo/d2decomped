@@ -16,7 +16,7 @@ come out the same in any order (d2d's are made once, list order).
 in turn, their rooms brought up in $ORDER and populated, every container
 opened: the object seed, the game seed and the drops (objgroups.game_dump).
 `layout` act 2's outdoor rectangles and Lut Gholein's file (level unused).
-`npcs` the camp's NPCs thinking ($THINKS each, default 40; npcs.py).
+`npcs` the camp's NPCs thinking (level 40: Lut Gholein's) ($THINKS each, default 40; npcs.py).
 Several kinds share one emulator boot (sweep.sh); each result line then
 starts with its kind. Exit status 1 when any kind mismatches.
 """
@@ -72,7 +72,7 @@ def compare(e, first, last, lid, what, ours_dir, env):
         elif what == "layout":
             game = drlg.layout_dump(e, seed, lid).splitlines()
         elif what == "npcs":
-            game = npcs.dump(e, seed, int(env.get("THINKS", npcs.THINKS))).splitlines()
+            game = npcs.dump(e, seed, int(env.get("THINKS", npcs.THINKS)), 40 if lid == 40 else 1).splitlines()
         elif what == "game":
             game = objgroups.game_dump(e, seed, [int(v) for v in env.get("LEVELS", objgroups.LEVELS).split(",")], env["ORDER"]).splitlines()
         elif what in ("objgroups", "drops"):

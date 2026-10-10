@@ -402,7 +402,8 @@ struct ObjectRooms {
     // Its footprint: 0x100 in its shape, 0x1000 in the one a size down.
     // A monster's own seed takes its look (FUN_00573cb0, rules::monster_look)
     // and one stat roll as it's made. Recorded in the level's spawns (NPCs aside).
-    std::optional<std::uint32_t> last_made;              // the unit seed made() took last
+    std::optional<d2d::rules::Rng> last_made;            // the unit seed made() left last (after its look and stat draws)
+    std::pair<int, int> last_spot;                       // and where it stood
     d2d::rules::Rng made(int type, int at_x, int at_y) {
         const auto& types = game_data.monsters.types;
         stamp_shape(at_x, at_y, size_of(type), 0x100);
@@ -412,7 +413,6 @@ struct ObjectRooms {
         // ponytail: Act 1's bosses by BaseId (Andariel, Blood Raven, the Maggot Queen); later acts' aren't.
         if (const auto* info = type_at(type)) pop.uniques += info->base == 156 || info->base == 267 || info->base == 284 ? 1 : 0;
         const auto value = game.next();
-        last_made = value;
         d2d::rules::Rng own{ value };
         const std::vector<d2d::rules::Components>* sets = nullptr;
         for (std::size_t i = 0; i < region.types.size() && i < region.components.size(); ++i)
@@ -433,6 +433,8 @@ struct ObjectRooms {
         if (type_at(type) && types[std::size_t(type)].id == "bloodraven") { own(1); game.next(); game.next(); }
         const bool npc = type_at(type) && std::size_t(type) < game_data.mon_is_npc.size() && game_data.mon_is_npc[std::size_t(type)];
         if (spawns && !npc) spawns->push_back({ type, at_x, at_y, leader, -1, d2d::rules::Boss::none, {}, 0, value });
+        last_made = own;
+        last_spot = { at_x, at_y };
         return own;
     }
     void tag(std::size_t spawn_index, d2d::rules::Boss kind, std::vector<int> mods = {}, int name_seed = 0) {
@@ -657,15 +659,15 @@ struct ObjectRooms {
                 monster(int(row), unit.x, unit.y, stay ? 0 : 4);
                 if (game_data.mon_is_npc[row] && !game_data.mon_npc[row].code.empty()) {                // an NPC (Flavie, Lut Gholein's) stands at its spot
                     auto npc = game_data.mon_npc[row];
-                    npc.x = (float(unit.x) + 0.5f) / 5;
-                    npc.y = (float(unit.y) + 0.5f) / 5;
+                    const auto [spot_x, spot_y] = last_made ? last_spot : std::pair{ unit.x, unit.y };     // where it was made: its spot, or the free one nearest
+                    npc.x = (float(spot_x) + 0.5f) / 5;
+                    npc.y = (float(spot_y) + 0.5f) / 5;
                     for (std::size_t k = 0; k < unit.path.size(); ++k) {                                   // its DS1 path (the town AIs walk it)
                         npc.path.emplace_back((float(unit.x + unit.path[k].first) + 0.5f) / 5, (float(unit.y + unit.path[k].second) + 0.5f) / 5);
                         npc.actions.push_back(k < unit.actions.size() ? unit.actions[k] : 0);
                     }
-                    // Its unit seed and its init's two draws (the look, the life), as the camp's (town-npcs.md).
-                    // ponytail: made() takes its own look and stat draws on a copy; the think's seed is stepped twice as the camp's is.
-                    if (last_made) { npc.seed = d2d::rules::Rng{ *last_made }; if (npc.town_ai != TownAi::none) { npc.seed.next(); npc.seed.next(); } }
+                    // Its unit seed after its init's draws (the look, the life: made()'s), what its think rolls on (town-npcs.md).
+                    if (last_made) npc.seed = *last_made;
                     level.npcs.push_back(std::move(npc));
                 }
             } else if (const int code = unit.id - nmon - nsu; code == 0x11 || code == 0x12 || code == 0x05) {

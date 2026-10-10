@@ -151,8 +151,12 @@ FUN_005e9e00, 81 JarJar FUN_005e7590 (act2guard2).
 
 d2d: `Npc::town_ai` (MonStats AI), `rules::npc_think(..., towner)` and
 `rules::vendor_think`. A built level's NPCs (Lut Gholein) take their DS1
-path and their unit seed (made()'s game seed step, two init draws) as
-the camp's do. Not diffed against game.exe (npcs.py runs the camp only).
+path, the spot they were made on (the free one nearest their preset spot)
+and their unit seed after the init's draws (made(): the look, which for a
+townsfolk composite rolls its pieces, then the stat).
+Checked: `THINKS=30 diff_drlg.py 1-20 40 npcs` (npcs.py with level 40:
+act 2 made for it, the Jerhyn markers stubbed, each unit's MonAI think):
+20/20.
 
 ## The other wanderer — FUN_0054ef50
 

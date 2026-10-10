@@ -137,8 +137,10 @@ def game_dump(e, seed, levels, kind="shuffle"):
     (low:high) and the game seed's after each level."""
     o, objects, swap = openers(e)
     g = monsters.new_game(e, seed)
-    act = monsters.act_of(e, g, levels[0])
+    act = monsters.act_of(e, g, levels[0], drlg.act_of(levels[0]))
     dact = e.r32(act + 0x48)
+    # Lut Gholein's Jerhyn markers (InitFn 18 / 19) ask quests this bare game hasn't (npcs.py).
+    for addr in (0x5448b0, 0x5448e0): e.hook(addr, lambda _e: 0, 0)
     rgn = e.r32(g + 0x10f0)
     made, pre, out = [], [0, 0], []
     def on_make(mu, addr, size, _):                         # FUN_00555230(ECX type, EDX class; x, y, ...)

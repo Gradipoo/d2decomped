@@ -258,8 +258,11 @@ static std::string dump_game(d2d::game::GameData& game, std::uint32_t seed, cons
                 return;
             }
             const auto& group = state.group_rooms[room];
-            std::snprintf(line, sizeof line, "room %d,%d r1 %08x seed %08x post %08x rgn %08x game %08x", made.rooms[room].x, made.rooms[room].y,
-                          made.room1_seeds[room], group.pre, group.post, spawning.objects.low, spawning.game.low);
+            if (level_ids::is_town(lid))              // a town's rooms print without their seeds (objgroups.py)
+                std::snprintf(line, sizeof line, "room %d,%d rgn %08x game %08x", made.rooms[room].x, made.rooms[room].y, spawning.objects.low, spawning.game.low);
+            else
+                std::snprintf(line, sizeof line, "room %d,%d r1 %08x seed %08x post %08x rgn %08x game %08x", made.rooms[room].x, made.rooms[room].y,
+                              made.room1_seeds[room], group.pre, group.post, spawning.objects.low, spawning.game.low);
             out << line;
             for (; from < made.npcs.size(); ++from)
                 if (made.npcs[from].root == "objects") out << ' ' << made.npcs[from].object_id << '@' << int(made.npcs[from].x * 5) << ',' << int(made.npcs[from].y * 5);
@@ -303,16 +306,20 @@ static std::string dump_game(d2d::game::GameData& game, std::uint32_t seed, cons
 // order, then each NPC with the Npc AI and a path thinks `thinks` times
 // (rules::npc_think); a walk puts it at the spot, every other one 4
 // subtiles short on x; its mode is NU at each think. Lines sorted.
-static std::string dump_npcs(d2d::game::GameData& game, std::uint32_t seed, int thinks) {
+// The town's NPCs thinking (tools/emu npcs.py): level 1 the camp, 40 Lut Gholein.
+static std::string dump_npcs(d2d::game::GameData& game, std::uint32_t seed, int thinks, int lid) {
     d2d::game::set_map_seed(game, seed);
     auto spawning = d2d::game::start_spawning(game, 0);
-    auto& camp = game.town;
-    const auto count = std::size_t((camp.ds1.width() + 6) / 8) * std::size_t((camp.ds1.height() + 6) / 8);
-    d2d::game::populate_level(game, spawning, camp, walk_order(count, seed, "list"));
+    std::unique_ptr<d2d::game::Level> built;
+    if (lid != level_ids::kRogueEncampment) built = d2d::game::build_level(game, *game.builder, lid);
+    auto& town = built ? *built : game.town;
+    const std::size_t count = built ? town.rooms.size() : std::size_t((town.ds1.width() + 6) / 8) * std::size_t((town.ds1.height() + 6) / 8);
+    d2d::game::populate_level(game, spawning, town, walk_order(count, seed, "list"));
     std::vector<std::string> lines;
     char text[64];
-    for (const auto& npc : camp.npcs) {
-        if (npc.town_ai != d2d::game::TownAi::npc || npc.path.empty() || npc.quest) continue;
+    using d2d::game::TownAi;
+    for (const auto& npc : town.npcs) {
+        if (npc.town_ai == TownAi::none || (npc.town_ai != TownAi::vendor && npc.path.empty()) || npc.quest || npc.palace) continue;
         std::vector<d2d::rules::NpcPoint> path;
         for (std::size_t i = 0; i < npc.path.size(); ++i)
             path.push_back({ i < npc.actions.size() ? npc.actions[i] : 0, int(npc.path[i].first * 5), int(npc.path[i].second * 5) });
@@ -324,7 +331,8 @@ static std::string dump_npcs(d2d::game::GameData& game, std::uint32_t seed, int 
         line += ':';
         d2d::rules::NpcBrain brain;
         for (int think = 0; think < thinks; ++think) {
-            const auto act = d2d::rules::npc_think(brain, rng, path, x, y, npc.hc_idx, npc.modes, 1);
+            const auto act = npc.town_ai == TownAi::vendor ? d2d::rules::vendor_think(rng)
+                                                           : d2d::rules::npc_think(brain, rng, path, x, y, npc.hc_idx, npc.modes, 1, {}, npc.town_ai == TownAi::towner);
             if (act.face >= 0) line += " f" + std::to_string(act.face);
             switch (act.kind) {
             case d2d::rules::NpcAct::Kind::stand: line += " s" + std::to_string(act.frames); break;
@@ -426,7 +434,7 @@ int main(int argc, char** argv) {
         const auto first = std::uint32_t(std::stoul(range.substr(0, dash), nullptr, 0));
         const auto last = dash == std::string::npos ? first : std::uint32_t(std::stoul(range.substr(dash + 1), nullptr, 0));
         for (auto seed = first;; ++seed) {
-            const auto text = dump_npcs(*game, seed, thinks ? std::atoi(thinks) : 40);
+            const auto text = dump_npcs(*game, seed, thinks ? std::atoi(thinks) : 40, id == 40 ? 40 : 1);
             if (argc > 5) std::ofstream(fs::path(argv[4]) / (std::to_string(seed) + ".txt")) << text;
             else std::fputs(text.c_str(), stdout);
             if (seed == last) break;

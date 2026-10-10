@@ -123,7 +123,7 @@ static std::string dump(const OutdoorAssets& assets, std::uint32_t seed, int id,
         for (const auto& note : notes) std::fprintf(stderr, "not implemented: %s\n", note.c_str());
         return out.str();
     }
-    const auto layout = act1_from_map_seed(level_defs(assets.levels), seed);
+    const auto layout = id >= level_ids::kLutGholein ? act2_layout(level_defs(assets.levels), act_seed(seed)) : act1_from_map_seed(level_defs(assets.levels), seed);
     if (std::getenv("DRLG_LAYOUT"))
         for (const auto& placement : layout) std::fprintf(stderr, "layout %d at %d,%d %dx%d dir %d flip %d flags %x\n", placement.level, placement.x, placement.y, placement.width, placement.height, placement.dir, placement.flip, placement.flags);
     const auto level = outdoor_level(assets.levels, layout, id);

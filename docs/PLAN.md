@@ -732,7 +732,9 @@ leftovers (act1-gaps.md) and hosting a game wait.
    checked against game.exe.
 3. The desert (LevelType 16: 41–46): the outdoor generator with act 2's
    border and exit rules (drlg.md: exits in pairs from 0x6f112c, columns
-   2 / 3 of 0x6f0630), its LvlSub / presets.
+   2 / 3 of 0x6f0630), its LvlSub / presets. *Built (2026-10-10):*
+   drlg.md "Act 2's desert"; 10/10 tiles and units on every level; the
+   town walks out into the Rocky Waste.
 4. The mazes: Sewers (47–49), Harem 2 / Palace Cellar (51–54), the tombs
    (55–61, 66–72, the boss tomb ×3 and staff tomb ×2 rooms), the Maggot
    Lair (62–64), Ancient Tunnels (65), the Arcane Sanctuary (74); presets:

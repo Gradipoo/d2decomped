@@ -359,6 +359,50 @@ level seed, then the rooms are allocated), other preset cells nothing, 0x100 cel
 nothing, the rest plain 8×8 rooms (FUN_0067d540 with +0x18, +0x2c,
 +0x40 and a LevelType word: 2 → 0x44103).
 
+### Act 2's desert (FUN_0067f980, LevelType 16, levels 41–46)
+
+FUN_00675360 picks the act's body (act 1 FUN_006807f0, 2 FUN_0067f980, 3
+FUN_0067f450, 4 FUN_0067e890, 5 FUN_0067e600; level 134 runs act 2's).
+The desert has no cliffs and no roads; contacts and borders as act 1 but:
+
+- **Border column 2** (0x6f0630 / 0x6f0620): edges 364 + kind, corners 363
+  + row (364..375); FUN_006743c0's border flag covers 4..15 and
+  0x16c..0x177.
+- **Exits**: no 0x400 cell; a pair of presets from 0x6f112c[dx + 2 + 2dy]
+  (up 373 / 372, left 372 / 375, right 373 / 374, down 374 / 375) at the
+  edge's middle and one step on.
+- **Border substitution** FUN_006752a0(type, base) with the border base
+  0x16c (act 1: 4): types 2, 1, 3 (FUN_0067f630).
+- **Per level** (`x` in EDX, then `y, def, file, border` for
+  FUN_006743c0):
+  - 41 Rocky Waste: by Lut Gholein (its neighbour node's side 3: 0x16b at
+    (0, h − 1), else 0x16a at (w − 1, 0)); subs; FUN_0067f670 (one
+    anywhere: 41 / 42 0x184, 43 0x186, 44 0x19c, 45 0x185); 5 shrines;
+    FUN_0067f470 {0x18b, 0x19b, 0x191, 0x192, 0x18f, 0x18e, 0x193}.
+  - 42 / 43 / 44: FUN_0067f5c0 (one of eight rows of five `{def, file, x,
+    y}` at 0x6f2390, `rand & 7`), subs, the one, (43: {0x18c, 0x18d}; 44:
+    {0x19d, 0x198, 0x199, 0x19a}), the waypoint (FUN_00674b70), 5 shrines,
+    then 42 {0x18b, 0x19b, 0x190, 0x18e} and every file of {0x194..0x197};
+    43 {0x19b, 0x18f, 0x18e, 0x193}, every file of 0x18b twice; 44 {0x18b,
+    0x190, 0x18e, 0x194, 0x195}, every file of 0x19b twice.
+  - 45 Valley of Snakes: the one.
+  - 46 Canyon of the Magi: nine `{def, file, x, y}` at 0x6f2610, 0x18a at
+    (4, 4), subs, 5 shrines, {0x191, 0x192, 0x196, 0x197, 0x193}, every
+    file of {0x188, 0x189}.
+  - FUN_0067f470(list, n, every_file): `rand(n)` on the level seed starts
+    it; each def in turn goes anywhere (FUN_00674730, file −1), or once
+    per file.
+- **Plain rooms**: DT1 mask 1 (FUN_006750f0 by LevelType: 2 → 0x44103;
+  16, 22, 27, 28 → 1; 21 → 4; 30, 31 → 0x11); the stamps as act 1; then
+  every floor cell without bits 0x3f0ff80 gets 0x100 (FUN_0067d2d0 by
+  LevelType: 16 0x100, 21 0x120000, 22 0x100000, 27 0xa00000, 28
+  0x1600000). LvlSub rows 7–9 are act 2's (waypoint, shrines, dunes /
+  rocks / bones / palms).
+
+d2d: `Gen::lay_desert`, `is_desert`, `border_base`, `kDesertExits`,
+`kDesertRows`, `kCanyonRows` (outdoor.hpp). `diff_drlg.py 1-10 <41..46>
+tiles units`: 10/10 each; act 1's outdoors unchanged.
+
 ### Plain rooms (OutRoom.cpp, FUN_0067d2d0)
 
 A room is 0xec bytes (FUN_0066b3e0): allocating one steps the level seed
@@ -887,7 +931,8 @@ Conditions those results hold under, so they aren't overstated:
 | Act 2's layout (rectangles, Lut Gholein's file, the tombs) | diffed, 2000/2000 seeds |
 | Lut Gholein (level 40): rooms, tiles, units | diffed: 20/20 seeds, units 10/10 (`diff_drlg.py 1-20 40 tiles`) |
 | Act 2's mazes and presets (47–73): rooms, tiles, units, doors | diffed (list order), 5/5 each |
-| The Arcane Sanctuary (74), the desert outdoors (41–46), act 3+ mazes; the Barracks' cross-level link to 27 (FUN_0066b790) | not ported |
+| Act 2's desert (41–46): grids, tiles, units | diffed, 10/10 each |
+| The Arcane Sanctuary (74), act 3+ outdoors and mazes; the Barracks' cross-level link to 27 (FUN_0066b790) | not ported |
 | Preset units that roll to stay (FUN_00667620) | ported outdoors (`stays`, units.hpp); diffed on Cold Plains' Cottages 2, whose row has Pops: presets with Scan or Pops roll at generation on the level seed (FUN_00667970), the rest on the seed of the room that copies them (room +0x14, the whole {low, high} — a maze room's was stepped once, so its high word isn't 666; diffed on the Jail and Catacombs). In the preset record's order, one step each — monsters 0xcc, 0xcd, 0x173, 0x174 kept when `low % 3 == 0`; MonPlace 0x21 when `low & 3`, 0x22 when odd, 0x23 when `!(low & 3)`, 0x24 always; objects 0xc4 / 0x105 when even, 0x245 when `low & 3`. It runs after the room's DT1 list and before its tiles (FUN_0061b730), whose seed FUN_0066ee40 resets, so tiles don't shift. Act 1: the Crypt, Jail, Catacombs, Fence Fill 1, Cottages 2 |
 | Units in other acts: the act 2 / act 4 MonPreset remaps, type-4 units (NPCs by name) | not ported |
 | LvlSub CheckAll stamps | not ported (no act 1 wilderness row uses them) |

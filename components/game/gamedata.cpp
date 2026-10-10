@@ -40,6 +40,7 @@
 #include <map>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <tuple>
@@ -155,8 +156,8 @@ Npc monster_npc(const GameData& game_data, const d2d::txt::Table& monstats, cons
     npc.utrans = { std::atoi(std::string(ms2.get(row2, "Utrans")).c_str()), std::atoi(std::string(ms2.get(row2, "Utrans(N)")).c_str()),
                  std::atoi(std::string(ms2.get(row2, "Utrans(H)")).c_str()) };
     if (const auto velocity = monstats.get(row, "Velocity"); !velocity.empty()) npc.velocity = float(std::atoi(std::string(velocity).c_str()));
-    const auto ai = monstats.get(row, "AI");
-    npc.town_ai = ai == "Npc" ? TownAi::npc : ai == "Towner" ? TownAi::towner : ai == "Vendor" ? TownAi::vendor : TownAi::none;
+    const auto ai_name = monstats.get(row, "AI");
+    npc.town_ai = ai_name == "Npc" ? TownAi::npc : ai_name == "Towner" ? TownAi::towner : ai_name == "Vendor" ? TownAi::vendor : TownAi::none;
     npc.modes = (ms2.get(row2, "mS1") == "1" ? 1u << 8 : 0u) | (ms2.get(row2, "mS2") == "1" ? 1u << 9 : 0u);
     // Hover name: MonStats' string key, only for units MonStats2 marks
     // selectable (isSel) — not the chicken or the camp's guard rogues,

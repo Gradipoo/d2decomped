@@ -736,7 +736,9 @@ leftovers (act1-gaps.md) and hosting a game wait.
 4. The mazes: Sewers (47–49), Harem 2 / Palace Cellar (51–54), the tombs
    (55–61, 66–72, the boss tomb ×3 and staff tomb ×2 rooms), the Maggot
    Lair (62–64), Ancient Tunnels (65), the Arcane Sanctuary (74); presets:
-   Harem 1 (50), Duriel's Lair (73).
+   Harem 1 (50), Duriel's Lair (73). *Built (2026-10-10):* 47–73 match
+   game.exe (rooms, tiles, units with doors; drlg.md "Act 2's mazes") and
+   build in play. Left: the Arcane Sanctuary (FUN_006719f0 / FUN_00672e50).
 5. The act 2 / act 4 MonPreset remaps and type-4 units (NPCs by name).
 
 **Step 2 — moving between acts:** *Done first (2026-10-10), ahead of the

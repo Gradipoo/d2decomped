@@ -621,6 +621,53 @@ the level seed, as outdoors).
    one when the preset is under 13×13, else one per 8×8 block (rows, then
    columns), each allocated in turn.
 
+**Act 2's mazes** (FUN_00673b30 by LevelType; 2026-10-10):
+
+| type | before the grow | grows | specials | themes / rotation |
+|---|---|---|---|---|
+| 13 sewers | ring (FUN_00670f60(2)) | yes | FUN_00672810 | both, base 0x12d |
+| 14 harem, 15 cellars | ring | no | none | neither |
+| 17 tombs | three arms off the first room (FUN_006718c0) | yes (×3 the boss tomb, ×2 the staff tomb) | FUN_00672be0 | both, base 0x19d |
+| 18 lair | ring | yes | FUN_00672dc0 | rotation only, base 0x1e1 |
+| 19 Arcane Sanctuary | FUN_006719f0 | — | FUN_00672e50 | not ported |
+
+- **Defs by link mask** (FUN_006709b0): base + mask for 13 / 17 / 18 / 19;
+  14 and 15 read 0x6ef758 / 0x6ef75c (12-byte rows by mask, 0 = no
+  change: only masks 5, 6, 9, 10 have rooms). The cellars set a file: level
+  52 def 0x169 → 2, level 54 def 0x169 / 0x167 → 3.
+- **Tombs**: a roll `& 3` is the first arm's side, each arm the next
+  side; the first room becomes the entrance facing the side left
+  (0x6ef888[side]: 447 / 444 / 446 / 445), special. Claw Viper Temple 2
+  (61) is that one room, def 0x1e0, no grow, no specials. FUN_00672be0
+  starts its turn from the entrance def (0x1bc → 3, 0x1bd → 1, 0x1be → 0,
+  0x1bf → 2; no roll) and runs the tables (16-byte `{from, to, file,
+  side}` × 4 by turn): 55–58 0x6efe28, 57 0x6efe68, 59 / 61 0x6efea8,
+  66–72 but the boss tomb 0x6efea8, 59 0x6efee8, 60 0x6eff28, 59 / 61
+  0x6eff68, the boss tomb 0x6effa8, the staff tomb 0x6effe8.
+- **Sewers** (FUN_00672810): two rolls, the first's `& 1` picking level
+  47's last side (1 above / 3 below), the second's `& 3` the turn. 48:
+  0x6efce8, 0x6efd68, 0x6efd28; 49: 0x6efce8, 0x6efda8; 65 (Ancient
+  Tunnels): 0x6efce8, 0x6efde8. Level 47 builds its own: from the topmost
+  room a room fits above (FUN_006723e0, FUN_00672340's probe only for a
+  candidate that beats the best) two rooms up, then special 0x14d file 0
+  to the left (FUN_00670de0: no merge); from the rightmost a room fits
+  beside on the right (FUN_00672460) two rooms right, special 0x150 file 0
+  on the rolled side, one plain room past it (no merge); then 0x6efd28.
+- **Lair** (FUN_00672dc0): a roll `& 3`; level 64 takes 0x6f00e8 (one
+  record), turn 3, 0x6f00d8, else 0x6f0068[turn]; then 0x6f0028[turn].
+- **Doors** (FUN_0066d9e0, table rows 13–22): 51 (291 / 290), 52–54,
+  the tombs 55–61 / 66–72 (objects 92 / 91), the lair 62–64. Objects 0x5b /
+  0x5c are made unless rand(3) on the room's seed (the tiles' seed, +0x14)
+  is 0; the tile's flagged either way, so a door shared with a neighbour is
+  made by whichever room comes up first — game.exe's tomb doors depend on
+  the order the player brings rooms up (d2d: list order).
+
+d2d: `generate_maze` (maze.hpp: `kAct2Specials`, `kTombEntrance`,
+`kHaremDefs`, `maze_themes` / `maze_rotates`), `MazeDef::boss_tomb` /
+`staff_tomb`; `kDoorLevels` / `kDoorRows` (room_tiles.hpp).
+`ORDER=list diff_drlg.py 1-5 <level> tiles units`, levels 47–73: all 5/5;
+the grids 1-10 too.
+
 A **preset level** (DrlgType 2, FUN_00668100) is one preset: the first
 LvlPrest row with that LevelId (FUN_0061f0e0), its file rolled on the
 level seed (FUN_00666ed0) unless the level's record (+0x14 [1]) already
@@ -839,7 +886,8 @@ Conditions those results hold under, so they aren't overstated:
 | The town's own layout beyond its DS1 choice | not diffed |
 | Act 2's layout (rectangles, Lut Gholein's file, the tombs) | diffed, 2000/2000 seeds |
 | Lut Gholein (level 40): rooms, tiles, units | diffed: 20/20 seeds, units 10/10 (`diff_drlg.py 1-20 40 tiles`) |
-| Act 2+ maze types; the desert outdoors; the Barracks' cross-level link to 27 (FUN_0066b790) | not ported |
+| Act 2's mazes and presets (47–73): rooms, tiles, units, doors | diffed (list order), 5/5 each |
+| The Arcane Sanctuary (74), the desert outdoors (41–46), act 3+ mazes; the Barracks' cross-level link to 27 (FUN_0066b790) | not ported |
 | Preset units that roll to stay (FUN_00667620) | ported outdoors (`stays`, units.hpp); diffed on Cold Plains' Cottages 2, whose row has Pops: presets with Scan or Pops roll at generation on the level seed (FUN_00667970), the rest on the seed of the room that copies them (room +0x14, the whole {low, high} — a maze room's was stepped once, so its high word isn't 666; diffed on the Jail and Catacombs). In the preset record's order, one step each — monsters 0xcc, 0xcd, 0x173, 0x174 kept when `low % 3 == 0`; MonPlace 0x21 when `low & 3`, 0x22 when odd, 0x23 when `!(low & 3)`, 0x24 always; objects 0xc4 / 0x105 when even, 0x245 when `low & 3`. It runs after the room's DT1 list and before its tiles (FUN_0061b730), whose seed FUN_0066ee40 resets, so tiles don't shift. Act 1: the Crypt, Jail, Catacombs, Fence Fill 1, Cottages 2 |
 | Units in other acts: the act 2 / act 4 MonPreset remaps, type-4 units (NPCs by name) | not ported |
 | LvlSub CheckAll stamps | not ported (no act 1 wilderness row uses them) |

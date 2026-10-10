@@ -101,15 +101,22 @@ inline constexpr std::array<int, 42> kOrientMerge = { 0, 1, 3, 3, 4, 1, 3, 1, 1,
 
 // Door objects of orientation 8 / 9 walls (FUN_0066d960): level -> first,
 // last row (0x6eefc8), each row {style, seq, orientation 9, object, dx, dy}
-// (0x6ef188; all act 1's are type 2, objects).
+// (0x6ef188, type 2: objects). Acts 1 and 2's rows (0..22).
+// ponytail: act 3+'s rows (23..33, some type 1: monsters by name) aren't here.
 struct DoorLevel { int level, first, last; };
-inline constexpr std::array<DoorLevel, 12> kDoorLevels = { { { 28, 0, 3 }, { 29, 0, 3 }, { 30, 0, 3 }, { 31, 0, 3 }, { 26, 4, 6 }, { 27, 4, 6 },
-                                                           { 32, 5, 9 }, { 33, 5, 9 }, { 34, 10, 11 }, { 35, 10, 11 }, { 36, 10, 11 }, { 37, 10, 12 } } };
+inline constexpr std::array<DoorLevel, 33> kDoorLevels = { { { 28, 0, 3 }, { 29, 0, 3 }, { 30, 0, 3 }, { 31, 0, 3 }, { 26, 4, 6 }, { 27, 4, 6 },
+                                                           { 32, 5, 9 }, { 33, 5, 9 }, { 34, 10, 11 }, { 35, 10, 11 }, { 36, 10, 11 }, { 37, 10, 12 },
+                                                           { 51, 13, 14 }, { 52, 15, 18 }, { 53, 15, 18 }, { 54, 15, 18 }, { 55, 19, 20 }, { 56, 19, 20 },
+                                                           { 57, 19, 20 }, { 58, 19, 20 }, { 59, 19, 20 }, { 60, 19, 20 }, { 61, 19, 20 }, { 66, 19, 20 },
+                                                           { 67, 19, 20 }, { 68, 19, 20 }, { 69, 19, 20 }, { 70, 19, 20 }, { 71, 19, 20 }, { 72, 19, 20 },
+                                                           { 62, 21, 22 }, { 63, 21, 22 }, { 64, 21, 22 } } };
 struct DoorRow { int style, seq, is9, id, dx, dy; };
-inline constexpr std::array<DoorRow, 13> kDoorRows = { { { 7, 0, 1, 14, 5, 0 }, { 7, 0, 0, 13, 0, 5 }, { 5, 0, 1, 16, 0, 0 }, { 5, 0, 0, 15, 0, 0 },
+inline constexpr std::array<DoorRow, 23> kDoorRows = { { { 7, 0, 1, 14, 5, 0 }, { 7, 0, 0, 13, 0, 5 }, { 5, 0, 1, 16, 0, 0 }, { 5, 0, 0, 15, 0, 0 },
                                                        { 6, 0, 1, 27, 5, -2 }, { 4, 0, 1, 24, 1, 2 }, { 4, 0, 0, 23, 0, 0 }, { 4, 3, 1, 25, 1, 0 },
                                                        { 1, 2, 0, 62, 0, 3 }, { 1, 2, 1, 63, 3, 0 }, { 0, 0, 1, 16, 0, 0 }, { 0, 0, 0, 64, 0, 0 },
-                                                       { 2, 0, 1, 47, 5, 0 } } };
+                                                       { 2, 0, 1, 47, 5, 0 }, { 0, 1, 1, 291, 2, 0 }, { 0, 1, 0, 290, 0, 2 }, { 5, 0, 1, 293, 2, 0 },
+                                                       { 4, 0, 0, 292, 0, 2 }, { 0, 0, 1, 295, 2, 0 }, { 0, 0, 0, 294, 0, 2 }, { 2, 4, 1, 92, 1, 0 },
+                                                       { 2, 1, 0, 91, 0, 2 }, { 0, 1, 1, 229, 0, 0 }, { 0, 1, 0, 230, 0, 0 } } };
 
 // FUN_0066bc20 + FUN_0066bbc0: the level's rooms (list order, the first
 // `own`) within a 6-tile gap on both axes, itself included, then
@@ -344,7 +351,8 @@ inline std::vector<BuiltRoom> level_room_tiles(const std::vector<Outdoor::RoomSe
         };
         // FUN_0066d9e0: an orientation 8 / 9 wall's door, once per tile
         // (`tile` null for a hidden one), inside this room.
-        // ponytail: act 1's rows only; other acts' type 1 and objects 0x5b / 0x5c (a 1-in-3 roll on the room seed) not ported.
+        // Objects 0x5b / 0x5c (the tombs') are made unless rand(3) on the
+        // room's seed is 0; the tile's marked either way.
         auto door = [&](PlacedTile* tile, std::uint32_t tile_word, int tile_orient, int x, int y) {
             if (tile && tile->door) return;
             const int is9 = (tile ? tile->orient : tile_orient) == 9;
@@ -356,7 +364,7 @@ inline std::vector<BuiltRoom> level_room_tiles(const std::vector<Outdoor::RoomSe
                     if (row.style != style || row.seq != seq || row.is9 != is9) continue;
                     const int unit_x = (x - room.x) * 5 + row.dx, unit_y = (y - room.y) * 5 + row.dy;
                     if (unit_x < 0 || unit_y < 0 || unit_x >= room.width * 5 || unit_y >= room.height * 5) return;
-                    room.units.insert(room.units.begin(), { 2, row.id, 0, unit_x, unit_y, 0 });
+                    if (!((row.id == 0x5b || row.id == 0x5c) && rng(3) == 0)) room.units.insert(room.units.begin(), { 2, row.id, 0, unit_x, unit_y, 0 });
                     if (tile) tile->door = true;
                     return;
                 }

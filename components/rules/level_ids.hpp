@@ -47,6 +47,22 @@ inline constexpr int kMooMooFarm = 39;
 
 // Acts 2 .. 5.
 inline constexpr int kRockyWaste = 41;
+inline constexpr int kSewersLevel1 = 47;
+inline constexpr int kSewersLevel2 = 48;
+inline constexpr int kSewersLevel3 = 49;
+inline constexpr int kHaremLevel1 = 50;
+inline constexpr int kPalaceCellarLevel1 = 52;
+inline constexpr int kPalaceCellarLevel3 = 54;
+inline constexpr int kStonyTombLevel1 = 55;
+inline constexpr int kHallsOfTheDeadLevel2 = 57;
+inline constexpr int kClawViperTempleLevel1 = 58;
+inline constexpr int kStonyTombLevel2 = 59;
+inline constexpr int kHallsOfTheDeadLevel3 = 60;
+inline constexpr int kClawViperTempleLevel2 = 61;
+inline constexpr int kMaggotLairLevel3 = 64;
+inline constexpr int kAncientTunnels = 65;
+inline constexpr int kFirstTalRashasTomb = 66;
+inline constexpr int kLastTalRashasTomb = 72;
 inline constexpr int kArcaneSanctuary = 74;
 inline constexpr int kTravincal = 83;
 inline constexpr int kBloodyFoothills = 110;

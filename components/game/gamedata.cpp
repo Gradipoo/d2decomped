@@ -1125,6 +1125,7 @@ bool build_maze(const GameData& game_data, d2d::mpq::Stack& mpqs, d2d::drlg::Out
             maze.merge = d2d::drlg::to_int(assets.lvl_maze.get(maze_row, "Merge"));
         }
     maze.type = d2d::drlg::to_int(assets.levels.get(row, "LevelType"));
+    { auto act = d2d::drlg::act_seed(game_data.map_seed); const auto tombs = d2d::drlg::roll_act2_tombs(act); maze.boss_tomb = tombs.boss; maze.staff_tomb = tombs.staff; }
     const bool preset_level = d2d::drlg::to_int(assets.levels.get(row, "DrlgType")) == 2;
     if (maze.width == 0 && !preset_level) { d2d::log::warn("{}: no LvlMaze row", level.name); return false; }
     std::vector<std::string> notes;

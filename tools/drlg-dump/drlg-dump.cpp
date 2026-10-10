@@ -73,6 +73,7 @@ static std::string dump(const OutdoorAssets& assets, std::uint32_t seed, int id,
                 maze.merge = to_int(assets.lvl_maze.get(row_index, "Merge"));
             }
         maze.type = to_int(assets.levels.get(*row, "LevelType"));
+        { auto act = act_seed(seed); const auto tombs = roll_act2_tombs(act); maze.boss_tomb = tombs.boss; maze.staff_tomb = tombs.staff; }
         std::vector<std::string> notes;
         int court_file = id == 27 || id == 28 ? courtyard_file(act1_from_map_seed(level_defs(assets.levels), seed), act_seed(seed)) : -1;
         if (id == level_ids::kLutGholein) court_file = lut_gholein_file(act2_layout(level_defs(assets.levels), act_seed(seed)));

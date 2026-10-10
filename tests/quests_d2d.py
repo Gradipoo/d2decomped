@@ -315,6 +315,10 @@ try:
     until("the caravan lands in Lut Gholein", lambda: level() == 40, 30)
     assert "through Warriv's caravan" in log_text(), "no caravan arrival logged"
     print("OK: Warriv's caravan lands in Lut Gholein")
+    open_menu("Warriv")                                 # Lut Gholein's Warriv: back west
+    menu_pick("go west")
+    until("the caravan lands in the camp", lambda: level() == 1, 30)
+    print("OK: Warriv's caravan goes back west")
     cmd("quit")
 finally:
     if proc.poll() is None:

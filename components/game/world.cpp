@@ -1106,7 +1106,10 @@ auto World::arrive(const Level* destination, float arrive_x, float arrive_y, con
         const Level* from = level;
         const int from_act = act();
         level = destination;
-        if (act() != from_act) stocks.clear();        // a new act's vendors stock anew
+        if (act() != from_act) {                      // a new act (the caravan, a waypoint): its vendors stock anew; the save starts there
+            stocks.clear();
+            set_act(act());
+        }
         player.x = free_x; player.y = free_y;
         player.walking = false; player.path.clear();
         target_x = free_x; target_y = free_y;
@@ -1362,7 +1365,6 @@ auto World::deal(const Command& command) -> bool {
             if (hc_idx == d2d::rules::monster_ids::kWarrivAct2) {
                 const auto& camp = game_data->town;
                 const auto spot = camp.spawn_at[5].first >= 0 ? camp.spawn_at[5] : camp.start;
-                set_act(0);
                 arrive(&camp, spot.first, spot.second, "Warriv's caravan");
                 return true;
             }
@@ -1371,7 +1373,6 @@ auto World::deal(const Command& command) -> bool {
             if (!lut_gholein || lut_gholein->start.first < 0) { d2d::log::warn("Lut Gholein didn't build; the caravan stays"); return true; }
             if (!qbit(quests(), 7, 0)) { d2d::rules::qset(quests(), 7, 0); d2d::rules::qset(quests(), 7, 13); }
             set_waypoint(waypoint_index(*game_data, d2d::rules::level_ids::kLutGholein));
-            set_act(1);
             // The arrival's level change runs the quests' enter hooks: Andariel's
             // (the Rogues get Cain if he's still caged, FUN_00596de0 / FUN_00597310).
             // ponytail: game.exe swaps the whole act (the old act's DRLG freed); Act 1's levels stay built.

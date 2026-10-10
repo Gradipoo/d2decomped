@@ -280,6 +280,7 @@ struct Town {
     // The quest log's inputs: this difficulty's flags, what the server told.
     [[nodiscard]] const d2d::rules::QuestBits& quest_bits() const;
     [[nodiscard]] QuestState quest_state() const { return { view.quest_log, view.game_quests, view.den_left }; }
+    int view_act() const;
     void toggle_quest_log();               // Q and the mini-panel (FUN_004a3fe0)
     [[nodiscard]] QuestLogButton quest_log_button_now() const;
 

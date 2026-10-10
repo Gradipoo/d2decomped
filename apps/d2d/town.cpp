@@ -1240,10 +1240,13 @@ auto Town::quest_bits() const -> const d2d::rules::QuestBits& {
         return character.header.quests[std::size_t(std::clamp(character.header.active_difficulty(), 0, 2))];
     }
 
-// The player's act: the act of the level they're on (acts 1 and 2 so far).
+// The player's act (0-based): the act of the level the View has them on
+// (acts 1 and 2 so far; a joined game's too).
+auto Town::view_act() const -> int { return view.level && view.level->id >= d2d::rules::level_ids::kLutGholein ? 1 : 0; }
+
 auto Town::toggle_quest_log() -> void {
         if (quest_log.open) { quest_log.open = false; return; }
-        quest_log_open(quest_log, quest_bits(), quest_state(), world.level && world.level->id >= d2d::rules::level_ids::kLutGholein ? 1 : 0);
+        quest_log_open(quest_log, quest_bits(), quest_state(), view_act());
         char_open = stash_open = cube_open = false;
     }
 
@@ -1554,7 +1557,7 @@ auto Town::handle(const Event& event, std::uint32_t frame_ms) -> void {
             return;
         }
         if (open_ui.kind == ev::OpenUI::waypoint) {
-            waypoint = { .open = true, .npc = open_ui.npc };
+            waypoint = { .open = true, .tab = view_act(), .npc = open_ui.npc };   // on the act's own tab
             inv_open = char_open = stash_open = cube_open = quest_log.open = false;
             return;
         }

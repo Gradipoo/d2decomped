@@ -46,6 +46,7 @@ inline constexpr int kTristram = 38;
 inline constexpr int kMooMooFarm = 39;
 
 // Acts 2 .. 5.
+inline constexpr int kRockyWaste = 41;
 inline constexpr int kArcaneSanctuary = 74;
 inline constexpr int kTravincal = 83;
 inline constexpr int kBloodyFoothills = 110;

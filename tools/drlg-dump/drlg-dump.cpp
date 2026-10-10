@@ -387,6 +387,33 @@ int main(int argc, char** argv) {
         }
         return 0;
     }
+    if (argc > 4 && std::string(argv[argc - 1]) == "layout") {
+        // Act 2's outdoor rectangles (act2_layout), as tools/emu drlg.layout_dump prints them.
+        d2d::mpq::Stack mpqs;
+        if (const char* patch = std::getenv("D2_PATCH_INSTALLER")) mpqs.push_installer(patch);
+        for (const char* name : { "d2exp.mpq", "d2data.mpq" }) if (fs::exists(dir / name)) mpqs.push(dir / name);
+        OutdoorAssets assets;
+        load_outdoor_assets(assets, [&](const std::string& path) { return mpqs.try_read(path); });
+        const auto defs = level_defs(assets.levels);
+        const auto dash = range.find('-');
+        const auto first = std::uint32_t(std::stoul(range.substr(0, dash), nullptr, 0));
+        const auto last = dash == std::string::npos ? first : std::uint32_t(std::stoul(range.substr(dash + 1), nullptr, 0));
+        for (auto seed = first;; ++seed) {
+            std::ostringstream out;
+            auto layout = act2_layout(defs, act_seed(seed));
+            std::ranges::sort(layout, {}, &Placed::level);
+            for (const auto& placement : layout)
+                out << "level " << placement.level << " at " << placement.x << ',' << placement.y << " size " << placement.width << 'x' << placement.height << '\n';
+            out << "town file " << lut_gholein_file(layout) << '\n';
+            auto tomb_seed = act_seed(seed);
+            const auto tombs = roll_act2_tombs(tomb_seed);
+            out << "tombs " << tombs.boss << ' ' << tombs.staff << '\n';
+            if (argc > 5) std::ofstream(fs::path(argv[4]) / (std::to_string(seed) + ".txt")) << out.str();
+            else std::fputs(out.str().c_str(), stdout);
+            if (seed == last) break;
+        }
+        return 0;
+    }
     if (argc > 4 && std::string(argv[argc - 1]) == "npcs") {
         const char* patch = std::getenv("D2_PATCH_INSTALLER");
         auto game = d2d::game::load_game_data(dir, patch ? fs::path(patch) : fs::path{}, 1);

@@ -93,6 +93,51 @@ outdoor generator reads these (phase B).
 d2d: `components/drlg` `place_chain` / `act1_layout` / `town_file`,
 `tests/test_drlg.cpp`.
 
+## Act 2's layout (FUN_00677790)
+
+FUN_00678ad0 picks the act's layout: act 1 FUN_00677750, act 2
+FUN_00677790, act 3 FUN_006789b0, act 4 FUN_00678a20, act 5 FUN_00678a70.
+
+**The tombs first** (FUN_00642da0, act 2 only, before the layout): two
+rolls of `rand(7)` on the act seed, again in pairs until they differ;
+the first + 66 is the boss tomb (act +0x94), the second + 66 the staff
+tomb (+0x484). The maze grower makes the boss tomb ×3 rooms and the
+staff tomb ×2 (FUN_00671210). Act 3 rolls one `& 1` there instead
+(+0x474). So act 2's chains start two (or more) steps later than act 1's.
+
+Two chains, no outdoor flags (the third argument is 0), each check
+FUN_00676f50 / FUN_00676fc0: clear of every earlier record but its link
+(FUN_0066b860 → FUN_0066b800, gap 0) — act 1's check without the town
+and Burial Grounds rules. Then FUN_00677680 links neighbours for levels
+40..46.
+
+| table | records |
+|---|---|
+| 0x6f0930 | 40 Lut Gholein (anchor), 41 Rocky Waste ← 0 (FUN_006769a0), 42 Dry Hills ← 1, 43 Far Oasis ← 2, 44 Lost City ← 3 (FUN_00676280), 45 Valley of Snakes ← 4 (FUN_00676ae0) |
+| 0x6f0a20 | 46 Canyon of the Magi (anchor) |
+
+**Placement** (L the link's rect, W/H the new level's size):
+
+- Rocky Waste (FUN_006769a0): first `(seed & 1) + 1`, the retry the
+  other; 1: (L.x − W, L.y) left, top-aligned; 2: (L.x, L.y − H) above,
+  left-aligned.
+- shifted (FUN_00676280): first `seed & 7`, retries (d + 1) & 7; with
+  a = W/2 + 8, b = H/2 + 8: 0 (L.x − a, L.y2), 1 (L.x + a, L.y2), 2
+  (L.x − W, L.y − b), 3 (L.x − W, L.y + b), 4 (L.x − a, L.y − H), 5
+  (L.x + a, L.y − H), 6 (L.x2, L.y − b), 7 (L.x2, L.y + b).
+- flush (FUN_00676ae0): as shifted for the rolls; d / 2 picks 0 (L.x,
+  L.y2), 1 (L.x − W, L.y), 2 (L.x, L.y − H), 3 (L.x2, L.y).
+
+**Lut Gholein's file** (FUN_006772c0, for a DrlgType-2 level 40): the
+next record's dir, the Rocky Waste's — LvlPrest 301 File2 LutW (1, the
+Rocky Waste to the west) or File3 LutN (2, north). Level 1 takes its own
+dir the same way (act 1's town file).
+
+d2d: `components/drlg` `act2_layout` / `roll_act2_tombs` /
+`lut_gholein_file`, `tests/test_drlg.cpp`; `diff_drlg.py 1-2000 40
+layout` (drlg.layout_dump; drlg.act_of picks a level's act for every
+dump): 2000/2000 seeds, rectangles, file and tombs.
+
 ## Outdoor levels (DrlgType 3) — FUN_00675360
 
 The level's outdoor record (0x268 bytes, FUN_00675320) holds four cell
@@ -792,7 +837,8 @@ Conditions those results hold under, so they aren't overstated:
 |---|---|
 | The rest of act 1's layout: other levels' rectangles, chain 2 (Moo Moo Farm, Monastery, Tamoe Highland, Black Marsh, Dark Wood), chain 2's overlap check shifted by 200 (FUN_00676eb0) | ported partly (chain 2 simplified); only the Blood Moor's rectangle and flags are diffed |
 | The town's own layout beyond its DS1 choice | not diffed |
-| Act 2+ maze types; the Barracks' cross-level link to 27 (FUN_0066b790) | not ported |
+| Act 2's layout (rectangles, Lut Gholein's file, the tombs) | diffed, 2000/2000 seeds |
+| Act 2+ maze types; the desert outdoors; the Barracks' cross-level link to 27 (FUN_0066b790) | not ported |
 | Preset units that roll to stay (FUN_00667620) | ported outdoors (`stays`, units.hpp); diffed on Cold Plains' Cottages 2, whose row has Pops: presets with Scan or Pops roll at generation on the level seed (FUN_00667970), the rest on the seed of the room that copies them (room +0x14, the whole {low, high} — a maze room's was stepped once, so its high word isn't 666; diffed on the Jail and Catacombs). In the preset record's order, one step each — monsters 0xcc, 0xcd, 0x173, 0x174 kept when `low % 3 == 0`; MonPlace 0x21 when `low & 3`, 0x22 when odd, 0x23 when `!(low & 3)`, 0x24 always; objects 0xc4 / 0x105 when even, 0x245 when `low & 3`. It runs after the room's DT1 list and before its tiles (FUN_0061b730), whose seed FUN_0066ee40 resets, so tiles don't shift. Act 1: the Crypt, Jail, Catacombs, Fence Fill 1, Cottages 2 |
 | Units in other acts: the act 2 / act 4 MonPreset remaps, type-4 units (NPCs by name) | not ported |
 | LvlSub CheckAll stamps | not ported (no act 1 wilderness row uses them) |

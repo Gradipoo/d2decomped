@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Diff our level generator against game.exe's over a range of map seeds.
 
-    uv run python diff_drlg.py 1-3000 [level] [tiles|units|seeds|monsters|objgroups|drops|collision|game|npcs]...     # level defaults to 2 (the Blood Moor)
+    uv run python diff_drlg.py 1-3000 [level] [tiles|units|seeds|monsters|objgroups|drops|collision|game|npcs|layout]...     # level defaults to 2 (the Blood Moor)
 
 Runs build/tools/drlg-dump for the range, game.exe's generator in the
 emulator for the same seeds, and prints how many match plus the first
@@ -15,6 +15,7 @@ come out the same in any order (d2d's are made once, list order).
 `game` one game, $LEVELS (default 2,8,4,9; the level argument unused) made
 in turn, their rooms brought up in $ORDER and populated, every container
 opened: the object seed, the game seed and the drops (objgroups.game_dump).
+`layout` act 2's outdoor rectangles and Lut Gholein's file (level unused).
 `npcs` the camp's NPCs thinking ($THINKS each, default 40; npcs.py).
 Several kinds share one emulator boot (sweep.sh); each result line then
 starts with its kind. Exit status 1 when any kind mismatches.
@@ -68,6 +69,8 @@ def compare(e, first, last, lid, what, ours_dir, env):
             rooms[1] += len(g.keys() | o.keys())
         elif what == "collision":
             game = drlg.collision_dump(e, seed, lid, env["ORDER"]).splitlines()
+        elif what == "layout":
+            game = drlg.layout_dump(e, seed, lid).splitlines()
         elif what == "npcs":
             game = npcs.dump(e, seed, int(env.get("THINKS", npcs.THINKS))).splitlines()
         elif what == "game":

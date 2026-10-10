@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Act 1's level layout: for many seeds, every level clear of the others
+// Acts 1 and 2's level layout: for many seeds, every level clear of the others
 // and touching its link, the town where game.exe allows it, reproducible.
 #include <drlg.hpp>
 
@@ -39,5 +39,28 @@ int main() {
     }
     std::printf("town files N/E/S/W: %d %d %d %d\n", files[0], files[1], files[2], files[3]);
     assert(files[0] + files[1] + files[2] + files[3] == 399);
+    // Act 2 (FUN_00677790): Lut Gholein anchors a chain of five, each
+    // clear of the rest and touching its link; the town's file is the Rocky
+    // Waste's side; the two tombs differ.
+    LevelDefs act2 = { { 40, { 56, 56, 1000, 1000 } }, { 45, { 32, 32, 0, 0, true } }, { 46, { 80, 80, 2500, 1000, true } } };
+    for (int id : { 41, 42, 43, 44 }) act2[id] = { 80, 80, 0, 0, true };
+    int lut_files[3] = {};
+    for (std::uint32_t seed = 1; seed < 400; ++seed) {
+        auto act_seed = d2d::rules::Rng{ seed };
+        const auto layout = act2_layout(act2, act_seed);
+        assert(layout.size() == kAct2Outdoors.size() + kAct2Canyon.size());
+        for (std::size_t i = 0; i < kAct2Outdoors.size(); ++i) {
+            const int link = kAct2Outdoors[i].link;
+            for (std::size_t j = 0; j < i; ++j)
+                if (int(j) != link) assert(apart(layout[i], layout[j]));
+            if (link >= 0) assert(touching(layout[i], layout[std::size_t(link)]));
+        }
+        const int file = lut_gholein_file(layout);
+        assert(file == 1 || file == 2);
+        ++lut_files[file];
+        const auto tombs = roll_act2_tombs(act_seed);
+        assert(tombs.boss != tombs.staff && tombs.boss >= 66 && tombs.staff <= 72);
+    }
+    assert(lut_files[1] && lut_files[2]);
     std::puts("test_drlg: ok");
 }

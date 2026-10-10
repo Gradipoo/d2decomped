@@ -34,7 +34,7 @@ namespace d2d::client {
 void draw_inventory(std::vector<std::uint8_t>& framebuffer, const Scene& scene, const Scene::InvLayout& layout,
                     const std::vector<d2d::d2s::Item>& items, int mouse_x , int mouse_y , const d2d::rules::Wearer* wearer ,
                     const std::function<std::string(const d2d::d2s::Item&)>* price) {
-    const auto& pal = scene.act1_pal.entries().empty() ? scene.pal : scene.act1_pal;
+    const auto& pal = scene.act_pal.entries().empty() ? scene.pal : scene.act_pal;
     // invchar6.dc6 holds two 2x2 panels (256+64 wide, 256+176 tall);
     // frames 4..7 are the inventory, 0..3 the character-stats page.
     if (scene.inv_panel.frames_per_direction() >= 8) {
@@ -86,7 +86,7 @@ int stat_button_at(int mouse_x, int mouse_y) {
 void draw_char_panel(std::vector<std::uint8_t>& framebuffer, const Scene& scene, const d2d::d2s::Stats& stats,
                      const PanelStats& panel,
                      std::string_view name, int class_idx, int pressed_button) {
-    const auto& pal = scene.act1_pal.entries().empty() ? scene.pal : scene.act1_pal;
+    const auto& pal = scene.act_pal.entries().empty() ? scene.pal : scene.act_pal;
     const int panel_x = kCharPanelX, panel_y = kCharPanelY;
     if (scene.inv_panel.frames_per_direction() >= 8) {
         const auto& frame = scene.inv_panel.frame(0, 0);
@@ -226,7 +226,7 @@ void draw_char_panel(std::vector<std::uint8_t>& framebuffer, const Scene& scene,
 
 void draw_hud(std::vector<std::uint8_t>& framebuffer, const Scene& scene, const d2d::d2s::Stats& stats, const Hud& hud, int mouse_x, int mouse_y) {
     using namespace d2d::d2s;
-    const auto& pal = scene.act1_pal.entries().empty() ? scene.pal : scene.act1_pal;
+    const auto& pal = scene.act_pal.entries().empty() ? scene.pal : scene.act_pal;
     const int width = int(kScreenWidth), height = int(kScreenHeight);
     auto at_bottom = [&](const d2d::dc6::Sprite& spr, int frame, int x, int bottom) {
         if (frame >= int(spr.frames_per_direction())) return;
@@ -376,7 +376,7 @@ bool over_skills_button(int x, int mouse_x, int mouse_y) {
 }
 
 void draw_level_buttons(std::vector<std::uint8_t>& framebuffer, const Scene& scene, const LevelButtons& buttons, int mouse_x, int mouse_y) {
-    const auto& pal = scene.act1_pal.entries().empty() ? scene.pal : scene.act1_pal;
+    const auto& pal = scene.act_pal.entries().empty() ? scene.pal : scene.act_pal;
     const int height = int(kScreenHeight);
     auto at_bottom = [&](const d2d::dc6::Sprite& spr, int frame, int x, int bottom) {
         if (frame >= int(spr.frames_per_direction())) return;
@@ -410,7 +410,7 @@ std::array<int, 4> grid_rect(const Scene& scene, const Scene::InvLayout& layout,
 void draw_storage(std::vector<std::uint8_t>& framebuffer, const Scene& scene, const std::vector<d2d::d2s::Item>& items,
                   const d2d::dc6::Sprite& art, const Scene::InvLayout& layout, int panel,
                   int mouse_x, int mouse_y, const d2d::rules::Wearer* wearer) {
-    const auto& pal = scene.act1_pal.entries().empty() ? scene.pal : scene.act1_pal;
+    const auto& pal = scene.act_pal.entries().empty() ? scene.pal : scene.act_pal;
     if (art.frames_per_direction() >= 4) {
         const auto& frame = art.frame(0, 0);
         blit_sprite(framebuffer, frame, pal, kCharPanelX, kCharPanelY);
@@ -455,7 +455,7 @@ void shade(std::vector<std::uint8_t>& framebuffer, const std::array<int, 4>& box
 void draw_trade(std::vector<std::uint8_t>& framebuffer, const Scene& scene, int state, const std::string& with, const std::string& our_name,
                 const std::vector<d2d::d2s::Item>& theirs, const std::vector<d2d::d2s::Item>& ours, std::uint32_t their_gold,
                 std::uint32_t our_gold, const std::string* typing, int mouse_x, int mouse_y, const d2d::rules::Wearer* wearer) {
-    const auto& pal = scene.act1_pal.entries().empty() ? scene.pal : scene.act1_pal;
+    const auto& pal = scene.act_pal.entries().empty() ? scene.pal : scene.act_pal;
     auto centred = [&](const std::array<int, 4>& box, const std::string& text) {
         scene.font.draw(framebuffer, kScreenWidth, kScreenHeight, pal, (box[0] + box[2]) / 2 - scene.font.measure(text) / 2,
                         (box[1] + box[3]) / 2 - scene.font.line_height() / 2, text);
@@ -513,7 +513,7 @@ TradeClick trade_click(const Scene& scene, int state, int mouse_x, int mouse_y) 
 
 void draw_belt(std::vector<std::uint8_t>& framebuffer, const Scene& scene, const std::vector<d2d::d2s::Item>& items,
                int mouse_x, int mouse_y, const d2d::rules::Wearer* wearer, bool popup) {
-    const auto& pal = scene.act1_pal.entries().empty() ? scene.pal : scene.act1_pal;
+    const auto& pal = scene.act_pal.entries().empty() ? scene.pal : scene.act_pal;
     const auto& belt = scene.belts[std::size_t(belt_index(scene, items))];
     const int rows = belt.boxes / 4;
     if (popup && scene.popbelt.frames_per_direction() > 0) {
@@ -627,7 +627,7 @@ void automap_reveal(const Scene& scene, const Level& level, Automap& automap, fl
 
 void draw_automap(std::vector<std::uint8_t>& framebuffer, const Scene& scene, const Automap& automap, float player_x, float player_y) {
     if (!automap.open || scene.automap_cels.frames_per_direction() == 0) return;
-    const auto& pal = scene.act1_pal.entries().empty() ? scene.pal : scene.act1_pal;
+    const auto& pal = scene.act_pal.entries().empty() ? scene.pal : scene.act_pal;
     const int scroll_x = int(std::lround((player_x - player_y) * 80 / 10)) - int(kScreenWidth) / 2 + 40;
     const int scroll_y = int(std::lround((player_x + player_y) * 40 / 10)) - int(kScreenHeight) / 2 + 15;
     for (const auto& cell : automap.cells) {
@@ -695,7 +695,7 @@ int waypoint_tab_at(const d2d::d2s::Header& header, bool expansion, int mouse_x,
 
 void draw_waypoints(std::vector<std::uint8_t>& framebuffer, const Scene& scene, const WaypointUI& waypoints,
                     const d2d::d2s::Header& header, bool expansion, int current_level, int mouse_x, int mouse_y) {
-    const auto& pal = scene.act1_pal.entries().empty() ? scene.pal : scene.act1_pal;
+    const auto& pal = scene.act_pal.entries().empty() ? scene.pal : scene.act_pal;
     if (scene.wp_bg.frames_per_direction() >= 4) {
         const auto& frame = scene.wp_bg.frame(0, 0);
         blit_sprite(framebuffer, frame, pal, kCharPanelX, kCharPanelY);
@@ -818,7 +818,7 @@ void quest_log_notify(QuestLog& quest_log, int quest) {
 
 bool draw_quest_log(std::vector<std::uint8_t>& framebuffer, const Scene& scene, QuestLog& quest_log, const d2d::rules::QuestBits& quest_bits,
                     const QuestState& quest_state, std::uint32_t now_ms, bool expansion, int mouse_x, int mouse_y) {
-    const auto& pal = scene.act1_pal.entries().empty() ? scene.pal : scene.act1_pal;
+    const auto& pal = scene.act_pal.entries().empty() ? scene.pal : scene.act_pal;
     const auto& font = scene.font_formal11.line_height() > 0 ? scene.font_formal11 : scene.font;   // font 8
     const int panel_x = kCharPanelX, panel_y = kCharPanelY;
     bool sound = false;
@@ -909,7 +909,7 @@ QuestLogButton quest_log_button(const QuestLog& quest_log, bool left_open, bool 
 
 void draw_quest_log_button(std::vector<std::uint8_t>& framebuffer, const Scene& scene, const QuestLogButton& button, bool held, int mouse_x, int mouse_y) {
     if (button.x0 < 0 || scene.level_socket.frames_per_direction() == 0) return;
-    const auto& pal = scene.act1_pal.entries().empty() ? scene.pal : scene.act1_pal;
+    const auto& pal = scene.act_pal.entries().empty() ? scene.pal : scene.act_pal;
     auto at_bottom = [&](const d2d::dc6::Sprite& sprite, int frame, int x, int bottom_y) {
         if (frame >= int(sprite.frames_per_direction())) return;
         const auto& frame_ref = sprite.frame(0, std::uint32_t(frame));

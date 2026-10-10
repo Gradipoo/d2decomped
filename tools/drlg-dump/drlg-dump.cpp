@@ -74,6 +74,7 @@ static std::string dump(const OutdoorAssets& assets, std::uint32_t seed, int id,
         maze.type = to_int(assets.levels.get(*row, "LevelType"));
         std::vector<std::string> notes;
         int court_file = id == 27 || id == 28 ? courtyard_file(act1_from_map_seed(level_defs(assets.levels), seed), act_seed(seed)) : -1;
+        if (id == level_ids::kLutGholein) court_file = lut_gholein_file(act2_layout(level_defs(assets.levels), act_seed(seed)));
         if (const auto court = level_row(assets.levels, 27); id == 28 && court) {
             auto court_seed = level_seed(seed, 27);
             court_file = preset_file(assets.data, 27, court_seed, court_file);

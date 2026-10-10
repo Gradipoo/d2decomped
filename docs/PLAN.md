@@ -714,7 +714,13 @@ leftovers (act1-gaps.md) and hosting a game wait.
    1-2000 40 layout`: 2000/2000.
 2. Lut Gholein (DrlgType 2, LvlPrest 301, LutW / LutN by the Rocky
    Waste's side) as a town: its DS1, tiles, warps, NPCs and their
-   MonAI, waypoint.
+   MonAI, waypoint. *Built (2026-10-10):* level 40 builds on demand
+   like any level (`kBuiltLevels`), acts 1 and 2's presets load;
+   `diff_drlg.py 1-20 40` / `tiles` 20/20, `units` 10/10. Its start and
+   portal spots come from the rooms' spawn tiles (BuiltRoom::spawns).
+   Left: the townsfolk and guards (act2male / act2female / act2guard*,
+   MonPreset 22–26), Jerhyn (in the Harem, level 50), the NPCs' act 2
+   menus and stock checked against game.exe.
 3. The desert (LevelType 16: 41–46): the outdoor generator with act 2's
    border and exit rules (drlg.md: exits in pairs from 0x6f112c, columns
    2 / 3 of 0x6f0630), its LvlSub / presets.
@@ -724,11 +730,15 @@ leftovers (act1-gaps.md) and hosting a game wait.
    Harem 1 (50), Duriel's Lair (73).
 5. The act 2 / act 4 MonPreset remaps and type-4 units (NPCs by name).
 
-**Step 2 — moving between acts:** the World holds one act at a time
-(game.exe frees the old act's DRLG on an act change); Warriv's Go East
-lands in Lut Gholein instead of ending the game; the save starts there
-(its act byte), the act's music, waypoints by act, the quest log's act 2
-tab.
+**Step 2 — moving between acts:** *Done first (2026-10-10), ahead of the
+town:* Warriv's Go East lands in Lut Gholein (`World::arrive`, the save's
+act byte set), a save left in act 2 starts there, town portals and
+respawns go to the act's town (`GameData::town_of`), every town counts
+as town (`in_town`), the palette follows the act (`load_act_palettes`),
+the quest log opens on the act's tab; `tests/quests_d2d.py` rides the
+caravan. Left: game.exe swaps the whole act (the old act's DRLG freed;
+d2d keeps act 1's levels built), waypoints across acts, Meshif / Warriv
+back west.
 
 **Step 3 — Act 2's content:** the town (Atma, Drognan, Elzix, Fara,
 Geglash, Greiz' hire list: act 2 mercs and their auras, Jerhyn, Lysander,

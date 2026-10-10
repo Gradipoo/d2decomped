@@ -167,9 +167,12 @@ struct Scene : GameData {
     d2d::dc6::Sprite run_button;                        // PANEL\runbutton (DAT_007bef0c)
     int                   bg_tiles_across{4};
 
-    // ACT1 palette — the actual town palette (fechar/sky are frontend-only).
-    d2d::palette::Palette                    act1_pal;
-    std::array<d2d::palette::Palette, 32>    act1_lit;   // act1_pal at each light level (PL2 +0x400)
+    // The act's palette (palette\ACTn), the in-game one for the world and
+    // the UI alike (fechar/sky are frontend-only); load_act_palettes swaps
+    // it as the player changes act.
+    d2d::palette::Palette                    act_pal;
+    std::array<d2d::palette::Palette, 32>    act_lit;   // act_pal at each light level (PL2 +0x400)
+    int                                      palette_act = -1;   // the act act_pal is (0-based)
     d2d::dc6::Sprite focus16;                          // UI\CURSOR\focus16: menu hover marks
     d2d::font::Font  font_formal11;                    // FontFormal11: NPC speech (font id 8)
     d2d::font::Font  font_chat;                        // FontInGameChat (font id 0xd): chat lines

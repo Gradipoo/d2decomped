@@ -93,27 +93,8 @@ void load_town(GameData& game_data, d2d::mpq::Stack& mpqs, const char* ds1_path)
         }
     }
     finish_level(game_data.town);
+    find_spawn_spots(game_data.town);
     const auto& map = game_data.town.ds1;
-    // The town start, as game.exe picks it on joining: DS1 special walls
-    // (orientation 10/11) with main index 30..33 become the level's spawn
-    // list (code at 0x667d09: main 30 sub n -> index n, 31 -> n+5,
-    // 32 -> 10, 33 -> 11 (town-portal arrival)); a join asks for index 0,
-    // which matches any of group 0 (indices 0..4) at random
-    // (FUN_0066ac40), at subtile tile*5+3 (FUN_0061b060), then the nearest
-    // free spot. ponytail: first match instead of a random one — each
-    // Act 1 town DS1 has exactly one.
-    for (const auto& layer : map.walls())
-        for (std::size_t i = 0; i < layer.cells.size() && game_data.town.start.first < 0; ++i) {
-            const auto& tile = layer.cells[i];
-            if ((tile.wall_type == 10 || tile.wall_type == 11) && tile.style == 30 && tile.sequence <= 4)
-                game_data.town.start = { (float(i % std::size_t(map.width())) * 5 + 3 + 0.5f) / 5,
-                                     (float(i / std::size_t(map.width())) * 5 + 3 + 0.5f) / 5 };
-        }
-    for (const auto& layer : map.walls())                      // 33: where town portals open (index 11)
-        for (std::size_t i = 0; i < layer.cells.size(); ++i)
-            if (const auto& tile = layer.cells[i]; (tile.wall_type == 10 || tile.wall_type == 11) && tile.style == 33 && game_data.town.portal_spot.first < 0)
-                game_data.town.portal_spot = { (float(i % std::size_t(map.width())) * 5 + 3 + 0.5f) / 5,
-                                           (float(i / std::size_t(map.width())) * 5 + 3 + 0.5f) / 5 };
     d2d::log::info("  World: {} {}x{}, {} of {} tilesets, {} tiles", ds1_path, map.width(), map.height(),
                    game_data.town.dt1s.size(), files.size(), game_data.town.tile_lookup.size());
 }
@@ -131,6 +112,7 @@ void place_act1(GameData& game_data, d2d::mpq::Stack& mpqs, const d2d::drlg::Out
     for (const auto& placement : layout)
         if (placement.level == 1) { game_data.town.world_x = placement.x; game_data.town.world_y = placement.y; }
     game_data.act1_layout = layout;
+    game_data.act2_layout = d2d::drlg::act2_layout(d2d::drlg::level_defs(act1.levels), d2d::drlg::act_seed(map_seed));
 }
 
 // Monster tables (MonStats, MonStats2, MonLvl), unique names and mods, and

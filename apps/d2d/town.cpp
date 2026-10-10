@@ -59,7 +59,7 @@ void draw_monster_bar(std::vector<std::uint8_t>& framebuffer, const Scene& scene
             const bool filled_here = x - left < filled;
             pixel[0] = filled_here ? 0x88 : 0x20; pixel[1] = filled_here ? 0x08 : 0x10; pixel[2] = filled_here ? 0x08 : 0x10;
         }
-    const auto& pal = scene.act1_pal.entries().empty() ? scene.pal : scene.act1_pal;
+    const auto& pal = scene.act_pal.entries().empty() ? scene.pal : scene.act_pal;
     // Its name's colour (FUN_00454ad0): gold for uniques, blue for champions.
     const int colour = d2d::rules::bar_name_colour(monster.boss, scene.monsters.types[std::size_t(monster.type)].id);
     const std::array<std::uint8_t, 3> tint = colour == d2d::rules::kNameGold ? std::array<std::uint8_t, 3>{ 199, 179, 119 }
@@ -159,7 +159,7 @@ void view_overlays(std::vector<std::uint8_t>& framebuffer, const Scene& scene, c
     // Nightmare / Hell (softcore) 0x13e7 "You have lost experience".
     // ponytail: FUN_00502680's anchor taken as the cel's bottom, centred.
     if (view.pmode == kModeDD) {
-        const auto& pal = scene.act1_pal.entries().empty() ? scene.pal : scene.act1_pal;
+        const auto& pal = scene.act_pal.entries().empty() ? scene.pal : scene.act_pal;
         int y = int(kScreenHeight) / 2 - 0x5e;
         for (const auto* spr : { &scene.you_died, &scene.you_died_inst }) {
             int width = 0;                                   // its frames side by side (FUN_00502680)
@@ -197,8 +197,8 @@ std::pair<int, std::uint32_t> view_seq(const Scene& scene, int cls, const View& 
 Lighting frame_light(const Scene& scene, const View& view, float cam_x, float cam_y, std::span<const View::Shot> effects , int ambient ,
                      std::span<const Unit> units , const Unit* player_look , std::uint32_t now) {
     Lighting lighting;
-    if (!view.level || scene.act1_lit[31].entries().empty()) return lighting;
-    lighting.pal = &scene.act1_lit;
+    if (!view.level || scene.act_lit[31].entries().empty()) return lighting;
+    lighting.pal = &scene.act_lit;
     // The grid covers the view's corners (half the width in cells over 80
     // plus half the height over 40, halved, in subtiles) and the widest light
     // (18) past them, not game.exe's 48 (bugs.md #11).
@@ -1232,7 +1232,6 @@ auto Town::update(std::vector<std::uint8_t>& framebuffer, const Mouse& frame_mou
         if (mouse.press_this_frame) press_on_ui = over_ui;
         else if (!mouse.down) press_on_ui = false;
         if (have_world) walk(mouse, over_ui || press_on_ui, frame_ms, last_ms);
-        if (world.went_east) { world.went_east = false; save(); screen = Screen::CharSelect; return; }
         play_cues(cues, audio, view.player.x, view.player.y, rng, frame_ms);
         draw(framebuffer, mouse, frame_ms);
     }
@@ -1241,10 +1240,10 @@ auto Town::quest_bits() const -> const d2d::rules::QuestBits& {
         return character.header.quests[std::size_t(std::clamp(character.header.active_difficulty(), 0, 2))];
     }
 
-// ponytail: the player's act is Act 1's (0): d2d has no level past it.
+// The player's act: the act of the level they're on (acts 1 and 2 so far).
 auto Town::toggle_quest_log() -> void {
         if (quest_log.open) { quest_log.open = false; return; }
-        quest_log_open(quest_log, quest_bits(), quest_state(), 0);
+        quest_log_open(quest_log, quest_bits(), quest_state(), world.level && world.level->id >= d2d::rules::level_ids::kLutGholein ? 1 : 0);
         char_open = stash_open = cube_open = false;
     }
 
@@ -1674,7 +1673,7 @@ auto Town::draw(std::vector<std::uint8_t>& framebuffer, const Mouse& mouse, std:
         std::erase_if(state_clock.seen, [&](const auto& entry) { return frame_ms - entry.second.last > 5000; });
         Unit player_look{};
         dress(*scene, player_look, -1, player_states(*scene, view), &state_clock);
-        const bool town = level->id == d2d::rules::level_ids::kRogueEncampment;             // TN/TW in town, NU/WL outside
+        const bool town = d2d::rules::level_ids::is_town(level->id);                       // TN/TW in town, NU/WL outside
         // A dead player has no DD composite: DT held on its last frame.
         const auto cls = std::max(character.character_class, 0);
         if (pmode == kModeDD) unit.mode_ms = frame_ms - (scene->composite(cls, kModeDT, view.gfx).length_ms() - 1);
@@ -1785,7 +1784,7 @@ auto Town::add_chat(const std::string& text, int colour, std::size_t gold) -> vo
 auto Town::draw_chat(std::vector<std::uint8_t>& framebuffer, bool left_open, bool right_open) const -> void {
     if (chat_lines.empty() && !chat_typing) return;
     const auto& font = scene->font_chat.line_height() > 0 ? scene->font_chat : scene->font;
-    const auto& pal = scene->act1_pal.entries().empty() ? scene->pal : scene->act1_pal;
+    const auto& pal = scene->act_pal.entries().empty() ? scene->pal : scene->act_pal;
     const int x = left_open && !right_open ? int(kScreenWidth) / 2 + 15 : 15;
     int baseline = portraits_shown ? 0x5f : 20;   // ponytail: taken as below the portraits (UI flag 0x13 (?))
     static constexpr std::array<std::array<std::uint8_t, 3>, 10> kRgb{ { { 255, 255, 255 }, { 255, 77, 77 }, { 0, 255, 0 }, { 105, 105, 255 }, { 199, 179, 119 },
@@ -1891,7 +1890,7 @@ auto Town::draw_portraits(std::vector<std::uint8_t>& framebuffer, bool left_open
     if (!net_game || left_open) return;
     const auto self = net_game->units.find(std::uint64_t(net_game->self_id));
     if (self == net_game->units.end() || self->second.party == 0xffff) return;
-    const auto& pal = scene->act1_pal.entries().empty() ? scene->pal : scene->act1_pal;
+    const auto& pal = scene->act_pal.entries().empty() ? scene->pal : scene->act_pal;
     const auto& font = scene->font_tiny.line_height() > 0 ? scene->font_tiny : scene->font;
     int x = 15, name_y = 0x48;
     for (const auto& [unit_key, unit] : net_game->units) {

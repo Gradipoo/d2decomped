@@ -213,7 +213,7 @@ static void take_blast(std::int64_t& life, int taken) {
 // FUN_00622b50 (mask 0x804): rules::sight_blocked from the unit to the
 // object over the walk grid's missile barrier (0x04) and doors (0x800).
 auto World::blast(const Npc& object, float x, float y, int size, std::int64_t life, int unit_level, int dexterity, int defense) -> int {
-    if (level == &game_data->town) return 0;
+    if (in_town(level)) return 0;
     const auto wall = [&](int at_x, int at_y) { return level->blocked((float(at_x) + 0.5f) / 5, (float(at_y) + 0.5f) / 5, 0x804); };
     const auto subtile = [](float cell) { return int(std::floor(cell * 5)); };
     if (d2d::rules::sight_blocked(subtile(x), subtile(y), size, subtile(object.x), subtile(object.y), object.size_x, wall)) return 0;
@@ -592,16 +592,6 @@ auto World::enter(const Character& entering) -> void {
         character.character_class = entering.character_class; character.name = entering.name;
         character.appearance = entering.appearance; character.items = entering.items; character.stats = entering.stats; character.panel = entering.panel;
         character.expansion = entering.expansion; character.header = entering.header; character.merc_items = entering.merc_items;
-        // A corpse in the save (its corpse list, FUN_00533850) lies by the
-        // camp's start.
-        // ponytail: where game.exe puts it isn't traced; the save's x / y
-        // aren't read.
-        corpses.clear();
-        if (!entering.corpse.empty() && game_data) {
-            const auto& town = game_data->town;
-            const auto [spot_x, spot_y] = town.nearest_free(town.start.first + 1.f, town.start.second + 1.f);
-            corpses.push_back({ &town, spot_x, spot_y, 4, entering.corpse, 0, entering.appearance ? *entering.appearance : game_data->starting_gear[std::size_t(entering.header.cls % 7)] });
-        }
         // A new game starts at full life, mana and stamina, whatever the
         // save held (D2's "save and exit to heal").
         for (const auto& [cur, max] : { std::pair{ d2d::d2s::kLife, d2d::d2s::kMaxLife }, { d2d::d2s::kMana, d2d::d2s::kMaxMana },
@@ -611,7 +601,20 @@ auto World::enter(const Character& entering) -> void {
         store = {};
         stocks.clear();
         hire_offers.clear();
-        level = &game_data->town;                     // a game starts in the camp (set_map_seed may have rebuilt it)
+        // A game starts in the town of the save's act (its difficulty byte:
+        // 0x80 and the act in the low bits); the camp when that isn't built.
+        const auto act_byte = character.header.difficulty[std::size_t(std::clamp(character.header.active_difficulty(), 0, 2))];
+        const Level* act2_town = (act_byte & 0x80) && (act_byte & 7) == 1 ? game_data->level(d2d::rules::level_ids::kLutGholein) : nullptr;
+        level = act2_town && act2_town->start.first >= 0 ? act2_town : &game_data->town;   // set_map_seed may have rebuilt the camp
+        // A corpse in the save (its corpse list, FUN_00533850) lies by the
+        // town's start.
+        // ponytail: where game.exe puts it isn't traced; the save's x / y
+        // aren't read.
+        corpses.clear();
+        if (!entering.corpse.empty()) {
+            const auto [spot_x, spot_y] = level->nearest_free(level->start.first + 1.f, level->start.second + 1.f);
+            corpses.push_back({ level, spot_x, spot_y, 4, entering.corpse, 0, entering.appearance ? *entering.appearance : game_data->starting_gear[std::size_t(entering.header.cls % 7)] });
+        }
         other_npcs.clear();
         npc_states = npc_start(*level);
         interact_npc = pick_item = take_warp = -1;
@@ -731,10 +734,10 @@ auto World::swap_npcs(const Level* from) -> void {
     }
 
 auto World::respawn(std::uint32_t now_ms) -> void {
-        if (level != &game_data->town) {
+        if (!in_town(level)) {
             events.push_back(ev::LevelChanged{ level, false });
             const Level* from = level;
-            level = &game_data->town;
+            level = game_data->town_of(level->id);
             swap_npcs(from);
             interact_npc = pick_item = -1;
         }
@@ -743,7 +746,7 @@ auto World::respawn(std::uint32_t now_ms) -> void {
         std::tie(player.x, player.y) = level->nearest_free(player.x, player.y);
         target_x = player.x; target_y = player.y;
         fight.revive(now_ms);
-        d2d::log::info("respawned in the Rogue Encampment");
+        d2d::log::info("respawned in {}", level_name(*level));
     }
 
 auto World::cross_level() -> void {
@@ -751,7 +754,7 @@ auto World::cross_level() -> void {
         bool known = level->inside(target_x, target_y);
         for (const auto& neighbour : level->nearby) known = known || neighbour.level->inside(target_x - float(neighbour.dx), target_y - float(neighbour.dy));
         if (!known)
-            for (const auto& placement : game_data->act1_layout)
+            for (const auto& placement : game_data->layout_of(level->id))
                 if (world_x >= float(placement.x) && world_y >= float(placement.y) && world_x < float(placement.x + placement.width) && world_y < float(placement.y + placement.height)
                     && std::ranges::find(not_there, placement.level) == not_there.end()) {
                     not_there.push_back(placement.level);
@@ -1179,7 +1182,7 @@ auto World::take_corpse_items(std::size_t corpse_index, std::uint32_t now_ms) ->
     }
 
 auto World::read_portal(std::vector<d2d::d2s::Item>::iterator scroll, std::uint32_t now_ms) -> void {
-        if (level == &game_data->town || fight.dead() || fight.pmode >= 0) return;
+        if (in_town(level) || fight.dead() || fight.pmode >= 0) return;
         const bool book = scroll->code == "tbk";
         if (book && scroll->quantity <= 0) return;
         if (!fight.cast_scroll(book ? 220 : 219, now_ms)) return;
@@ -1191,14 +1194,15 @@ auto World::read_portal(std::vector<d2d::d2s::Item>::iterator scroll, std::uint3
 auto World::open_portal(std::uint32_t now_ms) -> void { open_portal_at(player.x, player.y + 0.6f, now_ms); }
 
 auto World::open_portal_at(float portal_x, float portal_y, std::uint32_t now_ms) -> void {
-        const auto& town = game_data->town;
-        if (level == &town || town.portal_spot.first < 0) return;
+        const Level* act_town = game_data->town_of(level->id);
+        if (in_town(level) || !act_town || act_town->portal_spot.first < 0) return;
+        const auto& town = *act_town;
         const auto [spot_x, spot_y] = level->nearest_free(portal_x, portal_y);
         const auto [town_x, town_y] = town.nearest_free(town.portal_spot.first, town.portal_spot.second);
         portal[0] = { level, spot_x, spot_y, now_ms };
         portal[1] = { &town, town_x, town_y, now_ms };
         cues.cue("object_townportal", now_ms, spot_x, spot_y);
-        d2d::log::info("town portal: {} ({:.1f}, {:.1f}) <-> camp ({:.1f}, {:.1f})", level_name(*level), spot_x, spot_y, town_x, town_y);
+        d2d::log::info("town portal: {} ({:.1f}, {:.1f}) <-> {} ({:.1f}, {:.1f})", level_name(*level), spot_x, spot_y, level_name(town), town_x, town_y);
     }
 
 auto World::use_portal(std::uint32_t now_ms) -> void {
@@ -1342,14 +1346,16 @@ auto World::deal(const Command& command) -> bool {
             using d2d::rules::qbit;
             if (std::size_t(east->npc) >= level->npcs.size() || level->npcs[std::size_t(east->npc)].hc_idx != d2d::rules::monster_ids::kWarriv
                 || !qbit(quests(), d2d::rules::AndyQuest::kQuest, 0)) return true;
+            const Level* lut_gholein = game_data->level(d2d::rules::level_ids::kLutGholein);
+            if (!lut_gholein || lut_gholein->start.first < 0) { d2d::log::warn("Lut Gholein didn't build; the caravan stays"); return true; }
             if (!qbit(quests(), 7, 0)) { d2d::rules::qset(quests(), 7, 0); d2d::rules::qset(quests(), 7, 13); }
-            andy.enter(quests(), level->id, d2d::rules::level_ids::kLutGholein);
-            cain.enter(quests(), level->id, d2d::rules::level_ids::kLutGholein);   // the Rogues get him if he's still caged (FUN_00596de0 / FUN_00597310)
             set_waypoint(waypoint_index(*game_data, d2d::rules::level_ids::kLutGholein));
             auto& difficulty = character.header.difficulty[std::size_t(std::clamp(character.header.active_difficulty(), 0, 2))];
             difficulty = std::uint8_t((difficulty & ~7) | 0x80 | 1);   // the save's act: game.exe starts it in Lut Gholein
-            went_east = true;
-            d2d::log::info("not implemented: Act 2 (Warriv's caravan to Lut Gholein); the game ends here");
+            // The arrival's level change runs the quests' enter hooks: Andariel's
+            // (the Rogues get Cain if he's still caged, FUN_00596de0 / FUN_00597310).
+            // ponytail: game.exe swaps the whole act (the old act's DRLG freed); Act 1's levels stay built.
+            arrive(lut_gholein, lut_gholein->start.first, lut_gholein->start.second, "Warriv's caravan");
             return true;
         }
         // Charsi's imbue (FUN_00579d60, kind 0 at hcIdx 0x9a): while it's
@@ -1516,7 +1522,7 @@ auto World::apply(const Command& command, std::uint32_t now_ms) -> void {
             return;
         }
         if (fight.pmode >= 0) return;
-        const bool in_moor = level != &game_data->town;
+        const bool in_moor = !in_town(level);
         auto walk_to = [&](float x, float y, bool fresh) {
             target_x = x; target_y = y;
             player.walking = true;
@@ -1600,7 +1606,7 @@ auto World::apply(const Command& command, std::uint32_t now_ms) -> void {
 auto World::stamina_frame() -> void {
         using namespace d2d::d2s;
         if (fight.dead()) return;
-        const bool town = level == &game_data->town;
+        const bool town = in_town(level);
         auto& stamina = character.stats.values[kStamina];
         const bool run = player.walking && fight.pmode < 0 && running && stamina > 0;
         if (run && !town) {
@@ -1670,7 +1676,7 @@ auto World::tick(const std::vector<Command>& cmds, std::uint32_t now_ms, std::ui
         if (merc) crowd.units.push_back(&merc->unit);
         for (std::size_t i = 0; i < npc_states.size() && i < level->npcs.size(); ++i)
             if (level->npcs[i].root != "objects" && !npc_states[i].hidden) crowd.units.push_back(&npc_states[i]);
-        const bool in_moor = level != &game_data->town;     // outside: this level's monsters are about
+        const bool in_moor = !in_town(level);     // outside: this level's monsters are about
         if (in_moor) fight.crowd(crowd);       // the monsters around the player
         // Dead: the death plays out, then Resurrect respawns in camp; a
         // swing or a flinch holds the player in place until it ends, and

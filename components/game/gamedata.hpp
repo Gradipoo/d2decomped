@@ -11,6 +11,7 @@
 #include <d2s_items.hpp>
 #include <drlg.hpp>
 #include <ds1.hpp>
+#include <level_ids.hpp>
 #include <dt1.hpp>
 #include <monsters.hpp>
 #include <montypes.hpp>
@@ -507,6 +508,9 @@ struct GameData {
     // builds and links outdoor neighbours (Level::nearby). load.hpp.
     mutable std::map<int, std::unique_ptr<Level>> levels;
     const Level* level(int id) const;
+    // The town of level `id`'s act: the camp, or Lut Gholein (built on
+    // demand like any level).
+    [[nodiscard]] const Level* town_of(int id) const { return id < d2d::rules::level_ids::kLutGholein ? &town : level(d2d::rules::level_ids::kLutGholein); }
     void want_level(int id) const;
     void poll_levels() const;
     // SuperUniques.txt (without its Expansion row): name, MonStats row of
@@ -526,6 +530,12 @@ struct GameData {
     std::vector<std::uint8_t> field;                   // expfield.d2: 256 x 256 directions (0-7, 8 the centre) toward (128, 128)
     std::uint32_t map_seed = 3;                        // act layout + levels (3: townE1)
     std::vector<d2d::drlg::Placed> act1_layout;        // where act 1's levels sit (act tiles)
+    std::vector<d2d::drlg::Placed> act2_layout;        // act 2's (its own act tiles: the acts overlap)
+    // The layout level `id`'s act placed it in (empty for acts not laid out).
+    [[nodiscard]] const std::vector<d2d::drlg::Placed>& layout_of(int id) const {
+        static const std::vector<d2d::drlg::Placed> kNone;
+        return id < d2d::rules::level_ids::kLutGholein ? act1_layout : id < d2d::rules::level_ids::kKurastDocks ? act2_layout : kNone;
+    }
     // Mercenary units by hireling.txt Id (the save's merc type): the
     // monster, and the first name key (merc01, merca201, MercX101, ...).
     struct Merc { Npc npc; std::string name_first; };
@@ -727,8 +737,9 @@ struct GameData::LevelBuilder {
 // The Blood Moor from the map seed (components/drlg): act 1's layout
 // places it against the town, the generator fills it, its tiles come from
 // the Act 1 wilderness DT1s (LvlTypes).
-// The levels d2d builds so far (the rest of Act 1 comes with its research).
-constexpr std::array kBuiltLevels{ 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39 };
+// The levels d2d builds so far: Act 1's (the town is GameData::town) and
+// Lut Gholein; the rest of Act 2 comes with its research.
+constexpr std::array kBuiltLevels{ 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40 };
 
 // A composite's COF and timing (the World's part of a composite).
 struct CofAnim { d2d::cof::Cof cof; GameData::AnimTiming timing; std::string path; bool ok = false; };
@@ -851,6 +862,10 @@ std::pair<int, int> drop_spot(const std::vector<std::uint8_t>& field, int x, int
 void add_object(const GameData& game_data, const d2d::txt::Table& objects, const std::unordered_map<std::string, std::size_t>& obj_row,
                 Level& into, int oid, int spot_x, int spot_y, d2d::rules::Rng& rgn);
 void finish_level(Level& level);
+// A town of any act: no monsters, no running drain, no town portal.
+[[nodiscard]] inline bool in_town(const Level* level) { return level && d2d::rules::level_ids::is_town(level->id); }
+// A town's spawn spots from its DS1 specials: Level::start, portal_spot.
+void find_spawn_spots(Level& level);
 LevelDt1s load_level_dt1s(Level& level, d2d::mpq::Stack& mpqs, d2d::drlg::OutdoorAssets& assets, int type, d2d::dt1::Pixels pixels);
 std::size_t set_level_tiles(Level& level, const d2d::drlg::OutdoorAssets& assets, const LevelDt1s& dt1s,
                             const std::vector<d2d::drlg::Outdoor::RoomSeed>& made, const std::vector<d2d::drlg::PlainRoom>& plain,

@@ -687,6 +687,9 @@ int run_windowed(std::vector<std::uint8_t>& framebuffer,
             }
             case Screen::InGame: {
                 town.typed = text_this_frame;
+                // The act's palette follows the player's level (acts 1 and 2 so far).
+                if (const int act = town.view.level && town.view.level->id >= d2d::rules::level_ids::kLutGholein ? 1 : 0; act != scene->palette_act)
+                    load_act_palettes(*scene, scene->mpqs, act);
                 town.update(framebuffer, mouse, keys_this_frame, screen, audio, now_ms, last_ms);
                 write_save_back();
                 if (screen == Screen::CharSelect && town.net_game) {   // a joined game: leave the host, saving on again
@@ -768,13 +771,13 @@ int run_windowed(std::vector<std::uint8_t>& framebuffer,
                 // An identify pick: cursor state 6, buysell's frame = Books.txt
                 // SpellIcon (0; S->C 0x3f, FUN_00468010), bottom 0x21 below the
                 // hotspot (FUN_00468460).
-                const auto& pal = scene->act1_pal.entries().empty() ? scene->pal : scene->act1_pal;
+                const auto& pal = scene->act_pal.entries().empty() ? scene->pal : scene->act_pal;
                 const auto& frame = scene->cursor_buysell.frame(0, 0);
                 blit_sprite(framebuffer, frame, pal, mouse.x + frame.offset_x,
                             mouse.y + 0x21 + frame.offset_y - int(frame.height) + 1);
             } else if (screen != Screen::Video && scene->cursor.frames_per_direction() >= 8) {   // hidden over cinematics
                 const auto& pal = screen == Screen::InGame
-                                      ? (scene->act1_pal.entries().empty() ? scene->pal : scene->act1_pal)
+                                      ? (scene->act_pal.entries().empty() ? scene->pal : scene->act_pal)
                                   : screen == Screen::CharCreate ? scene->charselect_pal : scene->pal;
                 const auto& frame = scene->cursor.frame(0, mouse.down ? 7 : 0);
                 blit_sprite(framebuffer, frame, pal, mouse.x + frame.offset_x,

@@ -63,7 +63,7 @@ std::array<int, 4> store_button_frames(const Store& store) {
 
 void draw_store(std::vector<std::uint8_t>& framebuffer, const Scene& scene, const Store& store, int mouse_x, int mouse_y, const d2d::rules::Wearer* wearer) {
     if (store.npc < 0) return;
-    const auto& pal = scene.act1_pal.entries().empty() ? scene.pal : scene.act1_pal;
+    const auto& pal = scene.act_pal.entries().empty() ? scene.pal : scene.act_pal;
     if (scene.store_panel.frames_per_direction() >= 4) {
         const auto& frame = scene.store_panel.frame(0, 0);
         blit_sprite(framebuffer, frame, pal, kCharPanelX, kCharPanelY);
@@ -118,7 +118,7 @@ void draw_store(std::vector<std::uint8_t>& framebuffer, const Scene& scene, cons
 }
 
 void draw_gold(std::vector<std::uint8_t>& framebuffer, const Scene& scene, const d2d::d2s::Stats& stats, bool store) {
-    const auto& pal = scene.act1_pal.entries().empty() ? scene.pal : scene.act1_pal;
+    const auto& pal = scene.act_pal.entries().empty() ? scene.pal : scene.act_pal;
     const int cell = scene.font.sheet().frames_per_direction() > 0 ? int(scene.font.sheet().frame(0, 0).height) : 16;
     auto text = [&](int x, int baseline, const std::string& label) { scene.font.draw(framebuffer, kScreenWidth, kScreenHeight, pal, x, baseline - cell + 1, label); };
     if (!store) {

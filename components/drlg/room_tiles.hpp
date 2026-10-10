@@ -87,6 +87,10 @@ struct BuiltRoom {
     // start spot of a Levels Position level.
     // ponytail: type 0xb only, not 0x6eed88's kin types (unseen in Act 1).
     std::vector<std::pair<int, int>> starts;
+    // Every such tile with its spawn index (0..4 a join's start, 11 a town
+    // portal's arrival): a town's Level::start / portal_spot.
+    struct Spawn { int x, y, index; };
+    std::vector<Spawn> spawns;
 };
 
 namespace room_tiles_detail {
@@ -546,6 +550,7 @@ inline std::vector<BuiltRoom> level_room_tiles(const std::vector<Outdoor::RoomSe
                     if ((orient == 10 || orient == 11) && style < 8 && (seq == 0 || seq == 4 || (tile_word & 0x80000000u))) room.vis |= 0x10u << style;
                     const int info = style == 30 ? seq : style == 31 ? seq + 5 : style == 32 ? 10 : style == 33 ? 11 : -1;   // the tile info's type
                     if ((orient == 10 || orient == 11) && info == 11) room.starts.push_back({ room.x + x, room.y + y });
+                    if ((orient == 10 || orient == 11) && info >= 0) room.spawns.push_back({ room.x + x, room.y + y, info });
                 }
         }
         if (!map->shadows().empty()) {

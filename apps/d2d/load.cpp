@@ -268,21 +268,6 @@ void load_monster_sprites(Scene& scene, const d2d::mpq::Stack& mpqs) {
     }
 }
 
-void load_act1_palettes(Scene& scene, const d2d::mpq::Stack& mpqs) {
-    if (auto bytes = mpqs.try_read(R"(data\global\palette\ACT1\pal.dat)"))
-        scene.act1_pal = d2d::palette::Palette(*bytes);
-    // Its 32 light levels: PL2 +0x400, 256 indices a level, level 31 as is and
-    // 0 black; the software renderer draws a pixel at light v through level
-    // v >> 3 (FUN_004f8050).
-    if (auto bytes = mpqs.try_read(R"(data\global\palette\ACT1\Pal.pl2)"); bytes && bytes->size() >= 0x400 + 32 * 256)
-        for (std::size_t level = 0; level < 32; ++level) {
-            std::array<d2d::palette::Rgba, 256> entries{};
-            for (std::size_t i = 0; i < 256; ++i) entries[i] = scene.act1_pal[std::uint8_t((*bytes)[0x400 + level * 256 + i])];
-            entries[0].a = 0;
-            scene.act1_lit[level] = d2d::palette::Palette(entries);
-        }
-}
-
 }  // namespace
 
 void load_saves(Scene& scene, const fs::path& dir) {
@@ -464,12 +449,29 @@ void finish_scene(Scene& scene, const fs::path& save_dir, std::uint32_t map_seed
         game::load_game_world(scene, mpqs, map_seed);
         load_ui_sprites(scene, mpqs);
         load_monster_sprites(scene, mpqs);
-        load_act1_palettes(scene, mpqs);
+        load_act_palettes(scene, mpqs, 0);
         want_nearby(scene, scene.town);         // the town's neighbours build while the menus run (deviations.md improvement 8)
         d2d::log::info("Scene loaded in {} ms.", d2d::log::ms() - start_ms);
     } catch (const std::exception& error) {
         d2d::log::error("finish_scene: {}", error.what());
     }
+}
+
+// The act's palette (palette\ACTn\pal.dat) and its 32 light levels: PL2
+// +0x400, 256 indices a level, level 31 as is and 0 black; the software
+// renderer draws a pixel at light v through level v >> 3 (FUN_004f8050).
+void load_act_palettes(Scene& scene, const d2d::mpq::Stack& mpqs, int act) {
+    const auto dir = std::format(R"(data\global\palette\ACT{}\)", std::clamp(act, 0, 4) + 1);
+    if (auto bytes = mpqs.try_read(dir + "pal.dat"))
+        scene.act_pal = d2d::palette::Palette(*bytes);
+    if (auto bytes = mpqs.try_read(dir + "Pal.pl2"); bytes && bytes->size() >= 0x400 + 32 * 256)
+        for (std::size_t level = 0; level < 32; ++level) {
+            std::array<d2d::palette::Rgba, 256> entries{};
+            for (std::size_t i = 0; i < 256; ++i) entries[i] = scene.act_pal[std::uint8_t((*bytes)[0x400 + level * 256 + i])];
+            entries[0].a = 0;
+            scene.act_lit[level] = d2d::palette::Palette(entries);
+        }
+    scene.palette_act = act;
 }
 
 }  // namespace d2d::client

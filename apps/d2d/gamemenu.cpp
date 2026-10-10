@@ -87,7 +87,7 @@ constexpr Menu kMenus[] = {
     { 45, 34, 49, 36, kVideo }, { 45, 34, 49, 36, kAutomap },
 };
 
-const d2d::palette::Palette& palette(const Scene& scene) { return scene.act1_pal.entries().empty() ? scene.pal : scene.act1_pal; }
+const d2d::palette::Palette& palette(const Scene& scene) { return scene.act_pal.entries().empty() ? scene.pal : scene.act_pal; }
 
 // A frame by its bottom (FUN_004f6480); draw mode 1 (half) blends it
 // half over what's there, 5 draws it as is.

@@ -884,9 +884,9 @@ struct Gen {
     void desert_list(std::initializer_list<int> defs, bool every_file) {
         const std::vector<int> list(defs);
         const int count = int(list.size());
-        int at = seed(count);
-        for (int k = 0; k < count; ++k, at = (at + 1) % count) {
-            const int def = list[std::size_t(at)];
+        int slot = seed(count);
+        for (int k = 0; k < count; ++k, slot = (slot + 1) % count) {
+            const int def = list[std::size_t(slot)];
             if (!every_file) { anywhere(def, -1, 0, 0xf); continue; }
             const auto* found = preset(def);
             for (int file = 0; found && file < found->files; ++file) anywhere(def, file, 0, 0xf);

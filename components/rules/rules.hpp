@@ -1348,12 +1348,12 @@ inline std::vector<HireEntry> hire_entries(int names, Rng& game) {
     for (int name = 0; name < names; ++name) entries.push_back({ name, game.next() });
     for (int pick = 0; pick < 10 && names > 0; ++pick) {
         const int start = game(names);
-        int at = start;
-        while (entries[std::size_t(at)].offered || entries[std::size_t(at)].hired) {
-            at = (at + 1) % names;
-            if (at == start) return entries;
+        int slot = start;
+        while (entries[std::size_t(slot)].offered || entries[std::size_t(slot)].hired) {
+            slot = (slot + 1) % names;
+            if (slot == start) return entries;
         }
-        entries[std::size_t(at)].offered = true;
+        entries[std::size_t(slot)].offered = true;
     }
     return entries;
 }

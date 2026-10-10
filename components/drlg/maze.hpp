@@ -383,15 +383,15 @@ inline std::vector<Outdoor::RoomSeed> generate_maze(const OutdoorData& data, con
                 // their left; right from the rightmost two rooms, a special
                 // (0x150) above or below, and a room past it.
                 // ponytail: a step that doesn't fit leaves game.exe's room pointer null (a crash there); d2d stops the arm.
-                int at = best_fit(1, [](const Room& room, const Room& best) { return room.y < best.y; });
-                for (int step = 0; step < 2 && at >= 0; ++step) at = arm(at, 1);
-                if (at >= 0) connect(at, 0, 0x14d);
-                at = best_fit(2, [](const Room& room, const Room& best) { return best.x < room.x; });
-                for (int step = 0; step < 2 && at >= 0; ++step) at = arm(at, 2);
-                if (at >= 0) at = connect(at, sewer_side, 0x150);
-                if (at >= 0) {
+                int room_at = best_fit(1, [](const Room& room, const Room& best) { return room.y < best.y; });
+                for (int step = 0; step < 2 && room_at >= 0; ++step) room_at = arm(room_at, 1);
+                if (room_at >= 0) connect(room_at, 0, 0x14d);
+                room_at = best_fit(2, [](const Room& room, const Room& best) { return best.x < room.x; });
+                for (int step = 0; step < 2 && room_at >= 0; ++step) room_at = arm(room_at, 2);
+                if (room_at >= 0) room_at = connect(room_at, sewer_side, 0x150);
+                if (room_at >= 0) {
                     const int index = alloc(maze.width, maze.height);
-                    if (place(index, at, sewer_side)) { link(at, index, sewer_side); add(index); set_def(index); }
+                    if (place(index, room_at, sewer_side)) { link(room_at, index, sewer_side); add(index); set_def(index); }
                 }
                 special(kAct2Specials[1][std::size_t(turn)]);
             } else {

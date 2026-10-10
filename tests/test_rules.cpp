@@ -4,6 +4,7 @@
 #include <d2s_items.hpp>
 #include <rules.hpp>
 
+#include <algorithm>
 #include <array>
 #include <cassert>
 #include <cstdint>

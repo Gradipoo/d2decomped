@@ -764,6 +764,8 @@ void find_spawn_spots(Level& level) {
             if (tile.wall_type != 10 && tile.wall_type != 11) continue;
             if (tile.style == 30 && tile.sequence <= 4 && level.start.first < 0) level.start = spot(i);
             if (tile.style == 33 && level.portal_spot.first < 0) level.portal_spot = spot(i);   // 33: where town portals open (index 11)
+            const int index = tile.style == 30 ? tile.sequence : tile.style == 31 ? tile.sequence + 5 : tile.style == 32 ? 10 : tile.style == 33 ? 11 : -1;
+            if (index >= 0 && index < 12 && level.spawn_at[std::size_t(index)].first < 0) level.spawn_at[std::size_t(index)] = spot(i);
         }
 }
 
@@ -1012,6 +1014,7 @@ std::size_t set_level_tiles(Level& level, const d2d::drlg::OutdoorAssets& assets
             const std::pair spot{ (float(spawn.x) * 5 + 3 + 0.5f) / 5, (float(spawn.y) * 5 + 3 + 0.5f) / 5 };
             if (spawn.index <= 4 && level.start.first < 0) level.start = spot;
             if (spawn.index == 11 && level.portal_spot.first < 0) level.portal_spot = spot;
+            if (spawn.index < 12 && level.spawn_at[std::size_t(spawn.index)].first < 0) level.spawn_at[std::size_t(spawn.index)] = spot;
         }
     for (const auto& room : built)
         for (const auto& unit : room.units) {

@@ -21,6 +21,7 @@
 
 #include <d2s.hpp>
 #include <d2s_items.hpp>
+#include <level_ids.hpp>
 #include <light.hpp>
 #include <object_ids.hpp>
 #include <quests.hpp>
@@ -188,12 +189,15 @@ struct World {
     Store store;                           // the NPC window open (npc < 0: none): its stock
     // A vendor's stock lasts the game (the NPC's own inventory, server
     // side): bought items gone, sold ones there to buy back. By NPC index.
-    // ponytail: camp vendors only (every Act 1 vendor is); game.exe's
-    // refresh on an act change waits for Act 2.
+    // An act change refreshes them (World::arrive clears the lot), so NPC
+    // indices stay within one town.
     std::map<int, Store> stocks;
-    // Kashya's list (FUN_00576070): rolled when first asked for, a hired
-    // offer leaves it, and once none is left it's rolled anew (FUN_00577010).
-    std::vector<d2d::rules::MercOffer> hire_offers;
+    // The hire lists (FUN_00576070), one per act's hire NPC (Kashya, Greiz):
+    // rolled when first asked for, a hired offer leaves it, and once none is
+    // left it's rolled anew (FUN_00577010).
+    std::array<std::vector<d2d::rules::MercOffer>, 5> hire_lists;
+    // The player's act (0-based): the act of the level they're on.
+    [[nodiscard]] int act() const { return level && level->id >= d2d::rules::level_ids::kLutGholein ? 1 : 0; }
     int next_item_id = 1;                  // the next item's unit id
     d2d::rules::DenQuest den;              // this game's Den of Evil
     d2d::rules::AndyQuest andy;            // and Sisters to the Slaughter
@@ -253,6 +257,7 @@ struct World {
     // game changed (level, when last played, the gear's look), its stats and
     // items. "" when it's written, else why not.
     std::string save();
+    void set_act(int act);
 
     // Operating a shrine (FUN_00583c70: its Shrines.txt effect) or a chest
     // (FUN_00585f60 / FUN_00585b90: it opens, its act's chest treasure class

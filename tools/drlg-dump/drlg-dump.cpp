@@ -19,6 +19,7 @@
 #include <drops.hpp>
 #include <gamedata.hpp>
 #include <gamedata_load.hpp>
+#include <level_ids.hpp>
 #include <maze.hpp>
 #include <mpq.hpp>
 #include <rules.hpp>

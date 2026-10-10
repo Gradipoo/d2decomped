@@ -181,7 +181,7 @@ auto World::view() const -> View {
         }
         view.has_character = true;
         view.header = character.header; view.stats = character.stats; view.items = character.items; view.held = held;
-        view.hire_offers = hire_offers;
+        view.hire_offers = hire_lists[std::size_t(act())];
         return view;
     }
 
@@ -600,7 +600,7 @@ auto World::enter(const Character& entering) -> void {
         held.reset();
         store = {};
         stocks.clear();
-        hire_offers.clear();
+        for (auto& list : hire_lists) list.clear();
         // A game starts in the town of the save's act (its difficulty byte:
         // 0x80 and the act in the low bits); the camp when that isn't built.
         const auto act_byte = character.header.difficulty[std::size_t(std::clamp(character.header.active_difficulty(), 0, 2))];
@@ -848,6 +848,7 @@ auto World::blood_raven_died(std::uint32_t now_ms) -> void {
 auto World::kashya_merc() -> void {
         const auto& header = character.header;
         if (header.merc_seed && (character.expansion || !header.merc_dead)) return;
+        auto& hire_offers = hire_lists[0];
         if (hire_offers.empty())
             for (int k = 0; k < 5; ++k)
                 if (auto offer = d2d::rules::merc_offer(game_data->rules, character.expansion, 0, header.active_difficulty(), int(character.stats.get(d2d::d2s::kLevel)), rng)) hire_offers.push_back(*offer);
@@ -1103,7 +1104,9 @@ auto World::arrive(const Level* destination, float arrive_x, float arrive_y, con
         fight.pets_cross(level, destination, dx, dy);
         events.push_back(ev::LevelChanged{ level, true });
         const Level* from = level;
+        const int from_act = act();
         level = destination;
+        if (act() != from_act) stocks.clear();        // a new act's vendors stock anew
         player.x = free_x; player.y = free_y;
         player.walking = false; player.path.clear();
         target_x = free_x; target_y = free_y;
@@ -1121,6 +1124,13 @@ auto World::arrive(const Level* destination, float arrive_x, float arrive_y, con
         interact_npc = pick_item = take_warp = take_portal = -1;
         if (level->id == d2d::rules::DenQuest::kDen) den.enter_den(quests());
         d2d::log::info("level: {} at ({:.1f}, {:.1f}), through {} from {}", level_name(*level), free_x, free_y, how, level_name(*from));
+    }
+
+// The save's act (its difficulty byte: 0x80 and the act in the low bits):
+// game.exe starts the next game in that act's town.
+auto World::set_act(int act) -> void {
+        auto& difficulty = character.header.difficulty[std::size_t(std::clamp(character.header.active_difficulty(), 0, 2))];
+        difficulty = std::uint8_t((difficulty & ~7) | 0x80 | act);
     }
 
 auto World::death_penalty(std::uint32_t now_ms) -> void {
@@ -1249,9 +1259,10 @@ auto World::deal(const Command& command) -> bool {
         }
         if (const auto* hire = std::get_if<cmd::OpenHire>(&command)) {
             // ponytail: the server's offer count isn't traced; five.
+            auto& hire_offers = hire_lists[std::size_t(act())];
             if (hire_offers.empty())
                 for (int k = 0; k < 5; ++k)
-                    if (auto offer = d2d::rules::merc_offer(tables, character.expansion, 0, character.header.active_difficulty(), clvl, rng)) hire_offers.push_back(*offer);
+                    if (auto offer = d2d::rules::merc_offer(tables, character.expansion, act(), character.header.active_difficulty(), clvl, rng)) hire_offers.push_back(*offer);
             events.push_back(ev::OpenUI{ ev::OpenUI::hire, hire->npc });
             return true;
         }
@@ -1303,6 +1314,7 @@ auto World::deal(const Command& command) -> bool {
             return true;
         }
         if (const auto* hire = std::get_if<cmd::Hire>(&command)) {
+            auto& hire_offers = hire_lists[std::size_t(act())];
             if (hire->offer >= 0 && std::size_t(hire->offer) < hire_offers.size() && d2d::rules::hire(hire_offers[std::size_t(hire->offer)], character.header, character.stats)) {
                 hire_offers.erase(hire_offers.begin() + hire->offer);   // packet 0x50 subtype 2; an empty list rolls anew (FUN_00577010)
                 spawn_merc();
@@ -1339,19 +1351,27 @@ auto World::deal(const Command& command) -> bool {
             d2d::log::info("Akara reset the stat and skill points");
             return true;
         }
-        // Warriv's caravan (FUN_00579d60, hcIdx 0x9b): once quest 6 is done,
-        // to Lut Gholein; Act 2 opens (FUN_005467e0: quest 7 bits 0 and 13)
-        // and its town's waypoint is active.
-        if (const auto* east = std::get_if<cmd::GoEast>(&command)) {
+        // Warriv's caravan (FUN_00579d60): hcIdx 0x9b, once quest 6 is done,
+        // to Lut Gholein (FUN_0054b830(0x28, 0)); Act 2 opens (FUN_005467e0:
+        // quest 7 bits 0 and 13) and its town's waypoint is active. hcIdx 0xaf
+        // back to the camp (FUN_0054b830(1, 5): spawn index 5, DS1 special 31).
+        if (const auto* caravan = std::get_if<cmd::Caravan>(&command)) {
             using d2d::rules::qbit;
-            if (std::size_t(east->npc) >= level->npcs.size() || level->npcs[std::size_t(east->npc)].hc_idx != d2d::rules::monster_ids::kWarriv
-                || !qbit(quests(), d2d::rules::AndyQuest::kQuest, 0)) return true;
+            if (std::size_t(caravan->npc) >= level->npcs.size()) return true;
+            const int hc_idx = level->npcs[std::size_t(caravan->npc)].hc_idx;
+            if (hc_idx == d2d::rules::monster_ids::kWarrivAct2) {
+                const auto& camp = game_data->town;
+                const auto spot = camp.spawn_at[5].first >= 0 ? camp.spawn_at[5] : camp.start;
+                set_act(0);
+                arrive(&camp, spot.first, spot.second, "Warriv's caravan");
+                return true;
+            }
+            if (hc_idx != d2d::rules::monster_ids::kWarriv || !qbit(quests(), d2d::rules::AndyQuest::kQuest, 0)) return true;
             const Level* lut_gholein = game_data->level(d2d::rules::level_ids::kLutGholein);
             if (!lut_gholein || lut_gholein->start.first < 0) { d2d::log::warn("Lut Gholein didn't build; the caravan stays"); return true; }
             if (!qbit(quests(), 7, 0)) { d2d::rules::qset(quests(), 7, 0); d2d::rules::qset(quests(), 7, 13); }
             set_waypoint(waypoint_index(*game_data, d2d::rules::level_ids::kLutGholein));
-            auto& difficulty = character.header.difficulty[std::size_t(std::clamp(character.header.active_difficulty(), 0, 2))];
-            difficulty = std::uint8_t((difficulty & ~7) | 0x80 | 1);   // the save's act: game.exe starts it in Lut Gholein
+            set_act(1);
             // The arrival's level change runs the quests' enter hooks: Andariel's
             // (the Rogues get Cain if he's still caged, FUN_00596de0 / FUN_00597310).
             // ponytail: game.exe swaps the whole act (the old act's DRLG freed); Act 1's levels stay built.

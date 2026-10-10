@@ -74,8 +74,9 @@ struct CloseTrade {};
 // Akara's Reset Stat/Skill Points, confirmed ("ok" sends game.exe's 0x38
 // to her; d2d tells it apart with kind 3).
 struct Respec { int npc = -1; };
-// 0x38 (game.exe's kind 0, arg the level): Warriv's "Go East" to Lut Gholein.
-struct GoEast { int npc = -1; };
+// 0x38 (game.exe's kind 0, arg the level): Warriv's caravan, "Go East" to
+// Lut Gholein (warriv1) or "Go West" back to the camp (warriv2).
+struct Caravan { int npc = -1; };
 // 0x38 (game.exe's kind 0 at Charsi): imbue the item in hand.
 struct Imbue { int npc = -1; };
 // 0x53 / 0x54: run or walk.
@@ -94,7 +95,7 @@ using Command = std::variant<cmd::Move, cmd::UseSkill, cmd::Interact, cmd::Picku
                              cmd::StatPoint, cmd::SkillPoint, cmd::SelectSkill, cmd::UseBelt, cmd::UseItem,
                              cmd::ToCursor, cmd::Drop, cmd::ToGrid, cmd::ToBody, cmd::ToBelt,
                              cmd::OpenTrade, cmd::OpenHire, cmd::Buy, cmd::Sell, cmd::Repair, cmd::Identify, cmd::IdentifyWith, cmd::Hire, cmd::ResurrectMerc, cmd::CloseTrade, cmd::Respec,
-                             cmd::Run, cmd::Chat, cmd::QuestMessage, cmd::Waypoint, cmd::GoEast, cmd::Imbue>;
+                             cmd::Run, cmd::Chat, cmd::QuestMessage, cmd::Waypoint, cmd::Caravan, cmd::Imbue>;
 
 // The wire form of a command (what a transport carries): its id byte —
 // game.exe's packet id where there's one to match — then its fields,
@@ -178,9 +179,9 @@ inline constexpr std::uint8_t kRunOff = 0x54;
 }  // namespace opcode
 
 // 0x38's first byte: which deal (d2d's numbering; game.exe tells Respec,
-// GoEast and Imbue apart by the NPC and an argument, see the cmd structs).
+// Caravan and Imbue apart by the NPC and an argument, see the cmd structs).
 namespace npc_deal {
-inline constexpr int kTrade = 0, kGamble = 1, kHire = 2, kRespec = 3, kGoEast = 4, kImbue = 5, kResurrectMerc = 6;
+inline constexpr int kTrade = 0, kGamble = 1, kHire = 2, kRespec = 3, kCaravan = 4, kImbue = 5, kResurrectMerc = 6;
 }  // namespace npc_deal
 
 inline std::vector<std::uint8_t> encode(const Command& command) {
@@ -216,7 +217,7 @@ inline std::vector<std::uint8_t> encode(const Command& command) {
         else if constexpr (std::is_same_v<T, cmd::Run>) out.u8(message.running ? opcode::kRunOn : opcode::kRunOff);
         else if constexpr (std::is_same_v<T, cmd::Chat>) out.u8(opcode::kChat).i32(message.npc);
         else if constexpr (std::is_same_v<T, cmd::QuestMessage>) out.u8(opcode::kQuestMessage).i32(message.npc).i32(message.string);
-        else if constexpr (std::is_same_v<T, cmd::GoEast>) out.u8(opcode::kNpcDeal).u8(npc_deal::kGoEast).i32(message.npc);
+        else if constexpr (std::is_same_v<T, cmd::Caravan>) out.u8(opcode::kNpcDeal).u8(npc_deal::kCaravan).i32(message.npc);
         else if constexpr (std::is_same_v<T, cmd::Imbue>) out.u8(opcode::kNpcDeal).u8(npc_deal::kImbue).i32(message.npc);
         else if constexpr (std::is_same_v<T, cmd::Waypoint>) out.u8(opcode::kWaypoint).i32(message.npc).i32(message.level);
         else static_assert(!sizeof(T), "a command without a wire form");
@@ -251,7 +252,7 @@ inline std::optional<Command> decode(std::span<const std::uint8_t> bytes) {
         case opcode::kToBelt: command = cmd::ToBelt{ i32() }; break;
         case opcode::kNpcDeal: {
             const int kind = byte(), npc = i32();
-            command = kind == npc_deal::kImbue ? Command{ cmd::Imbue{ npc } } : kind == npc_deal::kGoEast ? Command{ cmd::GoEast{ npc } } : kind == npc_deal::kRespec ? Command{ cmd::Respec{ npc } } : kind == npc_deal::kResurrectMerc ? Command{ cmd::ResurrectMerc{ npc } }
+            command = kind == npc_deal::kImbue ? Command{ cmd::Imbue{ npc } } : kind == npc_deal::kCaravan ? Command{ cmd::Caravan{ npc } } : kind == npc_deal::kRespec ? Command{ cmd::Respec{ npc } } : kind == npc_deal::kResurrectMerc ? Command{ cmd::ResurrectMerc{ npc } }
                     : kind == npc_deal::kHire ? Command{ cmd::OpenHire{ npc } } : Command{ cmd::OpenTrade{ npc, kind == npc_deal::kGamble } };
             break;
         }

@@ -35,6 +35,7 @@
 #include <devctl.hpp>
 #include <install.hpp>
 #include <join.hpp>
+#include <level_ids.hpp>
 #include <log.hpp>
 #include <mpq.hpp>
 #include <screenshot.hpp>

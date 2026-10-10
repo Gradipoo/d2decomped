@@ -143,6 +143,13 @@ struct LevelDt1s {
 // (style, seq, type) -> tile lookup for the compositor, the walk grid, the
 // units the DS1 places, where players arrive, and its sound environment.
 // Empty when the assets aren't found (headless / bad data dir).
+// Level::spawn_at before any spawn tile is found.
+constexpr std::array<std::pair<float, float>, 12> no_spawns() {
+    std::array<std::pair<float, float>, 12> none{};
+    for (auto& spot : none) spot = { -1.f, -1.f };
+    return none;
+}
+
 struct Level {
     int id = 0;                                        // Levels.txt Id (1: the Rogue Encampment)
     std::string name;                                  // Levels.txt LevelName
@@ -245,6 +252,9 @@ struct Level {
     }
     std::pair<float, float> start{ -1.f, -1.f };            // cells: where a player joining arrives; see load_world
     std::pair<float, float> portal_spot{ -1.f, -1.f };      // cells: a town's portal arrival (DS1 special 33, spawn index 11)
+    // Every spawn index's spot (the first tile of each; -1 none): 5 is where
+    // an act change of kind 5 lands (Warriv's way back west, FUN_0054b830).
+    std::array<std::pair<float, float>, 12> spawn_at = no_spawns();
     // Its warps (the units its hidden warp tiles make): cell, the level
     // it leads to (Levels.txt Vis), its LvlWarp ExitWalk (cells), and where
     // its tile unit stands (cells: the cell x 5 + LvlWarp Offset subtiles).

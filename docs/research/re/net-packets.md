@@ -712,7 +712,7 @@ melee-range skill runs up first (`FUN_00548a50`).
 
 | Id | Size | Layout | Server | d2d |
 |---|---|---|---|---|
-| 38 NPC action | 13 | u32 action (**1 trade**: a real client's, recorded through d2proxy 2026-10-05; gamble, Go East, imbue **(?)**), u32 NPC id, u32 extra | `54bca0` → `FUN_00579d60` | `OpenTrade`, `OpenHire`, `Respec`, `GoEast`, `Imbue` (a kind byte of d2d's own) |
+| 38 NPC action | 13 | u32 action (**1 trade**: a real client's, recorded through d2proxy 2026-10-05; gamble, Go East, imbue **(?)**), u32 NPC id, u32 extra | `54bca0` → `FUN_00579d60` | `OpenTrade`, `OpenHire`, `Respec`, `Caravan`, `Imbue` (a kind byte of d2d's own) |
 | 32 buy | 17 | u32 NPC id, u32 item id, u32 flags (0 for a potion on page 4: recorded; 0x80000000 fill), u32 cost | `54bac0` → `FUN_00577f30` | `cmd::Buy{stock}`: **stock index, not item id** |
 | 33 sell | 17 | u32 NPC id, u32 item id, u16 mode (+9), u32 cost (+0xd) | `54bb20` → `FUN_00579510` | `cmd::Sell` |
 | 35 repair | 17 | the same shape | `54bb60` → `FUN_00578050` | `cmd::Repair` (−1 = all **(?)**) |

@@ -1101,8 +1101,8 @@ auto Town::update(std::vector<std::uint8_t>& framebuffer, const Mouse& frame_mou
                 npc_menu = open_respec_menu(*scene, who, screen_x, screen_y);
             } else if (action == NpcMenuState::kRespecOk) {
                 net.send(cmd::Respec{ who });
-            } else if (action == NpcMenuState::kGoEast) {
-                net.send(cmd::GoEast{ who });
+            } else if (action == NpcMenuState::kCaravan) {
+                net.send(cmd::Caravan{ who });
             } else if (action == NpcMenuState::kResurrectMerc) {
                 net.send(cmd::ResurrectMerc{ who });
             } else if (action == NpcMenuState::kImbue) {

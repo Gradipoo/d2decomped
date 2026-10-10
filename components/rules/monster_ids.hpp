@@ -12,6 +12,7 @@ inline constexpr int kAkara = 148;
 inline constexpr int kKashya = 150;
 inline constexpr int kCharsi = 154;
 inline constexpr int kWarriv = 155;        // warriv1: Act 1's
+inline constexpr int kWarrivAct2 = 175;    // warriv2: Lut Gholein's
 inline constexpr int kAndariel = 156;
 inline constexpr int kFara = 178;
 inline constexpr int kHratli = 253;

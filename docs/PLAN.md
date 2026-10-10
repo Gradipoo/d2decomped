@@ -728,7 +728,10 @@ leftovers (act1-gaps.md) and hosting a game wait.
    guard come from a2q4's two marker objects (quests-act2.md); the palace
    door leads into Harem Level 1 (level 50: tiles 10/10, units 10/10).
    The town's thinks match game.exe (`diff_drlg.py 1-20 40 npcs`, 20/20).
-   Left: JarJar's think, the stock and offers checked against game.exe,
+   The hire lists are game.exe's (npc-menu.md "Hire": entries on the game
+   seed, ten offered, the offers off each entry's seed; checked by
+   tools/emu/hire.py). Left: JarJar's think, the vendors' real stock roll
+   (store.md "Not yet", act 1's too),
    Lut Gholein's container drops (`LEVELS=40 diff_drlg.py 1-1 0 game`
    differs only there).
 3. The desert (LevelType 16: 41–46): the outdoor generator with act 2's

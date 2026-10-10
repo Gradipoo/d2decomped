@@ -195,7 +195,11 @@ struct World {
     // The hire lists (FUN_00576070), one per act's hire NPC (Kashya, Greiz):
     // rolled when first asked for, a hired offer leaves it, and once none is
     // left it's rolled anew (FUN_00577010).
-    std::array<std::vector<d2d::rules::MercOffer>, 5> hire_lists;
+    std::array<std::vector<d2d::rules::HireEntry>, 5> hire_lists;
+    // The act's list (rolled on the game seed when first asked for, and
+    // again once none is left for hire) and its offers, entry order.
+    std::vector<d2d::rules::HireEntry>& hire_list(int list_act);
+    [[nodiscard]] std::vector<d2d::rules::MercOffer> hire_offers(int list_act) const;
     // The player's act (0-based): the act of the level they're on.
     [[nodiscard]] int act() const { return level && level->id >= d2d::rules::level_ids::kLutGholein ? 1 : 0; }
     int next_item_id = 1;                  // the next item's unit id

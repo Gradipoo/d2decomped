@@ -20,15 +20,20 @@
 
 namespace d2d::client {
 
+// The list widget (FUN_004bf8f0: 490 x 280, rows 0x23) shows eight offers
+// from `scroll`; the wheel moves it.
 NpcMenuState open_hire_menu(const Scene& scene, int npc, const std::vector<d2d::rules::MercOffer>& offers,
-                            std::int64_t gold) {
+                            std::int64_t gold, int scroll) {
+    constexpr int kRows = 0x118 / 0x23;
     NpcMenuState menu;
     menu.npc = npc;
+    menu.scroll_max = std::max(0, int(offers.size()) - kRows);
+    menu.scroll = std::clamp(scroll, 0, menu.scroll_max);
     std::string head = string_id(scene, 0xd24);
     if (const auto found = head.find("%d"); found != head.npos) head.replace(found, 2, std::to_string(gold));
     menu.lines.push_back({ head, 21, 0, 0, true });
     auto label = [&](std::uint16_t id) { return string_id(scene, id) + ": "; };
-    for (std::size_t i = 0; i < offers.size(); ++i) {
+    for (std::size_t i = std::size_t(menu.scroll); i < offers.size() && i < std::size_t(menu.scroll + kRows); ++i) {
         const auto& offer = offers[i];
         const auto merc = scene.mercs.find(offer.id);
         const auto name = merc != scene.mercs.end() ? merc_name(scene, merc->second, offer.name) : std::string("?");

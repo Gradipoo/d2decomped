@@ -253,7 +253,7 @@ try:
         near("Kashya")
         pick("hire")
         rows = [l.split("\t") for l in cmd("menu").splitlines() if " - " in l]
-        assert len(rows) == 5, "no hire offers"
+        assert len(rows) == 8, f"hire list: {len(rows)} rows shown, not the widget's eight (ten offered)"
         cmd(f"move {rows[0][1]} {rows[0][2]}"); frames(2); cmd(f"click {rows[0][1]} {rows[0][2]}"); frames(6)
         assert state()["merc"].endswith(":RG"), "hired rogue missing"
 

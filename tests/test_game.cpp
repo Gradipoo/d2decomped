@@ -177,9 +177,9 @@ int main() {
         assert(!first.empty() && codes() == first);
         world.apply(d2d::game::cmd::CloseTrade{}, 27 * kTickMs);
         world.apply(d2d::game::cmd::OpenHire{ kashya }, 27 * kTickMs);
-        const auto offers = world.hire_lists[0];
+        const auto offers = world.hire_offers(0);
         world.apply(d2d::game::cmd::OpenHire{ kashya }, 27 * kTickMs);
-        assert(!offers.empty() && world.hire_lists[0].size() == offers.size() && world.hire_lists[0].front().seed == offers.front().seed);
+        assert(!offers.empty() && world.hire_offers(0).size() == offers.size() && world.hire_offers(0).front().seed == offers.front().seed);
         std::printf("OK: Charsi's stock and Kashya's offers outlast their windows\n");
     }
     {   // gold find (FUN_005589a0): the coins times (100 + stat 79) / 100

@@ -425,6 +425,44 @@ int main(int argc, char** argv) {
         }
         return 0;
     }
+    if (argc > 3 && std::string(argv[argc - 1]) == "hirelist") {
+        // rules::hire_entries as tools/emu hire.py entries_dump prints FUN_00576070's (41 and 21 names).
+        const auto dash = range.find('-');
+        const auto first = std::uint32_t(std::stoul(range.substr(0, dash), nullptr, 0));
+        const auto last = dash == std::string::npos ? first : std::uint32_t(std::stoul(range.substr(dash + 1), nullptr, 0));
+        for (auto index = first;; ++index) {
+            for (int names : { 41, 21 }) {
+                d2d::rules::Rng game{ index * 0x9e3779b1u };
+                for (const auto& entry : d2d::rules::hire_entries(names, game)) std::printf("%d %08x %d\n", entry.name, entry.seed, entry.offered ? 1 : 0);
+                std::printf("game %08x\n", game.low);
+            }
+            if (index == last) break;
+        }
+        return 0;
+    }
+    if (argc > 3 && std::string(argv[argc - 1]) == "hire") {
+        // rules::merc_offer as tools/emu hire.py prints game.exe's (seed s * 0x9e3779b1).
+        const char* patch = std::getenv("D2_PATCH_INSTALLER");
+        auto game = d2d::game::load_game_data(dir, patch ? fs::path(patch) : fs::path{}, 0);
+        if (!game) return 1;
+        const auto dash = range.find('-');
+        const auto first = std::uint32_t(std::stoul(range.substr(0, dash), nullptr, 0));
+        const auto last = dash == std::string::npos ? first : std::uint32_t(std::stoul(range.substr(dash + 1), nullptr, 0));
+        for (auto index = first;; ++index) {
+            const std::uint32_t seed = index * 0x9e3779b1u;
+            for (int act : { 0, 1 })
+                for (int diff : { 0, 1, 2 })
+                    for (int clvl : { 1, 9, 30, 75 }) {
+                        std::printf("%08x %d %d %d: ", seed, act, diff, clvl);
+                        const auto offer = d2d::rules::merc_offer(game->rules, true, act, diff, clvl, d2d::rules::HireEntry{ 0, seed });
+                        if (!offer) { std::puts("none"); continue; }
+                        std::printf("%d %d %d %d %d %d %u %d %d %d\n", offer->id, offer->level, offer->life, offer->str, offer->dex, offer->cost, offer->exp,
+                                    offer->def, offer->dmg_min, offer->dmg_max);
+                    }
+            if (index == last) break;
+        }
+        return 0;
+    }
     if (argc > 4 && std::string(argv[argc - 1]) == "npcs") {
         const char* patch = std::getenv("D2_PATCH_INSTALLER");
         auto game = d2d::game::load_game_data(dir, patch ? fs::path(patch) : fs::path{}, 1);

@@ -370,14 +370,19 @@ int main() {
                     { .version = 100, .id = 0, .act = 1, .difficulty = 1, .level = 36, .gold = 100 },   // other Level: skipped
                     { .version = 0, .id = 0, .act = 1, .difficulty = 1, .level = 3, .gold = 7 } };     // classic row
     for (int i = 0; i < 20; ++i) {
-        const auto offer = merc_offer(merc_tables, true, 0, 0, 20, roll);
-        assert(offer && offer->id == 0 && offer->level >= 15 && offer->level <= 19 && offer->name >= 0 && offer->name < 41);
+        const auto offer = merc_offer(merc_tables, true, 0, 0, 20, HireEntry{ i, roll.next() });
+        assert(offer && offer->id == 0 && offer->level >= 15 && offer->level <= 19 && offer->name == i);
         const int level_delta = offer->level - 3;
         assert(offer->life == 45 + 9 * level_delta && offer->cost == 100 * (level_delta * 15 + 100) / 100 && offer->def == 15 + 8 * level_delta);
         assert(offer->str == 35 + (10 * level_delta >> 3) && offer->exp == std::uint32_t((offer->level + 1) * 100 * offer->level * offer->level));
     }
-    assert(merc_offer(merc_tables, true, 0, 0, 1, roll)->level == 2);                  // never below 2
-    assert(!merc_offer(merc_tables, true, 1, 0, 20, roll));                           // no act 2 rows
+    assert(merc_offer(merc_tables, true, 0, 0, 1, HireEntry{ 0, 7 })->level == 2);     // never below 2
+    assert(!merc_offer(merc_tables, true, 1, 0, 20, HireEntry{ 0, 7 }));              // no act 2 rows
+    // FUN_00576070: 41 names, ten offered, each once; one hired leaves nine for hire.
+    auto entries = hire_entries(41, roll);
+    assert(entries.size() == 41 && std::ranges::count_if(entries, for_hire) == 10);
+    std::ranges::find_if(entries, for_hire)->hired = true;
+    assert(std::ranges::count_if(entries, for_hire) == 9);
     d2d::d2s::Header merc_header;
     d2d::d2s::Stats wallet2;
     wallet2.values[kGold] = 50; wallet2.values[kGoldBank] = 100;

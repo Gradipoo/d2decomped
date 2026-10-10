@@ -1336,7 +1336,39 @@ struct MercOffer {
     int name = 0;                                       // index from NameFirst
 };
 
-// One offer for act (0-based) and difficulty (0-2): FUN_00656580 lists
+// A hire list's entry (FUN_00576070, SUNITNPC.CPP): one per name of the
+// seller's (hireling.txt NameFirst..NameLast), its seed a step of the game
+// seed; `offered` (+0xc) the ten picked for the list, `hired` (+8) taken.
+struct HireEntry { int name = 0; std::uint32_t seed = 0; bool offered = false, hired = false; };
+// The list: the entries in name order, each a game seed step, then ten
+// picks of rand(names) on the game seed, each moving on past a taken
+// entry (wrapping; back at its start the picking ends).
+inline std::vector<HireEntry> hire_entries(int names, Rng& game) {
+    std::vector<HireEntry> entries;
+    for (int name = 0; name < names; ++name) entries.push_back({ name, game.next() });
+    for (int pick = 0; pick < 10 && names > 0; ++pick) {
+        const int start = game(names);
+        int at = start;
+        while (entries[std::size_t(at)].offered || entries[std::size_t(at)].hired) {
+            at = (at + 1) % names;
+            if (at == start) return entries;
+        }
+        entries[std::size_t(at)].offered = true;
+    }
+    return entries;
+}
+// The seller's names (FUN_00575ff0: its first row's NameFirst..NameLast)
+// for act (0-based), difficulty and version.
+[[nodiscard]] inline int hire_names(const Tables& tables, bool expansion, int act, int diff) {
+    for (const auto& hireling : tables.hirelings)
+        if (hireling.act == act + 1 && hireling.difficulty == diff + 1 && hireling.version == (expansion ? 100 : 0)) return hireling.names;
+    return 0;
+}
+// An entry still for hire (FUN_00577010 counts them: none left, the list's rolled anew).
+[[nodiscard]] inline bool for_hire(const HireEntry& entry) { return entry.offered && !entry.hired; }
+
+// An entry's offer (FUN_006637f0) for act (0-based) and difficulty (0-2),
+// on its own seed {seed, 666}: FUN_00656580 lists
 // the rows of that act, difficulty and version (100 = LoD) sharing the
 // first one's Level; one is picked, the level is clvl - 5 + rand(5)
 // (at least 2), and with d = level - the row's Level:
@@ -1344,7 +1376,8 @@ struct MercOffer {
 //   (>= 10), cost = Gold * (15d + 100) / 100 (>= Gold), exp =
 //   (level + 1) * Exp/Lvl * level^2, def = Def + Def/Lvl * d, damage =
 //   Dmg-Min/Max + (Dmg/Lvl * d >> 3).
-inline std::optional<MercOffer> merc_offer(const Tables& tables, bool expansion, int act, int diff, int clvl, Rng& rng) {
+inline std::optional<MercOffer> merc_offer(const Tables& tables, bool expansion, int act, int diff, int clvl, const HireEntry& entry) {
+    Rng rng{ entry.seed };
     std::vector<const Hireling*> rows;
     for (const auto& hireling : tables.hirelings)
         if (hireling.act == act + 1 && hireling.difficulty == diff + 1 && hireling.version == (expansion ? 100 : 0)
@@ -1354,7 +1387,7 @@ inline std::optional<MercOffer> merc_offer(const Tables& tables, bool expansion,
     const auto& hireling = *rows[std::size_t(rng(int(rows.size())))];
     MercOffer offer;
     offer.id = hireling.id;
-    offer.seed = std::uint32_t(rng(0x7fffffff)) | 1;
+    offer.seed = entry.seed;
     offer.level = std::max(2, clvl - 5 + rng(5));
     const int level_delta = offer.level - hireling.level;
     offer.life = std::max(40, hireling.hit_points + hireling.hp_per_level * level_delta);
@@ -1365,7 +1398,7 @@ inline std::optional<MercOffer> merc_offer(const Tables& tables, bool expansion,
     offer.def = std::max(0, hireling.def + hireling.def_per_level * level_delta);
     offer.dmg_min = std::max(0, hireling.dmg_min + (hireling.dmg_per_level * level_delta >> 3));
     offer.dmg_max = std::max(1, hireling.dmg_max + (hireling.dmg_per_level * level_delta >> 3));
-    offer.name = rng(std::max(1, hireling.names));
+    offer.name = entry.name;
     return offer;
 }
 

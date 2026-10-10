@@ -181,7 +181,7 @@ auto World::view() const -> View {
         }
         view.has_character = true;
         view.header = character.header; view.stats = character.stats; view.items = character.items; view.held = held;
-        view.hire_offers = hire_lists[std::size_t(act())];
+        view.hire_offers = hire_offers(act());
         return view;
     }
 
@@ -855,6 +855,23 @@ auto World::blood_raven_died(std::uint32_t now_ms) -> void {
         d2d::log::info("Sisters' Burial Grounds: Blood Raven is dead, return to Kashya");
     }
 
+auto World::hire_list(int list_act) -> std::vector<d2d::rules::HireEntry>& {
+        auto& entries = hire_lists[std::size_t(list_act)];
+        if (std::ranges::none_of(entries, d2d::rules::for_hire))      // FUN_00577010 -> FUN_00576070
+            entries = d2d::rules::hire_entries(d2d::rules::hire_names(game_data->rules, character.expansion, list_act, character.header.active_difficulty()),
+                                               fight.spawning.game);
+        return entries;
+    }
+
+auto World::hire_offers(int list_act) const -> std::vector<d2d::rules::MercOffer> {
+        std::vector<d2d::rules::MercOffer> offers;
+        const int clvl = int(character.stats.get(d2d::d2s::kLevel));
+        for (const auto& entry : hire_lists[std::size_t(list_act)])
+            if (d2d::rules::for_hire(entry))
+                if (auto offer = d2d::rules::merc_offer(game_data->rules, character.expansion, list_act, character.header.active_difficulty(), clvl, entry)) offers.push_back(*offer);
+        return offers;
+    }
+
 // Kashya's reward (FUN_00579180): the first offer of her hire list as the
 // merc, free — none if there's a merc already (LoD: even a dead one).
 // The offer leaves the list (packet 0x50 subtype 2).
@@ -863,15 +880,14 @@ auto World::blood_raven_died(std::uint32_t now_ms) -> void {
 auto World::kashya_merc() -> void {
         const auto& header = character.header;
         if (header.merc_seed && (character.expansion || !header.merc_dead)) return;
-        auto& hire_offers = hire_lists[0];
-        if (hire_offers.empty())
-            for (int k = 0; k < 5; ++k)
-                if (auto offer = d2d::rules::merc_offer(game_data->rules, character.expansion, 0, header.active_difficulty(), int(character.stats.get(d2d::d2s::kLevel)), rng)) hire_offers.push_back(*offer);
-        if (hire_offers.empty()) return;
-        auto offer = hire_offers.front();
+        auto& entries = hire_list(0);
+        const auto offers = hire_offers(0);
+        const auto first = std::ranges::find_if(entries, d2d::rules::for_hire);
+        if (offers.empty() || first == entries.end()) return;
+        auto offer = offers.front();
         offer.cost = 0;
         d2d::rules::hire(offer, character.header, character.stats);
-        hire_offers.erase(hire_offers.begin());
+        first->hired = true;
         spawn_merc();
         d2d::log::info("Sisters' Burial Grounds: Kashya's reward, a mercenary");
     }
@@ -1276,11 +1292,7 @@ auto World::deal(const Command& command) -> bool {
             return true;
         }
         if (const auto* hire = std::get_if<cmd::OpenHire>(&command)) {
-            // ponytail: the server's offer count isn't traced; five.
-            auto& hire_offers = hire_lists[std::size_t(act())];
-            if (hire_offers.empty())
-                for (int k = 0; k < 5; ++k)
-                    if (auto offer = d2d::rules::merc_offer(tables, character.expansion, act(), character.header.active_difficulty(), clvl, rng)) hire_offers.push_back(*offer);
+            hire_list(act());                         // ten offers (FUN_00576070)
             events.push_back(ev::OpenUI{ ev::OpenUI::hire, hire->npc });
             return true;
         }
@@ -1332,9 +1344,13 @@ auto World::deal(const Command& command) -> bool {
             return true;
         }
         if (const auto* hire = std::get_if<cmd::Hire>(&command)) {
-            auto& hire_offers = hire_lists[std::size_t(act())];
-            if (hire->offer >= 0 && std::size_t(hire->offer) < hire_offers.size() && d2d::rules::hire(hire_offers[std::size_t(hire->offer)], character.header, character.stats)) {
-                hire_offers.erase(hire_offers.begin() + hire->offer);   // packet 0x50 subtype 2; an empty list rolls anew (FUN_00577010)
+            auto offers = hire_offers(act());
+            if (hire->offer >= 0 && std::size_t(hire->offer) < offers.size() && d2d::rules::hire(offers[std::size_t(hire->offer)], character.header, character.stats)) {
+                // The entry's taken (packet 0x50 subtype 2); none left, the list rolls anew (FUN_00577010).
+                int seen = 0;
+                for (auto& entry : hire_lists[std::size_t(act())])
+                    if (d2d::rules::for_hire(entry) && seen++ == hire->offer) { entry.hired = true; break; }
+                hire_list(act());
                 spawn_merc();
             }
             return true;

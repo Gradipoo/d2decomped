@@ -1075,6 +1075,9 @@ auto Town::update(std::vector<std::uint8_t>& framebuffer, const Mouse& frame_mou
             speech = {};
             if (menu_after_speech >= 0 && std::size_t(menu_after_speech) < level->npcs.size()) open_menu(menu_after_speech);
             menu_after_speech = -1;
+        } else if (npc_menu.npc >= 0 && npc_menu.scroll_max > 0 && mouse.wheel != 0) {   // the hire list scrolls
+            npc_menu = open_hire_menu(*scene, npc_menu.npc, hire_offers, character.stats.get(d2d::d2s::kGold) + character.stats.get(d2d::d2s::kGoldBank),
+                                      npc_menu.scroll - mouse.wheel);
         } else if (npc_menu.npc >= 0 && mouse.press_this_frame) {
             menu_click = true;                            // the click is the menu's, not a walk
             const int line_index = npc_menu.line_at(mouse.x, mouse.y);

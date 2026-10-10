@@ -87,8 +87,9 @@ The base y is 539 (= 60 + 255 + 224):
     misc → 3;
   - rolled at the first opening and kept for the game (the vendor's own
     inventory on the server), what a trade leaves in it included.
-- Kashya's hire list (`FUN_00576070`) is rolled once; a hired offer leaves
-  it, and an empty list is rolled anew (`FUN_00577010`).
+- The hire lists (`FUN_00576070`, npc-menu.md "Hire"): game.exe's, on
+  the game seed, ten of the seller's names offered; an empty list is
+  rolled anew (`FUN_00577010`).
 - Cain's identify fee and other payments take the purse first, then the
   stash (`FUN_00576d90`).
 - Prices (hover: "Cost: " 0xd01 in the store, "Sell value: " 0xd03 on

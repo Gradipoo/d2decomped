@@ -24,7 +24,7 @@ namespace d2d::client {
 // H/2-160, rows 35 high) and the second line of hire description aren't
 // drawn.
 NpcMenuState open_hire_menu(const Scene& scene, int npc, const std::vector<d2d::rules::MercOffer>& offers,
-                            std::int64_t gold);
+                            std::int64_t gold, int scroll = 0);
 
 // The store item under the cursor (index into the open tab), or -1.
 int store_item_at(const Scene& scene, const Store& store, int mouse_x, int mouse_y);

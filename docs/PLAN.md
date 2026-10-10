@@ -722,9 +722,12 @@ leftovers (act1-gaps.md) and hosting a game wait.
    Drognan, Elzix, Fara and Lysander trade, Greiz hires Act 2's desert
    mercenaries (`World::hire_lists`, one per act), Warriv's Go West lands
    by him in the camp (FUN_0054b830(1, 5): spawn index 5, `Level::spawn_at`),
-   vendors restock on an act change. Left: the townsfolk and guards
-   (act2male / act2female / act2guard*, MonPreset 22–26), Jerhyn (in the
-   Harem, level 50), the stock and offers checked against game.exe.
+   vendors restock on an act change. The NPCs walk their DS1 paths (Npc
+   AI), the townsfolk and guards wander (Towner), the traders idle
+   (Vendor; town-npcs.md "Act 2's town AIs"). Left: JarJar's guard,
+   Jerhyn (in the Harem, level 50), the act 2 town's thinks diffed
+   against game.exe (npcs.py runs the camp only), the stock and offers
+   checked against game.exe.
 3. The desert (LevelType 16: 41–46): the outdoor generator with act 2's
    border and exit rules (drlg.md: exits in pairs from 0x6f112c, columns
    2 / 3 of 0x6f0630), its LvlSub / presets.

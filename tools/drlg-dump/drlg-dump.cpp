@@ -311,7 +311,7 @@ static std::string dump_npcs(d2d::game::GameData& game, std::uint32_t seed, int 
     std::vector<std::string> lines;
     char text[64];
     for (const auto& npc : camp.npcs) {
-        if (!npc.npc_ai || npc.path.empty() || npc.quest) continue;
+        if (npc.town_ai != d2d::game::TownAi::npc || npc.path.empty() || npc.quest) continue;
         std::vector<d2d::rules::NpcPoint> path;
         for (std::size_t i = 0; i < npc.path.size(); ++i)
             path.push_back({ i < npc.actions.size() ? npc.actions[i] : 0, int(npc.path[i].first * 5), int(npc.path[i].second * 5) });

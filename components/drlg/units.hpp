@@ -27,7 +27,8 @@ namespace unit_type = d2d::rules::unit_type;
 // object (objects.txt row), 5 warp (LvlWarp Id); mode (monsters 1);
 // subtiles; DS1 flags; its DS1 path (v14+) as the unit's map AI
 // (FUN_00665950 +0x10, moved with it by FUN_00667510), subtiles off it.
-struct Unit { int type = 0, id = 0, mode = 0, x = 0, y = 0; std::uint32_t flags = 0; std::vector<std::pair<int, int>> path = {}; };
+// path: offsets from the unit, and each point's action (an NPC's on arrival).
+struct Unit { int type = 0, id = 0, mode = 0, x = 0, y = 0; std::uint32_t flags = 0; std::vector<std::pair<int, int>> path = {}; std::vector<int> actions = {}; };
 
 // What a DS1's ids map through: MonPreset by act ({kind, id}: 0 MonPlace,
 // 1 MonStats, 2 SuperUniques) and the table sizes the ids offset by.
@@ -47,7 +48,10 @@ inline std::vector<Unit> ds1_units(const d2d::ds1::Map& map, const UnitIds& ids)
     const int version = map.version(), act = std::clamp(int(map.act()) - 1, 0, 4);
     for (const auto& object : map.objects()) {
         Unit unit{ object.type, object.id, 0, object.x, object.y, version > 5 ? std::uint32_t(object.flags) : 0u };
-        for (const auto& point : object.path) unit.path.emplace_back(point.x - object.x, point.y - object.y);
+        for (const auto& point : object.path) {
+            unit.path.emplace_back(point.x - object.x, point.y - object.y);
+            unit.actions.push_back(point.action);
+        }
         if (unit.type == unit_type::kMonster) {
             if (version < 5) continue;
             unit.mode = 1;

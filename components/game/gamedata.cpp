@@ -155,7 +155,8 @@ Npc monster_npc(const GameData& game_data, const d2d::txt::Table& monstats, cons
     npc.utrans = { std::atoi(std::string(ms2.get(row2, "Utrans")).c_str()), std::atoi(std::string(ms2.get(row2, "Utrans(N)")).c_str()),
                  std::atoi(std::string(ms2.get(row2, "Utrans(H)")).c_str()) };
     if (const auto velocity = monstats.get(row, "Velocity"); !velocity.empty()) npc.velocity = float(std::atoi(std::string(velocity).c_str()));
-    npc.npc_ai = monstats.get(row, "AI") == "Npc";
+    const auto ai = monstats.get(row, "AI");
+    npc.town_ai = ai == "Npc" ? TownAi::npc : ai == "Towner" ? TownAi::towner : ai == "Vendor" ? TownAi::vendor : TownAi::none;
     npc.modes = (ms2.get(row2, "mS1") == "1" ? 1u << 8 : 0u) | (ms2.get(row2, "mS2") == "1" ? 1u << 9 : 0u);
     // Hover name: MonStats' string key, only for units MonStats2 marks
     // selectable (isSel) — not the chicken or the camp's guard rogues,
@@ -308,7 +309,7 @@ void populate(const GameData& game_data, Spawning& spawning, const Level& level,
                     // Its init's two draws: the look (FUN_005739d0) and the life
                     // (FUN_00573cb0); what the Npc AI thinks on (town_npcs.hpp).
                     // ponytail: the rogues' init draws (up to 11) aren't stepped; nothing rolls on them.
-                    if (it->npc_ai) { it->seed.next(); it->seed.next(); }
+                    if (it->town_ai != TownAi::none) { it->seed.next(); it->seed.next(); }
                 }
         return;
     }
@@ -420,12 +421,15 @@ void populate(const GameData& game_data, Spawning& spawning, const Level& level,
         if (place(room, x, y, -1, fits, spot_x, spot_y) || (retry > 0 && place(room, x, y, retry, fits, spot_x, spot_y)))
             spawns.push_back({ type, spot_x, spot_y, -1, -1, d2d::rules::Boss::none, {}, 0, spawning.game.next(), {}, dead });
     };
-    auto npc_at = [&](int x, int y, int retry) {                  // at_spot for an NPC: made and blocking, not a spawn
+    // at_spot for an NPC: made and blocking, not a spawn; its unit seed
+    // (the game seed's step, FUN_00552df0), none when there's no room.
+    auto npc_at = [&](int x, int y, int retry) -> std::optional<std::uint32_t> {
         int spot_x, spot_y;
         if (place(room, x, y, -1, fits, spot_x, spot_y) || (retry > 0 && place(room, x, y, retry, fits, spot_x, spot_y))) {
             npcs.push_back({ spot_x, spot_y });
-            spawning.game.next();
+            return spawning.game.next();
         }
+        return std::nullopt;
     };
     // FUN_0063ec70 + FUN_0054e2a0: a base monster as the level has it — the
     // first of its family in the level's list, then Carvers / Devilkin (and
@@ -447,12 +451,18 @@ void populate(const GameData& game_data, Spawning& spawning, const Level& level,
             const auto monstats_row = game_data.mon_bin[std::size_t(unit.id)];
             const bool stay = unit.id == 0xe5 || (unit.id >= 0x11c && unit.id <= 0x120) || unit.id == 0x188 || unit.id == 0x189;   // FUN_0054e3a0
             if (!game_data.mon_is_npc[monstats_row]) at_spot(int(monstats_row), unit.x, unit.y, stay ? 0 : 4);
-            else {                                                           // an NPC (Flavie), standing at its spot
-                npc_at(unit.x, unit.y, stay ? 0 : 4);
+            else {                                                           // an NPC (Flavie, Lut Gholein's), standing at its spot
+                const auto unit_seed = npc_at(unit.x, unit.y, stay ? 0 : 4);
                 if (!game_data.mon_npc[monstats_row].code.empty()) {
                     auto npc = game_data.mon_npc[monstats_row];
                     npc.x = (float(unit.x) + 0.5f) / 5;
                     npc.y = (float(unit.y) + 0.5f) / 5;
+                    for (std::size_t k = 0; k < unit.path.size(); ++k) {     // its DS1 path (the town AIs walk it)
+                        npc.path.emplace_back((float(unit.x + unit.path[k].first) + 0.5f) / 5, (float(unit.y + unit.path[k].second) + 0.5f) / 5);
+                        npc.actions.push_back(k < unit.actions.size() ? unit.actions[k] : 0);
+                    }
+                    // Its unit seed and its init's two draws (the look, the life), as the camp's.
+                    if (unit_seed) { npc.seed = d2d::rules::Rng{ *unit_seed }; if (npc.town_ai != TownAi::none) { npc.seed.next(); npc.seed.next(); } }
                     level_rw.npcs.push_back(std::move(npc));
                 }
             }
@@ -1018,7 +1028,7 @@ std::size_t set_level_tiles(Level& level, const d2d::drlg::OutdoorAssets& assets
         }
     for (const auto& room : built)
         for (const auto& unit : room.units) {
-            level.units.push_back({ unit.type, unit.id, unit.mode, unit.x + room.x * 5, unit.y + room.y * 5, unit.flags, unit.path });
+            level.units.push_back({ unit.type, unit.id, unit.mode, unit.x + room.x * 5, unit.y + room.y * 5, unit.flags, unit.path, unit.actions });
             level.unit_rooms.push_back(room.seed ? int(room.seed - made.data()) : -1);
         }
     // Warps: the slot's Levels.txt Vis / Warp, LvlWarp's ExitWalk, and the

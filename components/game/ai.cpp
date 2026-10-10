@@ -177,7 +177,7 @@ void npc_patrol(const GameData& game_data, const Level& level, std::vector<UnitS
     constexpr std::uint32_t kFrameMs = 40;
     for (std::size_t i = 0; i < npcs.size() && i < level.npcs.size(); ++i) {
         const auto& npc = level.npcs[i];
-        if (!npc.npc_ai || npc.path.empty()) continue;
+        if (npc.town_ai == TownAi::none || (npc.town_ai != TownAi::vendor && npc.path.empty())) continue;
         auto& state = npcs[i];
         // A talk starting (FUN_00548b00): its path stopped, AI control +0x14
         // = 40, the think next frame.
@@ -213,7 +213,8 @@ void npc_patrol(const GameData& game_data, const Level& level, std::vector<UnitS
         }
         // ponytail: act.greet (unit sound 0x12, the client's greeting through
         // FUN_004e0590) plays nothing yet.
-        const auto act = d2d::rules::npc_think(state.brain, npc.seed, points, x, y, npc.hc_idx, npc.modes, 1, visitor);
+        const auto act = npc.town_ai == TownAi::vendor ? d2d::rules::vendor_think(npc.seed)
+                                                       : d2d::rules::npc_think(state.brain, npc.seed, points, x, y, npc.hc_idx, npc.modes, 1, visitor, npc.town_ai == TownAi::towner);
         if (act.face >= 0) state.dir = facing16(act.face);
         switch (act.kind) {
         case d2d::rules::NpcAct::Kind::stand: state.wait_until = now_ms + std::uint32_t(act.frames) * kFrameMs; break;

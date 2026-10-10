@@ -78,6 +78,10 @@ struct UnitShape {
     }
 };
 
+// The town AIs (MonAI 32 Npc FUN_005e7130, 41 Towner FUN_005e7540, 42
+// Vendor FUN_005e9e00; town-npcs.md).
+enum class TownAi { none, npc, towner, vendor };
+
 // Things the DS1 places (its object list): NPCs (type 1, from
 // data\global\monsters) and objects (type 2 — torches, fires, the
 // waypoint..., from data\global\objects). Both are composites.
@@ -93,7 +97,7 @@ struct Npc {
     std::vector<std::pair<float, float>> path;   // DS1 patrol points, cells
     std::vector<int> actions;            // each path point's DS1 action (town_npcs.hpp)
     float velocity = 3;                  // MonStats Velocity
-    bool npc_ai = false;                 // MonStats AI "Npc" (FUN_005e7130): thinks with rules::npc_think
+    TownAi town_ai = TownAi::none;       // MonStats AI Npc / Towner / Vendor: thinks with rules::npc_think / vendor_think
     std::uint32_t modes = 0;             // MonStats2 mS1 / mS2 as bits 8 / 9 (FUN_0046c140)
     int operate_fn = 0;                  // objects.txt OperateFn (32: the town stash)
     UnitShape shape;                     // an NPC's collision (MonStats / MonStats2)

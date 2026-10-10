@@ -258,6 +258,7 @@ struct World {
     // items. "" when it's written, else why not.
     std::string save();
     void set_act(int act);
+    void show_palace();
 
     // Operating a shrine (FUN_00583c70: its Shrines.txt effect) or a chest
     // (FUN_00585f60 / FUN_00585b90: it opens, its act's chest treasure class

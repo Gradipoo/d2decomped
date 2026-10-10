@@ -382,6 +382,32 @@ struct AndyQuest {
 };
 
 // The Search for Cain, one game's (a1q4.cpp, the record at FUN_005971b0).
+// Lut Gholein's palace (a2q4.cpp): two invisible objects in the town's DS1
+// place Jerhyn and the gate guard as their rooms come up. Object 121
+// (InitFn 18, FUN_0059f380) makes Jerhyn there when quest 8 and 12 lack
+// bit 13 and the Seven Tombs record (id 13, quest 14) is open with state
+// under 2. Object 122 (InitFn 19, FUN_0059f440) makes the guard (331) one
+// subtile east unless quest 14 has bit 13, and Jerhyn in the palace
+// (FUN_0059ef70: x - 10 with that record open and under 2, else x + 15;
+// y - 3) unless quests 8 and 9 lack bit 13 and the record holds.
+// ponytail: the game's flags are the player's here (one player), and the
+// Seven Tombs record's state is "under 2" while quest 14 has none of bits
+// 1..11 (its record isn't ported).
+struct PalaceSpots {
+    bool outside = false, palace = false, guard = false;
+    bool palace_west = false;          // the palace spot is x - 10 (else x + 15)
+};
+[[nodiscard]] inline PalaceSpots palace_spots(const QuestBits& quest_bits) {
+    bool tombs_early = !qbit(quest_bits, 14, 0) && !qbit(quest_bits, 14, 15);
+    for (int bit = 1; bit <= 11; ++bit) tombs_early = tombs_early && !qbit(quest_bits, 14, bit);
+    PalaceSpots spots;
+    spots.outside = !qbit(quest_bits, 8, 13) && !qbit(quest_bits, 12, 13) && tombs_early;
+    spots.guard = !qbit(quest_bits, 14, 13);
+    spots.palace = !(!qbit(quest_bits, 8, 13) && !qbit(quest_bits, 9, 13) && tombs_early);
+    spots.palace_west = tombs_early;
+    return spots;
+}
+
 // Quest 4; bits: 0 done, 1 reward due, 2 Akara told, 3 under way, 4 the
 // stones done, 10 the Cow King dead, 13 took part in the rescue, 14 missed
 // it, 15 closed. Fields are the record's data (rec+0x18) bytes.

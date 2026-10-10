@@ -1207,6 +1207,27 @@ std::unique_ptr<Level> build_level(const GameData& game_data, GameData::LevelBui
         npc.quest = d2d::rules::CainQuest::kQuest;   // out of the walk grid
         level->npcs.push_back(std::move(npc));
     }
+    // Lut Gholein's palace (rules::palace_spots, a2q4.cpp): Jerhyn by object
+    // 121, Jerhyn in the palace and the gate guard by object 122, each made
+    // here and shown by the World as the quests stand (World::show_palace).
+    // ponytail: FUN_00545340's free-spot search is the nearest free spot.
+    for (const auto& unit : level->units) {
+        if (id != d2d::rules::level_ids::kLutGholein || unit.type != d2d::rules::unit_type::kObject || (unit.id != 121 && unit.id != 122)) continue;
+        auto add = [&](int hc_idx, int at_x, int at_y, int palace) {
+            if (std::size_t(hc_idx) >= game_data.mon_bin.size()) return;
+            auto npc = game_data.mon_npc[game_data.mon_bin[std::size_t(hc_idx)]];
+            if (npc.code.empty()) return;
+            std::tie(npc.x, npc.y) = level->nearest_free((float(at_x) + 0.5f) / 5, (float(at_y) + 0.5f) / 5);
+            npc.palace = palace;
+            level->npcs.push_back(std::move(npc));
+        };
+        if (unit.id == 121) add(d2d::rules::monster_ids::kJerhyn, unit.x, unit.y, 1);
+        else {
+            add(d2d::rules::monster_ids::kJerhyn, unit.x - 10, unit.y - 3, 2);
+            add(d2d::rules::monster_ids::kJerhyn, unit.x + 15, unit.y - 3, 3);
+            add(d2d::rules::monster_ids::kPalaceGuard, unit.x + 1, unit.y, 4);
+        }
+    }
     level->npc_base = level->npcs.size();
     stamp_footprints(*level);
 

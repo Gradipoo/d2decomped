@@ -724,8 +724,10 @@ leftovers (act1-gaps.md) and hosting a game wait.
    by him in the camp (FUN_0054b830(1, 5): spawn index 5, `Level::spawn_at`),
    vendors restock on an act change. The NPCs walk their DS1 paths (Npc
    AI), the townsfolk and guards wander (Towner), the traders idle
-   (Vendor; town-npcs.md "Act 2's town AIs"). Left: JarJar's guard,
-   Jerhyn (in the Harem, level 50), the act 2 town's thinks diffed
+   (Vendor; town-npcs.md "Act 2's town AIs"). Jerhyn and the palace
+   guard come from a2q4's two marker objects (quests-act2.md); the palace
+   door leads into Harem Level 1 (level 50: tiles 10/10, units 10/10).
+   Left: JarJar's think, the act 2 town's thinks diffed
    against game.exe (npcs.py runs the camp only), the stock and offers
    checked against game.exe.
 3. The desert (LevelType 16: 41–46): the outdoor generator with act 2's

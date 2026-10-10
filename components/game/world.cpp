@@ -625,6 +625,7 @@ auto World::enter(const Character& entering) -> void {
         new_game();
         for (std::size_t i = 0; i < level->npcs.size() && i < npc_states.size(); ++i)
             if (level->npcs[i].quest == d2d::rules::CainQuest::kQuest) npc_states[i].hidden = !cain.camp_cain;
+        show_palace();                                // a save left in act 2 starts in Lut Gholein
     }
 
 auto World::new_game() -> void {
@@ -715,6 +716,7 @@ auto World::swap_npcs(const Level* from) -> void {
             npc_states = npc_start(*level);
         }
         grow_states(npc_states, *level);
+        show_palace();
         for (std::size_t i = 0; i < level->npcs.size() && i < npc_states.size(); ++i)   // camp Cain (FUN_00592960)
             if (level->npcs[i].quest == d2d::rules::CainQuest::kQuest)
                 npc_states[i].hidden = level->npcs[i].hc_idx == d2d::rules::monster_ids::kCain && level->id == d2d::rules::CainQuest::kTristram
@@ -730,6 +732,19 @@ auto World::swap_npcs(const Level* from) -> void {
                     const auto [spot_x, spot_y] = level->nearest_free(stone.x + 4, stone.y + 4);
                     portal[2] = { level, spot_x, spot_y, now };
                 }
+            }
+    }
+
+// Lut Gholein's palace NPCs as the quests stand (rules::palace_spots).
+auto World::show_palace() -> void {
+        const auto spots = d2d::rules::palace_spots(quests());
+        for (std::size_t i = 0; i < level->npcs.size() && i < npc_states.size(); ++i)
+            switch (level->npcs[i].palace) {
+            case 1: npc_states[i].hidden = !spots.outside; break;
+            case 2: npc_states[i].hidden = !(spots.palace && spots.palace_west); break;
+            case 3: npc_states[i].hidden = !(spots.palace && !spots.palace_west); break;
+            case 4: npc_states[i].hidden = !spots.guard; break;
+            default: break;
             }
     }
 

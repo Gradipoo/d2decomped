@@ -115,6 +115,10 @@ struct Npc {
     int hc_idx = -1;                     // MonStats hcIdx (NPC menu table key)
     std::string id;                      // MonStats Id (npc.txt key)
     int quest = 0;                       // shown once this Act 1 quest is done (Cain: 4), 0 = always
+    // Lut Gholein's palace NPCs, shown by rules::palace_spots: 1 Jerhyn by
+    // object 121, 2 / 3 Jerhyn in the palace (object 122's x - 10 / x + 15),
+    // 4 the gate guard; 0 = none.
+    int palace = 0;
     int op_frames = 0;                   // objects.txt FrameCnt1 when it has an OP mode (Mode1)
     int shrine = 0;                      // a shrine's Shrines.txt row (roll_shrine)
     int trap = 0;                        // a chest's trap type (roll_chest), 0 none
@@ -753,7 +757,7 @@ struct GameData::LevelBuilder {
 // the Act 1 wilderness DT1s (LvlTypes).
 // The levels d2d builds so far: Act 1's (the town is GameData::town) and
 // Lut Gholein; the rest of Act 2 comes with its research.
-constexpr std::array kBuiltLevels{ 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40 };
+constexpr std::array kBuiltLevels{ 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 50 };
 
 // A composite's COF and timing (the World's part of a composite).
 struct CofAnim { d2d::cof::Cof cof; GameData::AnimTiming timing; std::string path; bool ok = false; };

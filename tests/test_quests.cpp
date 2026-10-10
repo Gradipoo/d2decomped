@@ -367,5 +367,22 @@ int main() {
     assert(late_game.andy.start_in == 20);
     for (int i = 0; i < 20; ++i) late_game.andy.tick();
     assert(late_game.andy.state == 1);
+
+    // Lut Gholein's palace (a2q4.cpp): a fresh act 2 has Jerhyn outside and
+    // the guard at the gate; the Arcane Sanctuary done here moves him in
+    // (west of the gate while the Seven Tombs wait), the Seven Tombs given
+    // moves him east, and act 3 open sends the guard away.
+    QuestBits act2{};
+    auto spots = palace_spots(act2);
+    assert(spots.outside && spots.guard && !spots.palace);
+    qset(act2, 12, 13);
+    qset(act2, 9, 13);
+    spots = palace_spots(act2);
+    assert(!spots.outside && spots.palace && spots.palace_west);
+    qset(act2, 14, 2);
+    spots = palace_spots(act2);
+    assert(!spots.outside && spots.palace && !spots.palace_west);
+    qset(act2, 14, 13);
+    assert(!palace_spots(act2).guard);
     std::puts("ok");
 }

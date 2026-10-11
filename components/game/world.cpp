@@ -2201,10 +2201,10 @@ auto World::tick(const std::vector<Command>& cmds, std::uint32_t now_ms, std::ui
         }
         fight.kills.clear();
         // The Summoner goes for the player (FUN_005f85c0's first think -> FUN_0059c330).
-        // ponytail: his MonAI isn't ported; awareness stands in for its first attack think.
+        // His first think (FUN_005f85c0: AI control +0x14 0 -> 1) opens it (FUN_0059c330).
         if (!summoner.started && !hosted_quests && level->id == d2d::rules::SummonerQuest::kSanctuary)
             for (const auto& monster : fight.monsters)
-                if (monster.type == d2d::rules::monster_ids::kSummoner && monster.alive() && monster.aware) { summoner.engaged(quests()); break; }
+                if (monster.type == d2d::rules::monster_ids::kSummoner && monster.alive() && monster.ai_state != 0) { summoner.engaged(quests()); break; }
         cross_level();
         fight.rooms_up(*level, player.x, player.y, false);
         grow_states(npc_states, *level);

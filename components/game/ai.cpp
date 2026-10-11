@@ -21,6 +21,7 @@
 #include <cstdlib>
 #include <format>
 #include <initializer_list>
+#include <limits>
 #include <span>
 #include <string>
 #include <string_view>
@@ -578,6 +579,42 @@ bool think(const GameData& game_data, const Level& level, Monster& monster, std:
     input.laying = now_ms < monster.laid_until;
     input.velocity = type_info.velocity; input.run = type_info.run;
     input.aidel = per_difficulty.aidel ? per_difficulty.aidel : 15;
+    // Act 2's: Skill4 / 5; the target's fire / cold resists (stats 0x27 /
+    // 0x2b); the second target (FUN_005ddc30) as the target; Duriel's aura
+    // on; the searches (FUN_005dd0b0) over the monsters within 80 subtiles:
+    // the nearest living kin of its class (FUN_005b0d00, the Panthers'),
+    // any other living one (FUN_005f06b0, the Sand Raider's), by squared
+    // distance (FUN_005b0bd0); the Greater Mummy's (FUN_005f2a00) within
+    // aip5: the count, a corpse (DD, not raised) and a hurt one, the last
+    // found.
+    // ponytail: regen (stat 0x4a) is 0, d2d's monsters having none; a
+    // skill is always usable (FUN_005fd470); the near rooms as 80 subtiles;
+    // Radament's wider reach (aip5 + 10) left out.
+    input.skill45 = { !type_info.skill[3].empty(), !type_info.skill[4].empty() };
+    input.target_fire_res = target->fighter.res[0]; input.target_cold_res = target->fighter.res[2];
+    input.second = true; input.second_dist = best;
+    input.aura_on = monster.aura != 0;
+    std::vector<d2d::rules::ThinkEffect> effects;
+    input.effects = &effects;
+    int kin = -1, aid = -1;
+    {
+        const bool panther = type_info.ai_name == "PantherWoman" || type_info.ai_name == "PantherJavelin";
+        const bool raider = type_info.ai_name == "SandRaider", mummy = type_info.ai_name == "GreaterMummy";
+        int kin_dist = std::numeric_limits<int>::max();
+        for (std::size_t i = 0; (panther || raider || mummy) && i < pack.size(); ++i) {
+            const auto& other = pack[i];
+            const int off_x = subtile(other.unit.x) - x, off_y = subtile(other.unit.y) - y, squared = off_x * off_x + off_y * off_y;
+            if (&other == &monster || d2d::rules::ai_distance(off_x, off_y) >= 80) continue;
+            if (mummy) {
+                if (squared > input.aip[4] * input.aip[4]) continue;
+                ++input.in_reach;
+                if (!other.alive() && other.mode == "DD" && !other.corpse_used) corpse = int(i);
+                else if (other.alive() && other.hit_points < other.stats.hit_points) aid = int(i);
+            } else if (other.alive() && (raider || other.type == monster.type) && squared < kin_dist) { kin = int(i); kin_dist = squared; }
+        }
+        if (mummy) { input.corpse = corpse >= 0; input.aid = aid >= 0; }
+        else { input.kin = kin >= 0; input.kin_dist = kin_dist; }
+    }
     auto use = [&](std::string_view mode, int skill) {             // FUN_005dead0 / FUN_005ddf90: against the target (mode ctx +8)
         monster.chase = int(target - foes.data());
         unit.dir = direction16(dx, dy);
@@ -616,6 +653,21 @@ bool think(const GameData& game_data, const Level& level, Monster& monster, std:
         act = d2d::rules::mon_think(type_info.ai_name, input, monster.seed, away);
     }
     monster.move_pct = pace;                                       // the next mode takes it (FUN_005a63f0)
+    // Its effects: the leader's command done; Duriel's aura (Skill4) on.
+    // ponytail: states 0x5a / 0x5b and the overlays (looks) and stat 0x4a
+    // (regen) left out; the Summoner's quest reads his first think (ai_state).
+    for (const auto& effect : effects) {
+        if (effect.kind == d2d::rules::ThinkEffect::command_done) monster.ai_command = 0;
+        if (effect.kind == d2d::rules::ThinkEffect::aura) { monster.aura = skill_id(game_data, type_info.skill[std::size_t(effect.id)]); monster.aura_lvl = std::max(input.aip[0], 1); }
+    }
+    // The unit it's at: its kin (a walk to it), the hurt one or corpse it
+    // casts on; the second target is the target.
+    using d2d::rules::ThinkUnit;
+    const Monster* at_unit = act.unit == ThinkUnit::kin ? (kin >= 0 ? &pack[std::size_t(kin)] : corpse >= 0 ? &pack[std::size_t(corpse)] : nullptr)
+                           : act.unit == ThinkUnit::aid && aid >= 0 ? &pack[std::size_t(aid)] : nullptr;
+    // FUN_005de0f0 / FUN_005de130: its next think n frames on (a wait after its mode).
+    // ponytail: a wait counts from now, not the mode's end.
+    if (act.wait > 0 || act.event > 0) monster.next_act = std::max(monster.next_act, now_ms + std::uint32_t(std::max(act.wait, act.event)) * 40);
     if (rally)                                                     // FUN_0058f730 / FUN_0058ef40: its leader's group, itself too
         for (auto& other : pack)
             if (other.alive() && other.leader == monster.leader) other.ai_command = 1;
@@ -624,7 +676,10 @@ bool think(const GameData& game_data, const Level& level, Monster& monster, std:
         case MonAct::a1: use("A1", -1); return true;
         case MonAct::a2: use("A2", -1); return true;
         case MonAct::s2: use("S2", -1); return true;
+        case MonAct::s3: use("S3", -1); return true;
+        case MonAct::s4: use("S4", -1); return true;
         case MonAct::walk: case MonAct::approach: case MonAct::run:  // FUN_005deb60 at the target
+            if (at_unit) { walk_to(subtile(at_unit->unit.x) - x, subtile(at_unit->unit.y) - y, act.act == MonAct::run); return true; }
             if (set_off(act.act == MonAct::run, target)) {
                 monster.chase = int(target - foes.data());
                 return true;
@@ -656,6 +711,7 @@ bool think(const GameData& game_data, const Level& level, Monster& monster, std:
             set_off(false, nullptr);
             return true;
         }
+        case MonAct::seq:                                          // FUN_005de000: the skill's own sequence (the Greater Mummy's raise)
         case MonAct::skill: {                                      // its Sk mode's sequence (kSeqs) plays out
             // ponytail: later acts: a skill without a sequence here stands
             // instead (none in Act 1: cr_archer / cr_lancer carry no Skill1..3, so their

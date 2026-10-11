@@ -201,6 +201,32 @@ Act 1's last untraced MonAIs (MonStats AI column, levels 2..39): fetish1 (Cataco
 - **Second target (FUN_005ddc30).** The skill-set target (FUN_005dd610), else FUN_005dd0b0 mode 6 (callback FUN_005dcbd0: the near rooms' units, enemies by FUN_005dc970, FUN_005dc380 distance under 0x31, sight always (mask 4), threat 2 or more primary, else secondary), then FUN_005dd510.
 - **Skills.** Spider Lay is srvdofunc 23 (FUN_005c9c10; aurastate spiderlay = state 0x16, auralen 300, aurastat velocitypercent −100, anim A2). VampireFireball and VampireMissile are srvmissile vampirefireball / firehead (SC). VampireFirewall is srvdofunc 24 (FUN_005c9ea0, the Countess's), VampireMeteor 28 (FUN_005ca3e0). The srvdofunc table is at 0x7322b0. vampire5's aip5 is 1, so in Act 1 it only shoots.
 
+## Act 2's thinks
+
+Act 2's MonAIs (MonStats AI on levels 40..74, MonAI table 0x73ca18 + ai × 16: `{search type, init, think, other think}`). Params block as above: [0] AI control (+0x14 / +0x18 / +0x1c), [2] target, [5] AI distance, [6] in melee, [7] MonStats row. Search types 1 and 4 skip the think when none is found (FUN_005b1650), so every think below has a target.
+
+| AI | # | think | in `mon_think` |
+|---|---|---|---|
+| SandRaider | 8 | FUN_005f0700 | thinks counted (state): at aip5 its overlay (aip6 1: 0x96, else 0x2e), stands aidel + 1; past it state 0x5a / 0x5b on, Skill1 (Fire Hit) next in melee; hurt it walks to its nearest other monster (FUN_005f06b0), seven times |
+| Baboon | 11 | FUN_005f0cd0 | hit under aip1 % life, 50 %: flees rand(5) + 2 thinks, regen (stat 0x4a) up aip5 / 8, pace Run / Velocity |
+| SandMaggot | 15 | FUN_005f1800 | Skill1..3 (MagottUp / Down / Lay) on frame timers (state2), FUN_005de130 events, never stands |
+| ClawViper | 16 | FUN_005f1b60 | the charge (Skill1, FUN_005fd470 usable) within aip2, aip6's state 0x5a / 0x5b while it charges |
+| SandLeaper | 17 | FUN_005f20a0 | the leap within 5; past 10 bounds about the target (FUN_005df530, pace 75) |
+| PantherWoman | 18 | FUN_005f22b0 | runs in (pace 75), or regroups with its nearest kin past aip3 (FUN_005b0d00, squared) |
+| Swarm | 19 | FUN_005f2460 | walks in / A1 / stands aip2 |
+| Scarab | 20 | FUN_005f2540 | its leader (FUN_0058f0d0) sends the group charging (FUN_0058f730); charging: Skill1 (Jab) in melee |
+| Mummy | 21 | FUN_005f2850 | hit: walks in; within aip1 swings or walks in; else wanders 3 |
+| GreaterMummy | 22 | FUN_005f2b10 | Skill2 (Bestow) on a hurt one, Skill1's sequence (FUN_005de000, Resurrect2) on a corpse, Skill3 (UnHolyBolt) at the second target (FUN_005f2a00 searches aip5, squared) |
+| BatDemon | 29 | FUN_005f5040 | states 0..4: rises (S3), drops (S4), lands (S2), flees; regen as the Baboon's |
+| PinHead | 39 | FUN_005f6340 | Skill1 (Smite) / Skill2 after its first swing |
+| Duriel | 44 | FUN_005f67b0 | Holy Freeze (Skill4) on when off (FUN_006201d0 → FUN_005701b0); Charge out of melee, Smite / Jab / A2 / A1 in it |
+| Summoner | 53 | FUN_005f85c0 | first think opens his quest (FUN_0059c330); the element the target resists less (stats 0x27 / 0x2b) |
+| PantherJavelin | 95 | FUN_005e1080 | throws at its second target (FUN_005ddc30; none: 0x7fffffff off) |
+
+- **Other thinks.** A MonAI row's fourth word is a second think: FUN_005b0e00 called with the AI it already runs swaps the think for it, and from it back (re-running the init). FUN_00570530 does that as a unit comes back. The BatDemon's (FUN_005f4fd0) and SandMaggot's (FUN_005f1750) aren't ported.
+- **Checked.** `tools/emu/mon_ais.py` runs each think natively on random scenes, every helper hooked at its entry (the seed draws of FUN_005df7d0 / FUN_005de200 / FUN_005df530 made as they make them), and dumps the distinct paths as `tests/mon_ais_cases.inc`; `test_monsters` runs `rules::mon_think` on them: the act, its unit, wait and event, the pace, the effects, the AI control and seed. 3 × 150 000 runs (seeds 7, 13, 21), ~800 paths each, all match.
+- **In d2d.** `ai.cpp think`: the searches over the monsters within 80 subtiles; Duriel's aura through Aura Enchanted's (`Monster::aura`); a walk at a kin; S3 / S4. Act 2's skills have no sequence in `kSeqs` yet, so a skill act stands (Fire Hit, Charge, Leap, the maggots', the Summoner's spells). Left out: states 0x5a / 0x5b, overlays, regen (stat 0x4a), FUN_005fd470 (always usable), Radament's wider reach, a wait counted from the mode's end. Not ported: Vulture (23), NpcStationary (54, Tyrael).
+
 ## Doors — FUN_005b0f50
 
 Driver step 1. With MonStats flags byte +0xc & 8 (opendoors, DAT_006ce274):
@@ -234,6 +260,6 @@ Approximated (`ponytail:` in ai.cpp, fight.cpp, monsters.hpp):
 - Confuse's and Attract's duration is auralen's, not FUN_005c37a0's; FUN_0056e2f0's test is unread.
 - Movement is floats in cells, blocked as `monster_step` has it, and the target's +0x68 offset is taken as 0.
 - A dead pet is skipped (game.exe takes it off the list), and a dead monster leaves list 9.
-- An untraced AI (none in Act 1: every Act 1 MonStats AI is traced) goes at what it found from the next frame on.
+- An untraced AI (in Acts 1 and 2 only the Vulture and Tyrael's NpcStationary) goes at what it found from the next frame on.
 - A pace (`ThinkIn::pace` → `Monster::move_pct`) adds to the move's speed %; Spider Lay's −100 % leaves it creeping at the 10 % floor, and its slowed state on those about is left out. A foe's life % (`Foe::life_pct`) is the player's only.
 - The Vampire's second target (FUN_005ddc30) is its target. VampireFirewall / VampireMeteor stand (no Act 1 vampire casts them). The Fetish's leader commands never come, and the pathers 2 / 0xd and FUN_005defe0's steps are `path_to`'s.

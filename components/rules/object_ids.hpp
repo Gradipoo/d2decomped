@@ -43,6 +43,7 @@ inline constexpr int kBookshelf = 26;       // FUN_00584060
 inline constexpr int kTrapObject = 30;      // FUN_00581cd0: the exploding chest
 inline constexpr int kSunAltar = 24;        // FUN_0059a7e0: the Tainted Sun's altar
 inline constexpr int kStash = 32;
+inline constexpr int kCubeChest = 39, kScrollChest = 40, kShaftChest = 41;   // the Horadric Staff's chests (FUN_00599df0 / FUN_00599c10 / FUN_00599cf0)
 }  // namespace operate_fn
 
 // objects.txt rows (Id).

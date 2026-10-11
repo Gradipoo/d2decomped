@@ -179,3 +179,52 @@ Act 1 sky stays clear, the temple is state 3, the altar gives state 4 →
 log 3, bits 1 2 13, the amulet, the chest roll and 8 gold piles, sunrise.
 N-player gaps: one player (the rewarded list a bool, no party credit, the
 altar's room is "the player"); one day clock for all acts.
+
+## The Horadric Staff (a2q2.cpp, record 9, quest 10)
+
+`FUN_0059eb00`: +0xa = 1, the log its own (+0xe8 `FUN_0059e630`, +0xd 0),
+blocks `0x739918` (ten, Cain 244 one line each: 335 scroll, 336 amulet,
+337 shaft, 338 Cube, 339 staff; 0..4 kind 0, 5..9 kind 2 for 339, 335,
+336, 337, 338). Parts: `tr1`, `msf`, `box`, `vip`, `hst`, each "carried"
+by `FUN_00558110` (the cursor's, then every item the player owns; a
+questdiffcheck item only from this difficulty on, stat 0x164).
+
+Bits: 0 done (the staff in the orifice, a2q6), 1 reward due, 3 the scroll
+read (or any part shown), 4 / 5 / 6 the amulet / shaft / Cube shown,
+10 the staff shown, 13 / 14 done here / by others, 15 closed.
+
+- **The pick** (`FUN_00599590`): the staff → 4 (5 once bit 10); else the
+  first part not shown in the order Cube (3), scroll (0), amulet (1),
+  shaft (2); else the last carried one shown (9, 6, 7, 8).
+- **+0xa0** (`FUN_00599910`, Cain only): bit 1 → block 4; a new part → its
+  block; else rewarded → 5; bit 0 → none; else the last shown, or with
+  nothing carried block 6 if bit 3.
+- **+0xec** (`FUN_005996c0`): Cain, bit 1 or a new part.
+- **+0xcc** (`FUN_005997f0`): 335 → the scroll goes (`FUN_00544160` →
+  `FUN_005440a0`), bit 3; 336 / 337 / 338 → bit 4 / 5 / 6 and 3; 339 →
+  bit 1 off, 3, 10, 4, 6, 5, rewarded.
+- **+0xe8, the log** (`FUN_0059e630`): 0 without quest 7 bit 0; bit 0 / 1:
+  6 (5 with bit 10) till quest 14 bit 0, then 13 / 11 by bit 13. Else
+  shaft + Cube + amulet → 3 (bit 6) / 2 (bit 3) / 4; the staff → 6 / 5;
+  an unread scroll → 1; bit 3 → 2; any part → 4; a part lost (the Cube or
+  shaft after its chest gave one, data+0x29 / +0x28; the amulet after the
+  altar, record 10 data+4) → 9.
+- **+0xd4** (`FUN_0059e850`): counts the parts carried; without bit 0,
+  record 13 open and its data+0xb clear (the staff not placed) and no
+  staff: unless all three parts are carried, the missing ones' shown bits
+  (5 shaft, 6 Cube, 4 amulet) clear.
+- **+0xac** (`LAB_00599a00`): leaving 40, off the rewarded list.
+- **The chests** (objects.txt 355 / 356 / 354; InitFns 32 / 33 / 31 do
+  nothing): OperateFns 40 `FUN_00599c10` (Sewers 3), 41 `FUN_00599cf0`
+  (Maggot Lair 3), 39 `FUN_00599df0` (Halls of the Dead 3). Once
+  (`FUN_00545850`: mode 0 only; mode 1 with a Mode1, else 2): the part for
+  each player who wants it (the scroll: no bit 0 / 3; the shaft,
+  identified: no bit 0, shaft or staff; the Cube: none carried), the act's
+  chest class forced magic (`FUN_00585b90`, EDX 4), rand(5) + 5 gold piles
+  on the quest seed.
+
+d2d: `rules::HoradricStaffQuest`, the chests in `World::operate`, the
+scroll's removal in the said path. Checked live (devctl, 2026-10-11): the
+three chests give their parts; Cain takes the Cube, then the shaft (bits
+3, 5, 6). Not yet: the Cube's transmute (the staff, `FUN_005665f0`), the
+orifice (a2q6). N-player gaps: one player's counts, the rewarded bool.

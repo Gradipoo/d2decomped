@@ -442,5 +442,27 @@ int main() {
     assert(tainted.log == 3 && tainted.talk(sun, 176)[0].string == 368);
     tainted.said(sun, sun_game, 176, 368);
     assert(tainted.state == 5 && tainted.log == 0xd && qbit(sun, 11, 0) && !qbit(sun, 11, 1));
+
+    // The Horadric Staff: Cain greets with the first part not shown (the
+    // Cube, then the scroll, the amulet, the shaft); the scroll read goes;
+    // the log follows what's carried; the chests give each part once.
+    QuestBits horadric{};
+    qset(horadric, 7, 0);                     // Act 1 over: the log shows it
+    HoradricStaffQuest staff;
+    HoradricStaffQuest::Items carried{ .scroll = true };
+    assert(staff.log_state(horadric, carried, false) == 1 && HoradricStaffQuest::alert(horadric, HoradricStaffQuest::kCain, carried));
+    assert(staff.talk(horadric, HoradricStaffQuest::kCain, carried)[0].string == 335 && staff.talk(horadric, HoradricStaffQuest::kCain, carried)[0].greet);
+    assert(staff.said(horadric, HoradricStaffQuest::kCain, 335) && qbit(horadric, 10, 3));
+    carried = { .shaft = true, .cube = true };
+    assert(staff.talk(horadric, HoradricStaffQuest::kCain, carried)[0].string == 338);
+    assert(!staff.said(horadric, HoradricStaffQuest::kCain, 338) && staff.talk(horadric, HoradricStaffQuest::kCain, carried)[0].string == 337);
+    staff.said(horadric, HoradricStaffQuest::kCain, 337);
+    assert(!HoradricStaffQuest::alert(horadric, HoradricStaffQuest::kCain, carried) && !staff.talk(horadric, HoradricStaffQuest::kCain, carried)[0].greet);
+    carried.amulet = true;
+    assert(staff.log_state(horadric, carried, true) == 3);
+    assert(staff.chest(HoradricStaffQuest::kCubeChest, horadric, {}) == "box" && staff.chest(HoradricStaffQuest::kCubeChest, horadric, carried).empty());
+    assert(staff.log_state(horadric, {}, false) == 2);
+    staff.join(horadric, { .cube = true }, false);
+    assert(!qbit(horadric, 10, 5) && qbit(horadric, 10, 6));   // the shaft's gone: not shown any more
     std::puts("ok");
 }

@@ -11,6 +11,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <string>
 #include <vector>
 
 namespace d2d::rules {
@@ -553,6 +554,119 @@ struct RadamentQuest {
         if (!qbit(quest_bits, kQuest, 5)) return false;
         qset(quest_bits, kQuest, 5, false);
         return true;
+    }
+};
+
+// The Horadric Staff (a2q2.cpp, the record at FUN_0059eb00): quest 10, all
+// Cain's (Act 2's, 244) and the items the player carries: the scroll
+// (tr1), the shaft (msf), the Cube (box), the amulet (vip), the staff (hst).
+// Bits: 0 done (the staff in the orifice: the Seven Tombs'), 1 reward due,
+// 3 Cain's read the scroll (or seen any part), 4 / 5 / 6 the amulet /
+// shaft / Cube shown, 10 the staff shown, 13 / 14 done here / by others,
+// 15 closed. Its log is its own (+0xe8, FUN_0059e630).
+// N-player gap: one player — the rewarded list is a bool and the counts of
+// players carrying each part (data+0x18..0x24) are what this one carries.
+struct HoradricStaffQuest {
+    static constexpr int kQuest = 10, kCain = monster_ids::kCainAct2;
+    static constexpr int kScrollChest = 40, kShaftChest = 41, kCubeChest = 39;   // OperateFns (objects.txt 355, 356, 354)
+    struct Items { bool scroll = false, shaft = false, cube = false, amulet = false, staff = false; };
+    bool open = true;              // +9
+    bool rewarded = false;         // in the +0x1c list
+    bool shaft_dropped = false;    // data+0x28: the shaft chest gave one
+    bool cube_dropped = false;     // data+0x29: the Cube chest gave one
+
+    // The player joins (FUN_0059e850): parts no longer carried are no
+    // longer shown, unless all three are, the staff's made or placed.
+    void join(QuestBits& quest_bits, const Items& items, bool staff_placed) {
+        if (qbit(quest_bits, kQuest, 0) || qbit(quest_bits, kQuest, 15)) open = false;
+        if (qbit(quest_bits, kQuest, 0) || staff_placed || items.staff || (items.shaft && items.cube && items.amulet)) return;
+        if (!items.shaft) qset(quest_bits, kQuest, 5, false);
+        if (!items.cube) qset(quest_bits, kQuest, 6, false);
+        if (!items.amulet) qset(quest_bits, kQuest, 4, false);
+    }
+    // What Cain has to say of what's carried (FUN_00599590): a part not
+    // shown yet is news (blocks 0..4), else the last one shown (5..9).
+    struct Pick { bool news = false; int block = -1; };
+    [[nodiscard]] static Pick pick(const QuestBits& quest_bits, const Items& items) {
+        if (items.staff) return qbit(quest_bits, kQuest, 10) ? Pick{ false, 5 } : Pick{ true, 4 };
+        Pick out;
+        if (items.cube) { if (!qbit(quest_bits, kQuest, 6)) return { true, 3 }; out.block = 9; }
+        if (items.scroll) { if (!qbit(quest_bits, kQuest, 3)) return { true, 0 }; out.block = 6; }
+        if (items.amulet) { if (!qbit(quest_bits, kQuest, 4)) return { true, 1 }; out.block = 7; }
+        if (items.shaft) { if (!qbit(quest_bits, kQuest, 5)) return { true, 2 }; out.block = 8; }
+        return out;
+    }
+    // Cain's lines (FUN_00599910): blocks at 0x739918, one each; 0..4
+    // greet (kind 0), 5..9 are topics.
+    static constexpr std::array<int, 10> kLines{ 335, 336, 337, 338, 339, 339, 335, 336, 337, 338 };
+    [[nodiscard]] std::vector<QuestMsg> talk(const QuestBits& quest_bits, int npc, const Items& items) const {
+        if (npc != kCain) return {};
+        int block = 4;
+        if (!qbit(quest_bits, kQuest, 1)) {
+            const auto found = pick(quest_bits, items);
+            if (found.news && found.block >= 0) block = found.block;
+            else if (rewarded) block = 5;
+            else if (qbit(quest_bits, kQuest, 0)) return {};
+            else if (found.block < 0) { if (!qbit(quest_bits, kQuest, 3)) return {}; block = 6; }
+            else block = found.block;
+        }
+        return { { kLines[std::size_t(block)], block < 5 } };
+    }
+    // Cain's "!" (FUN_005996c0): the reward due, or a part to show.
+    [[nodiscard]] static bool alert(const QuestBits& quest_bits, int npc, const Items& items) {
+        return npc == kCain && (qbit(quest_bits, kQuest, 1) || pick(quest_bits, items).news);
+    }
+    // The player heard `string` from Cain (FUN_005997f0). True: he read the
+    // scroll, which goes (FUN_00544160 -> FUN_005440a0).
+    bool said(QuestBits& quest_bits, int npc, int string) {
+        if (npc != kCain) return false;
+        switch (string) {
+        case 335: qset(quest_bits, kQuest, 3); return true;
+        case 336: qset(quest_bits, kQuest, 4); break;
+        case 337: qset(quest_bits, kQuest, 5); break;
+        case 338: qset(quest_bits, kQuest, 6); break;
+        case 339:
+            qset(quest_bits, kQuest, 1, false);
+            rewarded = true;
+            for (const int bit : { 10, 4, 6, 5 }) qset(quest_bits, kQuest, bit);
+            break;
+        default: return false;
+        }
+        qset(quest_bits, kQuest, 3);
+        return false;
+    }
+    // The log (+0xe8, FUN_0059e630): nothing till Act 1's over; the parts
+    // as carried and shown; 9 when one's been lost (the Cube or shaft after
+    // its chest, the amulet after the altar); once done 5 / 6 till the
+    // Seven Tombs, then 11 / 13.
+    [[nodiscard]] int log_state(const QuestBits& quest_bits, const Items& items, bool altar_used) const {
+        auto bit = [&](int index) { return qbit(quest_bits, kQuest, index); };
+        if (!qbit(quest_bits, 7, 0)) return 0;
+        if (bit(0) || bit(1)) return !qbit(quest_bits, 14, 0) ? (bit(10) ? 5 : 6) : bit(13) ? 13 : 11;
+        if (items.shaft && items.cube && items.amulet) return bit(6) ? 3 : bit(3) ? 2 : 4;
+        if (items.staff) return bit(10) ? 5 : 6;
+        if (items.scroll && !bit(3)) return 1;
+        const bool lost = (cube_dropped && !items.cube) || (!items.amulet && altar_used) || (shaft_dropped && !items.shaft);
+        if (bit(3)) return 2;
+        if (items.amulet || items.shaft || items.cube) return 4;
+        return lost ? 9 : 0;
+    }
+    // A quest chest opened (OperateFns 40 / 41 / 39: FUN_00599c10,
+    // FUN_00599cf0, FUN_00599df0): its part for each player who wants one
+    // (the scroll: no bit 0 or 3; the shaft, identified: no bit 0, no shaft
+    // or staff; the Cube: none carried). The caller adds the act's chest
+    // class forced magic (FUN_00585b90, EDX 4) and rand(5) + 5 gold piles
+    // on the quest seed.
+    [[nodiscard]] std::string chest(int operate_fn, const QuestBits& quest_bits, const Items& items) {
+        if (operate_fn == kScrollChest) return !qbit(quest_bits, kQuest, 0) && !qbit(quest_bits, kQuest, 3) ? "tr1" : "";
+        if (operate_fn == kShaftChest) {
+            if (qbit(quest_bits, kQuest, 0) || items.shaft || items.staff) return "";
+            shaft_dropped = true;
+            return "msf";
+        }
+        if (operate_fn != kCubeChest || items.cube) return "";
+        cube_dropped = true;
+        return "box";
     }
 };
 

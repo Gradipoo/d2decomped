@@ -162,6 +162,7 @@ auto World::view() const -> View {
                                std::uint8_t(tower.log_state(quest_bits)), std::uint8_t(andy.log_state(quest_bits)) };
             view.quest_log[d2d::rules::RadamentQuest::kQuest] = std::uint8_t(radament.log_state(quest_bits));
             view.quest_log[d2d::rules::TaintedSunQuest::kQuest] = std::uint8_t(tainted.log_state(quest_bits));
+            view.quest_log[d2d::rules::HoradricStaffQuest::kQuest] = std::uint8_t(staff.log_state(quest_bits, staff_items(), tainted.used));
             for (int quest = 1; quest < 15; ++quest) {
                 const bool bit0 = d2d::rules::qbit(quest_bits, quest, 0) || d2d::rules::qbit(quest_bits, quest, 15);
                 if (bit0 && !d2d::rules::qbit(quest_bits, quest, 13) && !d2d::rules::qbit(quest_bits, quest, 14)) view.quest_log[std::size_t(quest)] = 0;
@@ -331,6 +332,27 @@ auto World::operate(int npc_index, std::uint32_t now_ms, int force ) -> void {  
         if (object.operate_fn == d2d::rules::operate_fn::kMoldyTome) {
             operated.try_emplace({ level, npc_index }, now_ms);
             if (!closed_at_join[std::size_t(d2d::rules::TowerQuest::kQuest)]) events.push_back(ev::Speech{ npc_index, d2d::rules::TowerQuest::kTome });
+            return;
+        }
+        // The Horadric Staff's chests (OperateFns 39 / 40 / 41): once (mode 0
+        // only, FUN_00545850: mode 1, or 2 without a Mode1), the part, then
+        // the act's chest class forced magic and rand(5) + 5 gold piles on the
+        // quest seed; the shaft identified (item flag 0x10).
+        if (const int operate_id = object.operate_fn; operate_id == d2d::rules::operate_fn::kCubeChest || operate_id == d2d::rules::operate_fn::kScrollChest || operate_id == d2d::rules::operate_fn::kShaftChest) {
+            if (operated.contains({ level, npc_index })) return;
+            operated[{ level, npc_index }] = now_ms;
+            to_mode(object.op_frames ? 1 : 2);
+            if (hosted_quests) return;
+            if (const auto part = staff.chest(operate_id, quests(), staff_items()); !part.empty()) {
+                loot.put({ .code = part }, object.x, object.y, here, fight.spawning.game, now_ms);
+                if (part == "msf") loot.ground.back().item.identified = true;
+            }
+            const auto [low, high] = d2d::rules::kChestLevels[1];
+            std::vector<d2d::rules::Drop> drops;
+            d2d::rules::chest_round(game_data->rules, d2d::rules::chest_tc(1, diff, here, alvl(low), alvl(high)), object.seed, drops, 4);
+            for (std::uint32_t gold = fight.spawning.quests.next() % 5 + 5; gold > 0; --gold) drops.push_back({ .code = "gld" });
+            for (const auto& dropped : drops) loot.put(dropped, object.x, object.y, here, fight.spawning.game, now_ms);
+            d2d::log::info("The Horadric Staff: chest {} opened ({} drops)", operate_id, drops.size());
             return;
         }
         // The Tainted Sun's altar (OperateFn 24, FUN_0059a7e0): mode 1, the
@@ -677,6 +699,8 @@ auto World::new_game() -> void {
         radament.join(quests(), game_bits, carries("ass"));
         tainted = {};
         tainted.join(quests(), game_bits);
+        staff = {};
+        staff.join(quests(), staff_items(), false);
         den = {};
         den.join(quests());
         andy = {};
@@ -744,6 +768,7 @@ auto World::swap_npcs(const Level* from) -> void {
         if (from && from != level) tools.enter(quests(), from->id);
         if (from && from != level) cain.enter(quests(), from->id, level->id);
         if (from && from != level) radament.enter(quests(), from->id);
+        if (from && from != level && from->id == d2d::rules::level_ids::kLutGholein) staff.rewarded = false;   // LAB_00599a00
         if (from && from != level && tainted.enter(from->id, level->id)) tainted.dark_in = int(fight.spawning.quests(17));
         if (from && from != level && level->id == d2d::rules::TaintedSunQuest::kTemple)   // the altar's InitFn 20 (FUN_0059a3f0): the level's rooms all come up
             for (const auto& object : level->npcs) if (object.root == "objects" && object.object_id == d2d::rules::TaintedSunQuest::kAltar) tainted.altar_seen();
@@ -850,6 +875,7 @@ auto World::quest_talk(int hc_idx) -> std::vector<d2d::rules::QuestMsg> {
         std::ranges::copy(d2d::rules::ActTwoOpening::talk(quests(), hc_idx), std::back_inserter(out));
         std::ranges::copy(radament.talk(quests(), hc_idx), std::back_inserter(out));
         std::ranges::copy(tainted.talk(quests(), hc_idx), std::back_inserter(out));
+        std::ranges::copy(staff.talk(quests(), hc_idx, staff_items()), std::back_inserter(out));
         return out;
     }
 
@@ -1067,7 +1093,9 @@ auto World::cain_step(std::uint32_t now_ms, float elapsed) -> void {
         d2d::log::info("Search for Cain: Cain has gone to the camp");
     }
 
-auto World::carries(std::string_view code) const -> bool { return std::ranges::contains(character.items, code, &d2d::d2s::Item::code); }
+// FUN_00558110: the cursor's item, then all the player's items.
+// N-player gap: the quest item's difficulty (stat 0x164, questdiffcheck) isn't checked.
+auto World::carries(std::string_view code) const -> bool { return (held && held->code == code) || std::ranges::contains(character.items, code, &d2d::d2s::Item::code); }
 
 // The tree (OperateFn 12) drops the scroll by it; the stones (9) light in
 // the deciphered scroll's order, the fifth opening the way to Tristram at
@@ -1564,6 +1592,10 @@ auto World::deal(const Command& command) -> bool {
             d2d::rules::ActTwoOpening::said(quests(), game_bits, hc_idx, message->string);
             radament.said(quests(), game_bits, hc_idx, message->string);
             tainted.said(quests(), game_bits, hc_idx, message->string);
+            if (staff.said(quests(), hc_idx, message->string)) {     // the scroll read: it goes
+                if (held && held->code == "tr1") held.reset();
+                else if (const auto scroll = std::ranges::find(character.items, std::string("tr1"), &d2d::d2s::Item::code); scroll != character.items.end()) character.items.erase(scroll);
+            }
             return true;
         }
         return false;
@@ -1930,7 +1962,7 @@ auto World::tick(const std::vector<Command>& cmds, std::uint32_t now_ms, std::ui
                                   || tools.alert(quests(), level->npcs[i].hc_idx, holding_malus(), int(character.stats.get(d2d::d2s::kLevel)))
                                   || cain.alert(quests(), level->npcs[i].hc_idx, carries("bks"))
                                   || d2d::rules::ActTwoOpening::alert(quests(), level->npcs[i].hc_idx) || radament.alert(quests(), level->npcs[i].hc_idx)
-                                  || tainted.alert(quests(), level->npcs[i].hc_idx);
+                                  || tainted.alert(quests(), level->npcs[i].hc_idx) || d2d::rules::HoradricStaffQuest::alert(quests(), level->npcs[i].hc_idx, staff_items());
         // The player's mode as the merc's think reads it: 2 walk, 3 run, 6 walk in town.
         fight.owner_mode = !player.walking ? 1 : running && character.stats.values[d2d::d2s::kStamina] > 0 ? 3 : in_moor ? 2 : 6;
         fight.world(in_moor, now_ms, elapsed, crowd);

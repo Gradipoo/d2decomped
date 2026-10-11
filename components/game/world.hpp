@@ -211,6 +211,8 @@ struct World {
     d2d::rules::CainQuest cain;            // and The Search for Cain
     d2d::rules::RadamentQuest radament;    // and Radament's Lair
     d2d::rules::TaintedSunQuest tainted;   // and the Tainted Sun
+    d2d::rules::HoradricStaffQuest staff;  // and the Horadric Staff
+    [[nodiscard]] d2d::rules::HoradricStaffQuest::Items staff_items() const { return { carries("tr1"), carries("msf"), carries("box"), carries("vip"), carries("hst") }; }
     d2d::rules::QuestBits game_bits{};
     // A joined game: the host runs the quests. d2d's records hear nothing,
     // reward nothing and drop nothing; the client shows the host's.
@@ -281,7 +283,8 @@ struct World {
     // containers, stands, wells, bookshelves, shrines, traps and doors.
     static bool operable(int operate_fn) {
         using namespace d2d::rules::operate_fn;
-        return std::ranges::contains(std::array{ kCasket, kShrine, kUrn, kChest, kBarrel, kExplodingBarrel, kCorpse, kArmorStand, kWeaponRack, kWell, kBookshelf, kTrapObject }, operate_fn)
+        return std::ranges::contains(std::array{ kCasket, kShrine, kUrn, kChest, kBarrel, kExplodingBarrel, kCorpse, kArmorStand, kWeaponRack, kWell, kBookshelf, kTrapObject,
+                                                 kCubeChest, kScrollChest, kShaftChest }, operate_fn)
             || is_door(operate_fn);
     }
     static bool is_door(int operate_fn) {

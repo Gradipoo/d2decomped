@@ -229,6 +229,7 @@ struct Monster {
     // (unit flag 0x40: no more of its events 1 / 2, FUN_005a8670).
     int seq_done = 0;
     bool seq_once = false;
+    int charging = -1;                        // Charge (srvstfunc 31) under way: its skill, swung at its end
     int move_pct = 0;
     std::uint32_t laid_until = 0;
     // Its unit seed (+0x20) as its look left it: what its thinks draw. A

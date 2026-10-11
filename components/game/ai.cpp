@@ -458,6 +458,19 @@ Search search_target(const GameData& game_data, const Level& level, Monster& mon
     return found;
 }
 
+// Charge's swing (FUN_005cf6b0 in melee, FUN_005cf900 at the charge's end):
+// A2 for Duriel and class 0x49, else A1, with the skill (its hit:
+// skill_hit).
+void charge_swing(const GameData& game_data, Monster& monster, const Foe& foe, int skill, std::uint32_t now_ms, d2d::rules::Rng& rng) {
+    const bool second = monster.type == int(game_data.mon_bin[std::size_t(d2d::rules::monster_ids::kDuriel)]) || monster.type == int(game_data.mon_bin[0x49]);
+    const std::string_view mode = second ? "A2" : "A1";
+    monster.unit.dir = direction16(foe.x - monster.unit.x, foe.y - monster.unit.y);
+    set_mode(game_data, monster, mode, now_ms);
+    monster.skill = skill; monster.struck = false; monster.wandering = false; monster.seq_done = 0; monster.seq_once = false;
+    monster.skill_frame = 0; monster.skill_x = subtile(foe.x); monster.skill_y = subtile(foe.y);
+    attack_starts(game_data, monster, mode, rng);
+}
+
 // A traced MonAI's frame outside an attack (the driver FUN_005b1740:
 // target search FUN_005de890 / FUN_005dd7f0, then the AI's think; Andariel
 // MonAI 34 FUN_005f5830 -> rules::andariel_think, the rest
@@ -514,6 +527,12 @@ bool think(const GameData& game_data, const Level& level, Monster& monster, std:
         if (move_frame(level, monster, monster.wandering ? nullptr : chased, monster.wandering, type_info.size, monster.mode == "RN" ? run : walk, crowd)) return true;
         set_mode(game_data, monster, "NU", now_ms);
         monster.wandering = false;
+        // A charge's end (srvdofunc 67, FUN_005cf900): at its target it
+        // swings with the skill (charge_swing).
+        if (const int with = std::exchange(monster.charging, -1); with >= 0 && chased && std::hypot(chased->x - unit.x, chased->y - unit.y) <= kMeleeReach + 0.3f) {
+            charge_swing(game_data, monster, *chased, with, now_ms, rng);
+            return true;
+        }
     }
     if (now_ms < monster.next_act) return true;
     // The driver's first step (FUN_005b10e0 → FUN_005b0f50): with opendoors
@@ -759,8 +778,20 @@ bool think(const GameData& game_data, const Level& level, Monster& monster, std:
                             || (plain_skill && type_info.sk_mode[std::size_t(act.n)] == "SC" && castable(*plain_skill));
             // ponytail: a charge (its sequence walks first: Charge's srvstfunc 31
             // moves it) stands.
-            const bool charge = seq && seq->front().mode == "WL";
-            if ((!seq && !plain) || charge || ((name == "Resurrect" || name == "Resurrect2") && corpse < 0)) { idle(0); return true; }
+            // Charge (srvstfunc 31, FUN_005cf6b0): in melee it swings at once;
+            // else it runs at the target (MonStats Run), swinging at the end.
+            // ponytail: its charge path (type 0x14) and state 0x12 are the
+            // run's; a sequence that walks first and isn't Charge stands.
+            if (seq && seq->front().mode == "WL") {
+                const auto* start = game_data.skills.get(id);
+                if (start && start->srvstfunc == d2d::rules::ServerStartFunction::kCharge) {
+                    if (input.in_melee) { charge_swing(game_data, monster, *target, id, now_ms, rng); return true; }
+                    if (set_off(true, target)) { monster.chase = int(target - foes.data()); monster.charging = id; return true; }
+                }
+                idle(0);
+                return true;
+            }
+            if ((!seq && !plain) || ((name == "Resurrect" || name == "Resurrect2") && corpse < 0)) { idle(0); return true; }
             // ponytail: the sequence plays its first row's mode throughout
             // (Duriel's and the vipers' charges walk, then swing).
             const std::string_view played = seq ? std::string_view(seq->front().mode) : std::string_view(type_info.sk_mode[std::size_t(act.n)]);
@@ -869,6 +900,7 @@ bool monster_update(const GameData& game_data, const Level& level, Monster& mons
     if (attack || monster.mode == "S1" || monster.mode == "S2" || monster.mode == "SC") {
         const auto& timing = game_data.npc_timing(monster.npc, monster.mode);
         const SeqRows* seq = skill_seq(game_data, type_info, monster.skill);
+        if (seq && seq->front().mode == "WL") seq = nullptr;               // a charge's swing: one hit (its flag 0x40 after the first)
         const auto skill = [&](const char* name) { return seq && monster.skill == skill_id(game_data, name); };
         // A sequence's rows, one a frame (FUN_005a8670, SQ's event function):
         // event 4, or 1 / 2 till a shot has marked it done (unit flag 0x40),
@@ -995,9 +1027,23 @@ bool monster_update(const GameData& game_data, const Level& level, Monster& mons
                 // Fire Hit (srvstfunc 42, FUN_005cae40, the Sand Raiders'): the hit
                 // is its S1 damage and S1 elements (FUN_005a4f50 mode 8).
                 // ponytail: the skill's ResultFlags / HitFlags / HitClass unread.
-                if (const auto* struck_with = seq ? game_data.skills.get(monster.skill) : nullptr; struck_with && struck_with->srvstfunc == d2d::rules::ServerStartFunction::kFireHit) {
+                const auto* struck_with = monster.skill >= 0 ? game_data.skills.get(monster.skill) : nullptr;
+                if (seq && struck_with && struck_with->srvstfunc == d2d::rules::ServerStartFunction::kFireHit) {
                     stats.a1_min = stats.s1_min; stats.a1_max = stats.s1_max;
                     for (auto& element : stats.elements) element.mode = element.mode == "S1" ? "A1" : "";
+                }
+                // Charge's hit (FUN_005cf900): sure to hit (flags 9), calc1 % more
+                // damage, the skill's element at its level (FUN_0056e0c0).
+                if (struck_with && struck_with->srvdofunc == d2d::rules::ServerDoFunction::kCharge) {
+                    const int lvl = skill_level(game_data, monster, monster.skill);
+                    const int more = d2d::rules::eval_calc(game_data.skills, struck_with->calc[0], {}, monster.skill, lvl);
+                    for (int* damage : { &stats.a1_min, &stats.a1_max }) *damage = std::max(*damage * (100 + more) / 100, 0);
+                    stats.to_hit = 1 << 20;
+                    const auto added = d2d::rules::row_damage(struck_with->etype, struck_with->emin, struck_with->emax, struck_with->emin_lev, struck_with->emax_lev,
+                                                              struck_with->hitshift, struck_with->elen, struck_with->elen_lev, lvl);
+                    if (added.etype >= 0)
+                        for (auto& element : stats.elements)
+                            if (element.type < 0) { element = { added.etype, 100, added.elo >> 8, added.ehi >> 8, added.elen, "A1" }; break; }
                 }
                 for (int* damage : { &stats.a1_min, &stats.a1_max }) *damage = std::max(*damage * (100 + monster.dmg_pct + monster.aura_dmg) / 100, 0);
                 stats.to_hit += stats.to_hit * monster.aura_th / 100;

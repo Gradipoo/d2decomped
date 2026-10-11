@@ -1270,7 +1270,6 @@ inline d2d::d2s::Item generate_item(const Tables& tables, const std::string& cod
         const int item_class = item_type ? int(std::ranges::find(kClass, std::string_view(item_type->cls)) - kClass.begin()) : 7;
         const int level = std::max(item.ilvl, qlvl);
         const int magic_alvl = std::clamp(base->magic_lvl ? level + base->magic_lvl : level < 99 - qlvl / 2 ? level - qlvl / 2 : 2 * level - 99, 1, 99);
-        std::vector<int> groups;
         // FUN_0065e620: an affix whose first mod sets the sockets (stat 0xc2)
         // only on an item that can hold some (hasinv and a socket count).
         const int by_ilvl = item_type ? item_type->max_sock[std::size_t(item.ilvl <= 25 ? 0 : item.ilvl <= 40 ? 1 : 2)] : 0;

@@ -332,6 +332,7 @@ enum class ServerDoFunction : int {
     kFistOfTheHeavens = 80,        // FUN_005d0670
     kHolyFreeze = 81,              // FUN_005d0920
     kRedemption = 82,
+    kTransMissile = 85,            // FUN_005cb0c0: srvmissilea's row + the monster's TransLvl, once (ShamanFire, UnHolyBolt)
     kMonsterBreath = 95,           // FUN_005cc4e0: FetishInferno, the inferno sentries
     kBookOrScroll = 113,           // Identify, Town Portal
     kRaven = 114,

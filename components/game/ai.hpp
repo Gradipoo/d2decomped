@@ -225,6 +225,10 @@ struct Monster {
     // (rules::ThinkIn::pace), until when it's in Spider Lay's state (0x16).
     std::string_view left_mode = "NU";
     int ai_state = 0, ai_state2 = 0, ai_state3 = 0, ai_command = 0, skill_unit = -1;
+    // A skill's sequence (MonSeq.txt): its next row, and the shot done
+    // (unit flag 0x40: no more of its events 1 / 2, FUN_005a8670).
+    int seq_done = 0;
+    bool seq_once = false;
     int move_pct = 0;
     std::uint32_t laid_until = 0;
     // Its unit seed (+0x20) as its look left it: what its thinks draw. A

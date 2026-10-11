@@ -241,6 +241,7 @@ enum class ServerStartFunction : int {
     kRepeatedHit = 37,             // FUN_005daf40: Zeal, Fury; calc1 hits stored
     kWhirlwind = 38,               // FUN_005d8f50
     kBerserk = 39,                 // FUN_005d97f0
+    kLeap = 40,                    // FUN_005d9d50: a monster hits its target, then leaps past it (twice its spot less its own)
     kLeapAttack = 41,              // FUN_005da540
     kFireHit = 42,                 // FUN_005cae40: a monster's hit with its S1 damage (FUN_005a4f50 mode 8)
     kStackingStrike = 56,          // Feral Rage, Maul

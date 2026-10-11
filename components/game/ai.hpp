@@ -230,6 +230,9 @@ struct Monster {
     int seq_done = 0;
     bool seq_once = false;
     int charging = -1;                        // Charge (srvstfunc 31) under way: its skill, swung at its end
+    // Leap (srvstfunc 40) under way: where it rose and where it lands (cells).
+    bool leaping = false;
+    float leap_from_x = 0, leap_from_y = 0, leap_to_x = 0, leap_to_y = 0;
     int move_pct = 0;
     std::uint32_t laid_until = 0;
     // Its unit seed (+0x20) as its look left it: what its thinks draw. A

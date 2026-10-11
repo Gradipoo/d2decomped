@@ -798,6 +798,14 @@ bool think(const GameData& game_data, const Level& level, Monster& monster, std:
             const std::string_view played = seq ? std::string_view(seq->front().mode) : std::string_view(type_info.sk_mode[std::size_t(act.n)]);
             use(played, id);
             if (seq) monster.mode_until = now_ms + std::uint32_t(seq->size()) * game_data.npc_timing(monster.npc, played).ms_per_frame();
+            // Leap (srvstfunc 40, FUN_005d9d50): it lands at twice the target's
+            // spot less its own, on the free spot nearest (mask 0x3c01).
+            // ponytail: the nearest free spot, not FUN_0064e7b0's search.
+            if (const auto* start = game_data.skills.get(id); start && start->srvstfunc == d2d::rules::ServerStartFunction::kLeap) {
+                const auto [land_x, land_y] = level.nearest_free((float(2 * target_x - x) + 0.5f) / 5, (float(2 * target_y - y) + 0.5f) / 5);
+                monster.leaping = true;
+                monster.leap_from_x = unit.x; monster.leap_from_y = unit.y; monster.leap_to_x = land_x; monster.leap_to_y = land_y;
+            }
             monster.skill_unit = name == "Resurrect" || name == "Resurrect2" ? corpse : act.unit == ThinkUnit::aid ? aid : -1;
             // Where a Nest's young come out: Blood Raven's spot off the
             // target, else spawnx / spawny off itself.
@@ -873,6 +881,7 @@ bool monster_update(const GameData& game_data, const Level& level, Monster& mons
         return false;
     }
     if (monster.mode == "GH" || monster.mode == "BL") {
+        monster.leaping = false;                                       // struck mid-leap: it stays where it is
         if (now_ms < monster.mode_until) return false;
         set_mode(game_data, monster, "NU", now_ms);
     }
@@ -1085,6 +1094,7 @@ bool monster_update(const GameData& game_data, const Level& level, Monster& mons
                 // is its S1 damage and S1 elements (FUN_005a4f50 mode 8).
                 // ponytail: the skill's ResultFlags / HitFlags / HitClass unread.
                 const auto* struck_with = monster.skill >= 0 ? game_data.skills.get(monster.skill) : nullptr;
+                if (monster.leaping) monster.seq_once = true;               // Leap's hit at its start (FUN_005d9c80), its later rows only fly (do 77)
                 if (seq && struck_with && struck_with->srvstfunc == d2d::rules::ServerStartFunction::kFireHit) {
                     stats.a1_min = stats.s1_min; stats.a1_max = stats.s1_max;
                     for (auto& element : stats.elements) element.mode = element.mode == "S1" ? "A1" : "";
@@ -1129,7 +1139,14 @@ bool monster_update(const GameData& game_data, const Level& level, Monster& mons
                 if (taken.hit && thorns > 0 && hurt(game_data, monster, thorns, now_ms)) return true;
             }
         }
+        if (monster.leaping) {                                          // Leap's flight (do 77, FUN_005d9f70): along the sequence to its landing
+            const float span = float(std::max<std::uint32_t>(monster.mode_until - unit.mode_ms, 1));
+            const float done = std::clamp(float(now_ms - unit.mode_ms) / span, 0.f, 1.f);
+            unit.x = monster.leap_from_x + (monster.leap_to_x - monster.leap_from_x) * done;
+            unit.y = monster.leap_from_y + (monster.leap_to_y - monster.leap_from_y) * done;
+        }
         if (now_ms < monster.mode_until) return false;
+        if (monster.leaping) { monster.leaping = false; unit.x = monster.leap_to_x; unit.y = monster.leap_to_y; }
         set_mode(game_data, monster, "NU", now_ms);
         monster.skill = -1;
         monster.next_act = now_ms + std::uint32_t(type_info.diff[std::size_t(monster.difficulty)].aidel) * 40;

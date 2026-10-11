@@ -201,7 +201,7 @@ class Oracle:
         e.w32(args + 0xfc, item)                       # FUN_00557ab0's EDX: where the item's pointer is
         self.stats, self.mods, self.sets = {}, {}, {}
         e.mu.mem_write(self.game + 0x6d, bytes([diff]))
-        if quality <= 3:                               # FUN_00557450 too: the quality's own rolls, ethereal, sockets, automagic
+        if quality <= 4:                               # FUN_00557450 too: the quality's own rolls (magic: its affixes), ethereal, sockets, automagic
             e.w32(args + 0x30, quality)
             e.call(0x557ab0, args, 1, ecx=self.game, edx=args + 0xfc)
             st = self.stats

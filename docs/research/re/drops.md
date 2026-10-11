@@ -207,6 +207,43 @@ when min == max; each func draws only when it needs one:
 to `Item::set_props` / `set_lists` / `set_list_sizes`, which
 `set_bonus_props` (character.hpp) reads back.
 
+## Magic — FUN_005565e0, FUN_005c1560 (2026-10-11)
+
+FUN_00557450 case 4 (after the type flags: FUN_0062e9e0 always magic,
+FUN_0062ea30 normal-only and the rest, `made_quality`): FUN_005565e0
+picks a prefix (FUN_005c18e0 → FUN_005c1560 for an expansion item,
+FUN_005c12f0 classic), then a suffix, forced when no prefix came. Each pick
+on the item's own seed:
+
+- one step, a coin: even and not forced → none;
+- the affix level: max(ilvl, qlvl), then + MagicLvl, or without one − qlvl
+  / 2 (2·level − 99 from 99 − qlvl / 2 up), clamped 1..99;
+- the rows (0x90 bytes) of its section: spawnable, version < 100 or an
+  expansion item, level ≤ alvl ≤ maxlevel (0: none), rare-capable or the
+  item not rare / normal / superior, the type test (FUN_0065e620: an
+  expansion item skips the stack / throw test; a first mod setting stat
+  0xc2 (sockets) needs an item with an inventory and a socket count; no
+  etype, an itype), frequency > 0, classspecific none / the item type's
+  Class (7: any) / equal, no group the item's prefixes or suffixes have
+  (FUN_005c1500);
+- weight frequency (× level with MagicLvl); FUN_00472280 rand(total + 1),
+  subtracted in row order, the last when it runs past; its mods at once
+  (FUN_0065fec0).
+- Type codes are compiled as four characters, space padded: "ring "
+  (MagicSuffix "of Nova Shield") is a ring and "staff" (MagicPrefix
+  Burning / Blazing / Sparking / Charged / Chilling / Freezing) a staf.
+
+Then FUN_005c1260 (staff mods). Neither fitting: FUN_00557320 clears the
+affixes, puts the own seed back to its start (item data +0x10), remakes it
+superior (FUN_005c2ad0) and normal when that fails (FUN_005572a0). Func 14
+(sockets, FUN_0065f590): the value (`first`, else a draw, else the param),
+at least 1, at most the grid (6) and FUN_0062bc20; flag 0x800, stat 0xc2.
+
+d2d: `generate_item` (quality 4 with a unit seed); the affix loader
+trims type codes. `drops.py items 1-10000` (magic now through
+FUN_00557450 too): 9994 / 9995 (an elixir: its own magic path,
+FUN_00556a60, not ported).
+
 ## Chests — FUN_00585b90
 
 The act's chest class by tier (area level against the act's two marker

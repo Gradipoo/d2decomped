@@ -1075,10 +1075,21 @@ void load_tables(GameData& game_data, const d2d::mpq::Stack& mpqs) {
                     d2d::rules::Affix affix{ std::string(table.get(row, "Name")), num(table.get(row, "level")), num(table.get(row, "maxlevel")),
                                          num(table.get(row, "group")), num(table.get(row, "frequency")),
                                          table.get(row, "spawnable") == "1", table.get(row, "rare") == "1", {}, {}, {} };
+                    static constexpr std::array<std::string_view, 7> kClassCodes = { "ama", "sor", "nec", "pal", "bar", "dru", "ass" };
+                    if (const auto found_class = std::ranges::find(kClassCodes, table.get(row, "classspecific")); found_class != kClassCodes.end())
+                        affix.class_specific = int(found_class - kClassCodes.begin());
+                    // Type codes as game.exe compiles them (four characters, space
+                    // padded): MagicSuffix "of Nova Shield"'s "ring " is a ring,
+                    // MagicPrefix "Burning"'s "staff" a staf.
+                    auto type_code = [](std::string_view text) {
+                        text = text.substr(0, 4);
+                        while (!text.empty() && text.back() == ' ') text.remove_suffix(1);
+                        return std::string(text);
+                    };
                     for (int i = 1; i <= 7; ++i)
-                        if (const auto item_type = table.get(row, "itype" + std::to_string(i)); !item_type.empty()) affix.itypes.emplace_back(item_type);
+                        if (const auto item_type = type_code(table.get(row, "itype" + std::to_string(i))); !item_type.empty()) affix.itypes.emplace_back(item_type);
                     for (int i = 1; i <= 5; ++i)
-                        if (const auto excluded_type = table.get(row, "etype" + std::to_string(i)); !excluded_type.empty()) affix.etypes.emplace_back(excluded_type);
+                        if (const auto excluded_type = type_code(table.get(row, "etype" + std::to_string(i))); !excluded_type.empty()) affix.etypes.emplace_back(excluded_type);
                     for (int i = 1; i <= 3; ++i) {
                         const auto mod_prefix = "mod" + std::to_string(i);
                         if (const auto mod_code = table.get(row, mod_prefix + "code"); !mod_code.empty())

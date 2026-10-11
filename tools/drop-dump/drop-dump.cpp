@@ -97,17 +97,19 @@ int main(int argc, char** argv) {
             d2d::d2s::Item item;
             int gold = 0;
             if (code == "gld") gold = d2d::rules::gold_amount(level, 0, unit);
-            else item = d2d::rules::generate_item(rules, code, level, wanted, own, &unit, &found_uniques, bovine == "1", diff.empty() ? 0 : std::stoi(diff));
-            if (wanted <= 3) {
+            else item = d2d::rules::generate_item(rules, code, level, wanted == 4 ? d2d::rules::made_quality(rules, code, wanted) : wanted, own, &unit,
+                                                  &found_uniques, bovine == "1", diff.empty() ? 0 : std::stoi(diff));   // a magic ask: FUN_00557450's type flags first
+            if (wanted <= 4) {
                 std::map<std::pair<int, int>, int> props;      // the item's one modifier list, (stat, param) summed
                 for (const auto& prop : item.props) props[{ prop.stat, prop.param }] += prop.value;
                 std::string list;
                 for (const auto& [key, value] : props)
                     if (value) list += (list.empty() ? "" : ",") + std::to_string(key.first) + ":" + std::to_string(key.second) + "=" + std::to_string(value);
                 const int flags = (item.socketed ? 0x800 : 0) | (item.ethereal ? 0x400000 : 0);
+                if (diff.empty()) diff = "0";
                 std::printf("%08x %s i%d q%d d%s: seeds %08x %08x qty %d dur %d/%d def %d | q%d sub %d flags %x sock %d pic %d auto %d [%s] -> %08x %08x %08x\n",
                             unsigned(std::stoul(seed)), code.c_str(), level, wanted, diff.c_str(), unit_low, own_low, std::max(item.quantity, 0), item.durability,
-                            item.max_durability, std::max(item.defense, 0), item.quality, item.qsub, flags, item.sockets, std::max(item.picture, 0),
+                            item.max_durability, std::max(item.defense, 0), item.quality, item.quality == 7 ? item.unique_id : item.qsub, flags, item.sockets, std::max(item.picture, 0),
                             item.class_affix < 0 ? 0 : item.class_affix, list.c_str(), game.low, unit.low, own.low);
                 continue;
             }

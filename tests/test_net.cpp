@@ -141,6 +141,8 @@ int main() {
         assert(d2gs::c2s::ping(1234).size() == 13);
         // Chat to all: type 1, language 0, the message, no target (54a5d0 wants size > length + 4).
         assert((d2gs::c2s::chat("hi") == d2d::net::Bytes{ 0x15, 0x01, 0x00, 'h', 'i', 0x00, 0x00 }));
+        // 0x31: 9 bytes, the host's size check (54ba90); Atma's 304 heard.
+        assert((d2gs::c2s::quest_message(0x12345678, 304) == d2d::net::Bytes{ 0x31, 0x78, 0x56, 0x34, 0x12, 0x30, 0x01, 0x00, 0x00 }));
     }
     assert(d2gs::s2c_name(0x59) == "assign player" && d2gs::s2c_name(0xb5).empty());
 

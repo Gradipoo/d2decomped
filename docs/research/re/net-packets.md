@@ -697,8 +697,8 @@ melee-range skill runs up first (`FUN_00548a50`).
 |---|---|---|---|---|
 | 13 interact | 9 | u32 type, u32 id | `54aa90` → `FUN_00548b00`: player (corpse / trade), NPC (walk up; ≤ 6 talk, `FUN_00573020`), object (range < 0x33, `FUN_00584540`; a walking player's 0x13 is dropped) | `cmd::Interact` (by `Level::npcs` index); a joined d2d sends it once the host has the player stopped within 4 subtiles |
 | 2f start NPC chat | 9 | u32 type, u32 NPC id | `54b930` → `FUN_00572e60` | `cmd::Chat{npc}` |
-| 30 end NPC chat | 9 | the same | `54b9f0` → `FUN_00572f20` | `cmd::Chat{-1}` / `CloseTrade` |
-| 31 quest message heard | 9 | u32 NPC id, u16 message (+5) | `54ba90` → `FUN_005443b0` | `cmd::QuestMessage` |
+| 30 end NPC chat | 9 | the same | `54b9f0` → `FUN_00572f20`, first `FUN_00543d50`: every quest's "talk closed" (+0xa8, event 2) | `cmd::Chat{-1}` / `CloseTrade`; a joined d2d opens (0x2f) and shuts (0x30) every NPC talk, as game.exe's client does |
+| 31 quest message heard | 9 | u32 NPC id, u32 message (+5; the client's `FUN_004786a0` zero-extends the u16) | `54ba90` → `FUN_005443b0`: the NPC by id (type 1), every record of the player's act gets +0xcc; no open chat needed | `cmd::QuestMessage`; a joined d2d sends it with the host's NPC (an object's for the Moldy Tome). The client sends it as a quest line starts (0x4b4812) and again when one playing is cut (0x4b4670 / 0x4b46d0) |
 | 3d operate object | 5 | u32 object id | `54bf10` → `FUN_005845d0` | in `Interact` |
 | 3f phrase | 3 | u16 phrase (0x19..0x20) | `54c070` | none |
 | 40 update quests | 1 | — | `54c0c0` → `FUN_00546040` | none |

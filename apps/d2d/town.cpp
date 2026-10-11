@@ -436,6 +436,7 @@ auto Town::send(const Command& command) -> void {
             return;                                         // gold from the host
         } else if (std::holds_alternative<cmd::CloseTrade>(command) && net_game->trade_npc) {
             net_game->send_items({ d2d::net::d2gs::c2s::npc_chat(false, 1, net_game->trade_npc) });
+            if (net_chat_npc == net_game->trade_npc) net_chat_npc = 0;
             net_game->trade_npc = 0;
             net_game->store_items.clear();
         } else if (std::holds_alternative<cmd::UseItem>(command) || std::holds_alternative<cmd::UseBelt>(command) || std::holds_alternative<cmd::ToCursor>(command)
@@ -486,6 +487,13 @@ auto Town::send(const Command& command) -> void {
             net.send(cmd::Move{ other.unit.x, other.unit.y, true });
             net_operate_type = 0; net_operate = other.id; net_operate_ms = frame_now; net_operate_moves = false; net_operate_waypoint = -1;
             return;
+        } else if (const auto* heard = std::get_if<cmd::QuestMessage>(&command); heard && heard->npc >= 0 && std::size_t(heard->npc) < level->npcs.size()) {
+            // The host's quests hear it (0x31): its NPC's id, or for an object
+            // (the Moldy Tome) the host's object there.
+            const auto& npc = level->npcs[std::size_t(heard->npc)];
+            const NetGame::Unit* unit = npc.root == "objects" ? net_game->nearest(2, -1, subtile_x(npc.x), subtile_y(npc.y), 4.f) : net_npc(heard->npc);
+            if (unit) net_game->send_items({ d2d::net::d2gs::c2s::quest_message(unit->id, std::uint32_t(heard->string)) });
+            else net_game->log.note(std::format("no host unit for {}'s quest message {}", npc.name, heard->string));
         } else if (std::holds_alternative<cmd::Resurrect>(command)) {
             net_game->send_items({ d2d::net::d2gs::c2s::resurrect() });   // the host respawns us in town (0x15)
         } else if (const auto* travel = std::get_if<cmd::Waypoint>(&command); travel && travel->npc >= 0 && std::size_t(travel->npc) < level->npcs.size()) {
@@ -1424,7 +1432,9 @@ auto Town::walk(const Mouse& mouse, bool over_ui, std::uint32_t frame_ms, std::u
                     // Talking: start the chat, then the trade (1) or gamble (2: unverified).
                     namespace c2s = d2d::net::d2gs::c2s;
                     net_game->trade_npc = std::uint32_t(net_trade_pending);
-                    net_game->send_items({ c2s::npc_chat(true, 1, net_game->trade_npc), c2s::npc_action(net_trade_gamble ? 2 : 1, net_game->trade_npc) });
+                    if (net_chat_npc != net_game->trade_npc) net_game->send_items({ c2s::npc_chat(true, 1, net_game->trade_npc) });   // the talk's open already
+                    net_chat_npc = net_game->trade_npc;
+                    net_game->send_items({ c2s::npc_action(net_trade_gamble ? 2 : 1, net_game->trade_npc) });
                     net_trade_pending = -1;
                     net_trade_asked = false;
                 }
@@ -1501,6 +1511,12 @@ auto Town::walk(const Mouse& mouse, bool over_ui, std::uint32_t frame_ms, std::u
         if (const int talk = npc_menu.npc >= 0 ? npc_menu.npc : speech.npc >= 0 ? speech.npc : store.npc; talk != talking_sent) {
             net.send(cmd::Chat{ talk });
             talking_sent = talk;
+            if (net_game) {   // as game.exe's client: 0x2f opens a talk, 0x30 shuts it (the host's quests' "talk closed", FUN_00543d50)
+                namespace c2s = d2d::net::d2gs::c2s;
+                const auto* host_npc = talk >= 0 && level && std::size_t(talk) < level->npcs.size() && level->npcs[std::size_t(talk)].root != "objects" ? net_npc(talk) : nullptr;
+                if (net_chat_npc && (!host_npc || host_npc->id != net_chat_npc)) { net_game->send_items({ c2s::npc_chat(false, 1, net_chat_npc) }); net_chat_npc = 0; }
+                if (host_npc && host_npc->id != net_chat_npc) { net_chat_npc = host_npc->id; net_game->send_items({ c2s::npc_chat(true, 1, net_chat_npc) }); }
+            }
         }
         for (const auto& command : input(mouse, over_ui)) send(command);
         // Fixed ticks of kTickMs; after a stall, a few to catch up, then the

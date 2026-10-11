@@ -673,6 +673,7 @@ int run_windowed(std::vector<std::uint8_t>& framebuffer,
                             town.world.fight.remote_monsters = true;
                             for (const auto& type_info : scene->monsters.types) net.monster_velocity.push_back(type_info.velocity);
                             town.net_game = std::move(*joined);
+                            town.net_chat_npc = 0;
                             town.enter();
                             if (const auto* here = town.world.level; here && net.self_x > 0) {
                                 town.world.player.x = (net.self_x + 0.5f) / 5.f - float(here->world_x);

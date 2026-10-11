@@ -60,6 +60,7 @@ struct MonType {
         int to_block = 0, drain = 100, cold_effect = 0;   // ToBlock, Drain (leech %), coldeffect (speed % while chilled)
         struct El { int pct = 0, min = 0, max = 0, dur = 0; };
         std::array<El, 3> elements{};                  // El1..3 Pct / MinD / MaxD (MonLvl %) / Dur (ticks)
+        int s1_min = 0, s1_max = 0;  // S1MinD / S1MaxD: a skill's hit (FUN_005a4f50 mode 7 / 8)
     };
     std::array<Diff, 3> diff{};
     // MonStats2.

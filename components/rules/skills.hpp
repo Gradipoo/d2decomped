@@ -242,6 +242,7 @@ enum class ServerStartFunction : int {
     kWhirlwind = 38,               // FUN_005d8f50
     kBerserk = 39,                 // FUN_005d97f0
     kLeapAttack = 41,              // FUN_005da540
+    kFireHit = 42,                 // FUN_005cae40: a monster's hit with its S1 damage (FUN_005a4f50 mode 8)
     kStackingStrike = 56,          // Feral Rage, Maul
     kRabies = 57,
     kFireClaws = 58,               // FUN_005c7e00

@@ -992,6 +992,13 @@ bool monster_update(const GameData& game_data, const Level& level, Monster& mons
                 // Melee: block, reductions, resistances; a hit that lands
                 // pays the foe's thorns (lightning ones less its resistance).
                 auto stats = monster.stats;                                  // Weaken, Decrepify, Battle Cry, Taunt, a boss's aura: its damage %
+                // Fire Hit (srvstfunc 42, FUN_005cae40, the Sand Raiders'): the hit
+                // is its S1 damage and S1 elements (FUN_005a4f50 mode 8).
+                // ponytail: the skill's ResultFlags / HitFlags / HitClass unread.
+                if (const auto* struck_with = seq ? game_data.skills.get(monster.skill) : nullptr; struck_with && struck_with->srvstfunc == d2d::rules::ServerStartFunction::kFireHit) {
+                    stats.a1_min = stats.s1_min; stats.a1_max = stats.s1_max;
+                    for (auto& element : stats.elements) element.mode = element.mode == "S1" ? "A1" : "";
+                }
                 for (int* damage : { &stats.a1_min, &stats.a1_max }) *damage = std::max(*damage * (100 + monster.dmg_pct + monster.aura_dmg) / 100, 0);
                 stats.to_hit += stats.to_hit * monster.aura_th / 100;
                 const auto taken = d2d::rules::monster_blow(foe.fighter, foe.level, foe.moving, stats, false, rng);

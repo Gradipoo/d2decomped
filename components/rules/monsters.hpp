@@ -366,6 +366,7 @@ void populate_room(const Monsters& monsters, const Region& reg, int density, Spa
 // not Level(N) / Level(H), which waits for those difficulties.
 struct MonStats {
     int level = 1, hit_points = 1, armor_class = 0, to_hit = 0, a1_min = 0, a1_max = 0, a2_min = 0, a2_max = 0, exp = 0;
+    int s1_min = 0, s1_max = 0;
     struct El { int type = -1, pct = 0, min = 0, max = 0, dur = 0; std::string_view mode; };
     std::array<El, 3> elements{};
 };
@@ -387,6 +388,8 @@ inline MonStats monster_stats(const Monsters& monsters, int type, int difficulty
     stats.a1_max = std::max(pct(level_row.damage[std::size_t(difficulty_index)], per_difficulty.a1_max), stats.a1_min);
     stats.a2_min = pct(level_row.damage[std::size_t(difficulty_index)], per_difficulty.a2_min);
     stats.a2_max = std::max(pct(level_row.damage[std::size_t(difficulty_index)], per_difficulty.a2_max), stats.a2_min);
+    stats.s1_min = pct(level_row.damage[std::size_t(difficulty_index)], per_difficulty.s1_min);
+    stats.s1_max = std::max(pct(level_row.damage[std::size_t(difficulty_index)], per_difficulty.s1_max), stats.s1_min);
     stats.exp = pct(level_row.experience[std::size_t(difficulty_index)], per_difficulty.exp);
     for (std::size_t element = 0; element < 3; ++element) {
         const auto& element_info = per_difficulty.elements[element];

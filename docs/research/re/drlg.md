@@ -673,8 +673,20 @@ the level seed, as outdoors).
 | 14 harem, 15 cellars | ring | no | none | neither |
 | 17 tombs | three arms off the first room (FUN_006718c0) | yes (×3 the boss tomb, ×2 the staff tomb) | FUN_00672be0 | both, base 0x19d |
 | 18 lair | ring | yes | FUN_00672dc0 | rotation only, base 0x1e1 |
-| 19 Arcane Sanctuary | FUN_006719f0 | — | FUN_00672e50 | not ported |
+| 19 Arcane Sanctuary | FUN_006719f0 | — | FUN_00672e50 | neither |
 
+- **The Arcane Sanctuary** (74, FUN_006719f0, 2026-10-11): a roll `& 3`
+  (the rotation), then four arms off the first room (12×12 rooms), arm a
+  by side u = a: two rooms on u, one on u + 3, four on u, one on u + 1
+  (A), a dead end on u from A, one on u + 1 from A (B), two on u + 2 (C),
+  a dead end on u + 3 from C, two more on u + 2; each the usual step
+  (FUN_0066b3e0 / FUN_00670880 / FUN_0066b5e0 / FUN_00670c70 /
+  FUN_0066b970, defs 0x1fd + mask). The 13 kept rooms of each arm take
+  file (a + rotation) & 3, the two dead ends keep 0, the first room 4. No
+  grow. The special (FUN_00672e50): a roll `& 3`, one row of 0x6f00f8
+  (`{517, 528, −1, 3}`, `{511, 526, −1, 0}`, `{513, 527, −1, 1}`,
+  `{510, 525, −1, 2}`). d2d: `generate_maze` type 19;
+  `diff_drlg.py 1-20 74`: 20/20, tiles / units 10/10.
 - **Defs by link mask** (FUN_006709b0): base + mask for 13 / 17 / 18 / 19;
   14 and 15 read 0x6ef758 / 0x6ef75c (12-byte rows by mask, 0 = no
   change: only masks 5, 6, 9, 10 have rooms). The cellars set a file: level
@@ -932,7 +944,7 @@ Conditions those results hold under, so they aren't overstated:
 | Lut Gholein (level 40): rooms, tiles, units | diffed: 20/20 seeds, units 10/10 (`diff_drlg.py 1-20 40 tiles`) |
 | Act 2's mazes and presets (47–73): rooms, tiles, units, doors | diffed (list order), 5/5 each |
 | Act 2's desert (41–46): grids, tiles, units | diffed, 10/10 each |
-| The Arcane Sanctuary (74), act 3+ outdoors and mazes; the Barracks' cross-level link to 27 (FUN_0066b790) | not ported |
+| Act 3+ outdoors and mazes; the Barracks' cross-level link to 27 (FUN_0066b790) | not ported |
 | Preset units that roll to stay (FUN_00667620) | ported outdoors (`stays`, units.hpp); diffed on Cold Plains' Cottages 2, whose row has Pops: presets with Scan or Pops roll at generation on the level seed (FUN_00667970), the rest on the seed of the room that copies them (room +0x14, the whole {low, high} — a maze room's was stepped once, so its high word isn't 666; diffed on the Jail and Catacombs). In the preset record's order, one step each — monsters 0xcc, 0xcd, 0x173, 0x174 kept when `low % 3 == 0`; MonPlace 0x21 when `low & 3`, 0x22 when odd, 0x23 when `!(low & 3)`, 0x24 always; objects 0xc4 / 0x105 when even, 0x245 when `low & 3`. It runs after the room's DT1 list and before its tiles (FUN_0061b730), whose seed FUN_0066ee40 resets, so tiles don't shift. Act 1: the Crypt, Jail, Catacombs, Fence Fill 1, Cottages 2 |
 | Units in other acts: the act 2 / act 4 MonPreset remaps, type-4 units (NPCs by name) | not ported |
 | LvlSub CheckAll stamps | not ported (no act 1 wilderness row uses them) |

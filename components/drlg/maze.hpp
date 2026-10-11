@@ -64,6 +64,8 @@ inline constexpr std::array<std::array<Special, 4>, 19> kSpecials = { {
 // 0x6efee8 59's, 0x6eff28 60's, 0x6eff68 59 / 61's, 0x6effa8 the boss
 // tomb's, 0x6effe8 the staff tomb's); the lair's (0x6f0028, 0x6f0068, and
 // level 64's single records 0x6f00e8, 0x6f00d8).
+// The Arcane Sanctuary's one special room by the turn (0x6f00f8, FUN_00672e50).
+inline constexpr std::array<Special, 4> kArcaneSpecials{ { { 517, 528, -1, 3 }, { 511, 526, -1, 0 }, { 513, 527, -1, 1 }, { 510, 525, -1, 2 } } };
 inline constexpr std::array<std::array<Special, 4>, 15> kAct2Specials = { {
     { { { 309, 335, -1, 3 }, { 303, 333, -1, 0 }, { 305, 334, -1, 1 }, { 302, 332, -1, 2 } } },
     { { { 309, 340, -1, 3 }, { 303, 338, -1, 0 }, { 305, 339, -1, 1 }, { 302, 337, -1, 2 } } },
@@ -281,6 +283,37 @@ inline std::vector<Outdoor::RoomSeed> generate_maze(const OutdoorData& data, con
         room.def = level == level_ids::kCatacombsLevel1 ? 0x122 : sides.front() == 0 ? 0x120 : 0x121;
         room.special = true;
         room.file = -1;
+    } else if (maze.type == 19) {
+        // The Arcane Sanctuary (FUN_006719f0): a rotation roll, then four
+        // arms off the first room, one by side u (0..3): two rooms on u, one
+        // on u + 3, four on u, one on u + 1 (A), a dead end on u from A, one
+        // on u + 1 from A (B), two on u + 2 (C), a dead end on u + 3 from C,
+        // two more on u + 2. The 13 kept rooms of each arm take file
+        // (arm + rotation) & 3, the dead ends keep 0, the first room 4.
+        grows = false;
+        const int rotation = int(seed.next() & 3);
+        std::array<int, 60> kept{};
+        kept.fill(-1);
+        auto step = [&](int from, int side) { return from < 0 ? -1 : arm(from, side); };   // ponytail: game.exe goes on from a null room (a crash); d2d stops the arm
+        for (int arm_index = 0; arm_index < 4; ++arm_index) {
+            const int side = arm_index & 3, next = (arm_index + 1) & 3, back = (arm_index + 2) & 3, before = (arm_index + 3) & 3;
+            auto* slot = &kept[std::size_t(arm_index * 15)];
+            slot[0] = step(first, side);
+            slot[1] = step(slot[0], side);
+            slot[2] = step(slot[1], before);
+            for (int index = 3; index <= 6; ++index) slot[index] = step(slot[index - 1], side);
+            slot[7] = step(slot[6], next);
+            step(slot[7], side);
+            slot[9] = step(slot[7], next);
+            slot[10] = step(slot[9], back);
+            slot[11] = step(slot[10], back);
+            step(slot[11], before);
+            slot[13] = step(slot[11], back);
+            slot[14] = step(slot[13], back);
+        }
+        for (std::size_t index = 0; index < kept.size(); ++index)
+            if (kept[index] >= 0) rooms[std::size_t(kept[index])].file = (int(index) / 15 + rotation) & 3;
+        rooms[std::size_t(first)].file = 4;
     } else if (maze.type == 17) {
         int def = 0x1e0;                                            // the Claw Viper Temple's second level: its one room
         if (level == level_ids::kClawViperTempleLevel2) grows = false;
@@ -411,6 +444,8 @@ inline std::vector<Outdoor::RoomSeed> generate_maze(const OutdoorData& data, con
             if (level == level_ids::kStonyTombLevel2 || level == level_ids::kClawViperTempleLevel2) special(kAct2Specials[10][std::size_t(turn)]);
             if (level == maze.boss_tomb) special(kAct2Specials[11][std::size_t(turn)]);
             if (level == maze.staff_tomb) special(kAct2Specials[12][std::size_t(turn)]);
+        } else if (maze.type == 19) {                                               // FUN_00672e50
+            special(kArcaneSpecials[std::size_t(turn)]);
         } else if (maze.type == 18) {                                               // FUN_00672dc0
             if (level == level_ids::kMaggotLairLevel3) { special(kLair64First); turn = 3; special(kLair64Second); }
             else special(kAct2Specials[14][std::size_t(turn)]);

@@ -1117,11 +1117,10 @@ struct SevenTombsQuest {
         if (!timer_started) { timer_started = true; open_in = 1; }
     }
     // The orifice's room comes up (InitFn 21, FUN_0059db50). True: it's
-    // open (mode 2).
+    // open (mode 2): the staff went in, in this game or an earlier one.
     bool orifice_seen() {
-        if (lair_open) return true;
-        if (state != 0 && !timer_started) { timer_started = true; open_in = 1; return true; }
-        return false;
+        if (later && !timer_started && !lair_open) { timer_started = true; open_in = 1; return true; }
+        return lair_open;
     }
     // A tick. True: the way down opens (object 100 by the orifice).
     bool tick() {

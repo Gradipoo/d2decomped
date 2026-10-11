@@ -796,6 +796,7 @@ auto World::new_game() -> void {
         cain = {};
         cain.join(quests(), carries("bks"), carries("bkd"));
         chain(1);
+        if (radament.state == 5 || !radament.open) tombs.chain();   // Act 2's root, Radament's +0xf0 (FUN_005991c0): on to record 13's
         cain.camp_spawn();
         den_left = -1;
         den_log_at = 0;

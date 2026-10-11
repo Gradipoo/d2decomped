@@ -335,6 +335,31 @@ auto World::operate(int npc_index, std::uint32_t now_ms, int force ) -> void {  
             if (!closed_at_join[std::size_t(d2d::rules::TowerQuest::kQuest)]) events.push_back(ev::Speech{ npc_index, d2d::rules::TowerQuest::kTome });
             return;
         }
+        // A teleport pad (OperateFn 27, FUN_00581bf0): another pad of its row
+        // in its own room, else in a room near it (FUN_00619790's list),
+        // and the player to a free spot by it (FUN_00581b50: FUN_0064e7b0,
+        // size 3), a joined game's by the host (0x15). Used every time.
+        if (object.operate_fn == d2d::rules::operate_fn::kTeleportPad) {
+            if (fight.remote_monsters) return;
+            auto pad_in = [&](int room) {
+                for (std::size_t index = 0; index < level->npcs.size(); ++index) {
+                    const auto& other = level->npcs[index];
+                    if (int(index) != npc_index && other.root == "objects" && other.object_id == object.object_id && other.room == room) return int(index);
+                }
+                return -1;
+            };
+            int target = pad_in(object.room);
+            for (const auto& [room_level, room] : near_rooms(*game_data, *level, object.x, object.y))
+                if (target < 0 && room_level == level && room != object.room) target = pad_in(room);
+            if (target < 0) return;
+            const auto [spot_x, spot_y] = level->nearest_free(level->npcs[std::size_t(target)].x, level->npcs[std::size_t(target)].y);
+            player.x = spot_x; player.y = spot_y;
+            player.path.clear(); player.walking = false;
+            player.goal_x = spot_x; player.goal_y = spot_y;
+            interact_npc = -1;
+            d2d::log::info("teleport pad {} -> {}", npc_index, target);
+            return;
+        }
         // The Horadric Staff's chests (OperateFns 39 / 40 / 41): once (mode 0
         // only, FUN_00545850: mode 1, or 2 without a Mode1), the part, then
         // the act's chest class forced magic and rand(5) + 5 gold piles on the

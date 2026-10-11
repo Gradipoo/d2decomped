@@ -284,7 +284,7 @@ struct World {
     static bool operable(int operate_fn) {
         using namespace d2d::rules::operate_fn;
         return std::ranges::contains(std::array{ kCasket, kShrine, kUrn, kChest, kBarrel, kExplodingBarrel, kCorpse, kArmorStand, kWeaponRack, kWell, kBookshelf, kTrapObject,
-                                                 kCubeChest, kScrollChest, kShaftChest }, operate_fn)
+                                                 kCubeChest, kScrollChest, kShaftChest, kTeleportPad }, operate_fn)
             || is_door(operate_fn);
     }
     static bool is_door(int operate_fn) {

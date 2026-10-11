@@ -19,6 +19,7 @@
 #include <level_ids.hpp>
 #include <monster_ids.hpp>
 #include <monsters.hpp>
+#include <outdoor_data.hpp>
 #include <object_ids.hpp>
 #include <quests.hpp>
 #include <rules.hpp>
@@ -901,7 +902,8 @@ auto World::respawn(std::uint32_t now_ms) -> void {
         if (!in_town(level)) {
             events.push_back(ev::LevelChanged{ level, false });
             const Level* from = level;
-            level = game_data->town_of(level->id);
+            const Level* act_town = game_data->town_of(level->id);
+            level = act_town ? act_town : &game_data->town;   // Lut Gholein not built: the camp
             swap_npcs(from);
             interact_npc = pick_item = -1;
         }
@@ -1523,6 +1525,7 @@ auto World::use_portal(std::uint32_t now_ms) -> void {
         if (take_portal >= 3) {                       // back to the Cairn Stones; the Canyon's pair
             const auto& twin = portal[std::size_t(take_portal ^ 1)];
             take_portal = -1;
+            if (!twin.level) { d2d::log::info("not implemented: the portal's far level isn't built"); return; }
             arrive(twin.level, twin.x, twin.y + 0.6f, "a quest portal");
             return;
         }

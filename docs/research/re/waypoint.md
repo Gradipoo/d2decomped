@@ -66,5 +66,7 @@ waygatebackground, waygatetabs or expwaygatetabs, waygateicons into
 - The bits save with the character (d2s 0x283 + difficulty·24).
 - Another act's row (Lut Gholein from Act 1's waypoints and back) arrives
   like any other; the arrival sets the save's act (`World::arrive`). The
-  panel opens on the player's act's tab. Not yet: Act 2's other waypoint
-  levels (not built).
+  panel opens on the player's act's tab. Act 2's levels all build in play
+  (the desert 41–46, the mazes 47–73, the Arcane Sanctuary 74); its other
+  waypoints work as Act 1's, but none past Lut Gholein has been checked
+  live yet.

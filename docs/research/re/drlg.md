@@ -682,7 +682,7 @@ the level seed, as outdoors).
   a dead end on u + 3 from C, two more on u + 2; each the usual step
   (FUN_0066b3e0 / FUN_00670880 / FUN_0066b5e0 / FUN_00670c70 /
   FUN_0066b970, defs 0x1fd + mask). The 13 kept rooms of each arm take
-  file (a + rotation) & 3, the two dead ends keep 0, the first room 4. No
+  file (a + rotation) & 3, the first room 4; the two dead ends keep none, so the preset step rolls rand(1) = 0 (their defs have Files 1). No
   grow. The special (FUN_00672e50): a roll `& 3`, one row of 0x6f00f8
   (`{517, 528, −1, 3}`, `{511, 526, −1, 0}`, `{513, 527, −1, 1}`,
   `{510, 525, −1, 2}`). d2d: `generate_maze` type 19;
@@ -948,7 +948,8 @@ Conditions those results hold under, so they aren't overstated:
 | Preset units that roll to stay (FUN_00667620) | ported outdoors (`stays`, units.hpp); diffed on Cold Plains' Cottages 2, whose row has Pops: presets with Scan or Pops roll at generation on the level seed (FUN_00667970), the rest on the seed of the room that copies them (room +0x14, the whole {low, high} — a maze room's was stepped once, so its high word isn't 666; diffed on the Jail and Catacombs). In the preset record's order, one step each — monsters 0xcc, 0xcd, 0x173, 0x174 kept when `low % 3 == 0`; MonPlace 0x21 when `low & 3`, 0x22 when odd, 0x23 when `!(low & 3)`, 0x24 always; objects 0xc4 / 0x105 when even, 0x245 when `low & 3`. It runs after the room's DT1 list and before its tiles (FUN_0061b730), whose seed FUN_0066ee40 resets, so tiles don't shift. Act 1: the Crypt, Jail, Catacombs, Fence Fill 1, Cottages 2 |
 | Units in other acts: the act 2 / act 4 MonPreset remaps, type-4 units (NPCs by name) | not ported |
 | LvlSub CheckAll stamps | not ported (no act 1 wilderness row uses them) |
-| Doors outside act 1 (FUN_0066d9e0's type 1 and objects 0x5b / 0x5c), tile word bit 4 on non-plain paths beyond what these levels hit | not ported |
+| Act 2's doors (FUN_0066d9e0, the tombs' and lair's objects 0x5b / 0x5c with their rand(3)) | generated, diffed with the mazes' units |
+| Doors in acts 3–5, tile word bit 4 on non-plain paths beyond what these levels hit | not ported |
 | Logical areas (FUN_0066ccb0 / FUN_0066d110; room_tiles.hpp `logic_areas`) | diffed bit-exact on every Logicals room of act 1, seeds 1-3 (ids are ours, only id != 0 is used) |
 | Room collision, automap | not diffed |
 | Monster population on these rooms (components/rules/monsters.hpp) | uses the proven room seeds; its own rolls not diffed |

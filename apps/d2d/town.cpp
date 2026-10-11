@@ -124,7 +124,7 @@ void view_units(const Scene& scene, const View& view, float camera_x, float came
     for (const auto& pet : view.pets) out.push_back({ pet.unit.x, pet.unit.y, &scene.npc_anim(pet.npc, pet.mode), pet.unit.dir, nullptr, pet.unit.mode_ms, -3 });
     // A joined game's other players, in what they wear (0x9d), walking,
     // standing or in a skill's mode.
-    const bool in_town = view.level && view.level->id == 1;
+    const bool in_town = view.level && d2d::rules::level_ids::is_town(view.level->id);
     for (std::size_t i = 0; i < view.others.size(); ++i) {                   // -4000 - i: a click asks them to trade
         const auto& other = view.others[i];
         if (!in_view(other.unit.x, other.unit.y)) continue;
@@ -1526,12 +1526,16 @@ auto Town::walk(const Mouse& mouse, bool over_ui, std::uint32_t frame_ms, std::u
         if (const int talk = npc_menu.npc >= 0 ? npc_menu.npc : speech.npc >= 0 ? speech.npc : store.npc; talk != talking_sent) {
             net.send(cmd::Chat{ talk });
             talking_sent = talk;
-            if (net_game) {   // as game.exe's client: 0x2f opens a talk, 0x30 shuts it (the host's quests' "talk closed", FUN_00543d50)
-                namespace c2s = d2d::net::d2gs::c2s;
-                const auto* host_npc = talk >= 0 && level && std::size_t(talk) < level->npcs.size() && level->npcs[std::size_t(talk)].root != "objects" ? net_npc(talk) : nullptr;
-                if (net_chat_npc && (!host_npc || host_npc->id != net_chat_npc)) { net_game->send_items({ c2s::npc_chat(false, 1, net_chat_npc) }); net_chat_npc = 0; }
-                if (host_npc && host_npc->id != net_chat_npc) { net_chat_npc = host_npc->id; net_game->send_items({ c2s::npc_chat(true, 1, net_chat_npc) }); }
-            }
+        }
+        // A joined game, as game.exe's client: 0x2f opens a talk, 0x30 shuts
+        // it (the host's quests' "talk closed", FUN_00543d50). Checked every
+        // frame, so a talk opened before the host's NPC is known opens once it is.
+        if (net_game) {
+            namespace c2s = d2d::net::d2gs::c2s;
+            const int talk = talking_sent;
+            const auto* host_npc = talk >= 0 && level && std::size_t(talk) < level->npcs.size() && level->npcs[std::size_t(talk)].root != "objects" ? net_npc(talk) : nullptr;
+            if (net_chat_npc && (!host_npc || host_npc->id != net_chat_npc)) { net_game->send_items({ c2s::npc_chat(false, 1, net_chat_npc) }); net_chat_npc = 0; }
+            if (host_npc && host_npc->id != net_chat_npc) { net_chat_npc = host_npc->id; net_game->send_items({ c2s::npc_chat(true, 1, net_chat_npc) }); }
         }
         for (const auto& command : input(mouse, over_ui)) send(command);
         // Fixed ticks of kTickMs; after a stall, a few to catch up, then the

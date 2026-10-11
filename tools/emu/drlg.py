@@ -194,7 +194,7 @@ def act_of(lid):
 def layout_dump(e, seed, lid):
     """The act's outdoor rectangles (act 2: levels 40..46) and Lut Gholein's
     LvlPrest file, as drlg-dump ... layout prints them; nothing is built."""
-    act = alloc_act(e, act_of(lid), seed, 0)
+    act = alloc_act(e, 1, seed, 0)            # act 2, whatever the level asked: the only layout compared
     out = []
     for l in sorted(levels(e, act), key=lambda l: e.r32(l + 0x1d0)):
         if 40 <= e.r32(l + 0x1d0) <= 46:

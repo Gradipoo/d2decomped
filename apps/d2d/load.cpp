@@ -464,8 +464,11 @@ void finish_scene(Scene& scene, const fs::path& save_dir, std::uint32_t map_seed
 // renderer draws a pixel at light v through level v >> 3 (FUN_004f8050).
 void load_act_palettes(Scene& scene, const d2d::mpq::Stack& mpqs, int act) {
     const auto dir = std::format(R"(data\global\palette\ACT{}\)", std::clamp(act, 0, 4) + 1);
+    scene.act_pal = {};                      // a missing file leaves none, never the last act's
+    scene.act_lit = {};
     if (auto bytes = mpqs.try_read(dir + "pal.dat"))
         scene.act_pal = d2d::palette::Palette(*bytes);
+    if (scene.act_pal.entries().empty()) { scene.palette_act = act; return; }
     if (auto bytes = mpqs.try_read(dir + "Pal.pl2"); bytes && bytes->size() >= 0x400 + 32 * 256)
         for (std::size_t level = 0; level < 32; ++level) {
             std::array<d2d::palette::Rgba, 256> entries{};

@@ -289,7 +289,9 @@ inline std::vector<Outdoor::RoomSeed> generate_maze(const OutdoorData& data, con
         // on u + 3, four on u, one on u + 1 (A), a dead end on u from A, one
         // on u + 1 from A (B), two on u + 2 (C), a dead end on u + 3 from C,
         // two more on u + 2. The 13 kept rooms of each arm take file
-        // (arm + rotation) & 3, the dead ends keep 0, the first room 4.
+        // (arm + rotation) & 3, the first room 4. The dead ends keep no file
+        // (-1): the preset step rolls theirs, rand(1) = 0 (their one-link
+        // defs, 510 / 511 / 513 / 517, have Files 1), a seed step as game.exe's.
         grows = false;
         const int rotation = int(seed.next() & 3);
         std::array<int, 60> kept{};

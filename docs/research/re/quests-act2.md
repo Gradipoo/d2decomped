@@ -267,7 +267,8 @@ state → block `0x738d44` (−1, 0, 1, 2, 3, 4). Bits: 0 done, 1 reward due,
 - **Horazon's Journal** (objects.txt 357, OperateFn 42, `FUN_0059b970`):
   mode 1 once; every read its 396 (`FUN_005456a0`), its room kept; open
   and not state 5 → state 5, and each player in the Sanctuary without bit
-  0 / 1: bits 13, 1, 0, 2..11 cleared, 8, 7 (`FUN_0059b3f0`); else bit 14.
+  0 / 1, in order: bits 13, 1 and 0 set, bits 2..11 cleared, bits 8 and 7
+  set (`FUN_0059b3f0`); else bit 14 (`LAB_0059b320`).
 - **The Sanctuary's portal** (objects.txt 298, OperateFn 34,
   `FUN_005846b0`): shut, it opens (mode 1); open, 54 → 74 and 74 → 54
   (`FUN_0053aec0`). **Teleport pads** (OperateFn 27, `FUN_00581bf0`): the

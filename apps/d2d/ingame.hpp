@@ -46,7 +46,7 @@ void render_ingame(std::vector<std::uint8_t>& framebuffer,
                    const std::vector<d2d::d2s::Item>* belt = nullptr,
                    int* hovered_npc = nullptr,
                    const std::vector<d2d::d2s::Item>* stash = nullptr, bool stash_expansion = true,
-                   bool belt_popup = false, bool cube_open = false,
+                   bool belt_popup = false, int cube_open = 0,   // the Cube: 0 shut, 1 open, 2 Transmute held
                    const NpcMenuState* npc_menu = nullptr, const Speech* speech = nullptr,
                    const Automap* automap = nullptr, const Store* store = nullptr,
                    int stat_pressed = -1,

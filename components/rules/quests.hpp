@@ -574,6 +574,7 @@ struct HoradricStaffQuest {
     bool rewarded = false;         // in the +0x1c list
     bool shaft_dropped = false;    // data+0x28: the shaft chest gave one
     bool cube_dropped = false;     // data+0x29: the Cube chest gave one
+    bool staff_made = false;       // data+0x2a: transmuted (FUN_0059e5c0; the player's bit 11)
 
     // The player joins (FUN_0059e850): parts no longer carried are no
     // longer shown, unless all three are, the staff's made or placed.

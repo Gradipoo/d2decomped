@@ -423,6 +423,7 @@ auto NetGame::handle(const d2d::net::Bytes& packet) -> void {
         break;
     case 0x77:   // trade button action (FUN_004b8cf0): +1 what
         if (size < 2) break;
+        if (packet[1] == 0x15) { cube_opened = true; break; }   // the Cube's open on the host (FUN_0048a460)
         log.note("trade: action " + std::to_string(packet[1]) + " in state " + std::to_string(trade.state));
         switch (packet[1]) {
         case 0: if (trade.state == 0) trade.state = 1; break;                      // our request is out

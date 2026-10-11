@@ -175,7 +175,8 @@ struct NetGame {
     std::vector<NpcQuest> npc_quests;
     std::vector<std::uint32_t> npc_alerts;
     struct Sky { int phase = 0, time = 0; bool eclipse = false; };
-    std::optional<Sky> sky;                    // the act's day the host set (0x53: the Tainted Sun's dark), for the client to take     // NPCs the host balloons for us (0x8a: the "!"), for the client to take
+    std::optional<Sky> sky;
+    bool cube_opened = false;                  // the host opened our Cube (0x77 0x15), for the client to take                    // the act's day the host set (0x53: the Tainted Sun's dark), for the client to take     // NPCs the host balloons for us (0x8a: the "!"), for the client to take
 
 private:
     bool socket_gone = false;

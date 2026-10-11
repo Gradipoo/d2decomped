@@ -34,6 +34,8 @@ struct Interact { int npc = -1; };
 struct Pickup { int item = -1; };
 // 0x41: back in town after dying (let through only when dead).
 struct Resurrect {};
+// 0x4f button 0x18: the Cube's Transmute (FUN_00566ae0 -> FUN_005665f0).
+struct Transmute {};
 // 0x3a: spend `count` stat points on a stat (0 str, 1 energy, 2 dex, 3 vit).
 struct StatPoint { int stat = 0, count = 1; };
 // 0x3b: spend a skill point on the class's skill `skill` (its index 0..29,
@@ -95,7 +97,7 @@ using Command = std::variant<cmd::Move, cmd::UseSkill, cmd::Interact, cmd::Picku
                              cmd::StatPoint, cmd::SkillPoint, cmd::SelectSkill, cmd::UseBelt, cmd::UseItem,
                              cmd::ToCursor, cmd::Drop, cmd::ToGrid, cmd::ToBody, cmd::ToBelt,
                              cmd::OpenTrade, cmd::OpenHire, cmd::Buy, cmd::Sell, cmd::Repair, cmd::Identify, cmd::IdentifyWith, cmd::Hire, cmd::ResurrectMerc, cmd::CloseTrade, cmd::Respec,
-                             cmd::Run, cmd::Chat, cmd::QuestMessage, cmd::Waypoint, cmd::Caravan, cmd::Imbue>;
+                             cmd::Run, cmd::Chat, cmd::QuestMessage, cmd::Waypoint, cmd::Caravan, cmd::Imbue, cmd::Transmute>;
 
 // The wire form of a command (what a transport carries): its id byte —
 // game.exe's packet id where there's one to match — then its fields,
@@ -173,6 +175,7 @@ inline constexpr std::uint8_t kStatPoint = 0x3a;
 inline constexpr std::uint8_t kSkillPoint = 0x3b;
 inline constexpr std::uint8_t kSelectSkill = 0x3c;
 inline constexpr std::uint8_t kResurrect = 0x41;
+inline constexpr std::uint8_t kButton = 0x4f;      // game.exe's "click button": +1 u16 0x18 Transmute
 inline constexpr std::uint8_t kWaypoint = 0x49;
 inline constexpr std::uint8_t kRunOn = 0x53;
 inline constexpr std::uint8_t kRunOff = 0x54;
@@ -193,6 +196,7 @@ inline std::vector<std::uint8_t> encode(const Command& command) {
         else if constexpr (std::is_same_v<T, cmd::Interact>) out.u8(opcode::kInteract).i32(message.npc);
         else if constexpr (std::is_same_v<T, cmd::Pickup>) out.u8(opcode::kPickup).i32(message.item);
         else if constexpr (std::is_same_v<T, cmd::Resurrect>) out.u8(opcode::kResurrect);
+        else if constexpr (std::is_same_v<T, cmd::Transmute>) out.u8(opcode::kButton).u16(0x18);
         else if constexpr (std::is_same_v<T, cmd::StatPoint>) out.u8(opcode::kStatPoint).i32(message.stat).i32(message.count);
         else if constexpr (std::is_same_v<T, cmd::SkillPoint>) out.u8(opcode::kSkillPoint).i32(message.skill);
         else if constexpr (std::is_same_v<T, cmd::SelectSkill>) out.u8(opcode::kSelectSkill).i32(message.skill).u8(message.left);
@@ -240,6 +244,7 @@ inline std::optional<Command> decode(std::span<const std::uint8_t> bytes) {
         case opcode::kInteract: command = cmd::Interact{ i32() }; break;
         case opcode::kPickup: command = cmd::Pickup{ i32() }; break;
         case opcode::kResurrect: command = cmd::Resurrect{}; break;
+        case opcode::kButton: if (input.get<std::uint16_t>() != 0x18) return std::nullopt; command = cmd::Transmute{}; break;
         case opcode::kStatPoint: { const int stat = i32(); command = cmd::StatPoint{ stat, i32() }; break; }
         case opcode::kSkillPoint: command = cmd::SkillPoint{ i32() }; break;
         case opcode::kSelectSkill: { const int skill = i32(); command = cmd::SelectSkill{ skill, byte() != 0 }; break; }

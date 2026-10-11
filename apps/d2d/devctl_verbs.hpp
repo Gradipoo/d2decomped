@@ -110,7 +110,9 @@ void register_game_verbs(d2d::devctl::Channel& channel, Window& win, Screen& scr
         else if (verb == "imbue" && verb_args.size() >= 3) town.send(cmd::Imbue{ int_arg(2) });
         else if (verb == "hand" && verb_args.size() >= 3) town.send(cmd::ToCursor{ int_arg(2) });
         else if (verb == "use" && verb_args.size() >= 3) town.send(cmd::UseItem{ int_arg(2) });
-        else if (verb == "grid" && verb_args.size() >= 4) town.send(cmd::ToGrid{ d2d::d2s::item_panel::kInventory, int_arg(2), int_arg(3) });
+        else if (verb == "grid" && verb_args.size() >= 4)    // the held item into the inventory (or "cube") at col, row
+            town.send(cmd::ToGrid{ verb_args.size() >= 5 && verb_args[4] == "cube" ? d2d::d2s::item_panel::kCube : d2d::d2s::item_panel::kInventory, int_arg(2), int_arg(3) });
+        else if (verb == "transmute") town.send(cmd::Transmute{});
         else if (verb == "said" && verb_args.size() >= 4) town.send(cmd::QuestMessage{ int_arg(2), int_arg(3, 0) });
         else if (verb == "chat" && verb_args.size() >= 3) town.send(cmd::Chat{ int_arg(2) });
         else if (verb == "trade" && verb_args.size() >= 3) town.send(cmd::OpenTrade{ int_arg(2), int_arg(3, 0) != 0 });
@@ -349,6 +351,11 @@ void register_game_verbs(d2d::devctl::Channel& channel, Window& win, Screen& scr
             town.world.character.header.difficulty[std::size_t(difficulty)] |= 0x80;
             town.new_game();
             return std::string("ok\n");
+        }
+        if (args.size() >= 3 && args[1] == "give") {       // an item <code> [quality] at the player's feet, the area level's
+            town.world.loot.put({ .code = args[2], .quality = args.size() >= 4 ? std::atoi(args[3].c_str()) : 2 }, town.world.player.x, town.world.player.y, 30,
+                                town.world.fight.spawning.game, town.world.now);
+            return std::format("ok #{}\n", town.world.loot.ground.back().id);
         }
         if (args.size() >= 3 && args[1] == "quest") {      // mark Act quest <q> done (bit 0), active difficulty
             const int quest = std::atoi(args[2].c_str()), bit = quest * 16;

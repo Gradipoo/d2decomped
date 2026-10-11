@@ -93,6 +93,9 @@ struct ItemBase {
     bool quest_diff = false;                              // questdiffcheck (+0x12b): stat 356 = the difficulty made in
     int max_1h = 0, max_2h = 0;                           // weapons.txt maxdam (+0xff) / 2handmaxdam (+0x103)
     std::string nightmare_upgrade, hell_upgrade;       // NightmareUpgrade / HellUpgrade ("xxx" none): a store's base in those difficulties
+    bool spawnable = false;                            // spawnable (+0x133)
+    int version = 0;                                   // version (+0xf6): 100 an expansion item
+    std::string type2;                                 // type2 (+0x120)
 };
 // Prices (FUN_0062efb0, docs/research/re/store.md): npc.txt by MonStats Id.
 struct NpcPrice { int buy = 1024, sell = 1024, rep = 1024; std::array<int, 3> qflag{}, qbuy{}, qsell{}, qrep{}, max_buy{}; };
@@ -128,6 +131,7 @@ struct Affix {
 // game, nolimit (flag 2) isn't one per game; set: its Sets.txt row.
 struct Special {
     std::string code; int level = 0, rarity = 1; bool enabled = true; std::vector<Mod> mods; bool ladder = false, nolimit = false; int set = -1;
+    std::string index;                                     // its "index" name (cubemain's names, FUN_006bd3c0)
     std::vector<Mod> bonus;                                // a set's aprop1a..aprop5b, all 10 (unused: no code)
     bool bonus_apart = false;                              // add func: the bonuses go to their own lists (else the item's)
 };
@@ -207,6 +211,7 @@ struct Tables {
     std::vector<std::pair<int, int>> skill_levels;         // Skills.txt reqlevel, maxlvl by Id (FUN_00644710 / FUN_004aa8b0)
     std::array<int, 7> class_first_skill{};                // per class its first skill Id (FUN_006460f0)
     std::vector<Special> uniques, sets;
+    std::vector<std::string> item_order;                  // item codes in the Items table's order (weapons, armor, misc)
     std::vector<SetBonus> set_bonuses;                    // by Sets.txt row
     std::unordered_map<std::string, std::vector<PropFunc>> properties;
     std::unordered_map<std::string, int> skill_id;         // Skills.txt skill name -> Id

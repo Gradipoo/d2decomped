@@ -226,5 +226,5 @@ read (or any part shown), 4 / 5 / 6 the amulet / shaft / Cube shown,
 d2d: `rules::HoradricStaffQuest`, the chests in `World::operate`, the
 scroll's removal in the said path. Checked live (devctl, 2026-10-11): the
 three chests give their parts; Cain takes the Cube, then the shaft (bits
-3, 5, 6). Not yet: the Cube's transmute (the staff, `FUN_005665f0`), the
-orifice (a2q6). N-player gaps: one player's counts, the rewarded bool.
+3, 5, 6); the Cube makes the staff (cube.md; bit 11, `FUN_0059e5c0`). Not
+yet: the orifice (a2q6). N-player gaps: one player's counts, the rewarded bool.

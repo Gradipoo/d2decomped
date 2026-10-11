@@ -148,6 +148,7 @@ struct Scene : GameData {
     d2d::dc6::Sprite trade_panel, trade_button;   // PANEL\trade, PANEL\tradebtn
     std::array<d2d::dc6::Sprite, 7> class_icons;  // Hireables\<class>Icon by d2s class: party portraits
     d2d::dc6::Sprite cube_panel;
+    d2d::dc6::Sprite transmute_button;                 // PANEL\miniconvert.dc6: the Cube's Transmute, 0 up / 1 held
     d2d::dc6::Sprite inv_panel;                       // PANEL\invchar6.dc6
     // Char panel stat buttons (docs/research/re/char-panel.md): PANEL\level
     // (frame 1 pressed) on PANEL\levelsocket, the PANEL\skillpoints box.

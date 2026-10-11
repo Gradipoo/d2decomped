@@ -6,6 +6,7 @@
 #include "log.hpp"
 
 #include <compcode.hpp>
+#include <cube.hpp>
 #include <d2s_items.hpp>
 #include <drlg.hpp>
 #include <drops.hpp>
@@ -794,6 +795,10 @@ void load_tables(GameData& game_data, const d2d::mpq::Stack& mpqs) {
                 base.quest_diff = table->get(row, "questdiffcheck") == "1";
                 base.max_1h = table == &weapons ? number("maxdam") : 0;
                 base.max_2h = table == &weapons ? number("2handmaxdam") : 0;
+                base.spawnable = table->get(row, "spawnable") == "1";
+                base.version = number("version");
+                base.type2 = std::string(table->get(row, "type2"));
+                game_data.rules.item_order.push_back(code);
                 if (table != &misc && table->get(row, "spawnable") == "1" && number("quest") == 0)
                     game_data.rules.stand_bases[table == &weapons ? 1 : 0].push_back(code);
                 if (table->get(row, "spawnable") != "1") continue;
@@ -1147,6 +1152,7 @@ void load_tables(GameData& game_data, const d2d::mpq::Stack& mpqs) {
                         special.bonus_apart = num(table.get(row, "add func")) != 0;
                     }
                     special.ladder = table.get(row, "ladder") == "1";
+                    special.index = std::string(table.get(row, "index"));
                     special.nolimit = table.get(row, "nolimit") == "1";
                     if (const auto set_row = std::ranges::find(set_names, table.get(row, "set")); set_row != set_names.end() && code_col[0] == 'i')
                         special.set = int(set_row - set_names.begin());
@@ -1157,6 +1163,42 @@ void load_tables(GameData& game_data, const d2d::mpq::Stack& mpqs) {
         };
         game_data.rules.uniques = specials("UniqueItems", "code", 12);
         game_data.rules.sets = specials("SetItems", "item", 9);
+        // The Cube's recipes (FUN_00669130's columns, cube.md).
+        if (auto bytes = mpqs.try_read(R"(data\global\excel\cubemain.txt)")) {
+            const d2d::txt::Table cube(*bytes);
+            static constexpr std::array<std::string_view, 7> kClasses{ "ama", "sor", "nec", "pal", "bar", "dru", "ass" };
+            for (std::size_t row = 0; row < cube.size(); ++row) {
+                d2d::rules::CubeRecipe recipe;
+                recipe.description = std::string(cube.get(row, "description"));
+                recipe.enabled = num(cube.get(row, "enabled")) != 0;
+                recipe.ladder = num(cube.get(row, "ladder")) != 0;
+                recipe.min_diff = num(cube.get(row, "min diff"));
+                recipe.op = num(cube.get(row, "op"));
+                recipe.param = num(cube.get(row, "param"));
+                recipe.value = num(cube.get(row, "value"));
+                const auto cls = std::ranges::find(kClasses, cube.get(row, "class"));
+                recipe.cls = cls == kClasses.end() ? -1 : int(cls - kClasses.begin());
+                recipe.numinputs = num(cube.get(row, "numinputs"));
+                recipe.version = num(cube.get(row, "version"));
+                for (std::size_t input = 0; input < 7; ++input)
+                    recipe.inputs[input] = d2d::rules::compile_cube_input(game_data.rules, cube.get(row, "input " + std::to_string(input + 1)));
+                for (std::size_t output = 0; output < 3; ++output) {
+                    const std::string prefix = output == 0 ? "" : output == 1 ? "b " : "c ";
+                    auto& made = recipe.outputs[output];
+                    made = d2d::rules::compile_cube_output(game_data.rules, cube.get(row, output == 0 ? std::string("output") : "output " + std::string(1, char('a' + output))));
+                    if (const auto level = cube.get(row, prefix + "lvl"); !level.empty()) made.lvl = num(level);
+                    if (const auto level = cube.get(row, prefix + "plvl"); !level.empty()) made.plvl = num(level);
+                    if (const auto level = cube.get(row, prefix + "ilvl"); !level.empty()) made.ilvl = num(level);
+                    for (int mod = 1; mod <= 5; ++mod) {
+                        const std::string column = prefix + "mod " + std::to_string(mod);
+                        if (const auto code = cube.get(row, column); !code.empty())
+                            made.mods.push_back({ { std::string(code), std::string(cube.get(row, column + " param")), num(cube.get(row, column + " min")), num(cube.get(row, column + " max")) },
+                                                  num(cube.get(row, column + " chance")) });
+                    }
+                }
+                game_data.cube_recipes.push_back(std::move(recipe));
+            }
+        }
         if (const auto sets_table = txt("Sets"); sets_table.size() > 0) {
             for (std::size_t row = 0; row < sets_table.size(); ++row) {
                 auto mod = [&](const std::string& code, const std::string& param, const std::string& low, const std::string& high) {

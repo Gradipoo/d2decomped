@@ -249,6 +249,14 @@ inline auto quest_message(std::uint32_t id, std::uint32_t message) -> Bytes {
     put_u8(out, 0x31); put_u32(out, id); put_u32(out, message);
     return out;
 }
+// 0x4f: a button (FUN_00478600, 7 bytes: u16 which, u16, u16); 0x18 the
+// Cube's Transmute, 0x17 the Cube shut (the host's FUN_00568060 ->
+// FUN_00566ae0, only while it has the Cube open for us).
+inline auto button(std::uint16_t which, std::uint16_t first = 0, std::uint16_t second = 0) -> Bytes {
+    Bytes out;
+    put_u8(out, 0x4f); put_u16(out, which); put_u16(out, first); put_u16(out, second);
+    return out;
+}
 // 0x38: an NPC action with NPC `id`: 1 trade (a real client's, recorded
 // 2026-10-05 through d2proxy), 2 gamble (unverified).
 inline auto npc_action(std::uint32_t action, std::uint32_t id, std::uint32_t extra = 0) -> Bytes {

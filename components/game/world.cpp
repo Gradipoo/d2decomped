@@ -12,6 +12,7 @@
 #include "protocol.hpp"
 
 #include <combat.hpp>
+#include <cube.hpp>
 #include <d2s_items.hpp>
 #include <drops.hpp>
 #include <level_ids.hpp>
@@ -924,6 +925,44 @@ auto World::blood_raven_died(std::uint32_t now_ms) -> void {
         d2d::log::info("Sisters' Burial Grounds: Blood Raven is dead, return to Kashya");
     }
 
+// The Cube's Transmute (FUN_005665f0 / FUN_00565ab0, rules/cube.hpp): the
+// first recipe the Cube's items answer; what it makes; every item in the
+// Cube gone (FUN_00564f30); the new ones into the Cube (FUN_00560200),
+// else at the feet. The Horadric Staff made: its quest's bit 11
+// (FUN_0059e5c0).
+// ponytail: FUN_00560200's own spot search (first fit by column here);
+// the transmute's sound.
+auto World::transmute(std::uint32_t now_ms) -> void {
+        using d2d::d2s::Item;
+        std::vector<const Item*> cube;
+        for (const auto& item : character.items)
+            if (item.location == d2d::d2s::item_location::kStored && item.panel == d2d::d2s::item_panel::kCube) cube.push_back(&item);
+        d2d::rules::CubeMatch match;
+        const int diff = character.header.active_difficulty();
+        const int row = d2d::rules::cube_recipe(game_data->rules, game_data->cube_recipes, cube, diff, character.expansion, character.header.cls, match);
+        if (row < 0) { d2d::log::info("transmute: nothing ({} items)", cube.size()); return; }
+        const auto& recipe = game_data->cube_recipes[std::size_t(row)];
+        auto made = d2d::rules::cube_make(game_data->rules, recipe, match, cube, int(character.stats.get(d2d::d2s::kLevel)), character.expansion, diff,
+                                          fight.spawning.game, &loot.found_uniques);
+        if (!made.made) { d2d::log::info("transmute: {} made nothing", recipe.description); return; }
+        std::erase_if(character.items, [](const Item& item) { return item.location == d2d::d2s::item_location::kStored && item.panel == d2d::d2s::item_panel::kCube; });
+        const auto& layout = game_data->cube_layout;
+        for (auto& item : made.items) {
+            if (item.code == "hst") { d2d::rules::qset(quests(), d2d::rules::HoradricStaffQuest::kQuest, 11); staff.staff_made = true; }
+            std::vector<const Item*> placed;
+            for (const auto& other : character.items)
+                if (other.location == d2d::d2s::item_location::kStored && other.panel == d2d::d2s::item_panel::kCube) placed.push_back(&other);
+            const auto [width, height] = d2d::rules::item_size(game_data->rules, item.code);
+            std::optional<Item> held_item = std::move(item);
+            held_item->id = -1;
+            if (const auto [column, cell_row] = d2d::rules::free_spot(game_data->rules, placed, layout.cols, layout.rows, width, height); column >= 0)
+                d2d::rules::put_in_grid(game_data->rules, character.items, held_item, d2d::d2s::item_panel::kCube, layout.cols, layout.rows, column, cell_row);
+            else
+                loot.place(std::move(*held_item), player.x, player.y, now_ms);
+        }
+        d2d::log::info("transmute: {} ({} made)", recipe.description, made.items.size());
+    }
+
 // Radament's death hook (FUN_00599020): the books due drop at him
 // (FUN_00559a30).
 // ponytail: "near" is the player in his lair, not the killer's room or its
@@ -1594,7 +1633,7 @@ auto World::deal(const Command& command) -> bool {
             tainted.said(quests(), game_bits, hc_idx, message->string);
             if (staff.said(quests(), hc_idx, message->string)) {     // the scroll read: it goes
                 if (held && held->code == "tr1") held.reset();
-                else if (const auto scroll = std::ranges::find(character.items, std::string("tr1"), &d2d::d2s::Item::code); scroll != character.items.end()) character.items.erase(scroll);
+                else if (const auto horadric_scroll = std::ranges::find(character.items, std::string("tr1"), &d2d::d2s::Item::code); horadric_scroll != character.items.end()) character.items.erase(horadric_scroll);
             }
             return true;
         }
@@ -1620,6 +1659,7 @@ auto World::apply(const Command& command, std::uint32_t now_ms) -> void {
             if (!select->left) if (const auto* skill = game_data->skills.get(select->skill)) fight.aura = skill->aura ? select->skill : 0;
             return;
         }
+        if (std::holds_alternative<cmd::Transmute>(command)) { transmute(now_ms); return; }
         if (const auto* use = std::get_if<cmd::UseItem>(&command)) {
             const auto found = std::ranges::find(character.items, use->item, &d2d::d2s::Item::id);
             if (found != character.items.end() && (found->code == "tsc" || found->code == "tbk")) read_portal(found, now_ms);

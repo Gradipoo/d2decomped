@@ -407,9 +407,20 @@ std::array<int, 4> grid_rect(const Scene& scene, const Scene::InvLayout& layout,
              (info != scene.rules.item_info.end() ? info->second.height : 1) * layout.box_h };
 }
 
+// The Cube panel's bottom as game.exe anchors it: its art's top-left
+// quarter ends 0xe0 above it (FUN_0048edf0).
+static int cube_bottom(const Scene& scene) {
+    return kCharPanelY + (scene.cube_panel.frames_per_direction() ? int(scene.cube_panel.frame(0, 0).height) : 0) + 0xe0;
+}
+
+bool transmute_at(const Scene& scene, int mouse_x, int mouse_y) {
+    const int bottom = cube_bottom(scene);
+    return mouse_x > kCharPanelX + 0x90 && mouse_x < kCharPanelX + 0xb8 && mouse_y > bottom - 0xdf && mouse_y < bottom - 0xb7;
+}
+
 void draw_storage(std::vector<std::uint8_t>& framebuffer, const Scene& scene, const std::vector<d2d::d2s::Item>& items,
                   const d2d::dc6::Sprite& art, const Scene::InvLayout& layout, int panel,
-                  int mouse_x, int mouse_y, const d2d::rules::Wearer* wearer) {
+                  int mouse_x, int mouse_y, const d2d::rules::Wearer* wearer, bool transmute_down) {
     const auto& pal = scene.act_pal.entries().empty() ? scene.pal : scene.act_pal;
     if (art.frames_per_direction() >= 4) {
         const auto& frame = art.frame(0, 0);
@@ -428,6 +439,12 @@ void draw_storage(std::vector<std::uint8_t>& framebuffer, const Scene& scene, co
             blit_sprite(framebuffer, frame, scene.item_pal(item, pal), box_x + (width - int(frame.width)) / 2, box_y + (height - int(frame.height)) / 2);
         }
         if (mouse_x >= box_x && mouse_x < box_x + width && mouse_y >= box_y && mouse_y < box_y + height) { hover = &item; hover_box = { box_x, box_y, width, height }; }
+    }
+    // The Transmute button (miniconvert, frame 0 up / 1 held) at x + 0x90,
+    // its bottom 0xbc over the panel's.
+    if (panel == d2d::d2s::item_panel::kCube && scene.transmute_button.frames_per_direction() > 1) {
+        const auto& frame = scene.transmute_button.frame(0, transmute_down ? 1 : 0);
+        blit_sprite(framebuffer, frame, pal, kCharPanelX + 0x90, cube_bottom(scene) - 0xbc - int(frame.height) + 1);
     }
     if (hover) draw_hover_text(framebuffer, scene, item_lines(scene, *hover, wearer ? wearer->lvl : 1, wearer), hover_box[0], hover_box[0] + hover_box[2], hover_box[1] + hover_box[3], hover_box[1]);
 }

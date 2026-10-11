@@ -991,9 +991,24 @@ auto Town::update(std::vector<std::uint8_t>& framebuffer, const Mouse& frame_mou
                 if (!in_inv && !in_stash) continue;
                 const auto rect = grid_rect(*scene, in_inv ? lay : scene->stash_layout[character.expansion ? 1 : 0], item);
                 if (mouse.x >= rect[0] && mouse.x < rect[0] + rect[2] && mouse.y >= rect[1] && mouse.y < rect[1] + rect[3]) {
-                    cube_open = true; stash_open = char_open = false;
+                    if (net_game) send(cmd::UseItem{ item.id });  // the host opens it (0x20 -> 0x77 0x15)
+                    else { cube_open = true; stash_open = char_open = false; }
                 }
             }
+        // The Cube's Transmute (FUN_0048a190): held on a press over it, sent
+        // on letting go over it — the World's (cmd::Transmute), a joined
+        // game's host's (C->S 0x4f 0x18).
+        if (cube_open && mouse.press_this_frame && transmute_at(*scene, mouse.x, mouse.y)) {
+            transmute_down = true;
+            audio.play_sfx(*scene, d2d::rules::sound_ids::kCursorButtonClick, 1.f, 0);
+        }
+        if (transmute_down && !mouse.down) {
+            if (cube_open && transmute_at(*scene, mouse.x, mouse.y)) {
+                if (net_game) net_game->send_items({ d2d::net::d2gs::c2s::button(0x18) });
+                else send(cmd::Transmute{});
+            }
+            transmute_down = false;
+        }
         // An open NPC menu takes every click: an entry runs its action,
         // anything else closes it.
         bool menu_click = false;
@@ -1630,6 +1645,9 @@ auto Town::net_quests(std::uint32_t frame_ms) -> void {
             }
         view.den_left = net_game->den_left;
         if (net_game->sky) { world.day.set(net_game->sky->phase, net_game->sky->time, net_game->sky->eclipse); net_game->sky.reset(); }
+        // The Cube: the host opens it (0x77 0x15); shut here, the host's shuts too (0x4f 0x17).
+        if (std::exchange(net_game->cube_opened, false)) { cube_open = net_cube_open = true; inv_open = true; stash_open = char_open = false; }
+        if (net_cube_open && !cube_open) { net_game->send_items({ d2d::net::d2gs::c2s::button(0x17) }); net_cube_open = false; }
         for (const std::uint32_t id : net_game->npc_alerts) net_alert_ms[id] = world_ms;
         net_game->npc_alerts.clear();
         for (std::size_t i = 0; level && i < view.npc_states.size() && i < level->npcs.size(); ++i) {
@@ -1757,7 +1775,7 @@ auto Town::draw(std::vector<std::uint8_t>& framebuffer, const Mouse& mouse, std:
                       inv_open ? &character.items : nullptr,
                       char_open ? &character.stats : nullptr, &character.stats, &character.panel, mode_ms, &character.items,
                       &hovered_npc, stash_open || cube_open ? &character.items : nullptr, character.expansion, belt_open,
-                      cube_open, &npc_menu, &speech, &automap, &store, stat_pressed,
+                      cube_open ? (transmute_down ? 2 : 1) : 0, &npc_menu, &speech, &automap, &store, stat_pressed,
                       nullptr, nullptr, nullptr, extra, rate, light.pal ? &light : nullptr, level->rain ? &rain : nullptr,
                       !(pmode == kModeDD && !view.corpses.empty()),    // dead, the corpse lies there instead
                       &player_look, alt_held || (SDL_GetModState() & SDL_KMOD_ALT) != 0,   // D2's "Show Items" (Alt)

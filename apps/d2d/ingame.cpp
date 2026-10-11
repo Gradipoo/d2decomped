@@ -73,7 +73,7 @@ void render_ingame(std::vector<std::uint8_t>& framebuffer,
                    const std::vector<d2d::d2s::Item>* belt ,
                    int* hovered_npc ,
                    const std::vector<d2d::d2s::Item>* stash , bool stash_expansion ,
-                   bool belt_popup , bool cube_open ,
+                   bool belt_popup , int cube_open ,
                    const NpcMenuState* npc_menu , const Speech* speech ,
                    const Automap* automap , const Store* store ,
                    int stat_pressed ,
@@ -243,7 +243,7 @@ void render_ingame(std::vector<std::uint8_t>& framebuffer,
             const int expansion_index = stash_expansion ? 1 : 0;
             if (cube_open)
                 draw_storage(framebuffer, scene, *stash, scene.cube_panel, scene.cube_layout, d2d::d2s::item_panel::kCube, mouse_x, mouse_y,
-                             hover_wearer);
+                             hover_wearer, cube_open == 2);
             else
                 draw_storage(framebuffer, scene, *stash, scene.stash_panel[std::size_t(expansion_index)], scene.stash_layout[std::size_t(expansion_index)], d2d::d2s::item_panel::kStash,
                              mouse_x, mouse_y, hover_wearer);

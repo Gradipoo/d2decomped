@@ -205,6 +205,8 @@ struct Town {
     std::string merc_label;
     bool  belt_open = false;               // belt popup (` key or a click on the belt)
     bool  cube_open = false;               // right-click the Horadric Cube item
+    bool  transmute_down = false;          // its Transmute button held (FUN_0048a190)
+    bool  net_cube_open = false;           // a joined game: the host has our Cube open (0x77 0x15; 0x4f 0x17 shuts it)
     NpcMenuState npc_menu;                 // open NPC menu (npc < 0: none)
     Automap automap;                       // Tab
     Store store;                           // an open vendor store (npc < 0: none): the View's stock, the client's tab and buttons

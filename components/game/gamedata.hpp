@@ -7,6 +7,7 @@
 #include "game.hpp"
 
 #include <cof.hpp>
+#include <cube.hpp>
 #include <compcode.hpp>
 #include <d2s_items.hpp>
 #include <drlg.hpp>
@@ -537,6 +538,7 @@ struct GameData {
                          std::array<int, 3> utrans{}; bool autopos = false, stacks = false;   // Utrans by difficulty: its colour; AutoPos, Stacks
                          std::string sound; };                                                   // MonSound: its own MonSounds row (rules::boss_sound)
     std::vector<SuperUnique> superuniques;
+    std::vector<d2d::rules::CubeRecipe> cube_recipes;    // cubemain.txt, compiled (rules::compile_cube_input / _output)
     d2d::rules::UMods umods;                           // MonUMod.txt: champion / unique mods and constants
     std::array<std::vector<std::string>, 3> unique_names;   // UniquePrefix / Suffix / Appellation, resolved
     std::array<std::string, 2> unique_formats;         // strings 0x6b9 ("%0 %1"), 0x6ba ("%0 %1 %2")

@@ -229,6 +229,8 @@ void load_ui_sprites(Scene& scene, const d2d::mpq::Stack& mpqs) {
             scene.class_icons[class_index] = d2d::dc6::Sprite(*bytes);
     if (auto bytes = mpqs.try_read(R"(data\global\ui\PANEL\supertransmogrifier.dc6)"))
         scene.cube_panel = d2d::dc6::Sprite(*bytes);
+    if (auto bytes = mpqs.try_read(R"(data\global\ui\PANEL\miniconvert.dc6)"))
+        scene.transmute_button = d2d::dc6::Sprite(*bytes);
     static constexpr const char* kTree[7] = { "a", "s", "n", "p", "b", "d", "i" };
     static constexpr const char* kIcons[7] = { "Am", "So", "Ne", "Pa", "Ba", "Dr", "As" };
     for (std::size_t class_index = 0; class_index < 7; ++class_index) {

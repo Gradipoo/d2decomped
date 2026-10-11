@@ -160,13 +160,15 @@ auto World::view() const -> View {
             view.quest_log = { 0, std::uint8_t(den.log_state(quest_bits)), std::uint8_t(burial.log_state(quest_bits)),
                                std::uint8_t(tools.log_state(quest_bits, holding_malus(), clvl)), std::uint8_t(cain.log_state(quest_bits)),
                                std::uint8_t(tower.log_state(quest_bits)), std::uint8_t(andy.log_state(quest_bits)) };
-            for (int quest = 1; quest < 7; ++quest) {
+            view.quest_log[d2d::rules::RadamentQuest::kQuest] = std::uint8_t(radament.log_state(quest_bits));
+            for (int quest = 1; quest < 15; ++quest) {
                 const bool bit0 = d2d::rules::qbit(quest_bits, quest, 0) || d2d::rules::qbit(quest_bits, quest, 15);
                 if (bit0 && !d2d::rules::qbit(quest_bits, quest, 13) && !d2d::rules::qbit(quest_bits, quest, 14)) view.quest_log[std::size_t(quest)] = 0;
             }
             const bool done[7] = { false, den.state >= 4, burial.state >= 4, tools.game_returned, cain.rescued_flag, tower.dead, andy.log == 0xd };
-            for (std::size_t quest = 1; quest < 7; ++quest)
-                view.game_quests[quest] = std::uint16_t((done[quest] ? 1 << 13 : 0) | (closed_at_join[quest] ? 1 << 15 : 0));
+            for (std::size_t quest = 1; quest < 15; ++quest)
+                view.game_quests[quest] = std::uint16_t(((quest < 7 ? done[quest] : d2d::rules::qbit(game_bits, int(quest), 13)) ? 1 << 13 : 0)
+                                                        | (closed_at_join[quest] ? 1 << 15 : 0));
         }
         view.den_left = std::max(den_left, 0);
         {
@@ -640,8 +642,12 @@ auto World::new_game() -> void {
         // The first join (FUN_00546270): quests the player's done or closed
         // are shut for the game (FUN_00544410, game flag 15), every quest's
         // join runs, then the chain from quest 1.
-        for (int quest = 1; quest < 7; ++quest)
+        for (int quest = 1; quest < 15; ++quest)
             closed_at_join[std::size_t(quest)] = d2d::rules::qbit(quests(), quest, 0) || d2d::rules::qbit(quests(), quest, 15);
+        game_bits = {};
+        d2d::rules::ActTwoOpening::join(quests(), game_bits);
+        radament = {};
+        radament.join(quests(), game_bits, carries("ass"));
         den = {};
         den.join(quests());
         andy = {};
@@ -708,6 +714,7 @@ auto World::swap_npcs(const Level* from) -> void {
         if (from && from != level) tower.enter(quests(), from->id, level->id);
         if (from && from != level) tools.enter(quests(), from->id);
         if (from && from != level) cain.enter(quests(), from->id, level->id);
+        if (from && from != level) radament.enter(quests(), from->id);
         if (from) other_npcs[from] = std::move(npc_states);
         if (const auto found = other_npcs.find(level); found != other_npcs.end()) {
             npc_states = std::move(found->second);
@@ -737,7 +744,7 @@ auto World::swap_npcs(const Level* from) -> void {
 
 // Lut Gholein's palace NPCs as the quests stand (rules::palace_spots).
 auto World::show_palace() -> void {
-        const auto spots = d2d::rules::palace_spots(quests());
+        const auto spots = d2d::rules::palace_spots(quests(), game_bits);
         for (std::size_t i = 0; i < level->npcs.size() && i < npc_states.size(); ++i)
             switch (level->npcs[i].palace) {
             case 1: npc_states[i].hidden = !spots.outside; break;
@@ -807,6 +814,8 @@ auto World::quest_talk(int hc_idx) -> std::vector<d2d::rules::QuestMsg> {
         std::ranges::copy(tower.talk(quests(), hc_idx), std::back_inserter(out));
         std::ranges::copy(tools.talk(quests(), hc_idx, holding_malus(), int(character.stats.get(d2d::d2s::kLevel))), std::back_inserter(out));
         std::ranges::copy(cain.talk(quests(), hc_idx, carries("bks")), std::back_inserter(out));
+        std::ranges::copy(d2d::rules::ActTwoOpening::talk(quests(), hc_idx), std::back_inserter(out));
+        std::ranges::copy(radament.talk(quests(), hc_idx), std::back_inserter(out));
         return out;
     }
 
@@ -853,6 +862,18 @@ auto World::blood_raven_died(std::uint32_t now_ms) -> void {
         static constexpr const char* kClass[7] = { "amazon", "sorceress", "necromancer", "paladin", "barbarian", "druid", "assassin" };
         if (character.header.cls < 7) cues.cue(std::format("{}_act1_complete_burial", kClass[character.header.cls]), now_ms, player.x, player.y);
         d2d::log::info("Sisters' Burial Grounds: Blood Raven is dead, return to Kashya");
+    }
+
+// Radament's death hook (FUN_00599020): the books due drop at him
+// (FUN_00559a30).
+// ponytail: "near" is the player in his lair, not the killer's room or its
+// neighbours (FUN_00598e20).
+auto World::radament_died(const Fight::Kill& kill, std::uint32_t now_ms) -> void {
+        const auto [books, took_part] = radament.killed(quests(), game_bits, level->id == d2d::rules::RadamentQuest::kLair, carries("ass"));
+        for (int i = 0; i < books; ++i) loot.put({ .code = "ass" }, kill.x, kill.y, kill.level, fight.spawning.game, now_ms);
+        static constexpr const char* kClass[7] = { "amazon", "sorceress", "necromancer", "paladin", "barbarian", "druid", "assassin" };
+        if (took_part && character.header.cls < 7) cues.cue(std::format("{}_act2_complete_radament", kClass[character.header.cls]), now_ms, player.x, player.y);
+        if (radament.state == 4) d2d::log::info("Radament's Lair: Radament is dead, return to Atma");
     }
 
 auto World::hire_list(int list_act) -> std::vector<d2d::rules::HireEntry>& {
@@ -1432,6 +1453,7 @@ auto World::deal(const Command& command) -> bool {
                 burial.talk_closed(quests(), level->npcs[std::size_t(talking[0])].hc_idx);
                 tools.talk_closed(quests(), level->npcs[std::size_t(talking[0])].hc_idx);
                 cain.talk_closed(quests(), level->npcs[std::size_t(talking[0])].hc_idx);
+                radament.talk_closed(quests(), level->npcs[std::size_t(talking[0])].hc_idx);
             }
             talking = { chat->npc, -1, -1 };
             return true;
@@ -1505,6 +1527,8 @@ auto World::deal(const Command& command) -> bool {
                 kashya_merc();
                 if (burial_was != 5 && burial.state == 5) chain(2);   // FUN_00590980
             }
+            d2d::rules::ActTwoOpening::said(quests(), game_bits, hc_idx, message->string);
+            radament.said(quests(), game_bits, hc_idx, message->string);
             return true;
         }
         return false;
@@ -1532,6 +1556,13 @@ auto World::apply(const Command& command, std::uint32_t now_ms) -> void {
         if (const auto* use = std::get_if<cmd::UseItem>(&command)) {
             const auto found = std::ranges::find(character.items, use->item, &d2d::d2s::Item::id);
             if (found != character.items.end() && (found->code == "tsc" || found->code == "tbk")) read_portal(found, now_ms);
+            else if (found != character.items.end() && found->code == "ass") {   // the Book of Skill (0x55e3d0)
+                if (d2d::rules::RadamentQuest::read_book(quests())) {
+                    ++character.stats.values[d2d::d2s::kSkillPts];
+                    character.items.erase(found);
+                    d2d::log::info("Radament's Lair: the Book of Skill, a skill point");
+                }
+            }
             else fight.drink_item(use->item, now_ms);
             return;
         }
@@ -1694,6 +1725,7 @@ auto World::tick(const std::vector<Command>& cmds, std::uint32_t now_ms, std::ui
             day.step();
             if (andy.tick() && level->id == d2d::rules::level_ids::kCatacombsLevel4) fight.portal_due = true;   // tick 10 of her death (FUN_00596490)
             burial.tick();
+            radament.tick();
             tower.tick();
             tower_treasure(day_at);
             stamina_frame();
@@ -1853,7 +1885,8 @@ auto World::tick(const std::vector<Command>& cmds, std::uint32_t now_ms, std::ui
             npc_states[i].alert = den.alert(quests(), level->npcs[i].hc_idx) || andy.alert(quests(), level->npcs[i].hc_idx)
                                   || burial.alert(quests(), level->npcs[i].hc_idx) || tower.alert(quests(), level->npcs[i].hc_idx)
                                   || tools.alert(quests(), level->npcs[i].hc_idx, holding_malus(), int(character.stats.get(d2d::d2s::kLevel)))
-                                  || cain.alert(quests(), level->npcs[i].hc_idx, carries("bks"));
+                                  || cain.alert(quests(), level->npcs[i].hc_idx, carries("bks"))
+                                  || d2d::rules::ActTwoOpening::alert(quests(), level->npcs[i].hc_idx) || radament.alert(quests(), level->npcs[i].hc_idx);
         // The player's mode as the merc's think reads it: 2 walk, 3 run, 6 walk in town.
         fight.owner_mode = !player.walking ? 1 : running && character.stats.values[d2d::d2s::kStamina] > 0 ? 3 : in_moor ? 2 : 6;
         fight.world(in_moor, now_ms, elapsed, crowd);
@@ -1870,6 +1903,7 @@ auto World::tick(const std::vector<Command>& cmds, std::uint32_t now_ms, std::ui
         }
         for (const auto& kill : fight.kills) if (kill.type == d2d::rules::monster_ids::kAndariel) andariel_died(kill, now_ms);   // a pet's kill too, the player dead
         for (const auto& kill : fight.kills) if (kill.type == d2d::rules::monster_ids::kBloodRaven) blood_raven_died(now_ms);
+        for (const auto& kill : fight.kills) if (kill.type == d2d::rules::monster_ids::kRadament) radament_died(kill, now_ms);
         for (const auto& kill : fight.kills) if (kill.super == d2d::rules::TowerQuest::kCountess) countess_died(now_ms);
         fight.kills.clear();
         cross_level();

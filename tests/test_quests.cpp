@@ -372,17 +372,50 @@ int main() {
     // the guard at the gate; the Arcane Sanctuary done here moves him in
     // (west of the gate while the Seven Tombs wait), the Seven Tombs given
     // moves him east, and act 3 open sends the guard away.
-    QuestBits act2{};
-    auto spots = palace_spots(act2);
+    QuestBits act2{}, game{};
+    auto spots = palace_spots(act2, game);
     assert(spots.outside && spots.guard && !spots.palace);
     qset(act2, 12, 13);
-    qset(act2, 9, 13);
-    spots = palace_spots(act2);
+    qset(game, 9, 13);
+    spots = palace_spots(act2, game);
     assert(!spots.outside && spots.palace && spots.palace_west);
     qset(act2, 14, 2);
-    spots = palace_spots(act2);
+    spots = palace_spots(act2, game);
     assert(!spots.outside && spots.palace && !spots.palace_west);
     qset(act2, 14, 13);
-    assert(!palace_spots(act2).guard);
+    assert(!palace_spots(act2, game).guard);
+
+    // Act 2's opening: Jerhyn greets with his "!" until heard, which is
+    // the player's bit 0 and the game's bit 13 (him into the palace).
+    QuestBits opening{}, opening_game{};
+    assert(ActTwoOpening::alert(opening, ActTwoOpening::kJerhyn) && ActTwoOpening::talk(opening, ActTwoOpening::kJerhyn).size() == 1);
+    ActTwoOpening::said(opening, opening_game, ActTwoOpening::kJerhyn, ActTwoOpening::kGreeting);
+    assert(qbit(opening, 8, 0) && qbit(opening_game, 8, 13) && !ActTwoOpening::alert(opening, ActTwoOpening::kJerhyn));
+    assert(palace_spots(QuestBits{}, opening_game).palace);
+
+    // Radament's Lair: Atma's "!" from the start; her 304 heard (talk shut)
+    // logs it; out of town is under way; the kill marks 13 / 1 / 5 and drops
+    // the book; her thanks is done; reading the book is the skill point.
+    QuestBits lair{}, lair_game{};
+    RadamentQuest radament;
+    radament.join(lair, lair_game, false);
+    assert(radament.alert(lair, RadamentQuest::kAtma) && radament.talk(lair, RadamentQuest::kAtma)[0].string == 304);
+    radament.said(lair, lair_game, RadamentQuest::kAtma, RadamentQuest::kInit);
+    radament.talk_closed(lair, RadamentQuest::kAtma);
+    assert(radament.state == 2 && radament.log == 1 && qbit(lair, 9, 2));
+    radament.enter(lair, level_ids::kLutGholein);
+    assert(radament.state == 3 && qbit(lair, 9, 3));
+    const auto kill = radament.killed(lair, lair_game, true, false);
+    assert(kill.books == 1 && kill.took_part && qbit(lair, 9, 13) && qbit(lair, 9, 1) && qbit(lair, 9, 5) && qbit(lair_game, 9, 13));
+    for (int i = 0; i < 12; ++i) radament.tick();
+    assert(radament.log == 3 && radament.alert(lair, RadamentQuest::kAtma) && radament.talk(lair, RadamentQuest::kAtma)[0].string == 334);
+    radament.said(lair, lair_game, RadamentQuest::kAtma, RadamentQuest::kSuccess);
+    assert(radament.state == 5 && radament.log == 0xd && qbit(lair, 9, 0) && !qbit(lair, 9, 1));
+    assert(RadamentQuest::read_book(lair) && !qbit(lair, 9, 5) && !RadamentQuest::read_book(lair));
+    QuestBits lost = lair;                    // done, the book unread and gone: done again later
+    qset(lost, 9, 5);
+    RadamentQuest relost;
+    relost.join(lost, lair_game, false);
+    assert(!relost.open && !qbit(lost, 9, 0) && !qbit(lost, 9, 5));
     std::puts("ok");
 }

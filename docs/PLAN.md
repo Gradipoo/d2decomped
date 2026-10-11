@@ -763,6 +763,11 @@ Geglash, Greiz' hire list: act 2 mercs and their auras, Jerhyn, Lysander,
 Meshif, Warriv), the six quests (Radament, the Horadric Staff and Cube,
 Tainted Sun, Arcane Sanctuary, the Summoner, Seven Tombs), the desert's
 monsters and MonAI, Duriel.
+*Started (2026-10-11):* Act 2's opening (Jerhyn's greeting, the game's
+flag that moves him into the palace) and Radament's Lair (Atma, the kill,
+the Book of Skill, the log's Act 2 tab) are game.exe's records
+(quests-act2.md), checked live. Next: the Horadric Staff (record 9),
+then Tainted Sun, Arcane Sanctuary, the Summoner, the Seven Tombs.
 
 ## Earlier list (as of 2026-09-26; superseded by "Road to a whole Act 1")
 

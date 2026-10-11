@@ -390,23 +390,170 @@ struct AndyQuest {
 // subtile east unless quest 14 has bit 13, and Jerhyn in the palace
 // (FUN_0059ef70: x - 10 with that record open and under 2, else x + 15;
 // y - 3) unless quests 8 and 9 lack bit 13 and the record holds.
-// ponytail: the game's flags are the player's here (one player), and the
-// Seven Tombs record's state is "under 2" while quest 14 has none of bits
-// 1..11 (its record isn't ported).
+// Quests 8 and 9 are the game's flags (`game_bits`, game +0x10f4 +0xc).
+// ponytail: quests 12 and 14 are the player's (one player; their records
+// aren't ported), and the Seven Tombs record's state is "under 2" while
+// quest 14 has none of bits 1..11.
 struct PalaceSpots {
     bool outside = false, palace = false, guard = false;
     bool palace_west = false;          // the palace spot is x - 10 (else x + 15)
 };
-[[nodiscard]] inline PalaceSpots palace_spots(const QuestBits& quest_bits) {
+[[nodiscard]] inline PalaceSpots palace_spots(const QuestBits& quest_bits, const QuestBits& game_bits) {
     bool tombs_early = !qbit(quest_bits, 14, 0) && !qbit(quest_bits, 14, 15);
     for (int bit = 1; bit <= 11; ++bit) tombs_early = tombs_early && !qbit(quest_bits, 14, bit);
     PalaceSpots spots;
-    spots.outside = !qbit(quest_bits, 8, 13) && !qbit(quest_bits, 12, 13) && tombs_early;
+    spots.outside = !qbit(game_bits, 8, 13) && !qbit(quest_bits, 12, 13) && tombs_early;
     spots.guard = !qbit(quest_bits, 14, 13);
-    spots.palace = !(!qbit(quest_bits, 8, 13) && !qbit(quest_bits, 9, 13) && tombs_early);
+    spots.palace = !(!qbit(game_bits, 8, 13) && !qbit(game_bits, 9, 13) && tombs_early);
     spots.palace_west = tombs_early;
     return spots;
 }
+
+// Act 2's opening (a2q0.cpp, the record at FUN_00598810): quest 8. Jerhyn
+// greets (253, FUN_005986b0) with his "!" (FUN_00598780) until the player
+// has bit 0; hearing it sets that and the game's bit 13 (LAB_00598640), as
+// a join with bit 0 does (LAB_005987d0).
+// ponytail: Cain's 125 (quest 4 bit 14, the rescue missed; FUN_005940a0)
+// isn't here.
+struct ActTwoOpening {
+    static constexpr int kQuest = 8, kJerhyn = monster_ids::kJerhyn, kGreeting = 253;
+    static void join(const QuestBits& quest_bits, QuestBits& game_bits) {
+        if (qbit(quest_bits, kQuest, 0)) qset(game_bits, kQuest, 13);
+    }
+    [[nodiscard]] static std::vector<QuestMsg> talk(const QuestBits& quest_bits, int npc) {
+        if (npc == kJerhyn && !qbit(quest_bits, kQuest, 0)) return { { kGreeting, true } };
+        return {};
+    }
+    [[nodiscard]] static bool alert(const QuestBits& quest_bits, int npc) { return npc == kJerhyn && !qbit(quest_bits, kQuest, 0); }
+    static void said(QuestBits& quest_bits, QuestBits& game_bits, int npc, int string) {
+        if (npc != kJerhyn || string != kGreeting) return;
+        qset(quest_bits, kQuest, 0);
+        qset(game_bits, kQuest, 13);
+    }
+};
+
+// Radament's Lair (a2q1.cpp, the record at FUN_00599340): quest 9, given
+// out from the start (state 1). Bits: 0 done, 1 reward due, 2 Atma told,
+// 3 / 4 under way, 5 the Book of Skill due (cleared reading it), 13 took
+// part, 14 killed by someone else, 15 closed.
+// ponytail: one player — the rewarded list (rec+0x1c) is a bool, the party's
+// bits (FUN_00598d40) and the chain on to the Seven Tombs (+0x10 13, its
+// record not ported) are left out.
+struct RadamentQuest {
+    static constexpr int kQuest = 9, kAtma = monster_ids::kAtma, kLair = level_ids::kSewersLevel3, kRadament = monster_ids::kRadament;
+    static constexpr int kInit = 304, kSuccess = 334;
+    bool open = true;   // +9
+    int state = 1;      // +0xc: 1 given out, 2 Atma spoke, 3 out of town, 4 Radament dead, 5 done
+    int log = 0;        // +0xb
+    int log_in = 0;     // ticks to the kill's "return to Atma" (timer 0xc, LAB_00598f70)
+    bool pending = false;          // data+8: Atma spoke, the log waits for the talk to close
+    bool rewarded = false;         // in the +0x1c list
+    bool reward_closed = false;    // data+0x10: joined closed with the reward due
+
+    // A player's bits for the state (LAB_005989e0).
+    void mark(QuestBits& quest_bits) const {
+        if (qbit(quest_bits, kQuest, 0) || qbit(quest_bits, kQuest, 1)) return;
+        if (state == 2) qset(quest_bits, kQuest, 2);
+        if (state == 3) qset(quest_bits, kQuest, log == 1 ? 3 : 4);
+    }
+    // The player joins (FUN_00599230). Done with the book due but gone: the
+    // quest's bits go, to be done again in a later game.
+    void join(QuestBits& quest_bits, QuestBits& game_bits, bool has_book) {
+        if (qbit(quest_bits, kQuest, 0)) {
+            if (qbit(quest_bits, kQuest, 5) && !has_book)
+                for (const int bit : { 0, 1, 15, 5 }) qset(quest_bits, kQuest, bit, false);
+            qset(game_bits, kQuest, 13);
+            open = false; state = 0;
+            return;
+        }
+        if (qbit(quest_bits, kQuest, 15)) { reward_closed = qbit(quest_bits, kQuest, 1); state = 0; open = false; return; }
+        if (qbit(quest_bits, kQuest, 4)) { log = 2; state = 3; }
+        else if (qbit(quest_bits, kQuest, 3)) { state = 3; log = 1; }
+        else if (qbit(quest_bits, kQuest, 2)) { state = 2; log = 1; }
+    }
+    [[nodiscard]] int log_state(const QuestBits& quest_bits) const { return quest_log(quest_bits, kQuest, state, log, 4); }
+    void tick() {
+        if (log_in > 0 && --log_in == 0 && state == 4) log = 3;
+    }
+    // What `npc` says (FUN_00598c40): blocks at 0x739218 by the state
+    // (0x7398fc: -1, 0, 1, 2, 3, 4); kind 2 a topic, else greets.
+    struct E { int npc, string; bool greet; };
+    static inline const std::vector<E> kBlocks[5] = {
+        { { kAtma, 304, true } },
+        { { kAtma, 310, false }, { 175, 307, false }, { 198, 305, false }, { 199, 306, false }, { 177, 312, false }, { 202, 313, false },
+          { 244, 314, false }, { 210, 311, false }, { 200, 308, false }, { 178, 309, false } },
+        { { kAtma, 317, false }, { 175, 315, false }, { 198, 318, false }, { 199, 320, false }, { 177, 322, false }, { 202, 321, false },
+          { 244, 324, false }, { 210, 316, false }, { 200, 319, false }, { 178, 323, false } },
+        { { kAtma, 334, true }, { 198, 325, false }, { 199, 330, false }, { 177, 326, false }, { 202, 327, false }, { 244, 333, false },
+          { 210, 328, false }, { 200, 329, false }, { 178, 332, false } },
+        { { 175, 331, false }, { kAtma, 334, false }, { 198, 325, false }, { 199, 330, false }, { 177, 326, false }, { 244, 333, false },
+          { 210, 328, false }, { 200, 329, false }, { 178, 332, false } },
+    };
+    [[nodiscard]] std::vector<QuestMsg> talk(const QuestBits& quest_bits, int npc) const {
+        int block = -1;
+        if (qbit(quest_bits, kQuest, 1)) block = 3;
+        else if (rewarded) block = 4;
+        else if (!qbit(quest_bits, kQuest, 0) && state != 0 && (state < 4 || qbit(quest_bits, kQuest, 13))) block = state - 1;
+        std::vector<QuestMsg> out;
+        if (block >= 0 && block <= 4)
+            for (const auto& entry : kBlocks[block]) if (entry.npc == npc) out.push_back({ entry.string, entry.greet });
+        return out;
+    }
+    // Atma's "!" (FUN_00598910).
+    [[nodiscard]] bool alert(const QuestBits& quest_bits, int npc) const {
+        if (npc != kAtma || qbit(quest_bits, kQuest, 0)) return false;
+        return (open && state == 1 && !qbit(quest_bits, kQuest, 15)) || qbit(quest_bits, kQuest, 1);
+    }
+    // The player heard `string` from `npc` (FUN_00598a70). Atma's thanks with
+    // the reward due: done (the book was the reward).
+    void said(QuestBits& quest_bits, QuestBits& game_bits, int npc, int string) {
+        if (npc != kAtma) return;
+        if (string == kInit) { pending = true; state = 2; mark(quest_bits); return; }
+        if (string != kSuccess || !qbit(quest_bits, kQuest, 1)) return;
+        if (qbit(quest_bits, kQuest, 13)) {
+            if (state != 5) { log = 0xd; pending = false; state = 5; }
+            if (!open) qset(game_bits, kQuest, 13);
+        }
+        qset(quest_bits, kQuest, 0);
+        qset(quest_bits, kQuest, 1, false);
+        rewarded = true;
+    }
+    // The talk with `npc` closed (LAB_00598990).
+    void talk_closed(QuestBits& quest_bits, int npc) {
+        if (npc != kAtma || !pending) return;
+        log = 1; pending = false;
+        mark(quest_bits);
+    }
+    // The player went from level `from` (LAB_00599130): out of town.
+    void enter(QuestBits& quest_bits, int from) {
+        if (from != level_ids::kLutGholein) return;
+        rewarded = false;                         // FUN_00545310
+        if (state == 2 && !qbit(quest_bits, kQuest, 0) && !qbit(quest_bits, kQuest, 1)) { state = 3; mark(quest_bits); }
+    }
+    // Radament died (FUN_00599020). The books to drop at him (one each for a
+    // player due one without one, LAB_00598fa0); `took_part` (FUN_00598e20:
+    // the player's room is the killer's or next to it) also plays the
+    // class's act2_complete_radament (voice 0x32).
+    struct Kill { int books = 0; bool took_part = false; };
+    Kill killed(QuestBits& quest_bits, QuestBits& game_bits, bool nearby, bool has_book) {
+        if (!open) return {};
+        state = 4;
+        qset(game_bits, kQuest, 13);
+        pending = false;                          // +0xa8 = 0
+        const bool first = !qbit(quest_bits, kQuest, 0) && !qbit(quest_bits, kQuest, 1);
+        if (first && nearby) for (const int bit : { 13, 1, 5 }) qset(quest_bits, kQuest, bit);
+        else if (first) qset(quest_bits, kQuest, 14);   // LAB_00598dc0
+        if (log_in == 0) log_in = 12;
+        return { qbit(quest_bits, kQuest, 5) && !has_book ? 1 : 0, qbit(quest_bits, kQuest, 13) };
+    }
+    // The Book of Skill read (0x55cd31 / 0x55e3d0): only while bit 5 is set;
+    // it clears, and a skill point (stat 5).
+    static bool read_book(QuestBits& quest_bits) {
+        if (!qbit(quest_bits, kQuest, 5)) return false;
+        qset(quest_bits, kQuest, 5, false);
+        return true;
+    }
+};
 
 // Quest 4; bits: 0 done, 1 reward due, 2 Akara told, 3 under way, 4 the
 // stones done, 10 the Cow King dead, 13 took part in the rescue, 14 missed
@@ -925,7 +1072,7 @@ inline void chain(int quest, DenQuest& den, BurialQuest& burial, CainQuest& cain
 // The Den's states 3 / 4 add the count ("Monsters remaining: " N, 3739 for
 // one or none).
 // ponytail: single player (DAT_007a0610 0: 3729, never 3730).
-inline constexpr std::array<std::array<std::uint16_t, 29>, 6> kQuestLogRecords = { {
+inline constexpr std::array<std::array<std::uint16_t, 29>, 12> kQuestLogRecords = { {
     { 3714, 76, 4, 3735, 64, 3736, 64, 3737, 64, 3738, 64, 3740, 64, 3725, 3725, 3725, 3725, 3725, 3725, 3725, 3725,
       3740, 64, 3728, 3725, 3727, 3725, 3726, 64 },
     { 3715, 92, 2, 3741, 81, 3742, 81, 3743, 81, 3725, 3725, 3725, 3725, 3725, 3725, 3725, 3725, 3725, 3725, 3725, 3725,
@@ -938,19 +1085,34 @@ inline constexpr std::array<std::array<std::uint16_t, 29>, 6> kQuestLogRecords =
       3725, 3725, 3728, 3725, 3727, 3725, 3726, 127 },
     { 3719, 184, 9, 3758, 166, 3759, 166, 3761, 166, 3725, 3725, 3725, 3725, 3725, 3725, 3725, 3725, 3725, 3725, 3725, 3725,
       3760, 166, 3728, 3725, 3727, 3725, 3726, 184 },
+    // Act 2's, quests 9..14 (0x723b24 on).
+    { 923, 334, 2, 941, 304, 942, 304, 943, 304, 3725, 3725, 3725, 3725, 3725, 3725, 3725, 3725, 3725, 3725, 3725, 3725,
+      943, 3725, 3728, 3725, 3727, 3725, 3726, 304 },
+    { 924, 339, 0xffff, 944, 3725, 945, 335, 946, 338, 948, 3725, 947, 339, 947, 3725, 3725, 3725, 3725, 3725, 3730, 3725,
+      947, 3725, 3728, 3725, 3727, 3725, 3726, 339 },
+    { 925, 3725, 0xffff, 950, 3725, 951, 3725, 952, 348, 3725, 3725, 3725, 3725, 3725, 3725, 3725, 3725, 3725, 3725, 3725, 3725,
+      952, 3725, 3728, 3725, 3727, 3725, 3726, 3725 },
+    { 926, 3725, 0xffff, 954, 3725, 953, 373, 953, 377, 955, 377, 956, 396, 3725, 3725, 3725, 3725, 3725, 3725, 3725, 3725,
+      956, 396, 3728, 396, 3727, 3725, 3726, 396 },
+    { 927, 3725, 0xffff, 957, 3725, 958, 3725, 3726, 3725, 959, 3725, 3725, 3725, 3725, 3725, 3725, 3725, 3725, 3725, 3725, 3725,
+      959, 3725, 3728, 3725, 3727, 3725, 3726, 3725 },
+    { 928, 442, 4, 960, 430, 962, 431, 11030, 431, 964, 431, 965, 302, 966, 442, 961, 396, 3729, 3725, 3730, 3725,
+      965, 3725, 3728, 3725, 3727, 3725, 3726, 442 },
 } };
 // `state` is what the picker keeps as the quest's last shown state
 // (0x7bf380, -1 left as it was); `marks` when a change of it is news (+0x263:
 // the open log picks that quest, FUN_004a3220).
 struct QuestText { int string = 0, count = -1, speech = 0, shown = 2, state = -1; bool marks = false; };
 struct QuestState {
-    std::array<std::uint8_t, 7> log{};     // the log state the server sent, by quest (the view's quest_log)
-    std::array<std::uint16_t, 7> game{};   // the game's quest flags (the view's game_quests)
+    std::array<std::uint8_t, 15> log{};     // the log state the server sent, by quest (the view's quest_log)
+    std::array<std::uint16_t, 15> game{};   // the game's quest flags (the view's game_quests)
     int den_left = 0;                      // DAT_007bf2a4
 };
+// ponytail: the Seven Tombs' own case (record 0x723a64: quests 12 and 14's
+// bits pick states 5..7) isn't here; its record isn't ported.
 inline QuestText quest_text(const d2d::rules::QuestBits& quest_bits, int quest, const QuestState& quest_state) {
-    if (quest < 1 || quest > 6) return {};
-    const auto& rec = kQuestLogRecords[std::size_t(quest - 1)];
+    if (quest < 1 || quest > 14 || quest == 7 || quest == 8) return {};
+    const auto& rec = kQuestLogRecords[std::size_t(quest < 7 ? quest - 1 : quest - 3)];
     auto flag = [&](int bit) { return d2d::rules::qbit(quest_bits, quest, bit); };
     auto game = [&](int bit) { return (quest_state.game[std::size_t(quest)] >> bit & 1) != 0; };
     auto entry = [&](int string, int speech, int shown, int state, bool marks) {

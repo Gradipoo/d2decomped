@@ -112,8 +112,8 @@ struct View {
     bool den_cleared = false;              // the Den of Evil cleared in this game (its quest state, S→C 0x02)
     int light_bonus = 0;                   // item_lightradius (stat 89) from what's worn: the player's light grows by it
     std::array<d2d::rules::AttackLine, 2> attack_lines{};   // the char panel's left / right skill blocks (FUN_004eda20)
-    std::array<std::uint8_t, 7> quest_log{};     // Act 1's log states as the server sends them, by quest (FUN_00544190)
-    std::array<std::uint16_t, 7> game_quests{};  // the game's quest flags (FUN_00544720): 13 done in this game, 15 closed at the first join
+    std::array<std::uint8_t, 15> quest_log{};     // Acts 1 and 2's log states as the server sends them, by quest (FUN_00544190)
+    std::array<std::uint16_t, 15> game_quests{};  // the game's quest flags (FUN_00544720): 13 done in this game, 15 closed at the first join
     int den_left = 0;                            // the Den's monsters left (the quest log)
     // The player's own character (what only its owner is told): header,
     // stats, items with their unit ids, the item in hand; the open store's
@@ -209,9 +209,11 @@ struct World {
     d2d::rules::TowerQuest tower;          // and the Forgotten Tower
     d2d::rules::ToolsQuest tools;          // and Tools of the Trade
     d2d::rules::CainQuest cain;            // and The Search for Cain
+    d2d::rules::RadamentQuest radament;    // and Radament's Lair
+    d2d::rules::QuestBits game_bits{};     // the game's own quest flags (game +0x10f4 +0xc), as Act 2's records set them
     int den_left = -1;                     // its monsters alive when last counted
     std::uint32_t den_log_at = 0;          // when the log moves to "Return to Akara", 0 none
-    std::array<bool, 7> closed_at_join{};  // Act 1 quests the first join closed (the game's flag 15, FUN_00546270)
+    std::array<bool, 15> closed_at_join{};  // Acts 1 and 2's quests the first join closed (the game's flag 15, FUN_00546270)
     // The quest flags of the difficulty played.
     d2d::rules::QuestBits& quests();
     // Every item of the character has a unit id (new ones get theirs).
@@ -370,6 +372,7 @@ struct World {
     std::vector<d2d::rules::QuestMsg> quest_talk(int hc_idx);   // every quest's messages from that NPC
     void andariel_died(const Fight::Kill& kill, std::uint32_t now_ms);
     void blood_raven_died(std::uint32_t now_ms);
+    void radament_died(const Fight::Kill& kill, std::uint32_t now_ms);
     void kashya_merc();
     void countess_died(std::uint32_t now_ms);
     // The Countess's treasure (missile 332, towerchestspawner, one a chest

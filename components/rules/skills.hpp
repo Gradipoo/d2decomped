@@ -333,8 +333,12 @@ enum class ServerDoFunction : int {
     kFistOfTheHeavens = 80,        // FUN_005d0670
     kHolyFreeze = 81,              // FUN_005d0920
     kRedemption = 82,
+    kHatch = 84,                   // FUN_005cafa0: calc1 of its MonStats spawn about it, then it dies (MaggotEgg)
     kTransMissile = 85,            // FUN_005cb0c0: srvmissilea's row + the monster's TransLvl, once (ShamanFire, UnHolyBolt)
+    kMaggotDown = 86,              // FUN_005cb300: burrowed, it heals calc1 % of its life
+    kMaggotLay = 87,               // FUN_005cb3c0: its MonStats spawn two subtiles toward the target
     kMonsterBreath = 95,           // FUN_005cc4e0: FetishInferno, the inferno sentries
+    kBestow = 96,                  // FUN_005cc840: heals the one it's at calc1..calc2 % of its life
     kBookOrScroll = 113,           // Identify, Town Portal
     kRaven = 114,
     kVine = 115,                   // FUN_005c6a80: Plague Poppy, Cycle of Life, Vines

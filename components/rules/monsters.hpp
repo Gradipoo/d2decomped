@@ -1160,11 +1160,12 @@ inline int monster_skill_level(int sk_lvl, int difficulty) {
 }
 
 inline bool traced_ai(std::string_view ai_name) {
-    static constexpr std::array<std::string_view, 39> kTraced{ "Skeleton", "Zombie", "Bighead", "BloodHawk", "Brute", "Wraith", "Goatman",
+    static constexpr std::array<std::string_view, 41> kTraced{ "Skeleton", "Zombie", "Bighead", "BloodHawk", "Brute", "Wraith", "Goatman",
                                                                "CorruptRogue", "QuillRat", "CorruptArcher", "CorruptLancer", "SkeletonBow", "Fallen", "FallenShaman", "FoulCrowNest",
                                                                "BloodRaven", "SkeletonMage", "GargoyleTrap", "Arach", "Vampire", "Fetish", "Griswold", "Smith",
                                                                "Duriel", "Swarm", "PinHead", "Mummy", "SandLeaper", "ClawViper", "PantherWoman", "PantherJavelin",
-                                                               "Scarab", "BatDemon", "Baboon", "SandRaider", "GreaterMummy", "SandMaggot", "Summoner", "Vulture" };
+                                                               "Scarab", "BatDemon", "Baboon", "SandRaider", "GreaterMummy", "SandMaggot", "Summoner", "Vulture",
+                                                               "MaggotEgg", "MaggotLarva" };
     return std::ranges::contains(kTraced, ai_name);
 }
 
@@ -2012,6 +2013,25 @@ Think mon_think(std::string_view ai_name, const ThinkIn& input, Rng& rng, Away&&
         const Think out = rng(100) < aip[3] ? think_circle(rng, 6) : keep(ThinkUnit::target, 2, 9, 0);
         aloft = 0;
         return wait(out, 12);
+    }
+    // MaggotEgg (40, FUN_005f6530): unhatched, aip2 % it hatches (Skill1,
+    // wait aip1; state 1); hatched it dies; else stands aip1.
+    if (ai_name == "MaggotEgg") {
+        if (*input.state == 1) { Think out{ MonAct::die }; return out; }
+        if (input.skill[0] && roll() < aip[1]) { *input.state = 1; Think out = cast(0); out.wait = aip[0]; return out; }
+        return { MonAct::idle, aip[0] };
+    }
+    // MaggotLarva (38, FUN_005f6220): out of melee aip3 % walks in (flags
+    // 1), else stands aip4; in melee, rested (state 0), aip1 % A1 (state
+    // 1); else stands aip2.
+    if (ai_name == "MaggotLarva") {
+        if (!input.in_melee) {
+            *input.state = 0;
+            return roll() < aip[2] ? Think{ MonAct::walk, 1 } : Think{ MonAct::idle, aip[3] };
+        }
+        if (*input.state == 0 && roll() < aip[0]) { *input.state = 1; return { MonAct::a1 }; }
+        *input.state = 0;
+        return { MonAct::idle, aip[1] };
     }
     return { MonAct::untraced };
 }

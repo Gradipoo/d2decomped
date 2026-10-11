@@ -38,7 +38,7 @@ AIS = {
     "Duriel": 0x5f67b0, "Swarm": 0x5f2460, "PinHead": 0x5f6340, "Mummy": 0x5f2850, "SandLeaper": 0x5f20a0,
     "ClawViper": 0x5f1b60, "PantherWoman": 0x5f22b0, "PantherJavelin": 0x5e1080, "Scarab": 0x5f2540,
     "BatDemon": 0x5f5040, "Baboon": 0x5f0cd0, "SandRaider": 0x5f0700, "GreaterMummy": 0x5f2b10,
-    "SandMaggot": 0x5f1800, "Summoner": 0x5f85c0, "Vulture": 0x5f3170,
+    "SandMaggot": 0x5f1800, "Summoner": 0x5f85c0, "Vulture": 0x5f3170, "MaggotEgg": 0x5f6530, "MaggotLarva": 0x5f6220,
 }
 ORDER = list(AIS)
 # Think acts (rules::MonAct) by name; units (rules::ThinkUnit).
@@ -232,7 +232,9 @@ def install(e):
     e.hook(0x64e7b0, free, 5)
     e.hook(0x5de4e0, lambda e: out("keep", name(e.arg(0)), e.arg(1), S32(e.arg(2)), S32(e.arg(3))) or 1, 4)
     e.hook(0x5de440, lambda e: out("fly", S32(e.arg(0)), S32(e.arg(1)), e.arg(2)) or 1, 3)
-    e.hook(0x599420, lambda e: 0, 0)                                   # Radament's: FUN_00599420 (the quest's)
+    e.hook(0x599420, lambda e: 0, 0)
+    e.hook(0x553540, lambda e: cur["units"]["foe"], 2)                 # the unit its mode is at (the target)
+    e.hook(0x57ccb0, lambda e: out("die"), 2)                          # it dies (the egg hatched)                                   # Radament's: FUN_00599420 (the quest's)
 
 
 def run_game(e, s, addr, rng_moves):
@@ -288,10 +290,12 @@ def outcome(s, out):
         elif k == "pace":
             if item[1]: pace[0] = item[1]
             if item[2]: pace[1] = item[2]
+        elif k == "die": to("die")
         elif k == "keep": to("keep", item[3], item[4], item[2], item[1])
         elif k == "fly": to("fly", item[3], item[1], item[2], None)
         elif k == "aura": effects.append(("aura", s["skills"].index(item[1])))
         else: effects.append(item)
+    if any(item[0] == "die" for item in out): act[:] = ["die", 0, 0, 0, 0, 0, 0]   # dead: the stand after it is moot
     return act, pace, effects, asks
 
 

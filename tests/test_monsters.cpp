@@ -641,8 +641,9 @@ int main() {
                 static constexpr std::string_view kCases[] = {
 #include "mon_ais_cases.inc"
                 };
-                static constexpr std::array<std::string_view, 16> kAis{ "Duriel", "Swarm", "PinHead", "Mummy", "SandLeaper", "ClawViper", "PantherWoman", "PantherJavelin",
-                                                                       "Scarab", "BatDemon", "Baboon", "SandRaider", "GreaterMummy", "SandMaggot", "Summoner", "Vulture" };
+                static constexpr std::array<std::string_view, 18> kAis{ "Duriel", "Swarm", "PinHead", "Mummy", "SandLeaper", "ClawViper", "PantherWoman", "PantherJavelin",
+                                                                       "Scarab", "BatDemon", "Baboon", "SandRaider", "GreaterMummy", "SandMaggot", "Summoner", "Vulture",
+                                                                       "MaggotEgg", "MaggotLarva" };
                 using d2d::rules::ThinkEffect;
                 int checked = 0;
                 for (const std::string_view case_line : kCases) {

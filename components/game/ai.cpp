@@ -7,6 +7,7 @@
 
 #include <combat.hpp>
 #include <level_ids.hpp>
+#include <monster_ids.hpp>
 #include <monsters.hpp>
 #include <rules.hpp>
 #include <skills.hpp>
@@ -797,7 +798,7 @@ bool think(const GameData& game_data, const Level& level, Monster& monster, std:
             const std::string_view played = seq ? std::string_view(seq->front().mode) : std::string_view(type_info.sk_mode[std::size_t(act.n)]);
             use(played, id);
             if (seq) monster.mode_until = now_ms + std::uint32_t(seq->size()) * game_data.npc_timing(monster.npc, played).ms_per_frame();
-            monster.skill_unit = name == "Resurrect" || name == "Resurrect2" ? corpse : -1;
+            monster.skill_unit = name == "Resurrect" || name == "Resurrect2" ? corpse : act.unit == ThinkUnit::aid ? aid : -1;
             // Where a Nest's young come out: Blood Raven's spot off the
             // target, else spawnx / spawny off itself.
             monster.skill_x = act.x || act.y ? target_x + act.x : x + type_info.spawn_x;
@@ -897,7 +898,7 @@ bool monster_update(const GameData& game_data, const Level& level, Monster& mons
     // An attack, a taunt (the Fallen's S2), a skill's sequence (MonSeq: its
     // event rows), a young one coming out (spawnmode S1).
     const bool attack = monster.mode == "A1" || monster.mode == "A2";
-    if (attack || monster.mode == "S1" || monster.mode == "S2" || monster.mode == "SC") {
+    if (attack || monster.mode == "S1" || monster.mode == "S2" || monster.mode == "SC" || (monster.mode == "DT" && monster.skill >= 0)) {   // DT alive: a sequence (the egg's hatch)
         const auto& timing = game_data.npc_timing(monster.npc, monster.mode);
         const SeqRows* seq = skill_seq(game_data, type_info, monster.skill);
         if (seq && seq->front().mode == "WL") seq = nullptr;               // a charge's swing: one hit (its flag 0x40 after the first)
@@ -975,6 +976,62 @@ bool monster_update(const GameData& game_data, const Level& level, Monster& mons
                     if (type_info.spawn_mode != "NU" && !type_info.spawn_mode.empty()) set_mode(game_data, laid, type_info.spawn_mode, now_ms);
                     born->push_back(std::move(laid));
                 }
+            } else if (const auto* done = seq ? game_data.skills.get(monster.skill) : nullptr; done && done->srvdofunc == d2d::rules::ServerDoFunction::kMaggotLay) {
+                // MagottLay (srvdofunc 87, FUN_005cb3c0): its MonStats spawn (an
+                // egg) in spawnmode two subtiles toward the target: the 64-way
+                // direction (FUN_0064fdc0) in 8 (DAT_00745600), the ring-2 step
+                // (DAT_006e3138 into DAT_006ea998 / DAT_006ea978).
+                // ponytail: the egg's flag 0x4000000 unread.
+                static constexpr std::array<int, 8> kRing{ 10, 8, 22, 20, 18, 16, 14, 12 };
+                static constexpr std::array<int, 24> kStepX{ 0, -1, -1, -1, 0, 1, 1, 1, 0, -1, -2, -2, -2, -2, -2, -1, 0, 1, 2, 2, 2, 2, 2, 1 };
+                static constexpr std::array<int, 24> kStepY{ -1, -1, 0, 1, 1, 1, 0, -1, -2, -2, -2, -1, 0, 1, 2, 2, 2, 2, 2, 1, 0, -1, -2, -2 };
+                const int at_x = subtile(unit.x), at_y = subtile(unit.y);
+                const int ring = kRing[std::size_t(((d2d::rules::direction64(at_x, at_y, monster.skill_x, monster.skill_y) + 4) >> 3) & 7)];
+                if (const auto young = game_data.monsters.by_id.find(type_info.spawn); born && young != game_data.monsters.by_id.end()) {
+                    auto laid = make_monster(game_data, young->second, (float(at_x + kStepX[std::size_t(ring)]) + 0.5f) / 5, (float(at_y + kStepY[std::size_t(ring)]) + 0.5f) / 5, rng, monster.difficulty);
+                    laid.aware = true;
+                    laid.seed = d2d::rules::Rng{ rng.next() };
+                    if (type_info.spawn_mode != "NU" && !type_info.spawn_mode.empty()) set_mode(game_data, laid, type_info.spawn_mode, now_ms);
+                    born->push_back(std::move(laid));
+                }
+            } else if (done && done->srvdofunc == d2d::rules::ServerDoFunction::kHatch) {
+                // MaggotEgg (srvdofunc 84, FUN_005cafa0): calc1 of its MonStats
+                // spawn (FUN_0056e620), the first on its spot, the rest on rings
+                // out to 4 as spots fill (FUN_005b23c0, 2 x calc1 tries), each
+                // flag 0x4000000; then it dies (FUN_0057ccb0).
+                // ponytail: each larva at the nearest free spot to the egg, not
+                // FUN_005b23c0's ring search; the flag unread.
+                const int lvl = skill_level(game_data, monster, monster.skill);
+                const int count = d2d::rules::eval_calc(game_data.skills, done->calc[0], {}, monster.skill, lvl);
+                if (const auto young = game_data.monsters.by_id.find(type_info.spawn); born && young != game_data.monsters.by_id.end())
+                    for (int made = 0; made < count; ++made) {
+                        const auto [free_x, free_y] = level.nearest_free(unit.x + float(made % 3 - 1) * 0.4f, unit.y + float(made / 3 % 3 - 1) * 0.4f);
+                        auto larva = make_monster(game_data, young->second, free_x, free_y, rng, monster.difficulty);
+                        larva.aware = true;
+                        larva.seed = d2d::rules::Rng{ rng.next() };
+                        born->push_back(std::move(larva));
+                    }
+                monster.hit_points = 0;                                        // no loot, no experience
+            } else if (done && done->srvdofunc == d2d::rules::ServerDoFunction::kMaggotDown) {
+                // MagottDown (srvdofunc 86, FUN_005cb300): calc1 % of its life back, once (flag 0x40).
+                // ponytail: burrowed it stays hittable (no underground state).
+                const int lvl = skill_level(game_data, monster, monster.skill);
+                const int back = d2d::rules::eval_calc(game_data.skills, done->calc[0], {}, monster.skill, lvl);
+                if (back > 0) monster.hit_points = std::min(monster.hit_points + monster.stats.hit_points * back / 100, monster.stats.hit_points);
+                monster.seq_once = true;
+            } else if (done && done->srvdofunc == d2d::rules::ServerDoFunction::kBestow) {
+                // Bestow (srvdofunc 96, FUN_005cc840): the one it's at gets
+                // lo + rand(hi - lo) % of its life back on the caster's seed (hi:
+                // calc2 in 0..100, lo: calc1 in 0..hi), within 1..its life; once.
+                const int lvl = skill_level(game_data, monster, monster.skill);
+                const int high = std::min(std::max(d2d::rules::eval_calc(game_data.skills, done->calc[1], {}, monster.skill, lvl), 0), 100);
+                const int low = std::min(std::max(d2d::rules::eval_calc(game_data.skills, done->calc[0], {}, monster.skill, lvl), 0), high);
+                const int pct = monster.seed(high - low) + low;
+                if (monster.skill_unit >= 0 && std::size_t(monster.skill_unit) < pack.size()) {
+                    auto& healed = pack[std::size_t(monster.skill_unit)];
+                    if (healed.alive()) healed.hit_points = std::clamp(healed.hit_points + healed.stats.hit_points * pct / 100, 1, healed.stats.hit_points);
+                }
+                monster.seq_once = true;
             } else if (skill("Resurrect") || skill("Resurrect2")) {           // srvdofunc 97 (FUN_005ccb10 / FUN_005cc960): the corpse back at full life
                 // ponytail: the revived state's look (FUN_005cc960's state) left out.
                 if (monster.skill_unit >= 0 && std::size_t(monster.skill_unit) < pack.size()) {

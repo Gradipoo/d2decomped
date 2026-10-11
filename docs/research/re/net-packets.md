@@ -472,11 +472,14 @@ ids).
   `FUN_0065c4d0(…, 0x60, 0)`); otherwise the NPC is looked up and the
   quest log opens.
 - **0x29 game quest info** (97): 96 bytes at +1 → `DAT_007c0d47` (the
-  game's quest words).
+  game's quest words; the log's "done in this game" bits 13 / 15).
+  d2d: `NetGame::game_quests` → the View's `game_quests` in a joined game.
 - **0x52 player quest info** (42): the whole packet, id included, →
-  `DAT_007bf355` (a jump to `FUN_004a40d0`), so 41 bytes of data
-  (`FUN_00483350`, then the log refresh `FUN_004a3220`); what each byte
-  means **(?)** (quests.md's log states, one a quest, by the size).
+  `DAT_007bf355` (a jump to `FUN_004a40d0`), then the log refresh
+  `FUN_004a3220`. Byte k + 1 is the log state of row k of the log's table
+  (0x723f30, 41 rows of 16 bytes: +8 the quest record id, 37 none; +0xc
+  the row, which is the quest word). So 41 log states by quest word.
+  d2d: `NetGame::quest_log` → the View's `quest_log` in a joined game.
 
 ### NPCs, UI, waypoints, portals
 
@@ -633,7 +636,11 @@ The ids apps/d2proxy flagged in a real game.exe client's session (table
   another). Sent in pairs after item and stat changes. Which one the host
   sends when isn't traced.
 - **0x5d quest log news** (6; `0x45e540` → `FUN_004a2cb0`): quests.md's
-  Quest Log button.
+  Quest Log button. +1 is the quest **record** id (the host's
+  `FUN_00544190` sends by record), mapped to its row / word by
+  `FUN_004a1910` (Radament: record 8, word 9); no flags (or flags 0x20,
+  the Den's, with +4 s16 its count) writes +3, the log state, into
+  0x7bf355. d2d: `d2gs::s2c::quest_word_of_record`.
 - **0x5e quests open in this game** (38; `0x45e570`): 37 bytes copied to
   `0x7c0ea4` (flag `0x7c0ecc` = 1), read by `FUN_004b92e0(_, quest)` (the
   mini panel, the quest buttons). The host (`FUN_00546270`) fills them from

@@ -210,7 +210,10 @@ struct World {
     d2d::rules::ToolsQuest tools;          // and Tools of the Trade
     d2d::rules::CainQuest cain;            // and The Search for Cain
     d2d::rules::RadamentQuest radament;    // and Radament's Lair
-    d2d::rules::QuestBits game_bits{};     // the game's own quest flags (game +0x10f4 +0xc), as Act 2's records set them
+    d2d::rules::QuestBits game_bits{};
+    // A joined game: the host runs the quests. d2d's records hear nothing,
+    // reward nothing and drop nothing; the client shows the host's.
+    bool hosted_quests = false;     // the game's own quest flags (game +0x10f4 +0xc), as Act 2's records set them
     int den_left = -1;                     // its monsters alive when last counted
     std::uint32_t den_log_at = 0;          // when the log moves to "Return to Akara", 0 none
     std::array<bool, 15> closed_at_join{};  // Acts 1 and 2's quests the first join closed (the game's flag 15, FUN_00546270)

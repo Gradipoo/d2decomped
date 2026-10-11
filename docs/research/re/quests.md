@@ -281,6 +281,8 @@ log with Q doesn't turn it off.
 
 d2d: `quest_log_open` / `_close` / `_tab` / `_notify`, `quest_log_button`
 (panels.hpp), `rules::quest_log_pick` / `quest_log_act`.
+In a joined game the log is the host's (0x52 / 0x5d / 0x29, net-packets.md
+"Quests"), and d2d's own records don't act (`World::hosted_quests`).
 ponytail: a change in the View's log state stands in for each 0x5d (so a
 log change the server keeps to itself, Burial's 13 at the reward, also
 brings the button); the player's act is taken as Act 1's; the description

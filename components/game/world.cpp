@@ -808,6 +808,7 @@ auto World::cross_level() -> void {
     }
 
 auto World::quest_talk(int hc_idx) -> std::vector<d2d::rules::QuestMsg> {
+        if (hosted_quests) return {};
         auto out = den.talk(quests(), hc_idx);
         std::ranges::copy(andy.talk(quests(), hc_idx), std::back_inserter(out));
         std::ranges::copy(burial.talk(quests(), hc_idx), std::back_inserter(out));
@@ -1481,7 +1482,7 @@ auto World::deal(const Command& command) -> bool {
             return true;
         }
         if (const auto* message = std::get_if<cmd::QuestMessage>(&command)) {   // only what that NPC has to say
-            if (std::size_t(message->npc) >= level->npcs.size()) return true;
+            if (hosted_quests || std::size_t(message->npc) >= level->npcs.size()) return true;
             if (level->npcs[std::size_t(message->npc)].operate_fn == d2d::rules::operate_fn::kMoldyTome) {   // the tome's 127 (FUN_00594960: no NPC check)
                 if (message->string == d2d::rules::TowerQuest::kTome && !closed_at_join[std::size_t(d2d::rules::TowerQuest::kQuest)]) { tower.read_tome(quests()); d2d::log::info("The Forgotten Tower: read the Moldy Tome"); }
                 return true;
@@ -1557,7 +1558,7 @@ auto World::apply(const Command& command, std::uint32_t now_ms) -> void {
             const auto found = std::ranges::find(character.items, use->item, &d2d::d2s::Item::id);
             if (found != character.items.end() && (found->code == "tsc" || found->code == "tbk")) read_portal(found, now_ms);
             else if (found != character.items.end() && found->code == "ass") {   // the Book of Skill (0x55e3d0)
-                if (d2d::rules::RadamentQuest::read_book(quests())) {
+                if (!hosted_quests && d2d::rules::RadamentQuest::read_book(quests())) {   // a joined game's: the host's (the use went to it)
                     ++character.stats.values[d2d::d2s::kSkillPts];
                     character.items.erase(found);
                     d2d::log::info("Radament's Lair: the Book of Skill, a skill point");
@@ -1901,10 +1902,12 @@ auto World::tick(const std::vector<Command>& cmds, std::uint32_t now_ms, std::ui
         }
         use_portal(now_ms);
         }
-        for (const auto& kill : fight.kills) if (kill.type == d2d::rules::monster_ids::kAndariel) andariel_died(kill, now_ms);   // a pet's kill too, the player dead
-        for (const auto& kill : fight.kills) if (kill.type == d2d::rules::monster_ids::kBloodRaven) blood_raven_died(now_ms);
-        for (const auto& kill : fight.kills) if (kill.type == d2d::rules::monster_ids::kRadament) radament_died(kill, now_ms);
-        for (const auto& kill : fight.kills) if (kill.super == d2d::rules::TowerQuest::kCountess) countess_died(now_ms);
+        for (const auto& kill : hosted_quests ? std::vector<Fight::Kill>{} : fight.kills) {
+            if (kill.type == d2d::rules::monster_ids::kAndariel) andariel_died(kill, now_ms);   // a pet's kill too, the player dead
+            if (kill.type == d2d::rules::monster_ids::kBloodRaven) blood_raven_died(now_ms);
+            if (kill.type == d2d::rules::monster_ids::kRadament) radament_died(kill, now_ms);
+            if (kill.super == d2d::rules::TowerQuest::kCountess) countess_died(now_ms);
+        }
         fight.kills.clear();
         cross_level();
         fight.rooms_up(*level, player.x, player.y, false);

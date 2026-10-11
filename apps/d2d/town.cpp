@@ -296,7 +296,7 @@ auto Town::publish() -> void {
         // button, or the open log picks it.
         // ponytail: a change in the View's log state stands in for each send
         // (FUN_00544190); none at the game's first View (the join sends none).
-        for (std::size_t quest = 1; quest < view.quest_log.size(); ++quest)
+        for (std::size_t quest = 1; !net_game && quest < view.quest_log.size(); ++quest)   // a joined game's come as 0x5d (net_quests)
             if (quest_log.sent_known && view.quest_log[quest] && view.quest_log[quest] != quest_log.sent[quest]) quest_log_notify(quest_log, int(quest));
         quest_log.sent = view.quest_log;
         quest_log.sent_known = true;
@@ -1622,6 +1622,13 @@ auto Town::net_quests(std::uint32_t frame_ms) -> void {
             else { net_early_quest = std::move(host_quest); net_early_ms = world_ms; }
         }
         net_game->npc_quests.clear();
+        // The log as the host has it (0x52 / 0x5d / 0x29): the View's are d2d's own records'.
+        if (net_game->quest_log_known)
+            for (std::size_t quest = 0; quest < view.quest_log.size(); ++quest) {
+                view.quest_log[quest] = net_game->quest_log[quest];
+                view.game_quests[quest] = net_game->game_quests[quest];
+            }
+        view.den_left = net_game->den_left;
         for (const std::uint32_t id : net_game->npc_alerts) net_alert_ms[id] = world_ms;
         net_game->npc_alerts.clear();
         for (std::size_t i = 0; level && i < view.npc_states.size() && i < level->npcs.size(); ++i) {

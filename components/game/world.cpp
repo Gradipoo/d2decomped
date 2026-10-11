@@ -132,10 +132,11 @@ auto World::view() const -> View {
         for (const auto& fire : fires) if (fire.level == level) view.fires.push_back({ fire.x, fire.y, fire.npc });
         for (std::size_t k = 0; k < corpses.size(); ++k)
             if (corpses[k].level == level) view.corpses.push_back({ corpses[k].x, corpses[k].y, corpses[k].dir, corpses[k].gfx, int(k) });
-        for (int k = 0; k < 4; ++k)
+        for (int k = 0; k < int(portal.size()); ++k)
             if (portal[std::size_t(k)].level == level)
-                view.portals.push_back({ portal[std::size_t(k)].x, portal[std::size_t(k)].y, k >= 2 ? portal[std::size_t(5 - k)].level ? portal[std::size_t(5 - k)].level->id : d2d::rules::CainQuest::kTristram : portal[std::size_t(1 - k)].level->id, portal[std::size_t(k)].born, k });
-        if (cain_portal.level == level) view.portals.push_back({ cain_portal.x, cain_portal.y, 1, cain_portal.born, 4 });
+                view.portals.push_back({ portal[std::size_t(k)].x, portal[std::size_t(k)].y, portal[std::size_t(k ^ 1)].level ? portal[std::size_t(k ^ 1)].level->id : d2d::rules::CainQuest::kTristram,
+                                         portal[std::size_t(k)].born, k });
+        if (cain_portal.level == level) view.portals.push_back({ cain_portal.x, cain_portal.y, 1, cain_portal.born, 6 });
         view.npc_states = npc_states;
         grow_states(view.npc_states, *level);
         view.npc_states.resize(level->npcs.size());
@@ -164,6 +165,8 @@ auto World::view() const -> View {
             view.quest_log[d2d::rules::RadamentQuest::kQuest] = std::uint8_t(radament.log_state(quest_bits));
             view.quest_log[d2d::rules::TaintedSunQuest::kQuest] = std::uint8_t(tainted.log_state(quest_bits));
             view.quest_log[d2d::rules::HoradricStaffQuest::kQuest] = std::uint8_t(staff.log_state(quest_bits, staff_items(), tainted.used));
+            view.quest_log[d2d::rules::ArcaneQuest::kQuest] = std::uint8_t(arcane.log_state(quest_bits));
+            view.quest_log[d2d::rules::SummonerQuest::kQuest] = std::uint8_t(summoner.log_state(quest_bits));
             for (int quest = 1; quest < 15; ++quest) {
                 const bool bit0 = d2d::rules::qbit(quest_bits, quest, 0) || d2d::rules::qbit(quest_bits, quest, 15);
                 if (bit0 && !d2d::rules::qbit(quest_bits, quest, 13) && !d2d::rules::qbit(quest_bits, quest, 14)) view.quest_log[std::size_t(quest)] = 0;
@@ -405,6 +408,30 @@ auto World::operate(int npc_index, std::uint32_t now_ms, int force ) -> void {  
             for (std::uint32_t gold = fight.spawning.quests.next() % 5 + 5; gold > 0; --gold) drops.push_back({ .code = "gld" });
             for (const auto& dropped : drops) loot.put(dropped, object.x, object.y, here, fight.spawning.game, now_ms);
             d2d::log::info("The Tainted Sun: the altar, the sun's back ({} drops)", drops.size() + std::size_t(use.amulets));
+            return;
+        }
+        // Horazon's Journal (OperateFn 42, FUN_0059b970): opened once (mode
+        // 1), read every time: its 396 (FUN_005456a0, as the Moldy Tome's),
+        // and the quest's (ArcaneQuest::journal).
+        if (object.operate_fn == d2d::rules::operate_fn::kJournal) {
+            if (operated.try_emplace({ level, npc_index }, now_ms).second) to_mode(1);
+            if (!hosted_quests) arcane.journal(quests(), object.room, level->id == d2d::rules::ArcaneQuest::kSanctuary);
+            events.push_back(ev::Speech{ npc_index, d2d::rules::ArcaneQuest::kJournal });
+            return;
+        }
+        // The Sanctuary's portal (OperateFn 34, FUN_005846b0): shut, it opens
+        // (mode 1); open, Palace Cellar 3 and the Sanctuary take the player to
+        // each other's (FUN_0053aec0), by the portal there.
+        if (object.operate_fn == d2d::rules::operate_fn::kSanctuaryPortal) {
+            if (operated.try_emplace({ level, npc_index }, now_ms).second) { to_mode(1); return; }
+            if (fight.remote_monsters) return;
+            const int destination = level->id == d2d::rules::level_ids::kArcaneSanctuary ? d2d::rules::level_ids::kPalaceCellarLevel3 : d2d::rules::level_ids::kArcaneSanctuary;
+            const Level* there = game_data->level(destination);
+            if (!there || there->ds1.width() == 0) { d2d::log::info("not implemented: level {} (the Sanctuary's portal)", destination); return; }
+            const auto other = std::ranges::find(there->npcs, object.object_id, &Npc::object_id);
+            const float to_x = other == there->npcs.end() ? float(there->ds1.width()) / 2 : other->x, to_y = other == there->npcs.end() ? float(there->ds1.height()) / 2 : other->y;
+            const auto [spot_x, spot_y] = there->nearest_free(to_x, to_y + 0.6f);
+            arrive(there, spot_x, spot_y, "the Sanctuary's portal");
             return;
         }
         if (object.operate_fn == d2d::rules::operate_fn::kCairnStone || object.operate_fn == d2d::rules::operate_fn::kGibbet || object.operate_fn == d2d::rules::operate_fn::kInifussTree) { cain_operate(npc_index, now_ms); return; }
@@ -725,6 +752,10 @@ auto World::new_game() -> void {
         radament.join(quests(), game_bits, carries("ass"));
         tainted = {};
         tainted.join(quests(), game_bits);
+        arcane = {};
+        arcane.join(quests(), game_bits, carries("hst"));
+        summoner = {};
+        summoner.join(quests());
         staff = {};
         staff.join(quests(), staff_items(), false);
         den = {};
@@ -795,6 +826,7 @@ auto World::swap_npcs(const Level* from) -> void {
         if (from && from != level) cain.enter(quests(), from->id, level->id);
         if (from && from != level) radament.enter(quests(), from->id);
         if (from && from != level && from->id == d2d::rules::level_ids::kLutGholein) staff.rewarded = false;   // LAB_00599a00
+        if (from && from != level) { arcane.enter(quests(), from->id, level->id); summoner.enter(from->id, level->id); }
         if (from && from != level && tainted.enter(from->id, level->id)) tainted.dark_in = int(fight.spawning.quests(17));
         if (from && from != level && level->id == d2d::rules::TaintedSunQuest::kTemple)   // the altar's InitFn 20 (FUN_0059a3f0): the level's rooms all come up
             for (const auto& object : level->npcs) if (object.root == "objects" && object.object_id == d2d::rules::TaintedSunQuest::kAltar) tainted.altar_seen();
@@ -890,7 +922,7 @@ auto World::cross_level() -> void {
         }
     }
 
-auto World::quest_talk(int hc_idx) -> std::vector<d2d::rules::QuestMsg> {
+auto World::quest_talk(int hc_idx, bool fresh) -> std::vector<d2d::rules::QuestMsg> {
         if (hosted_quests) return {};
         auto out = den.talk(quests(), hc_idx);
         std::ranges::copy(andy.talk(quests(), hc_idx), std::back_inserter(out));
@@ -902,6 +934,11 @@ auto World::quest_talk(int hc_idx) -> std::vector<d2d::rules::QuestMsg> {
         std::ranges::copy(radament.talk(quests(), hc_idx), std::back_inserter(out));
         std::ranges::copy(tainted.talk(quests(), hc_idx), std::back_inserter(out));
         std::ranges::copy(staff.talk(quests(), hc_idx, staff_items()), std::back_inserter(out));
+        std::ranges::copy(arcane.talk(quests(), hc_idx, [&] {          // the guard's line: one roll a talk on the quest seed
+                              if (fresh) guard_line = 187 + int(fight.spawning.quests.next() % 3);
+                              return std::uint32_t(guard_line - 187);
+                          }), std::back_inserter(out));
+        std::ranges::copy(summoner.talk(quests(), hc_idx), std::back_inserter(out));
         return out;
     }
 
@@ -973,7 +1010,11 @@ auto World::transmute(std::uint32_t now_ms) -> void {
         std::erase_if(character.items, [](const Item& item) { return item.location == d2d::d2s::item_location::kStored && item.panel == d2d::d2s::item_panel::kCube; });
         const auto& layout = game_data->cube_layout;
         for (auto& item : made.items) {
-            if (item.code == "hst") { d2d::rules::qset(quests(), d2d::rules::HoradricStaffQuest::kQuest, 11); staff.staff_made = true; }
+            if (item.code == "hst") {             // FUN_0059e5c0 -> FUN_0059b660
+                d2d::rules::qset(quests(), d2d::rules::HoradricStaffQuest::kQuest, 11);
+                staff.staff_made = true;
+                arcane.staff_made(quests());
+            }
             std::vector<const Item*> placed;
             for (const auto& other : character.items)
                 if (other.location == d2d::d2s::item_location::kStored && other.panel == d2d::d2s::item_panel::kCube) placed.push_back(&other);
@@ -986,6 +1027,22 @@ auto World::transmute(std::uint32_t now_ms) -> void {
                 loot.place(std::move(*held_item), player.x, player.y, now_ms);
         }
         d2d::log::info("transmute: {} ({} made)", recipe.description, made.items.size());
+    }
+
+// The way to the Canyon of the Magi (FUN_0056d130: object 60 to level 46):
+// by the player (FUN_00545340's search: the nearest free spot), its twin at
+// the Canyon's portal spot.
+auto World::canyon_portal(std::uint32_t now_ms) -> void {
+        const Level* canyon = game_data->level(d2d::rules::ArcaneQuest::kCanyon);
+        const auto [spot_x, spot_y] = level->nearest_free(player.x, player.y + 0.6f);
+        portal[4] = { level, spot_x, spot_y, now_ms };
+        if (canyon && canyon->ds1.width() > 0) {
+            const auto [to_x, to_y] = canyon->portal_spot.first >= 0 ? canyon->nearest_free(canyon->portal_spot.first, canyon->portal_spot.second)
+                                                                    : canyon->nearest_free(float(canyon->ds1.width()) / 2, float(canyon->ds1.height()) / 2);
+            portal[5] = { canyon, to_x, to_y, now_ms };
+        }
+        cues.cue("object_townportal", now_ms, spot_x, spot_y);
+        d2d::log::info("The Arcane Sanctuary: the way to the Canyon of the Magi");
     }
 
 // Radament's death hook (FUN_00599020): the books due drop at him
@@ -1415,9 +1472,10 @@ auto World::use_portal(std::uint32_t now_ms) -> void {
             arrive(tristram, portal[3].x, portal[3].y + 0.6f, "the Cairn Stones' portal");
             return;
         }
-        if (take_portal == 3) {                       // back to the Cairn Stones
+        if (take_portal >= 3) {                       // back to the Cairn Stones; the Canyon's pair
+            const auto& twin = portal[std::size_t(take_portal ^ 1)];
             take_portal = -1;
-            arrive(portal[2].level, portal[2].x, portal[2].y + 0.6f, "the Cairn Stones' portal");
+            arrive(twin.level, twin.x, twin.y + 0.6f, "a quest portal");
             return;
         }
         const auto& other_end = portal[std::size_t(1 - take_portal)];
@@ -1580,6 +1638,7 @@ auto World::deal(const Command& command) -> bool {
                 tools.talk_closed(quests(), level->npcs[std::size_t(talking[0])].hc_idx);
                 cain.talk_closed(quests(), level->npcs[std::size_t(talking[0])].hc_idx);
                 radament.talk_closed(quests(), level->npcs[std::size_t(talking[0])].hc_idx);
+                arcane.talk_closed(quests(), level->npcs[std::size_t(talking[0])].hc_idx);
             }
             talking = { chat->npc, -1, -1 };
             return true;
@@ -1608,12 +1667,16 @@ auto World::deal(const Command& command) -> bool {
         }
         if (const auto* message = std::get_if<cmd::QuestMessage>(&command)) {   // only what that NPC has to say
             if (hosted_quests || std::size_t(message->npc) >= level->npcs.size()) return true;
+            if (level->npcs[std::size_t(message->npc)].operate_fn == d2d::rules::operate_fn::kJournal) {     // the journal's 396 (a2q4's +0xcc: no NPC)
+                if (arcane.said(quests(), game_bits, -1, message->string, room_of(*level, player.x, player.y))) canyon_portal(now);
+                return true;
+            }
             if (level->npcs[std::size_t(message->npc)].operate_fn == d2d::rules::operate_fn::kMoldyTome) {   // the tome's 127 (FUN_00594960: no NPC check)
                 if (message->string == d2d::rules::TowerQuest::kTome && !closed_at_join[std::size_t(d2d::rules::TowerQuest::kQuest)]) { tower.read_tome(quests()); d2d::log::info("The Forgotten Tower: read the Moldy Tome"); }
                 return true;
             }
             const int hc_idx = level->npcs[std::size_t(message->npc)].hc_idx;
-            if (!std::ranges::contains(quest_talk(hc_idx), message->string, &d2d::rules::QuestMsg::string)) return true;
+            if (!std::ranges::contains(quest_talk(hc_idx, false), message->string, &d2d::rules::QuestMsg::string)) return true;
             if (tower.said(quests(), hc_idx, message->string)) { d2d::log::info("The Forgotten Tower: done"); chain(5); }   // FUN_00594960
             if (andy.said(quests(), hc_idx, message->string)) {
                 d2d::log::info("Sisters to the Slaughter: done, Warriv's caravan goes east");
@@ -1655,7 +1718,12 @@ auto World::deal(const Command& command) -> bool {
             }
             d2d::rules::ActTwoOpening::said(quests(), game_bits, hc_idx, message->string);
             radament.said(quests(), game_bits, hc_idx, message->string);
+            const int tainted_was = tainted.state;
             tainted.said(quests(), game_bits, hc_idx, message->string);
+            if (tainted_was != 5 && tainted.state == 5) arcane.chain();          // the Tainted Sun's +0xf0: on to record 11's
+            arcane.said(quests(), game_bits, hc_idx, message->string, room_of(*level, player.x, player.y));
+            summoner.said(quests(), game_bits, message->string);
+            if (hc_idx == d2d::rules::ArcaneQuest::kDrognan || hc_idx == d2d::rules::ArcaneQuest::kJerhyn) show_palace();   // the guard steps aside
             if (staff.said(quests(), hc_idx, message->string)) {     // the scroll read: it goes
                 if (held && held->code == "tr1") held.reset();
                 else if (const auto horadric_scroll = std::ranges::find(character.items, std::string("tr1"), &d2d::d2s::Item::code); horadric_scroll != character.items.end()) character.items.erase(horadric_scroll);
@@ -1766,7 +1834,7 @@ auto World::apply(const Command& command, std::uint32_t now_ms) -> void {
                 take_corpse = -3000 - interact->npc;
                 return;
             }
-            if (interact->npc <= -2000 && interact->npc > -2004) {                       // a town portal (the client names them -2000 - k)
+            if (interact->npc <= -2000 && interact->npc > -2000 - int(portal.size())) {                       // a town portal (the client names them -2000 - k)
                 const auto& entry_portal = portal[std::size_t(-2000 - interact->npc)];
                 if (entry_portal.level != level) return;
                 walk_to(entry_portal.x, entry_portal.y, true);
@@ -1860,6 +1928,11 @@ auto World::tick(const std::vector<Command>& cmds, std::uint32_t now_ms, std::ui
             burial.tick();
             radament.tick();
             tainted.tick(quests());
+            if (summoner.tick() && d2d::rules::qbit(quests(), d2d::rules::SummonerQuest::kQuest, 13) && level->id == d2d::rules::SummonerQuest::kSanctuary
+                && character.header.cls < 7) {
+                static constexpr const char* kClass[7] = { "amazon", "sorceress", "necromancer", "paladin", "barbarian", "druid", "assassin" };
+                cues.cue(std::format("{}_act2_complete_summoner", kClass[character.header.cls]), day_at, player.x, player.y);   // voice 0x33
+            }
             // The act's sky (S->C 0x53, FUN_0059a100 / FUN_0059a170): dark
             // while the Tainted Sun has it out and the player's in Act 2; a
             // joined game's comes from the host.
@@ -2027,7 +2100,8 @@ auto World::tick(const std::vector<Command>& cmds, std::uint32_t now_ms, std::ui
                                   || tools.alert(quests(), level->npcs[i].hc_idx, holding_malus(), int(character.stats.get(d2d::d2s::kLevel)))
                                   || cain.alert(quests(), level->npcs[i].hc_idx, carries("bks"))
                                   || d2d::rules::ActTwoOpening::alert(quests(), level->npcs[i].hc_idx) || radament.alert(quests(), level->npcs[i].hc_idx)
-                                  || tainted.alert(quests(), level->npcs[i].hc_idx) || d2d::rules::HoradricStaffQuest::alert(quests(), level->npcs[i].hc_idx, staff_items());
+                                  || tainted.alert(quests(), level->npcs[i].hc_idx) || d2d::rules::HoradricStaffQuest::alert(quests(), level->npcs[i].hc_idx, staff_items())
+                                  || arcane.alert(quests(), level->npcs[i].hc_idx) || d2d::rules::SummonerQuest::alert(quests(), level->npcs[i].hc_idx);
         // The player's mode as the merc's think reads it: 2 walk, 3 run, 6 walk in town.
         fight.owner_mode = !player.walking ? 1 : running && character.stats.values[d2d::d2s::kStamina] > 0 ? 3 : in_moor ? 2 : 6;
         fight.world(in_moor, now_ms, elapsed, crowd);
@@ -2046,9 +2120,17 @@ auto World::tick(const std::vector<Command>& cmds, std::uint32_t now_ms, std::ui
             if (kill.type == d2d::rules::monster_ids::kAndariel) andariel_died(kill, now_ms);   // a pet's kill too, the player dead
             if (kill.type == d2d::rules::monster_ids::kBloodRaven) blood_raven_died(now_ms);
             if (kill.type == d2d::rules::monster_ids::kRadament) radament_died(kill, now_ms);
+            // The Summoner (FUN_0059c150). N-player gap: "by him" is the player in the Sanctuary.
+            if (kill.type == d2d::rules::monster_ids::kSummoner && summoner.killed(quests(), level->id == d2d::rules::SummonerQuest::kSanctuary))
+                d2d::log::info("The Summoner: dead");
             if (kill.super == d2d::rules::TowerQuest::kCountess) countess_died(now_ms);
         }
         fight.kills.clear();
+        // The Summoner goes for the player (FUN_005f85c0's first think -> FUN_0059c330).
+        // ponytail: his MonAI isn't ported; awareness stands in for its first attack think.
+        if (!summoner.started && !hosted_quests && level->id == d2d::rules::SummonerQuest::kSanctuary)
+            for (const auto& monster : fight.monsters)
+                if (monster.type == d2d::rules::monster_ids::kSummoner && monster.alive() && monster.aware) { summoner.engaged(quests()); break; }
         cross_level();
         fight.rooms_up(*level, player.x, player.y, false);
         grow_states(npc_states, *level);

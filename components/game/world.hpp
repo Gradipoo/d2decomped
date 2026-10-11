@@ -168,9 +168,11 @@ struct World {
     // The player's town portal: [0] where it was cast, [1] its twin in town
     // (FUN_0056d130 / FUN_0056cf40); a new one closes the old pair. [2]:
     // the Cairn Stones' portal to Tristram (object 60, FUN_005a9930), [3]
-    // its twin in Tristram back to them.
+    // its twin in Tristram back to them; [4] the Arcane Sanctuary's way to
+    // the Canyon of the Magi (object 60, FUN_0056d130), [5] its twin. A
+    // portal's other end is k ^ 1.
     struct Portal { const Level* level = nullptr; float x = 0, y = 0; std::uint32_t born = 0; };
-    std::array<Portal, 4> portal{};
+    std::array<Portal, 6> portal{};
     int take_portal = -1;                  // the portal (0..3) the player is walking to
     // The player's corpses (FUN_0057f700): where they fell, what they wore
     // and had in hand, 75% of the experience the death took; at most 16.
@@ -212,6 +214,9 @@ struct World {
     d2d::rules::RadamentQuest radament;    // and Radament's Lair
     d2d::rules::TaintedSunQuest tainted;   // and the Tainted Sun
     d2d::rules::HoradricStaffQuest staff;  // and the Horadric Staff
+    d2d::rules::ArcaneQuest arcane;        // and the Arcane Sanctuary
+    d2d::rules::SummonerQuest summoner;    // and the Summoner
+    int guard_line = 186;                  // the palace guard's line as last rolled (the talk's, for what's heard)
     [[nodiscard]] d2d::rules::HoradricStaffQuest::Items staff_items() const { return { carries("tr1"), carries("msf"), carries("box"), carries("vip"), carries("hst") }; }
     d2d::rules::QuestBits game_bits{};
     // A joined game: the host runs the quests. d2d's records hear nothing,
@@ -376,11 +381,12 @@ struct World {
     // Into level `to` near (ax, ay): everything with the player (merc, pets)
     // comes along; the automap and monsters are the new level's.
     void arrive(const Level* destination, float arrive_x, float arrive_y, const char* how);
-    std::vector<d2d::rules::QuestMsg> quest_talk(int hc_idx);   // every quest's messages from that NPC
+    std::vector<d2d::rules::QuestMsg> quest_talk(int hc_idx, bool fresh = true);   // every quest's messages from that NPC (fresh: rolls the guard's line)
     void andariel_died(const Fight::Kill& kill, std::uint32_t now_ms);
     void blood_raven_died(std::uint32_t now_ms);
     void radament_died(const Fight::Kill& kill, std::uint32_t now_ms);
     void transmute(std::uint32_t now_ms);
+    void canyon_portal(std::uint32_t now_ms);
     void kashya_merc();
     void countess_died(std::uint32_t now_ms);
     // The Countess's treasure (missile 332, towerchestspawner, one a chest

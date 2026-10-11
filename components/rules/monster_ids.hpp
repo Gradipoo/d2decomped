@@ -18,6 +18,7 @@ inline constexpr int kAtma = 176;
 inline constexpr int kDrognan = 177;
 inline constexpr int kCainAct2 = 244;      // cain2: Lut Gholein's
 inline constexpr int kRadament = 229;
+inline constexpr int kSummoner = 250;
 inline constexpr int kPalaceGuard = 331;   // act2guard2 (MonAI JarJar): at the palace gate
 inline constexpr int kAndariel = 156;
 inline constexpr int kFara = 178;

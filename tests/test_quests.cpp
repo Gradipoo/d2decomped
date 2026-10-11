@@ -464,5 +464,41 @@ int main() {
     assert(staff.log_state(horadric, {}, false) == 2);
     staff.join(horadric, { .cube = true }, false);
     assert(!qbit(horadric, 10, 5) && qbit(horadric, 10, 6));   // the shaft's gone: not shown any more
+
+    // The Arcane Sanctuary: the staff made opens it; Drognan, Jerhyn, the
+    // Sanctuary, the journal (done for a player there), its 396 in the
+    // journal's room opens the way to the Canyon once.
+    QuestBits sanctuary{}, sanctuary_game{};
+    ArcaneQuest arcane;
+    arcane.staff_made(sanctuary);
+    assert(arcane.state == 1 && arcane.log == 1 && arcane.alert(sanctuary, ArcaneQuest::kDrognan));
+    auto roll = [] { return 1u; };
+    assert(arcane.talk(sanctuary, ArcaneQuest::kGuard, roll)[0].string == 186 && arcane.alert(sanctuary, ArcaneQuest::kGuard));
+    arcane.said(sanctuary, sanctuary_game, ArcaneQuest::kDrognan, ArcaneQuest::kToJerhyn, 0);
+    arcane.talk_closed(sanctuary, ArcaneQuest::kDrognan);
+    assert(arcane.state == 2 && arcane.log == 2 && arcane.guard_in && qbit(sanctuary, 12, 2) && arcane.talk(sanctuary, ArcaneQuest::kGuard, roll)[0].string == 188);
+    arcane.said(sanctuary, sanctuary_game, ArcaneQuest::kJerhyn, ArcaneQuest::kToPalace, 0);
+    assert(arcane.state == 3 && arcane.log == 3 && qbit(sanctuary, 12, 3));
+    arcane.enter(sanctuary, 54, ArcaneQuest::kSanctuary);
+    assert(arcane.state == 4 && arcane.log == 4 && qbit(sanctuary, 12, 5));
+    arcane.journal(sanctuary, 7, true);
+    assert(arcane.state == 5 && qbit(sanctuary, 12, 0) && qbit(sanctuary, 12, 1) && qbit(sanctuary, 12, 13) && !qbit(sanctuary, 12, 5));
+    assert(!arcane.said(sanctuary, sanctuary_game, -1, ArcaneQuest::kJournal, 3) && arcane.log == 5);
+    assert(arcane.said(sanctuary, sanctuary_game, -1, ArcaneQuest::kJournal, 7) && qbit(sanctuary_game, 12, 13));
+    assert(!arcane.said(sanctuary, sanctuary_game, -1, ArcaneQuest::kJournal, 7));
+    arcane.said(sanctuary, sanctuary_game, 176, 406, 0);
+    assert(!qbit(sanctuary, 12, 1) && arcane.rewarded);
+
+    // The Summoner: going for the player opens it; his death credits a
+    // player by him; three ticks on, log 4; the town's thanks are done.
+    QuestBits summoning{}, summoning_game{};
+    SummonerQuest summoner;
+    summoner.engaged(summoning);
+    assert(summoner.state == 1 && summoner.log == 2 && qbit(summoning, 13, 2) && summoner.talk(summoning, 176)[0].string == 414);
+    assert(summoner.killed(summoning, true) && qbit(summoning, 13, 13) && qbit(summoning, 13, 1) && summoner.state == 2);
+    assert(!summoner.tick() && !summoner.tick() && summoner.tick() && summoner.log == 4);
+    assert(SummonerQuest::alert(summoning, 176) && summoner.talk(summoning, 176)[0].string == 427 && summoner.talk(summoning, 176)[0].greet);
+    summoner.said(summoning, summoning_game, 427);
+    assert(summoner.state == 3 && summoner.log == 0xd && qbit(summoning, 13, 0) && !qbit(summoning, 13, 1));
     std::puts("ok");
 }

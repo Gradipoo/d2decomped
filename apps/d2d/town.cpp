@@ -109,10 +109,10 @@ void view_units(const Scene& scene, const View& view, float camera_x, float came
     }
     // Town portals: opening (OP, FrameCnt1 15 at FrameDelta 200/256 a tick:
     // 768 ms), then ON; named by where they lead (-2000 - which). Tristram
-    // Cain's (which 4, object 189: its token tP is TP's files, MPQ names
+    // Cain's (which 6, object 189: its token tP is TP's files, MPQ names
     // being case-blind) has no name: Selectable0..2 all 0.
     for (const auto& portal : view.portals) {
-        const Level* destination = portal.which < 4 ? scene.level(portal.destination) : nullptr;
+        const Level* destination = portal.which < 6 ? scene.level(portal.destination) : nullptr;
         const bool opening = now_ms - portal.born < kPortalOpenMs;
         out.push_back({ portal.x, portal.y, &scene.npc_anim(scene.town_portal, opening ? "OP" : "ON"), 0, destination ? &destination->name : nullptr,
                         opening ? portal.born : portal.born + kPortalOpenMs, -2000 - portal.which });
@@ -464,7 +464,7 @@ auto Town::send(const Command& command) -> void {
                     if (const float apart = std::hypot(unit->second.x - subtile_x(corpse.x), unit->second.y - subtile_y(corpse.y)); apart < best) {
                         best = apart; net_operate_type = 0; net_operate = id; net_operate_ms = frame_now; net_operate_moves = false; net_operate_waypoint = -1;
                     }
-        } else if (interact && interact->npc <= -2000 && interact->npc > -2004) {
+        } else if (interact && interact->npc <= -2000 && interact->npc > -2006) {
             // A town portal: ours by the host's id for this end (0x82), else its
             // TownPortal (object 59) nearest d2d's (they open apart:
             // deviations.md); operated once the host has us there, as it
@@ -1314,7 +1314,7 @@ auto Town::input(const Mouse& mouse, bool over_ui) const -> std::vector<Command>
         if (mouse.press_this_frame) {
             if (live) out.push_back(cmd::UseSkill{ skillbar.left, world_x, world_y, view.monsters[std::size_t(hovered_monster_index)].id, true });
             else if (hovered_ground() >= 0) out.push_back(cmd::Pickup{ view.ground[std::size_t(hovered_ground())].id });
-            else if (hovered_npc >= 0 || (hovered_npc <= -2000 && hovered_npc > -2004) || (hovered_npc <= -3000 && hovered_npc > -3016)
+            else if (hovered_npc >= 0 || (hovered_npc <= -2000 && hovered_npc > -2006) || (hovered_npc <= -3000 && hovered_npc > -3016)
                      || (hovered_npc <= -4000 && hovered_npc > -4000 - int(view.others.size())))
                 out.push_back(cmd::Interact{ hovered_npc });
             else out.push_back(cmd::Move{ world_x, world_y, true });

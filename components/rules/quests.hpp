@@ -671,6 +671,259 @@ struct HoradricStaffQuest {
     }
 };
 
+// The Arcane Sanctuary (a2q4.cpp, the record at FUN_0059f2a0): quest 12.
+// Open once the Tainted Sun's done (the chain) or the staff's made
+// (FUN_0059b660); Drognan (373) sends the player to Jerhyn, Jerhyn (377)
+// to the palace; the guard (331) stands aside then; Horazon's Journal in
+// the Sanctuary (OperateFn 42) finishes it and its 396 opens the way to the
+// Canyon of the Magi. Bits: 0 done, 1 reward due, 2..5 under way (the
+// mark), 7 / 8 the guard's two lines heard, 13 took part, 14 by others,
+// 15 closed.
+// N-player gaps: one player (the rewarded bool, no party credit); the
+// palace door's mode (data+0x38) and Jerhyn's moves are show_palace's.
+struct ArcaneQuest {
+    static constexpr int kQuest = 12, kDrognan = monster_ids::kDrognan, kJerhyn = monster_ids::kJerhyn, kGuard = monster_ids::kPalaceGuard;
+    static constexpr int kSanctuary = level_ids::kArcaneSanctuary, kHarem = 50, kCanyon = level_ids::kCanyonOfTheMagi;
+    static constexpr int kToJerhyn = 373, kToPalace = 377, kJournal = 396, kThanksFirst = 397, kThanksLast = 407;
+    bool open = true;          // +9
+    int state = 0;             // +0xc: 1 open, 2 Drognan told, 3 Jerhyn told, 4 in the Sanctuary, 5 the journal read
+    int log = 0;               // +0xb
+    bool guard_in = false;     // data+0xe: the guard lets the player by
+    int guard_state = 0;       // data+0x40: 2 once he has
+    bool guard_new = false;    // data+0x46: his second line is news
+    bool pending = false;      // data+4: Drognan spoke, the log waits for the talk to close
+    int journal_room = -1;     // data+8: the journal's room (the Sanctuary's)
+    bool portal_made = false;  // data+0x16
+    bool rewarded = false;
+
+    // A player's bits for the state (LAB_0059adb0).
+    void mark(QuestBits& quest_bits) const {
+        if (qbit(quest_bits, kQuest, 0) || qbit(quest_bits, kQuest, 1)) return;
+        if (state == 2) qset(quest_bits, kQuest, 2);
+        if (state == 3) qset(quest_bits, kQuest, 3);
+        if (state == 4 && (log == 2 || log == 3)) qset(quest_bits, kQuest, 4);
+        if (state == 4 && log == 4) qset(quest_bits, kQuest, 5);
+    }
+    // The guard stands aside (FUN_0059aef0).
+    void let_in(QuestBits& quest_bits) {
+        guard_in = true;
+        if (guard_state == 0) guard_new = true;
+        guard_state = 2;
+        mark(quest_bits);
+    }
+    // The chain reached it (LAB_0059b500): open; it passes on (+0x10 13).
+    bool chain() { if (state == 0 && open) state = 1; return true; }
+    // The Horadric Staff made (FUN_0059b660).
+    void staff_made(QuestBits& quest_bits) {
+        if (!open) { let_in(quest_bits); return; }
+        if (state == 0) state = 1;
+        if (log == 0) log = 1;
+    }
+    // The player joins (FUN_0059b530).
+    void join(const QuestBits& quest_bits, QuestBits& game_bits, bool has_staff) {
+        auto bit = [&](int index) { return qbit(quest_bits, kQuest, index); };
+        if (bit(0) || bit(15)) open = false;
+        if (qbit(quest_bits, 11, 0)) { guard_in = true; guard_state = 2; }
+        if (bit(0) || bit(1)) { qset(game_bits, kQuest, 13); guard_state = 2; guard_in = true; return; }
+        if (has_staff) { log = 1; state = 1; }
+        bool under_way = true;
+        if (bit(5)) { log = 4; state = 4; }
+        else if (bit(4)) { log = 3; state = 4; }
+        else if (bit(3)) { log = 3; state = 3; }
+        else if (bit(2)) { log = 2; state = 2; }
+        else under_way = false;
+        if (under_way || qbit(quest_bits, 10, 0)) { guard_state = 2; guard_in = true; }
+    }
+    [[nodiscard]] int log_state(const QuestBits& quest_bits) const { return quest_log(quest_bits, kQuest, state, log, 5); }
+    // What `npc` says (FUN_0059b1c0): blocks at 0x73a638 by the state
+    // (0x738d44: -1, 0, 1, 2, 3, 4); the guard: 186 till he lets the player
+    // by, then one of 187..189 on the quest seed.
+    struct E { int npc, string; bool greet; };
+    static inline const std::vector<E> kBlocks[6] = {
+        { { kDrognan, 373, true } },
+        { { kDrognan, 373, false }, { kJerhyn, 377, true } },
+        { { 176, 380, false }, { 175, 381, false }, { 198, 375, false }, { 199, 376, false }, { kDrognan, 383, false }, { 202, 382, false },
+          { 244, 378, false }, { kJerhyn, 377, false }, { 210, 384, false }, { 200, 379, false }, { 178, 374, false } },
+        { { 176, 393, false }, { 175, 394, false }, { 198, 387, false }, { 199, 385, false }, { kDrognan, 388, false }, { kJerhyn, 386, false },
+          { 202, 389, false }, { 244, 395, false }, { 210, 392, false }, { 200, 391, false }, { 178, 390, false } },
+        { { 176, 406, true }, { 175, 403, true }, { 198, 397, true }, { 199, 400, true }, { kJerhyn, 398, true }, { kDrognan, 399, true },
+          { 202, 405, true }, { 244, 407, true }, { 210, 402, true }, { 200, 401, true }, { 178, 404, true } },
+        { { 175, 403, false }, { 198, 397, false }, { 199, 400, false }, { kJerhyn, 398, false }, { kDrognan, 399, false }, { 202, 405, false },
+          { 244, 407, false }, { 210, 402, false }, { 200, 401, false }, { 178, 404, false } },
+    };
+    // `roll`: the quest seed's next step, drawn only for the guard's line.
+    template <class Roll>
+    [[nodiscard]] std::vector<QuestMsg> talk(const QuestBits& quest_bits, int npc, Roll&& roll) const {
+        if (npc == kGuard) return { { guard_in ? 187 + int(roll() % 3) : 186, true } };
+        int block = -1;
+        if (qbit(quest_bits, kQuest, 1)) block = 4;
+        else if (rewarded) block = 5;
+        else if (state != 0 && open && !qbit(quest_bits, kQuest, 0) && !(state > 4 && !qbit(quest_bits, kQuest, 13))) block = state - 1;
+        std::vector<QuestMsg> out;
+        if (block >= 0 && block < 6)
+            for (const auto& entry : kBlocks[block]) if (entry.npc == npc) out.push_back({ entry.string, entry.greet });
+        return out;
+    }
+    // The "!" (FUN_0059aca0).
+    [[nodiscard]] bool alert(const QuestBits& quest_bits, int npc) const {
+        if (qbit(quest_bits, kQuest, 0)) return false;
+        if (npc == kGuard) {
+            if (qbit(quest_bits, kQuest, 1)) return false;
+            if (guard_state == 0) return !qbit(quest_bits, kQuest, 7);
+            return guard_state == 2 && guard_new && !qbit(quest_bits, kQuest, 8);
+        }
+        if ((npc == kDrognan && state == 1) || (npc == kJerhyn && state == 2)) return !qbit(quest_bits, kQuest, 1);
+        return false;
+    }
+    // The player heard `string` from `npc` (FUN_0059af50). True: the
+    // journal's 396 heard in its room: the way to the Canyon opens there
+    // (FUN_0056d130: object 60 to level 46), once; the game's bit 13.
+    bool said(QuestBits& quest_bits, QuestBits& game_bits, int npc, int string, int player_room) {
+        if (npc == kGuard) {
+            if (string == 186) qset(quest_bits, kQuest, 7);
+            else if (string >= 187 && string <= 189) qset(quest_bits, kQuest, 8);
+            return false;
+        }
+        if (string >= kThanksFirst && string <= kThanksLast && qbit(quest_bits, kQuest, 1)) {
+            qset(quest_bits, kQuest, 1, false);
+            rewarded = true;
+        }
+        if (string == kJournal) {
+            if (open && log < 5) log = 5;
+            if (!portal_made && player_room == journal_room && journal_room >= 0) {
+                portal_made = true;
+                qset(game_bits, kQuest, 13);
+                return true;
+            }
+            return false;
+        }
+        if (npc == kDrognan && string == kToJerhyn) { state = 2; pending = true; let_in(quest_bits); }
+        if (npc == kJerhyn && string == kToPalace) { state = 3; log = 3; mark(quest_bits); }
+        return false;
+    }
+    // The talk with `npc` closed (LAB_0059ae60).
+    void talk_closed(QuestBits& quest_bits, int npc) {
+        if (npc != kDrognan || !pending) return;
+        log = 2; pending = false;
+        mark(quest_bits);
+    }
+    // The player went from `from` to `dest` (FUN_0059f0c0).
+    void enter(QuestBits& quest_bits, int from, int dest) {
+        if (dest == kSanctuary) {
+            const bool before = state <= 3;
+            if (before) state = 4;
+            if (log < 4) log = 4;
+            else if (!before) return;
+            mark(quest_bits);
+            return;
+        }
+        if (dest == kHarem) { qset(quest_bits, kQuest, 8); qset(quest_bits, kQuest, 7); }
+        if (from == level_ids::kLutGholein) {
+            rewarded = false;                     // FUN_00545310
+            if (!qbit(quest_bits, kQuest, 0) && !qbit(quest_bits, kQuest, 1) && state == 3) { state = 4; mark(quest_bits); }
+        }
+    }
+    // Horazon's Journal read (OperateFn 42, FUN_0059b970): its 396 to the
+    // player (FUN_005456a0), its room kept; open and not done: state 5, and
+    // a player in the Sanctuary without bit 0 / 1 gets 13, 1, 0 (their
+    // 2..11 cleared, then 8, 7: FUN_0059b3f0); else bit 14 (LAB_0059b320).
+    void journal(QuestBits& quest_bits, int room, bool in_sanctuary) {
+        journal_room = room;
+        if (!open || state == 5) return;
+        state = 5;
+        if (qbit(quest_bits, kQuest, 0) || qbit(quest_bits, kQuest, 1)) return;
+        if (in_sanctuary) {
+            for (const int bit : { 13, 1, 0 }) qset(quest_bits, kQuest, bit);
+            for (int bit = 2; bit < 12; ++bit) qset(quest_bits, kQuest, bit, false);
+            qset(quest_bits, kQuest, 8);
+            qset(quest_bits, kQuest, 7);
+        } else qset(quest_bits, kQuest, 14);
+    }
+};
+
+// The Summoner (a2q5.cpp, the record at FUN_0059c280): quest 13. Opened
+// when he first goes for a player (FUN_005f85c0 -> FUN_0059c330); his
+// death credits the players by him; the town's thanks finish it. Bits: 0
+// done, 1 reward due, 2 under way, 13 took part, 14 by others, 15 closed.
+// N-player gaps: one player (the rewarded bool, no party credit).
+struct SummonerQuest {
+    static constexpr int kQuest = 13, kSummoner = monster_ids::kSummoner, kSanctuary = level_ids::kArcaneSanctuary;
+    static constexpr int kThanksFirst = 419, kThanksLast = 429;
+    bool open = true;
+    int state = 0;             // +0xc: 1 under way, 2 he's dead, 3 done
+    int log = 0;
+    bool started = false;      // data+1
+    int log_in = 0;            // data+8: the death's 3-tick timer (LAB_0059bfd0)
+    bool rewarded = false;
+    void mark(QuestBits& quest_bits) const {   // LAB_0059bd10
+        if (!qbit(quest_bits, kQuest, 0) && !qbit(quest_bits, kQuest, 1) && state == 1) qset(quest_bits, kQuest, 2);
+    }
+    void engaged(QuestBits& quest_bits) {      // FUN_0059c330
+        if (!open) return;
+        started = true;
+        if (state == 0) state = 1;
+        if (log < 2) { log = 2; mark(quest_bits); }
+    }
+    void join(const QuestBits& quest_bits) {   // LAB_0059c220
+        if (qbit(quest_bits, kQuest, 0) || qbit(quest_bits, kQuest, 15)) { open = false; return; }
+        if (qbit(quest_bits, kQuest, 2)) { log = 2; state = 1; }
+    }
+    [[nodiscard]] int log_state(const QuestBits& quest_bits) const { return quest_log(quest_bits, kQuest, state, log, 2); }
+    // He died (FUN_0059c150). True: the player took part (FUN_0059be70:
+    // their room is his or next to it): bits 13 and 1; else bit 14
+    // (LAB_0059c0f0).
+    bool killed(QuestBits& quest_bits, bool nearby) {
+        if (!open) return false;
+        state = 2;
+        if (log_in == 0) log_in = 3;
+        const bool first = !qbit(quest_bits, kQuest, 0) && !qbit(quest_bits, kQuest, 1);
+        if (first && nearby) { qset(quest_bits, kQuest, 13); qset(quest_bits, kQuest, 1); return true; }
+        if (first) qset(quest_bits, kQuest, 14);
+        return false;
+    }
+    // A tick. True: the timer's end, when a player with bit 13 in the
+    // Sanctuary says act2_complete_summoner (voice 0x33, LAB_0059bf80).
+    bool tick() {
+        if (log_in == 0 || --log_in > 0) return false;
+        if (open) log = 4;
+        return true;
+    }
+    struct E { int npc, string; bool greet; };
+    static inline const std::vector<E> kBlocks[3] = {
+        { { 176, 414, false }, { 175, 413, false }, { 198, 408, false }, { 199, 417, false }, { 177, 410, false }, { 202, 411, false },
+          { 244, 418, false }, { 210, 412, false }, { 201, 409, false }, { 200, 415, false }, { 178, 416, false } },
+        { { 176, 427, true }, { 175, 424, true }, { 198, 419, true }, { 199, 423, true }, { 177, 422, true }, { 202, 426, true },
+          { 244, 429, true }, { 210, 425, true }, { 201, 421, true }, { 200, 420, true }, { 178, 428, true } },
+        { { 176, 427, false }, { 175, 424, false }, { 198, 419, false }, { 199, 423, false }, { 177, 422, false }, { 202, 426, false },
+          { 244, 429, false }, { 210, 425, false }, { 201, 421, false }, { 200, 420, false }, { 178, 428, false } },
+    };
+    // FUN_0059bbc0: the reward due → block 1; rewarded → 2; else by the
+    // state (0x73b278: -1, 0, 1, 2).
+    [[nodiscard]] std::vector<QuestMsg> talk(const QuestBits& quest_bits, int npc) const {
+        int block = -1;
+        const bool b13 = qbit(quest_bits, kQuest, 13);
+        if (qbit(quest_bits, kQuest, 1)) block = 1;
+        else if (rewarded) block = 2;
+        else if (open && state != 0 && !(qbit(quest_bits, kQuest, 0) && !b13) && !(state > 1 && !b13)) block = state - 1;
+        std::vector<QuestMsg> out;
+        if (block >= 0 && block < 3)
+            for (const auto& entry : kBlocks[block]) if (entry.npc == npc) out.push_back({ entry.string, entry.greet });
+        return out;
+    }
+    [[nodiscard]] static bool alert(const QuestBits& quest_bits, int npc) {   // FUN_0059bb40
+        static constexpr std::array<int, 10> kTown{ 176, 175, 199, 177, 202, 244, 210, 201, 200, 178 };
+        return std::ranges::find(kTown, npc) != kTown.end() && qbit(quest_bits, kQuest, 1);
+    }
+    void said(QuestBits& quest_bits, QuestBits& game_bits, int string) {     // FUN_0059bd70
+        if (string < kThanksFirst || string > kThanksLast || !qbit(quest_bits, kQuest, 1)) return;
+        if (qbit(quest_bits, kQuest, 13)) { log = 0xd; qset(game_bits, kQuest, 13); state = 3; }
+        rewarded = true;
+        qset(quest_bits, kQuest, 0);
+        qset(quest_bits, kQuest, 1, false);
+    }
+    void enter(int from, int dest) { if (open && dest >= level_ids::kLutGholein && from == level_ids::kLutGholein) rewarded = false; }   // LAB_0059c200
+};
+
 // The Tainted Sun (a2q3.cpp, the record at FUN_0059eea0): quest 11. The
 // sun goes out a while after a player first reaches the Lost City or the
 // Valley of Snakes; the altar in the Claw Viper Temple's second level

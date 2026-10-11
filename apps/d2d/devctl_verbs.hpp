@@ -368,10 +368,11 @@ void register_game_verbs(d2d::devctl::Channel& channel, Window& win, Screen& scr
                 town.world.den_left = -1;
             }
             if (args.size() >= 4)                          // show / reset: its 16 bits, the Den's state
-                return std::format("ok bits={:#06x} den={} skillpts={} states={},{},{},{},{},{} radament={} log={} tainted={} log={} dark={} eclipse={} light={}\n", quest_bits[std::size_t(bit >> 3)] | quest_bits[std::size_t(bit >> 3) + 1] << 8,
+                return std::format("ok bits={:#06x} den={} skillpts={} states={},{},{},{},{},{} radament={} log={} tainted={} log={} dark={} eclipse={} light={} arcane={} log={} summoner={} log={} portal={}\n", quest_bits[std::size_t(bit >> 3)] | quest_bits[std::size_t(bit >> 3) + 1] << 8,
                                    town.world.den.state, town.world.character.stats.get(d2d::d2s::kSkillPts), town.world.den.state, town.world.burial.state,
                                    town.world.tools.state, town.world.cain.state, town.world.tower.state, town.world.andy.state, town.world.radament.state, town.world.radament.log,
-                                   town.world.tainted.state, town.world.tainted.log, town.world.tainted.dark, town.world.day.eclipse, town.world.day.intensity());
+                                   town.world.tainted.state, town.world.tainted.log, town.world.tainted.dark, town.world.day.eclipse, town.world.day.intensity(),
+                                   town.world.arcane.state, town.world.arcane.log, town.world.summoner.state, town.world.summoner.log, town.world.arcane.portal_made);
             header.quests[std::size_t(header.active_difficulty())][std::size_t(bit >> 3)] |= std::uint8_t(1 << (bit & 7));
             switch (quest) {                                // as a new game would see it (FUN_00546270): its join, then the chain from quest 1
             case 1: town.world.den.join(quest_bits); break;

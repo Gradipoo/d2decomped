@@ -228,3 +228,78 @@ scroll's removal in the said path. Checked live (devctl, 2026-10-11): the
 three chests give their parts; Cain takes the Cube, then the shaft (bits
 3, 5, 6); the Cube makes the staff (cube.md; bit 11, `FUN_0059e5c0`). Not
 yet: the orifice (a2q6). N-player gaps: one player's counts, the rewarded bool.
+
+## The Arcane Sanctuary (a2q4.cpp, record 11, quest 12)
+
+`FUN_0059f2a0`: +0xa = 1, state 0, +0xd 5, +0x10 = 0xd, blocks `0x73a638`,
+state → block `0x738d44` (−1, 0, 1, 2, 3, 4). Bits: 0 done, 1 reward due,
+2..5 under way, 7 / 8 the palace guard's two lines heard, 13 / 14, 15.
+
+- **Open**: the chain (`LAB_0059b500`: state 0 and open → 1, then on to
+  record 13's +0xf0), from the Tainted Sun's done; or the staff made
+  (`FUN_0059e5c0` → `FUN_0059b660`: open → state 1, log 1; closed → the
+  guard stands aside, `FUN_0059aef0`).
+- **+0xa0** (`FUN_0059b1c0`): the guard (331): line 186 (block 7) till he
+  stands aside (data+0xe), then rand(3) + 8 on the quest seed (187..189).
+  Others: bit 1 → block 4, rewarded → 5, else open, state ≠ 0, no bit 0,
+  not past 4 without bit 13 → state − 1 (Drognan's 373; Jerhyn's 377; the
+  town's 374..384; 385..395).
+- **+0xec** (`FUN_0059aca0`): the guard while his line is news (bit 7
+  before he stands aside, bit 8 after: data+0x40 / +0x46); Drognan in
+  state 1, Jerhyn in state 2.
+- **+0xcc** (`FUN_0059af50`): the guard's 186 → bit 7, 187..189 → bit 8;
+  the thanks 397..407 with bit 1 → bit 1 off, rewarded; 396 (the journal):
+  open and log < 5 → log 5; once, heard in the journal's room: the way to
+  the Canyon (`FUN_00545340` spot, `FUN_0056d130`: object 60 to level 46),
+  the game's bit 13; Drognan's 373 → state 2, data+4, the guard stands
+  aside (`FUN_0059aef0`: data+0xe, +0x40 = 2, +0x46 if new, mark, the
+  palace door); Jerhyn's 377 → state 3, log 3, mark.
+- **+0xa8** (`LAB_0059ae60`): Drognan's talk shut after 373 → log 2, mark.
+- **+0xac** (`FUN_0059f0c0`): into 74 → state 4 (from ≤ 3), log 4, mark;
+  into 50 → bits 8, 7; out of 40 → Jerhyn's moves (palace_spots), off the
+  rewarded list, state 3 (no bit 0 / 1) → 4, mark.
+- **+0xd4** (`FUN_0059b530`): quest 11 done or quest 10 done or the quest
+  under way → the guard stands aside; bit 0 / 1 → the game's bit 13; the
+  staff carried → log 1, state 1; bit 5 → 4 / 4, bit 4 → 3 / 4, bit 3 →
+  3 / 3, bit 2 → 2 / 2.
+- **Mark** (`LAB_0059adb0`): state 2 → bit 2, 3 → bit 3, 4 → bit 4 (log 2
+  or 3) / bit 5 (log 4).
+- **Horazon's Journal** (objects.txt 357, OperateFn 42, `FUN_0059b970`):
+  mode 1 once; every read its 396 (`FUN_005456a0`), its room kept; open
+  and not state 5 → state 5, and each player in the Sanctuary without bit
+  0 / 1: bits 13, 1, 0, 2..11 cleared, 8, 7 (`FUN_0059b3f0`); else bit 14.
+- **The Sanctuary's portal** (objects.txt 298, OperateFn 34,
+  `FUN_005846b0`): shut, it opens (mode 1); open, 54 → 74 and 74 → 54
+  (`FUN_0053aec0`). **Teleport pads** (OperateFn 27, `FUN_00581bf0`): the
+  other pad of the row in the room, else a near room; the player beside it.
+
+## The Summoner (a2q5.cpp, record 12, quest 13)
+
+`FUN_0059c280`: state 0, +0xd 2, blocks `0x73af68` (0: the town's 408..418;
+1: their thanks 419..429, greeting; 2: the same as topics), state → block
+`0x73b278` (−1, 0, 1, 2). The Summoner is MonStats 250.
+
+- **Open** (`FUN_0059c330`, from his AI's first attack think
+  `FUN_005f85c0`): data+1; state 0 → 1; log < 2 → log 2, mark (bit 2 in
+  state 1).
+- **Dead** (+0xc0 `FUN_0059c150`): state 2; a 3-tick timer once
+  (`LAB_0059bfd0`: log 4; a player with bit 13 in the Sanctuary says voice
+  0x33, act2_complete_summoner); players by him (his room or next to it)
+  without bit 0 / 1 → bits 13, 1 (`FUN_0059be70`), their party; the rest
+  bit 14 (`LAB_0059c0f0`).
+- **+0xcc** (`FUN_0059bd70`): 419..429 with bit 1: bit 13 → log 0xd, the
+  game's bit 13, state 3; rewarded, bit 0, bit 1 off.
+- **+0xa0** (`FUN_0059bbc0`): bit 1 → block 1; rewarded → 2; open, state ≠
+  0, not (bit 0 without 13), not (past 1 without 13) → state − 1.
+- **+0xec**: the town's people with bit 1. **+0xd4**: bit 2 → log 2, state
+  1. **+0xac**: out of 40 → off the rewarded list.
+
+d2d: `rules::ArcaneQuest`, `rules::SummonerQuest`, the journal / portals /
+pads in `World::operate`, `World::canyon_portal` (portal slots 4 / 5).
+Checked live (devctl, 2026-10-11): the staff made opens it; Drognan → 2,
+Jerhyn → 3, the Sanctuary → 4; the Summoner's death (bits 1, 13, log 4);
+the journal (bits 0 1 7 8 13), its 396 opens the Canyon portal, which
+leads to the Canyon of the Magi. Gaps: the Summoner's AI isn't ported
+(awareness stands in for its first attack think); "by him" is the player
+in the Sanctuary; the portal draws as a town portal, not object 60's red
+one; the palace door's mode; one player.

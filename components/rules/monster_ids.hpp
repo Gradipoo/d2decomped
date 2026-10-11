@@ -15,6 +15,7 @@ inline constexpr int kWarriv = 155;        // warriv1: Act 1's
 inline constexpr int kWarrivAct2 = 175;    // warriv2: Lut Gholein's
 inline constexpr int kJerhyn = 201;
 inline constexpr int kAtma = 176;
+inline constexpr int kDrognan = 177;
 inline constexpr int kCainAct2 = 244;      // cain2: Lut Gholein's
 inline constexpr int kRadament = 229;
 inline constexpr int kPalaceGuard = 331;   // act2guard2 (MonAI JarJar): at the palace gate

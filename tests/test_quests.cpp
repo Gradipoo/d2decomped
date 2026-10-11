@@ -417,5 +417,30 @@ int main() {
     RadamentQuest relost;
     relost.join(lost, lair_game, false);
     assert(!relost.open && !qbit(lost, 9, 0) && !qbit(lost, 9, 5));
+
+    // The Tainted Sun: the Lost City starts the timer; dark, Drognan tells
+    // it, out of town, the temple, the altar (credit, an amulet), the log's
+    // timer, any thanks with the reward due is done. Having it with the
+    // amulet: refused.
+    QuestBits sun{}, sun_game{};
+    TaintedSunQuest tainted;
+    tainted.join(sun, sun_game);
+    assert(!tainted.enter(level_ids::kLutGholein, level_ids::kRockyWaste) && tainted.enter(43, TaintedSunQuest::kLostCity));
+    tainted.dark_in = 3;
+    for (int i = 0; i < 4; ++i) tainted.tick(sun);
+    assert(tainted.dark && tainted.state == 1 && tainted.log == 1 && qbit(sun, 11, 2));
+    assert(tainted.alert(sun, TaintedSunQuest::kDrognan) && tainted.talk(sun, TaintedSunQuest::kDrognan)[0].string == 348);
+    tainted.said(sun, sun_game, TaintedSunQuest::kDrognan, TaintedSunQuest::kTold);
+    assert(tainted.state == 2 && tainted.log == 2 && qbit(sun, 11, 3));
+    tainted.enter(level_ids::kLutGholein, level_ids::kRockyWaste);
+    assert(tainted.state == 3);
+    tainted.altar_seen();
+    const auto altar = tainted.use_altar(sun, sun_game, false, false);
+    assert(altar.used && altar.amulets == 1 && altar.took_part && !tainted.dark && tainted.state == 4 && qbit(sun, 11, 1) && qbit(sun_game, 11, 13));
+    assert(!tainted.use_altar(sun, sun_game, false, false).used && tainted.use_altar(sun, sun_game, true, false).refused);
+    for (int i = 0; i < 10; ++i) tainted.tick(sun);
+    assert(tainted.log == 3 && tainted.talk(sun, 176)[0].string == 368);
+    tainted.said(sun, sun_game, 176, 368);
+    assert(tainted.state == 5 && tainted.log == 0xd && qbit(sun, 11, 0) && !qbit(sun, 11, 1));
     std::puts("ok");
 }

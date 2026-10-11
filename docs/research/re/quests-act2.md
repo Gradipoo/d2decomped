@@ -128,3 +128,54 @@ Atma 334 → state 5, log 0xd; the log's Act 2 tab says "Quest completed".
 Ponytails: one player (the lists are bools, no party), "near" is the
 player in Sewers level 3, the chain on to the Seven Tombs waits for its
 record.
+
+## The Tainted Sun (a2q3.cpp, record 10, quest 11)
+
+`FUN_0059eea0`: +0xa = 1, state 0, +0xd 4, +0x10 = 0xb (the Arcane
+Sanctuary next on the chain), blocks `0x73a188`, state → block `0x73a620`
+(−1, 0, 1, 2). Bits: 0 done, 1 reward due, 2 the dark seen, 3 Drognan
+told, 4 in the temple, 13 took part, 14 done by someone else, 15 closed.
+
+| field | function | when |
+|---|---|---|
+| +0xa0 | `FUN_0059a270` | bit 1 → block 3; bit 14 → none; rewarded → 4; else open, state 1..3, no bit 0 → state − 1 |
+| +0xac | `FUN_0059ee00` | into 44 / 45, state 0: the darkness timer (`FUN_0059edc0`: rand(17) ticks on the quest seed, once); into 40 with the dark pending: dark; out of 40: off the rewarded list, state 2 → 3 |
+| +0xcc | `LAB_0059ebe0` | 348 from Drognan (177): log 1 → 2, state 1 → 2 + mark; 362..372 from anyone: bit 13 and not done → log 0xd, state 5, the chain; bit 1 → bit 0, rewarded (closed: the game's bit 13) |
+| +0xd4 | `FUN_0059a5d0` | bit 0 / 1: the game's bit 13; bit 2: dark for them (`FUN_0059a570`), then bit 4 → log 2 state 3, bit 3 → log 2 state 2, else log 1 state 1 |
+| +0xec | `FUN_0059a1c0` | the "!": no bit 0, and bit 1 over Atma, Warriv, Greiz, Elzix, Drognan, Lysander, Cain, Meshif, Geglash, Jerhyn; or Drognan in state 1 |
+| +0xf0 | `FUN_0059a480` | the chain on to record 11 once done |
+
+Mark (`LAB_0059a4f0`, no bit 0 / 1): state ≥ 1 bit 2, state 2 bit 3,
+state 3 bit 4.
+
+**The dark** (`FUN_0059a350`): log 1, state 0 → 1, the act's day into the
+eclipse (`FUN_0061c450`) and each player sent S→C **0x53** `{u32 5, u32 0,
+u8 1}` (`FUN_0059a100`). The client (`FUN_0061c240`) sets phase, time and
+eclipse, its scale untouched: the eclipse phases (0x744480: 300° dawn,
+0° day, 60° dusk, 120° / 180° / 240° night), no night's extra frame, and
+the light falling 8 a frame to 32 whatever the hour (`FUN_0061bb80`).
+
+**The altar** (objects.txt 149, InitFn 20 at 0x544910 → `FUN_0059a3f0`:
+its room up → open and state < 2: dark, state 3; log 0 → 2; its mode
+data+8). OperateFn 24, `FUN_0059a7e0`: a player who has it (bit 0 / 1) and
+quest 10 done or carrying "vip" / "hst" gets voice 0x13; else once: mode
+1, the sun back (`FUN_0061c4d0`, S→C 0x53 `{2, 0, 0}`: sunrise), state 4,
+the game's bit 13; the operator bits 1 and 13 (14 off), the players in the
+altar's room too (`FUN_0059a680`), their parties (`0x59a040`); bit 13 →
+voice 0x34 (act2_complete_tainted); a Viper Amulet ("vip", item flag 0x10)
+for each player without one, the staff or quest 10 done; the act's chest
+class with quality forced magic (`FUN_00585b90`, EDX 4); rand(5) + 5 gold
+piles on the quest seed (`FUN_00585970`); a 10-tick timer
+(`LAB_0059a700`): state 4 → log 3.
+
+**The quest seed** (`FUN_005438b0`, list +0x18): `{a game-seed step, 666}`
+at game start (`FUN_00545d80` → `FUN_00650e40`), after sunitproxy:
+`Spawning::quests`.
+
+d2d: `rules::TaintedSunQuest`, `Day::set` / the eclipse (light.hpp), the
+altar in `World::operate`; a joined game takes 0x53 (`NetGame::sky`).
+Checked live (devctl, 2026-10-11): the Lost City darkens (light 32), the
+Act 1 sky stays clear, the temple is state 3, the altar gives state 4 →
+log 3, bits 1 2 13, the amulet, the chest roll and 8 gold piles, sunrise.
+N-player gaps: one player (the rewarded list a bool, no party credit, the
+altar's room is "the player"); one day clock for all acts.

@@ -7,6 +7,7 @@
 #include "monster_ids.hpp"
 #include "object_ids.hpp"
 
+#include <algorithm>
 #include <array>
 #include <cstddef>
 #include <cstdint>
@@ -552,6 +553,154 @@ struct RadamentQuest {
         if (!qbit(quest_bits, kQuest, 5)) return false;
         qset(quest_bits, kQuest, 5, false);
         return true;
+    }
+};
+
+// The Tainted Sun (a2q3.cpp, the record at FUN_0059eea0): quest 11. The
+// sun goes out a while after a player first reaches the Lost City or the
+// Valley of Snakes; the altar in the Claw Viper Temple's second level
+// brings it back. Bits: 0 done, 1 reward due, 2 the dark seen, 3 Drognan
+// told, 4 in the temple, 13 took part, 14 done by someone else, 15 closed.
+// N-player gap: one player here — the rewarded list (rec+0x1c) is a bool,
+// the party's credit (LAB_0059a0b0 -> 0x59a040) isn't here.
+struct TaintedSunQuest {
+    static constexpr int kQuest = 11, kDrognan = monster_ids::kDrognan, kLostCity = level_ids::kLostCity, kValley = level_ids::kValleyOfSnakes;
+    static constexpr int kTemple = level_ids::kClawViperTempleLevel2, kAltar = 149;   // objects.txt row (InitFn 20, OperateFn 24)
+    static constexpr int kTold = 348, kThanksFirst = 362, kThanksLast = 372;
+    bool open = true;   // +9
+    int state = 0;      // +0xc: 0 not yet, 1 dark, 2 Drognan told, 3 in the temple, 4 the altar used, 5 done
+    int log = 0;        // +0xb
+    int dark_in = -1;   // data+1: ticks to the darkness (rand(17) on the quest seed), -1 not running
+    bool dark = false;  // data+2: the sun's out (FUN_0061c450 .. FUN_0061c4d0)
+    bool used = false;  // data+4: the altar's been used (data+8 its mode 2)
+    int log_in = 0;     // the altar's timer (10 ticks, LAB_0059a700): log 3
+    bool rewarded = false;
+
+    // A player's bits for the state (LAB_0059a4f0).
+    void mark(QuestBits& quest_bits) const {
+        if (qbit(quest_bits, kQuest, 0) || qbit(quest_bits, kQuest, 1)) return;
+        if (state >= 1) qset(quest_bits, kQuest, 2);
+        if (state == 2) qset(quest_bits, kQuest, 3);
+        if (state == 3) qset(quest_bits, kQuest, 4);
+    }
+    // The sun goes out (FUN_0059a350): log 1, given out, the act's sky
+    // dark (each player gets S->C 0x53 {5, 0, 1}, FUN_0059a100).
+    void darken() {
+        log = 1;
+        if (state == 0) state = 1;
+        dark = true;
+    }
+    // The player joins (FUN_0059a5d0); done or closed: shut for the game.
+    void join(const QuestBits& quest_bits, QuestBits& game_bits) {
+        if (qbit(quest_bits, kQuest, 0) || qbit(quest_bits, kQuest, 15)) open = false;
+        if (qbit(quest_bits, kQuest, 0) || qbit(quest_bits, kQuest, 1)) { qset(game_bits, kQuest, 13); return; }
+        if (!qbit(quest_bits, kQuest, 2)) return;
+        darken();                                 // FUN_0059a570: their sky's dark again
+        if (qbit(quest_bits, kQuest, 4)) { log = 2; state = 3; }
+        else if (qbit(quest_bits, kQuest, 3)) { log = 2; state = 2; }
+        else { log = 1; state = 1; }
+    }
+    [[nodiscard]] int log_state(const QuestBits& quest_bits) const { return quest_log(quest_bits, kQuest, state, log, 4); }
+    // The player went from level `from` to `dest` (FUN_0059ee00). True:
+    // the desert's far end starts the darkness's timer, rand(17) ticks on
+    // the quest seed (FUN_0059edc0), which the caller rolls into dark_in.
+    bool enter(int from, int dest) {
+        const bool starts = (dest == kLostCity || dest == kValley) && state == 0 && open && dark_in < 0 && !dark;
+        if (from == level_ids::kLutGholein) {
+            rewarded = false;                     // FUN_00545310
+            if (state == 2) state = 3;
+        }
+        return starts;
+    }
+    // A tick (40 ms).
+    void tick(QuestBits& quest_bits) {
+        if (dark_in >= 0 && dark_in-- == 0 && !dark) { darken(); mark(quest_bits); }   // LAB_0059ed80
+        if (log_in > 0 && --log_in == 0 && state == 4) log = 3;
+    }
+    // The altar's room comes up (InitFn 20 -> FUN_0059a3f0): in the temple,
+    // dark if not yet; log 2 if none. Its mode: 2 once used.
+    void altar_seen() {
+        if (!open) return;
+        if (state < 2) { darken(); state = 3; }
+        if (log == 0) log = 2;
+    }
+    // What `npc` says (FUN_0059a270): blocks at 0x73a188 by the state
+    // (0x73a620: -1, 0, 1, 2).
+    struct E { int npc, string; bool greet; };
+    static inline const std::vector<E> kBlocks[5] = {
+        { { 176, 344, false }, { 175, 343, false }, { 198, 341, false }, { 199, 342, false }, { kDrognan, 348, true }, { 202, 347, false },
+          { 244, 350, false }, { 210, 349, false }, { 200, 345, false }, { 201, 340, false }, { 178, 346, false } },
+        { { 176, 344, false }, { 175, 343, false }, { 198, 341, false }, { 199, 342, false }, { kDrognan, 348, false }, { 202, 347, false },
+          { 244, 350, false }, { 210, 349, false }, { 200, 345, false }, { 201, 340, false }, { 178, 346, false } },
+        { { 176, 361, false }, { 175, 353, false }, { 198, 352, false }, { 199, 359, false }, { kDrognan, 358, false }, { 202, 357, false },
+          { 244, 360, false }, { 210, 355, false }, { 201, 351, false }, { 200, 354, false }, { 178, 356, false } },
+        { { 176, 368, true }, { 175, 366, true }, { 198, 363, true }, { 199, 364, true }, { kDrognan, 371, true }, { 202, 370, true },
+          { 244, 372, true }, { 210, 367, true }, { 200, 365, true }, { 201, 362, true } },
+        { { 176, 368, false }, { 175, 366, false }, { 198, 363, false }, { 201, 362, false }, { 199, 364, false }, { kDrognan, 371, false },
+          { 202, 370, false }, { 210, 367, false }, { 200, 365, false }, { 178, 369, false } },
+    };
+    [[nodiscard]] std::vector<QuestMsg> talk(const QuestBits& quest_bits, int npc) const {
+        int block = -1;
+        if (qbit(quest_bits, kQuest, 1)) block = 3;
+        else if (qbit(quest_bits, kQuest, 14)) return {};
+        else if (rewarded) block = 4;
+        else if (state != 0 && open && !qbit(quest_bits, kQuest, 0) && state <= 3) block = state - 1;
+        std::vector<QuestMsg> out;
+        if (block >= 0)
+            for (const auto& entry : kBlocks[block]) if (entry.npc == npc) out.push_back({ entry.string, entry.greet });
+        return out;
+    }
+    // The "!" (FUN_0059a1c0): the reward due, over the town's people; or
+    // Drognan while it's new.
+    [[nodiscard]] bool alert(const QuestBits& quest_bits, int npc) const {
+        static constexpr std::array<int, 10> kTown{ 176, 175, 198, 199, 177, 202, 244, 210, 200, 201 };
+        if (qbit(quest_bits, kQuest, 0)) return false;
+        return (qbit(quest_bits, kQuest, 1) && std::ranges::find(kTown, npc) != kTown.end()) || (npc == kDrognan && state == 1);
+    }
+    // The player heard `string` from `npc` (LAB_0059ebe0): Drognan's 348
+    // tells it; any thanks (362..372) with the reward due is done.
+    void said(QuestBits& quest_bits, QuestBits& game_bits, int npc, int string) {
+        if (string == kTold) {
+            if (!open || npc != kDrognan) return;
+            if (log == 1) log = 2;
+            if (state == 1) { state = 2; mark(quest_bits); }
+            return;
+        }
+        if (string < kThanksFirst || string > kThanksLast) return;
+        if (state != 5 && open && qbit(quest_bits, kQuest, 13)) { log = 0xd; state = 5; }
+        if (!qbit(quest_bits, kQuest, 1)) return;
+        qset(quest_bits, kQuest, 0);
+        qset(quest_bits, kQuest, 1, false);
+        rewarded = true;
+        if (!open) qset(game_bits, kQuest, 13);
+    }
+    // The altar used (OperateFn 24, FUN_0059a7e0). `refused`: the player has
+    // it (bit 0 / 1) and quest 10's done or carries the Viper Amulet / the
+    // staff: "I can't" (voice 0x13). Otherwise once: the sun back (S->C 0x53
+    // {2, 0, 0}), state 4, the player's credit (bits 1 and 13, 14 off; the
+    // altar's room too, FUN_0059a680), a Viper Amulet for each player
+    // without one or the staff or quest 10 done (LAB_0059a770), the game's
+    // bit 13, the 10-tick log timer.
+    struct Use { bool refused = false, used = false, took_part = false; int amulets = 0; };
+    Use use_altar(QuestBits& quest_bits, QuestBits& game_bits, bool has_amulet, bool has_staff) {
+        const bool has_it = qbit(quest_bits, kQuest, 0) || qbit(quest_bits, kQuest, 1);
+        if (has_it && (qbit(quest_bits, 10, 0) || has_amulet || has_staff)) return { .refused = true };
+        if (used) return {};
+        used = true;
+        Use out{ .used = true };
+        out.amulets = !has_amulet && !has_staff && !qbit(quest_bits, 10, 0) ? 1 : 0;
+        if (!open) return out;
+        dark = false;
+        state = 4;
+        if (!qbit(quest_bits, kQuest, 0)) {
+            qset(quest_bits, kQuest, 1);
+            qset(quest_bits, kQuest, 13);
+            qset(quest_bits, kQuest, 14, false);
+        }
+        out.took_part = qbit(quest_bits, kQuest, 13);   // LAB_0059a730: voice 0x34
+        qset(game_bits, kQuest, 13);
+        log_in = 10;
+        return out;
     }
 };
 

@@ -210,6 +210,7 @@ struct World {
     d2d::rules::ToolsQuest tools;          // and Tools of the Trade
     d2d::rules::CainQuest cain;            // and The Search for Cain
     d2d::rules::RadamentQuest radament;    // and Radament's Lair
+    d2d::rules::TaintedSunQuest tainted;   // and the Tainted Sun
     d2d::rules::QuestBits game_bits{};
     // A joined game: the host runs the quests. d2d's records hear nothing,
     // reward nothing and drop nothing; the client shows the host's.

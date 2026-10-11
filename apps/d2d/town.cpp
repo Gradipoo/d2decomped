@@ -1629,6 +1629,7 @@ auto Town::net_quests(std::uint32_t frame_ms) -> void {
                 view.game_quests[quest] = net_game->game_quests[quest];
             }
         view.den_left = net_game->den_left;
+        if (net_game->sky) { world.day.set(net_game->sky->phase, net_game->sky->time, net_game->sky->eclipse); net_game->sky.reset(); }
         for (const std::uint32_t id : net_game->npc_alerts) net_alert_ms[id] = world_ms;
         net_game->npc_alerts.clear();
         for (std::size_t i = 0; level && i < view.npc_states.size() && i < level->npcs.size(); ++i) {

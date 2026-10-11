@@ -364,6 +364,9 @@ auto NetGame::handle(const d2d::net::Bytes& packet) -> void {
         send({ d2d::net::d2gs::c2s::update_quests() });   // the words behind it (0x28)
         break;
     }
+    case 0x53:   // the act's day (FUN_0061c240): +1 u32 phase, +5 u32 time, +9 u8 eclipse
+        if (size >= 10) sky = Sky{ int(read_u32(packet, 1)), int(read_u32(packet, 5)), packet[9] != 0 };
+        break;
     case 0x52:   // player quest info: 41 log states by quest word (FUN_004a40d0 -> 0x7bf355)
         if (size >= 42) { std::copy_n(packet.begin() + 1, 41, quest_log.begin()); quest_log_known = true; }
         break;

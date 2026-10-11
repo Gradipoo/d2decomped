@@ -194,7 +194,7 @@ Spawning start_spawning(const GameData& game_data, int difficulty) {
     d2d::rules::Rng region_seed{ spawning.game.next() };
     spawning.objects = d2d::rules::Rng{ spawning.game.next() };   // object_seed()
     spawning.proxy = d2d::rules::Rng{ spawning.game.next() };     // sunitproxy
-    spawning.game.next();                                         // quests
+    spawning.quests = d2d::rules::Rng{ spawning.game.next() };    // the quests' (FUN_00545d80 -> FUN_00650e40: list +0x18)
     spawning.regions.resize(game_data.level_mon.size());
     for (std::size_t id = 1; id < game_data.level_mon.size(); ++id)
         spawning.regions[id] = d2d::rules::monster_region(game_data.monsters, game_data.level_mon[id], spawning.difficulty, region_seed);
@@ -724,6 +724,7 @@ void add_object(const GameData& game_data, const d2d::txt::Table& objects, const
     const bool lit_mode = npc.preoperated || (objects.get(row, "Mode2") == "1" && !objects.get(row, "Lit2").empty()
                  && objects.get(row, "Lit2") != "0" && npc.operate_fn != d2d::rules::operate_fn::kShrine && npc.operate_fn != d2d::rules::operate_fn::kChest   // shrines / chests: NU until used
                  && npc.operate_fn != d2d::rules::operate_fn::kCairnStone && npc.operate_fn != d2d::rules::operate_fn::kGibbet   // Cairn stones / the Gibbet: mode 0 until touched (InitFn 6 / 7)
+                 && npc.operate_fn != d2d::rules::operate_fn::kSunAltar   // the Tainted Sun's altar: its quest's mode, 0 till used (InitFn 20)
                  && (npc.operate_fn != d2d::rules::operate_fn::kWaypoint || d2d::rules::level_ids::is_town(into.id)));   // waypoints: on in towns (InitFn 17)
     npc.mode   = lit_mode ? "ON" : "NU";
     // Hover name when selectable in its start mode (Selectable0 = NU,

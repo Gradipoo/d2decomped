@@ -59,5 +59,16 @@ int main() {
     big.reset(100, 100, 0, 120); game.reset(100, 100, 0);
     big.stamp(140 * 8 + 4, 100 * 8 + 4, 18 * 8, 255); game.stamp(140 * 8 + 4, 100 * 8 + 4, 18 * 8, 255);
     assert(big.at(140, 100) > 240 && game.at(140, 100) < 60);   // game.exe's reads its clamped edge
+    // The eclipse (S->C 0x53 {5, 0, 1}): 8 a frame down to 32; {2, 0, 0}
+    // is sunrise again.
+    {
+        Day sky;
+        sky.set(5, 0, true);
+        assert(sky.eclipse && sky.intensity() == sky.sun() - 8);
+        for (int i = 0; i < 40; ++i) sky.step();
+        assert(sky.intensity() == 32);
+        sky.set(2, 0, false);
+        assert(!sky.eclipse && sky.intensity() == 128);
+    }
     std::puts("test_light: ok");
 }

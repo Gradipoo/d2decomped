@@ -41,6 +41,7 @@ inline constexpr int kWell = 22;            // FUN_005858a0
 inline constexpr int kWaypoint = 23;        // FUN_00584e30
 inline constexpr int kBookshelf = 26;       // FUN_00584060
 inline constexpr int kTrapObject = 30;      // FUN_00581cd0: the exploding chest
+inline constexpr int kSunAltar = 24;        // FUN_0059a7e0: the Tainted Sun's altar
 inline constexpr int kStash = 32;
 }  // namespace operate_fn
 

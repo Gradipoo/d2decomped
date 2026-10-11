@@ -47,6 +47,8 @@ inline constexpr int kMooMooFarm = 39;
 
 // Acts 2 .. 5.
 inline constexpr int kRockyWaste = 41;
+inline constexpr int kLostCity = 44;
+inline constexpr int kValleyOfSnakes = 45;
 inline constexpr int kCanyonOfTheMagi = 46;
 inline constexpr int kSewersLevel1 = 47;
 inline constexpr int kSewersLevel2 = 48;

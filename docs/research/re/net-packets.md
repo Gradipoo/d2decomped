@@ -474,6 +474,9 @@ ids).
 - **0x29 game quest info** (97): 96 bytes at +1 → `DAT_007c0d47` (the
   game's quest words; the log's "done in this game" bits 13 / 15).
   d2d: `NetGame::game_quests` → the View's `game_quests` in a joined game.
+- **0x53 the act's day** (10; `0x45e300` → `FUN_0061c240`): +1 u32 phase,
+  +5 u32 time, +9 u8 eclipse. The Tainted Sun sends `{5, 0, 1}` dark,
+  `{2, 0, 0}` sunrise. d2d: `NetGame::sky` → `Day::set`.
 - **0x52 player quest info** (42): the whole packet, id included, →
   `DAT_007bf355` (a jump to `FUN_004a40d0`), then the log refresh
   `FUN_004a3220`. Byte k + 1 is the log state of row k of the log's table

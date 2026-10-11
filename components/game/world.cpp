@@ -161,6 +161,7 @@ auto World::view() const -> View {
                                std::uint8_t(tools.log_state(quest_bits, holding_malus(), clvl)), std::uint8_t(cain.log_state(quest_bits)),
                                std::uint8_t(tower.log_state(quest_bits)), std::uint8_t(andy.log_state(quest_bits)) };
             view.quest_log[d2d::rules::RadamentQuest::kQuest] = std::uint8_t(radament.log_state(quest_bits));
+            view.quest_log[d2d::rules::TaintedSunQuest::kQuest] = std::uint8_t(tainted.log_state(quest_bits));
             for (int quest = 1; quest < 15; ++quest) {
                 const bool bit0 = d2d::rules::qbit(quest_bits, quest, 0) || d2d::rules::qbit(quest_bits, quest, 15);
                 if (bit0 && !d2d::rules::qbit(quest_bits, quest, 13) && !d2d::rules::qbit(quest_bits, quest, 14)) view.quest_log[std::size_t(quest)] = 0;
@@ -330,6 +331,32 @@ auto World::operate(int npc_index, std::uint32_t now_ms, int force ) -> void {  
         if (object.operate_fn == d2d::rules::operate_fn::kMoldyTome) {
             operated.try_emplace({ level, npc_index }, now_ms);
             if (!closed_at_join[std::size_t(d2d::rules::TowerQuest::kQuest)]) events.push_back(ev::Speech{ npc_index, d2d::rules::TowerQuest::kTome });
+            return;
+        }
+        // The Tainted Sun's altar (OperateFn 24, FUN_0059a7e0): mode 1, the
+        // sun back, then at it a Viper Amulet each (identified, item flag
+        // 0x10), the act's chest class with quality forced magic
+        // (FUN_00585b90, EDX 4) and rand(5) + 5 gold piles on the quest seed
+        // (FUN_00585970); a joined game's are the host's.
+        if (object.operate_fn == d2d::rules::operate_fn::kSunAltar) {
+            if (hosted_quests) return;
+            const auto use = tainted.use_altar(quests(), game_bits, carries("vip"), carries("hst"));
+            if (use.refused) { d2d::log::info("I can't use this yet."); return; }   // voice 0x13
+            if (!use.used) return;
+            operated.try_emplace({ level, npc_index }, now_ms);
+            to_mode(1);
+            static constexpr const char* kClass[7] = { "amazon", "sorceress", "necromancer", "paladin", "barbarian", "druid", "assassin" };
+            if (use.took_part && character.header.cls < 7) cues.cue(std::format("{}_act2_complete_tainted", kClass[character.header.cls]), now_ms, player.x, player.y);
+            for (int amulet = 0; amulet < use.amulets; ++amulet) {
+                loot.put({ .code = "vip" }, object.x, object.y, here, fight.spawning.game, now_ms);
+                loot.ground.back().item.identified = true;
+            }
+            const auto [low, high] = d2d::rules::kChestLevels[1];
+            std::vector<d2d::rules::Drop> drops;
+            d2d::rules::chest_round(game_data->rules, d2d::rules::chest_tc(1, diff, here, alvl(low), alvl(high)), object.seed, drops, 4);
+            for (std::uint32_t gold = fight.spawning.quests.next() % 5 + 5; gold > 0; --gold) drops.push_back({ .code = "gld" });
+            for (const auto& dropped : drops) loot.put(dropped, object.x, object.y, here, fight.spawning.game, now_ms);
+            d2d::log::info("The Tainted Sun: the altar, the sun's back ({} drops)", drops.size() + std::size_t(use.amulets));
             return;
         }
         if (object.operate_fn == d2d::rules::operate_fn::kCairnStone || object.operate_fn == d2d::rules::operate_fn::kGibbet || object.operate_fn == d2d::rules::operate_fn::kInifussTree) { cain_operate(npc_index, now_ms); return; }
@@ -648,6 +675,8 @@ auto World::new_game() -> void {
         d2d::rules::ActTwoOpening::join(quests(), game_bits);
         radament = {};
         radament.join(quests(), game_bits, carries("ass"));
+        tainted = {};
+        tainted.join(quests(), game_bits);
         den = {};
         den.join(quests());
         andy = {};
@@ -715,6 +744,9 @@ auto World::swap_npcs(const Level* from) -> void {
         if (from && from != level) tools.enter(quests(), from->id);
         if (from && from != level) cain.enter(quests(), from->id, level->id);
         if (from && from != level) radament.enter(quests(), from->id);
+        if (from && from != level && tainted.enter(from->id, level->id)) tainted.dark_in = int(fight.spawning.quests(17));
+        if (from && from != level && level->id == d2d::rules::TaintedSunQuest::kTemple)   // the altar's InitFn 20 (FUN_0059a3f0): the level's rooms all come up
+            for (const auto& object : level->npcs) if (object.root == "objects" && object.object_id == d2d::rules::TaintedSunQuest::kAltar) tainted.altar_seen();
         if (from) other_npcs[from] = std::move(npc_states);
         if (const auto found = other_npcs.find(level); found != other_npcs.end()) {
             npc_states = std::move(found->second);
@@ -817,6 +849,7 @@ auto World::quest_talk(int hc_idx) -> std::vector<d2d::rules::QuestMsg> {
         std::ranges::copy(cain.talk(quests(), hc_idx, carries("bks")), std::back_inserter(out));
         std::ranges::copy(d2d::rules::ActTwoOpening::talk(quests(), hc_idx), std::back_inserter(out));
         std::ranges::copy(radament.talk(quests(), hc_idx), std::back_inserter(out));
+        std::ranges::copy(tainted.talk(quests(), hc_idx), std::back_inserter(out));
         return out;
     }
 
@@ -1530,6 +1563,7 @@ auto World::deal(const Command& command) -> bool {
             }
             d2d::rules::ActTwoOpening::said(quests(), game_bits, hc_idx, message->string);
             radament.said(quests(), game_bits, hc_idx, message->string);
+            tainted.said(quests(), game_bits, hc_idx, message->string);
             return true;
         }
         return false;
@@ -1649,7 +1683,8 @@ auto World::apply(const Command& command, std::uint32_t now_ms) -> void {
             walk_to(npc_x, npc_y, true);
             const bool menu = std::ranges::any_of(kNpcMenus, [&](const NpcMenu& menu_entry) { return menu_entry.hc_idx == npc.hc_idx; });
             const bool usable = is_door(npc.operate_fn) || npc.operate_fn == d2d::rules::operate_fn::kWell || npc.operate_fn == d2d::rules::operate_fn::kMoldyTome || (operable(npc.operate_fn) && !npc.preoperated && !operated.contains({ level, interact->npc }));
-            const bool quest_object = npc.operate_fn == d2d::rules::operate_fn::kCairnStone || npc.operate_fn == d2d::rules::operate_fn::kGibbet || npc.operate_fn == d2d::rules::operate_fn::kInifussTree;   // the quest says what it does
+            const bool quest_object = npc.operate_fn == d2d::rules::operate_fn::kCairnStone || npc.operate_fn == d2d::rules::operate_fn::kGibbet || npc.operate_fn == d2d::rules::operate_fn::kInifussTree
+                                      || npc.operate_fn == d2d::rules::operate_fn::kSunAltar;   // the quest says what it does
             if (npc.operate_fn == d2d::rules::operate_fn::kStash || npc.operate_fn == d2d::rules::operate_fn::kWaypoint || npc.operate_fn == d2d::rules::ToolsQuest::kStand || usable || quest_object || (npc.root == "monsters" && menu)) interact_npc = interact->npc;
             return;
         }
@@ -1727,6 +1762,12 @@ auto World::tick(const std::vector<Command>& cmds, std::uint32_t now_ms, std::ui
             if (andy.tick() && level->id == d2d::rules::level_ids::kCatacombsLevel4) fight.portal_due = true;   // tick 10 of her death (FUN_00596490)
             burial.tick();
             radament.tick();
+            tainted.tick(quests());
+            // The act's sky (S->C 0x53, FUN_0059a100 / FUN_0059a170): dark
+            // while the Tainted Sun has it out and the player's in Act 2; a
+            // joined game's comes from the host.
+            // N-player gap: d2d keeps one clock, not one an act.
+            if (const bool dark = tainted.dark && act() == 1; !hosted_quests && dark != day.eclipse) day.set(dark ? 5 : 2, 0, dark);
             tower.tick();
             tower_treasure(day_at);
             stamina_frame();
@@ -1789,7 +1830,8 @@ auto World::tick(const std::vector<Command>& cmds, std::uint32_t now_ms, std::ui
             const auto& state = npc_states[std::size_t(interact_npc)];
             const float npc_x = npc.path.empty() ? npc.x : state.x, npc_y = npc.path.empty() ? npc.y : state.y;
             if (std::hypot(npc_x - player.x, npc_y - player.y) < 2.f) {
-                if (operable(npc.operate_fn) || npc.operate_fn == d2d::rules::operate_fn::kMoldyTome || npc.operate_fn == d2d::rules::ToolsQuest::kStand || npc.operate_fn == d2d::rules::operate_fn::kCairnStone || npc.operate_fn == d2d::rules::operate_fn::kGibbet || npc.operate_fn == d2d::rules::operate_fn::kInifussTree) {
+                if (operable(npc.operate_fn) || npc.operate_fn == d2d::rules::operate_fn::kMoldyTome || npc.operate_fn == d2d::rules::ToolsQuest::kStand || npc.operate_fn == d2d::rules::operate_fn::kCairnStone || npc.operate_fn == d2d::rules::operate_fn::kGibbet || npc.operate_fn == d2d::rules::operate_fn::kInifussTree
+                    || npc.operate_fn == d2d::rules::operate_fn::kSunAltar) {
                     operate(interact_npc, now_ms);
                 } else if (npc.operate_fn == d2d::rules::operate_fn::kStash) {
                     events.push_back(ev::OpenUI{ ev::OpenUI::stash, interact_npc });
@@ -1887,7 +1929,8 @@ auto World::tick(const std::vector<Command>& cmds, std::uint32_t now_ms, std::ui
                                   || burial.alert(quests(), level->npcs[i].hc_idx) || tower.alert(quests(), level->npcs[i].hc_idx)
                                   || tools.alert(quests(), level->npcs[i].hc_idx, holding_malus(), int(character.stats.get(d2d::d2s::kLevel)))
                                   || cain.alert(quests(), level->npcs[i].hc_idx, carries("bks"))
-                                  || d2d::rules::ActTwoOpening::alert(quests(), level->npcs[i].hc_idx) || radament.alert(quests(), level->npcs[i].hc_idx);
+                                  || d2d::rules::ActTwoOpening::alert(quests(), level->npcs[i].hc_idx) || radament.alert(quests(), level->npcs[i].hc_idx)
+                                  || tainted.alert(quests(), level->npcs[i].hc_idx);
         // The player's mode as the merc's think reads it: 2 walk, 3 run, 6 walk in town.
         fight.owner_mode = !player.walking ? 1 : running && character.stats.values[d2d::d2s::kStamina] > 0 ? 3 : in_moor ? 2 : 6;
         fight.world(in_moor, now_ms, elapsed, crowd);

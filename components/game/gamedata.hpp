@@ -801,6 +801,7 @@ struct Spawning {
     // The sunitproxy seed (FUN_00536070: {a game seed step, 666}, game
     // +0x1d24 +8, FUN_00536b40): the hire lists and the vendors' stock roll on it.
     d2d::rules::Rng proxy;
+    d2d::rules::Rng quests;                 // the quests' seed (game +0x10f4 +0x18): its timers and drops (FUN_005438b0)
     std::vector<d2d::rules::Region> regions;               // by Levels.txt Id
     std::unordered_map<const Level*, LevelState> levels;
     std::bitset<128> superuniques;                         // spawned this game (game +0x1d30)

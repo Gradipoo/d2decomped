@@ -8,6 +8,7 @@
 #include "level_ids.hpp"
 #include "montypes.hpp"
 #include "rules.hpp"
+#include "town_npcs.hpp"
 #include "uniques.hpp"
 
 #include <algorithm>
@@ -16,6 +17,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
+#include <optional>
 #include <span>
 #include <string_view>
 #include <utility>
@@ -1065,7 +1067,7 @@ inline std::pair<int, int> andariel_spray_aim(int dir64, int frame) {
 // A think's rand(100)s are one step each of the monster's seed (+0x20),
 // drawn here in game.exe's order; a skill test with no skill (-1) draws
 // nothing.
-enum class MonAct : std::uint8_t { idle, a1, a2, s2, skill, walk, run, approach, keep, circle, wander, none, die, around, home, point, untraced, s3, s4, seq };
+enum class MonAct : std::uint8_t { idle, a1, a2, s2, skill, walk, run, approach, keep, circle, wander, none, die, around, home, point, untraced, s3, s4, seq, fly };
 // Whom an act is at: the think's target, no unit, the second target
 // (FUN_005ddc30), the search's find (FUN_005dd0b0: kin, a corpse), the hurt
 // one it heals, itself.
@@ -1083,9 +1085,10 @@ struct Think {
 // overlay (FUN_00621e40), stat 0x4a set (FUN_00627260), its group sent
 // charging (FUN_0058f730), the leader's command done (FUN_0058ed10), the
 // Summoner's quest opened (FUN_0059c330), its aura (Skill n) started
-// (FUN_005701b0).
+// (FUN_005701b0), a Vulture landing (FUN_005f2fc0) or taking off
+// (FUN_005f2eb0).
 struct ThinkEffect {
-    enum Kind : std::uint8_t { state, overlay, stat, rally, command_done, summoner_open, aura } kind;
+    enum Kind : std::uint8_t { state, overlay, stat, rally, command_done, summoner_open, aura, land, take_off } kind;
     int id = 0, value = 0;
 };
 struct ThinkIn {
@@ -1135,6 +1138,15 @@ struct ThinkIn {
     int second_dist = 0x7fffffff, kin_dist = 0, in_reach = 0;
     std::vector<ThinkEffect>* effects = nullptr;
     int* steps = nullptr;
+    // The Vulture's: its spot and the target's (subtiles); the target in its
+    // room (FUN_00620bb0); it can land (FUN_005f2fc0: not down already, room
+    // to stand); a weak one about (FUN_005f30f0: within 11, at most aip3 %
+    // life); in a group (FUN_0058f0d0); the free spot nearest its circling
+    // point (state2, state3) by the target's room, else by its own
+    // (FUN_0064e7b0).
+    int self_x = 0, self_y = 0, target_x = 0, target_y = 0;
+    bool same_room = true, can_land = false, victim = false, grouped = false;
+    std::array<std::optional<std::pair<int, int>>, 2> free_spot{};
 };
 
 // A monster's skill level (FUN_00573cb0): Sk*lvl + DifficultyLevels
@@ -1145,11 +1157,11 @@ inline int monster_skill_level(int sk_lvl, int difficulty) {
 }
 
 inline bool traced_ai(std::string_view ai_name) {
-    static constexpr std::array<std::string_view, 38> kTraced{ "Skeleton", "Zombie", "Bighead", "BloodHawk", "Brute", "Wraith", "Goatman",
+    static constexpr std::array<std::string_view, 39> kTraced{ "Skeleton", "Zombie", "Bighead", "BloodHawk", "Brute", "Wraith", "Goatman",
                                                                "CorruptRogue", "QuillRat", "CorruptArcher", "CorruptLancer", "SkeletonBow", "Fallen", "FallenShaman", "FoulCrowNest",
                                                                "BloodRaven", "SkeletonMage", "GargoyleTrap", "Arach", "Vampire", "Fetish", "Griswold", "Smith",
                                                                "Duriel", "Swarm", "PinHead", "Mummy", "SandLeaper", "ClawViper", "PantherWoman", "PantherJavelin",
-                                                               "Scarab", "BatDemon", "Baboon", "SandRaider", "GreaterMummy", "SandMaggot", "Summoner" };
+                                                               "Scarab", "BatDemon", "Baboon", "SandRaider", "GreaterMummy", "SandMaggot", "Summoner", "Vulture" };
     return std::ranges::contains(kTraced, ai_name);
 }
 
@@ -1930,6 +1942,73 @@ Think mon_think(std::string_view ai_name, const ThinkIn& input, Rng& rng, Away&&
             if (skill_set(4)) return spot(4);
         }
         return think_wander(rng, 4);
+    }
+    // Vulture (23, FUN_005f3170; state: its thinks aloft, -1 landed). Far
+    // (over 12) in another room: down, it keeps 9 off (2 a go); aloft it
+    // lands (S2, 2 a go to 3 off; -1). Down, not in a group, far, 60 % it
+    // takes off for rand(8) + 24 thinks (S1 8 to 8 off). Aloft (2 or more)
+    // with no weak one about, past 5 or 85 %: it flies (S1) to a point
+    // rand(2r) about the target (r = thinks + 8) pushed off itself until
+    // it's clamp(2r, 12, 36) away, kept in state2 / 3 (then re-placed on a
+    // free spot), a think less; else (or 1 left) it lands to 3 off (-1),
+    // or can't (8 more) and fights on. In melee aip1 % A1, else waits
+    // aip2; landed or aip5 %: aip4 % circles 6, else keeps 9 off; down.
+    // Each waits 12.
+    if (ai_name == "Vulture") {
+        auto wait = [](Think out, int frames) { out.wait = frames; return out; };
+        auto keep = [&](ThinkUnit unit, int mode, int most, int want) { Think out{ MonAct::keep, most, want, mode }; out.unit = unit; return out; };
+        auto land = [&] { if (!input.can_land) return false; effect(ThinkEffect::land); return true; };
+        const int off_x = input.self_x - input.target_x, off_y = input.self_y - input.target_y;
+        const bool distant = off_x * off_x + off_y * off_y > 0x90;
+        int& aloft = *input.state;
+        if (!input.same_room && distant) {
+            if (aloft < 1) return keep(ThinkUnit::target, 2, 9, 0);
+            if (land()) { aloft = -1; return wait(keep(ThinkUnit::self, 9, 2, 3), 12); }
+        }
+        if (aloft == 0 && !input.grouped && distant && rng(100) < 60) {
+            effect(ThinkEffect::take_off);
+            aloft = int(rng.next() & 7) + 24;
+            return wait(keep(ThinkUnit::target, 8, 8, 8), 12);
+        }
+        Think fallback{ MonAct::none };
+        bool landing = aloft == 1;
+        if (aloft >= 2) {
+            if (!input.victim && (input.dist > 5 || rng(100) > 14)) {
+                effect(ThinkEffect::take_off);
+                auto gap = [&](int x, int y) { return npc_distance(input.self_x, input.self_y, x, y); };
+                int& spot_x = *input.state2;
+                int& spot_y = *input.state3;
+                if (spot_x == 0 || spot_y == 0 || gap(spot_x, spot_y) < 2) {
+                    const int reach = aloft + 8;
+                    int x = rng(reach * 2) + input.target_x - reach;
+                    int y = rng(reach * 2) + input.target_y - reach;
+                    const int need = std::clamp(reach * 2, 12, 36);
+                    while (gap(x, y) < need) {
+                        x += (x > input.self_x) - (x < input.self_x);
+                        y += (y > input.self_y) - (y < input.self_y);
+                        if (x == input.self_x && y == input.self_y) { ++x; ++y; }
+                    }
+                    spot_x = x; spot_y = y;
+                } else if (input.free_spot[0]) std::tie(spot_x, spot_y) = *input.free_spot[0];
+                else if (input.free_spot[1]) std::tie(spot_x, spot_y) = *input.free_spot[1];
+                --aloft;
+                Think fly{ MonAct::fly, 8, spot_x, spot_y };
+                fly.unit = ThinkUnit::none;
+                return wait(fly, 12);
+            }
+            aloft = 1;
+            landing = true;
+        }
+        if (landing) {
+            if (land()) { aloft = -1; return wait(keep(ThinkUnit::target, 9, 2, 3), 12); }
+            aloft = 8;
+            fallback.wait = 12;
+        }
+        if (input.in_melee) return roll() >= aip[0] ? wait(fallback, aip[1]) : wait({ MonAct::a1 }, fallback.wait);
+        if (aloft != -1 && rng(100) >= aip[4]) return wait(fallback, aip[1]);
+        const Think out = rng(100) < aip[3] ? think_circle(rng, 6) : keep(ThinkUnit::target, 2, 9, 0);
+        aloft = 0;
+        return wait(out, 12);
     }
     return { MonAct::untraced };
 }

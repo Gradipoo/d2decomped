@@ -641,8 +641,8 @@ int main() {
                 static constexpr std::string_view kCases[] = {
 #include "mon_ais_cases.inc"
                 };
-                static constexpr std::array<std::string_view, 15> kAis{ "Duriel", "Swarm", "PinHead", "Mummy", "SandLeaper", "ClawViper", "PantherWoman", "PantherJavelin",
-                                                                       "Scarab", "BatDemon", "Baboon", "SandRaider", "GreaterMummy", "SandMaggot", "Summoner" };
+                static constexpr std::array<std::string_view, 16> kAis{ "Duriel", "Swarm", "PinHead", "Mummy", "SandLeaper", "ClawViper", "PantherWoman", "PantherJavelin",
+                                                                       "Scarab", "BatDemon", "Baboon", "SandRaider", "GreaterMummy", "SandMaggot", "Summoner", "Vulture" };
                 using d2d::rules::ThinkEffect;
                 int checked = 0;
                 for (const std::string_view case_line : kCases) {
@@ -668,6 +668,13 @@ int main() {
                     input.second = read() != 0; input.second_dist = read(); input.kin = read() != 0; input.kin_dist = read();
                     input.corpse = read() != 0; input.aid = read() != 0; (void)read(); input.in_reach = read();
                     input.usable = read() != 0; command = read(); input.leader = read() != 0; input.aura_on = read() != 0;
+                    input.self_x = read(); input.self_y = read(); input.target_x = read(); input.target_y = read();
+                    input.same_room = read() != 0; input.can_land = read() != 0; input.victim = read() != 0; input.grouped = read() != 0;
+                    for (auto& spot : input.free_spot) {
+                        const bool found = read() != 0;
+                        const int spot_x = read(), spot_y = read();
+                        if (found) spot = std::pair{ spot_x, spot_y };
+                    }
                     d2d::rules::Rng seed;
                     seed.low = std::uint32_t(std::stoll([&] { std::string text; fields >> text; return text; }()));
                     seed.high = std::uint32_t(std::stoll([&] { std::string text; fields >> text; return text; }()));

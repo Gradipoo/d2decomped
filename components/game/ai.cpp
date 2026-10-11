@@ -615,6 +615,26 @@ bool think(const GameData& game_data, const Level& level, Monster& monster, std:
         if (mummy) { input.corpse = corpse >= 0; input.aid = aid >= 0; }
         else { input.kin = kin >= 0; input.kin_dist = kin_dist; }
     }
+    // The Vulture's: the spots, the rooms, a weak foe within 11 (squared
+    // 0x79) at most aip3 % life (FUN_005f30f0), its group, the free spot
+    // nearest its circling point.
+    // ponytail: it can always land (FUN_005f2fc0's flying collision isn't
+    // kept); a weak one is a foe (players and monsters both, in game.exe);
+    // one free-spot search (the level's nearest), not one per room.
+    if (type_info.ai_name == "Vulture") {
+        input.self_x = x; input.self_y = y; input.target_x = target_x; input.target_y = target_y;
+        input.same_room = room_at(level, unit.x, unit.y) == room_at(level, target->x, target->y);
+        input.can_land = true;
+        input.grouped = monster.leader >= 0;
+        for (const auto& foe : foes) {
+            const int off_x = subtile(foe.x) - x, off_y = subtile(foe.y) - y;
+            if (foe.alive && off_x * off_x + off_y * off_y <= 0x79 && foe.life_pct <= input.aip[2]) input.victim = true;
+        }
+        if (monster.ai_state2 != 0 && monster.ai_state3 != 0) {
+            const auto [free_x, free_y] = level.nearest_free((float(monster.ai_state2) + 0.5f) / 5, (float(monster.ai_state3) + 0.5f) / 5);
+            input.free_spot[0] = std::pair{ subtile(free_x), subtile(free_y) };
+        }
+    }
     auto use = [&](std::string_view mode, int skill) {             // FUN_005dead0 / FUN_005ddf90: against the target (mode ctx +8)
         monster.chase = int(target - foes.data());
         unit.dir = direction16(dx, dy);
@@ -697,7 +717,9 @@ bool think(const GameData& game_data, const Level& level, Monster& monster, std:
             monster.skill_x = act.x; monster.skill_y = act.y;
             unit.dir = direction16(float(act.x - x), float(act.y - y));
             return true;
+        case MonAct::fly: walk_to(act.x - x, act.y - y, false); return true;   // FUN_005de440: to the point (mode n: the Vulture's S1)
         case MonAct::keep: {                                       // FUN_005de4e0: toward, or from, the target to keep x off
+            if (act.unit == ThinkUnit::self) { idle(0); return true; }   // the Vulture's landing: a move onto itself
             const int stride = std::min(std::abs(best - act.x), act.n), sign = best < act.x ? -1 : 1;
             const int across = std::abs(target_x - x), down = std::abs(target_y - y), sum = std::max(across + down, stride);
             int step_x = sum ? across * stride / sum : 0, step_y = sum ? down * stride / sum : 0;

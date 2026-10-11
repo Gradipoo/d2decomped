@@ -38,12 +38,12 @@ AIS = {
     "Duriel": 0x5f67b0, "Swarm": 0x5f2460, "PinHead": 0x5f6340, "Mummy": 0x5f2850, "SandLeaper": 0x5f20a0,
     "ClawViper": 0x5f1b60, "PantherWoman": 0x5f22b0, "PantherJavelin": 0x5e1080, "Scarab": 0x5f2540,
     "BatDemon": 0x5f5040, "Baboon": 0x5f0cd0, "SandRaider": 0x5f0700, "GreaterMummy": 0x5f2b10,
-    "SandMaggot": 0x5f1800, "Summoner": 0x5f85c0,
+    "SandMaggot": 0x5f1800, "Summoner": 0x5f85c0, "Vulture": 0x5f3170,
 }
 ORDER = list(AIS)
 # Think acts (rules::MonAct) by name; units (rules::ThinkUnit).
 ACTS = ["idle", "a1", "a2", "s2", "skill", "walk", "run", "approach", "keep", "circle", "wander", "none", "die", "around",
-        "home", "point", "untraced", "s3", "s4", "seq"]
+        "home", "point", "untraced", "s3", "s4", "seq", "fly"]
 UNIT = {"foe": 0, None: 1, "foe2": 2, "kin": 3, "aid": 4, "mon": 5}
 MODE_ACT = {4: "a1", 5: "a2", 9: "s2", 10: "s3", 11: "s4"}
 
@@ -74,9 +74,23 @@ def setup(rng, ai):
     s["counts"] = (rng.randint(0, 4), rng.randint(0, 4))
     s["usable"] = rng.random() < 0.7
     s["command"] = rng.choice((None, 1, 2))                                # FUN_0058ee80: no command / its kind
-    s["leader"] = rng.random() < 0.5                                       # FUN_0058f0d0 gives itself
     s["aura"] = rng.random() < 0.5                                         # FUN_006201d0: its right skill (an aura) is on
     s["fails"] = rng.random()
+    # The Vulture's: the units' spots (subtiles), whether the target's room is
+    # its own, whether it can land (FUN_005f2fc0), a victim (FUN_005f30f0), the
+    # free spots found by the target's room / its own (FUN_0064e7b0).
+    cx, cy = rng.randint(4000, 6000), rng.randint(4000, 6000)
+    s["spots"] = {u: (cx + rng.randint(-25, 25), cy + rng.randint(-25, 25)) for u in UNITS}
+    s["spot"] = s["spots"]["foe"]
+    s["same_room"] = rng.random() < 0.6
+    s["can_land"] = rng.random() < 0.6
+    s["victim"] = rng.random() < 0.4
+    s["group"] = rng.choice((None, "mon", "kin"))                         # FUN_0058f0d0: its group's leader
+    s["leader"] = s["group"] == "mon"
+    s["free"] = [None if rng.random() < 0.4 else (cx + rng.randint(-25, 25), cy + rng.randint(-25, 25)) for _ in range(2)]
+    if ai == "Vulture":
+        for k in range(2):                                                 # its spot words: a point, or unset
+            if rng.random() < 0.5: s["ctrl"][1 + k] = s["spots"]["foe"][k] + rng.randint(-12, 12)
     return s
 
 
@@ -175,6 +189,8 @@ def install(e):
         if cb in (0x5b0d00, 0x5f06b0):                                     # the nearest kin / other monster
             if s["kin"] and S32(s["kin_d"]) < S32(e.r32(ctx + 4)):
                 e.w32(ctx, cur["units"]["kin"]); e.w32(ctx + 4, s["kin_d"])
+        elif cb == 0x5f30f0:                                               # a weak one within 11 (the Vulture's)
+            if s["victim"]: e.w32(ctx, cur["units"]["foe2"])
         elif cb == 0x5f2a00:                                               # a corpse, a hurt one, their counts
             if s["corpse"]: e.w32(ctx, cur["units"]["kin"])
             if s["aid"]: e.w32(ctx + 4, cur["units"]["aid"])
@@ -190,21 +206,44 @@ def install(e):
         e.w32(cur["cmd"] + 8, c)
         return cur["cmd"]
     e.hook(0x58ee80, command, 0)
-    e.hook(0x58f0d0, lambda e: cur["units"]["mon"] if cur["s"]["leader"] else cur["units"]["kin"], 0)
+    e.hook(0x58f0d0, lambda e: cur["units"][cur["s"]["group"]] if cur["s"]["group"] else 0, 0)
     e.hook(0x6201d0, lambda e: int(cur["s"]["aura"]), 1)
-    e.hook(0x6488c0, lambda e: cur["s"]["spot"][0], 1)                 # the target's path spot
-    e.hook(0x648900, lambda e: cur["s"]["spot"][1], 1)
+    e.hook(0x6488c0, lambda e: cur["s"]["spots"][cur["paths"][e.arg(0)]][0], 1)   # a unit's path spot
+    e.hook(0x648900, lambda e: cur["s"]["spots"][cur["paths"][e.arg(0)]][1], 1)
+    def squared(e):                                                    # FUN_005b0bd0 (ECX, EDX: the two units)
+        from unicorn.x86_const import UC_X86_REG_ECX, UC_X86_REG_EDX
+        (ax, ay), (bx, by) = (cur["s"]["spots"][name(e.mu.reg_read(r))] for r in (UC_X86_REG_ECX, UC_X86_REG_EDX))
+        return (ax - bx) ** 2 + (ay - by) ** 2
+    e.hook(0x5b0bd0, squared, 0)
+    e.hook(0x620bb0, lambda e: 1 if name(e.arg(0)) == "mon" or cur["s"]["same_room"] else 2, 1)
+    e.hook(0x620510, lambda e: 2, 1)
+    def land(e):                                                       # FUN_005f2fc0
+        if not cur["s"]["can_land"]: return 0
+        out("land"); out("wait", 12)
+        return 1
+    e.hook(0x5f2fc0, land, 0)
+    e.hook(0x5f2eb0, lambda e: out("takeoff") or out("wait", 12), 0)
+    def free(e):                                                       # FUN_0064e7b0(room, &spot, size, mask, 1): by the target, then itself
+        spot = cur["s"]["free"][cur["frees"]]
+        cur["frees"] += 1
+        if spot is None: return 0
+        e.w32(e.arg(1), spot[0]); e.w32(e.arg(1) + 4, spot[1])
+        return 1
+    e.hook(0x64e7b0, free, 5)
+    e.hook(0x5de4e0, lambda e: out("keep", name(e.arg(0)), e.arg(1), S32(e.arg(2)), S32(e.arg(3))) or 1, 4)
+    e.hook(0x5de440, lambda e: out("fly", S32(e.arg(0)), S32(e.arg(1)), e.arg(2)) or 1, 3)
     e.hook(0x599420, lambda e: 0, 0)                                   # Radament's: FUN_00599420 (the quest's)
 
 
 def run_game(e, s, addr, rng_moves):
     def alloc(n): a = e.alloc(n); e.mu.mem_write(a, bytes(n)); return a
     game, params, ctrl, row, cmd = (alloc(n) for n in (0x2000, 0x40, 0x40, 0x200, 0x40))
-    units, names = {}, {}
+    units, names, paths = {}, {}, {}
     for k, n in enumerate(UNITS):
         u = alloc(0x200)
-        e.w32(u, 1); e.w32(u + 4, 0x100 + k); e.w32(u + 0xc, k + 1); e.w32(u + 0x2c, alloc(0x80))
-        units[n], names[u] = u, n
+        path = alloc(0x80)
+        e.w32(u, 1); e.w32(u + 4, 0x100 + k); e.w32(u + 0xc, k + 1); e.w32(u + 0x2c, path)
+        units[n], names[u], paths[path] = u, n, n
     mon = units["mon"]
     e.w32(mon + 0x20, s["seed"][0]); e.w32(mon + 0x24, s["seed"][1])
     e.mu.mem_write(game + 0x6d, bytes([s["diff"]])); e.w32(game + 0xa8, s["frame"])
@@ -217,7 +256,7 @@ def run_game(e, s, addr, rng_moves):
     e.w32(params, ctrl); e.w32(params + 7 * 4, row)
     if s["target"]: e.w32(params + 8, units["foe"])
     e.w32(params + 20, s["dist"]); e.w32(params + 24, int(s["melee"]))
-    CUR.update(s=s, out=[], units=units, names=names, moves=rng_moves, cmd=cmd)
+    CUR.update(s=s, out=[], units=units, names=names, paths=paths, moves=rng_moves, cmd=cmd, frees=0)
     e.call(addr, params, ecx=game, edx=mon)
     return CUR["out"], [S32(e.r32(ctrl + 0x14 + 4 * k)) for k in range(3)], (e.r32(mon + 0x20), e.r32(mon + 0x24))
 
@@ -249,6 +288,8 @@ def outcome(s, out):
         elif k == "pace":
             if item[1]: pace[0] = item[1]
             if item[2]: pace[1] = item[2]
+        elif k == "keep": to("keep", item[3], item[4], item[2], item[1])
+        elif k == "fly": to("fly", item[3], item[1], item[2], None)
         elif k == "aura": effects.append(("aura", s["skills"].index(item[1])))
         else: effects.append(item)
     return act, pace, effects, asks
@@ -262,8 +303,10 @@ def dump_case(s, act, pace, effects, asks, ctrl, seed):
     nums += [s["stat"][(u, k)] for u in ("mon", "foe") for k in (0x4a, 0x27, 0x2b)]
     nums += [int(s["foe2"]), s["foe2_dist"], int(s["kin"]), s["kin_d"], int(s["corpse"]), int(s["aid"]), *s["counts"]]
     nums += [int(s["usable"]), s["command"] or 0, int(s["leader"]), int(s["aura"])]
+    nums += [*s["spots"]["mon"], *s["spots"]["foe"], int(s["same_room"]), int(s["can_land"]), int(s["victim"]), int(s["group"] is not None)]
+    nums += [c for f in s["free"] for c in ((1, *f) if f else (0, 0, 0))]
     nums += list(s["seed"])
-    kinds = {"state": 0, "overlay": 1, "stat": 2, "rally": 3, "command_done": 4, "summoner_open": 5, "aura": 6}
+    kinds = {"state": 0, "overlay": 1, "stat": 2, "rally": 3, "command_done": 4, "summoner_open": 5, "aura": 6, "land": 7, "takeoff": 8}
     eff = [f"{kinds[x[0]]} {x[1] if len(x) > 1 else 0} {x[2] if len(x) > 2 else 0}" for x in effects]
     tail = [ACTS.index(act[0])] + act[1:] + pace + ctrl + list(seed)
     return " ".join(map(str, nums)) + " | " + " ; ".join(f"{n} {ok}" for n, ok in asks) + " | " + " ; ".join(eff) + " | " + " ".join(map(str, tail))

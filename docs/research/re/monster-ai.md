@@ -215,6 +215,7 @@ Act 2's MonAIs (MonStats AI on levels 40..74, MonAI table 0x73ca18 + ai × 16: `
 | PantherWoman | 18 | FUN_005f22b0 | runs in (pace 75), or regroups with its nearest kin past aip3 (FUN_005b0d00, squared) |
 | Swarm | 19 | FUN_005f2460 | walks in / A1 / stands aip2 |
 | Scarab | 20 | FUN_005f2540 | its leader (FUN_0058f0d0) sends the group charging (FUN_0058f730); charging: Skill1 (Jab) in melee |
+| Vulture | 23 | FUN_005f3170 | aloft (state: thinks left) it flies (S1, FUN_005de440) to a point rand(2r) about the target pushed clamp(2r, 12, 36) off itself (state2 / 3, re-placed on a free spot, FUN_0064e7b0); dives at a weak one (FUN_005f30f0: within 11, at most aip3 % life); lands (FUN_005f2fc0, S2) and fights; takes off (FUN_005f2eb0) for rand(8) + 24 thinks |
 | Mummy | 21 | FUN_005f2850 | hit: walks in; within aip1 swings or walks in; else wanders 3 |
 | GreaterMummy | 22 | FUN_005f2b10 | Skill2 (Bestow) on a hurt one, Skill1's sequence (FUN_005de000, Resurrect2) on a corpse, Skill3 (UnHolyBolt) at the second target (FUN_005f2a00 searches aip5, squared) |
 | BatDemon | 29 | FUN_005f5040 | states 0..4: rises (S3), drops (S4), lands (S2), flees; regen as the Baboon's |
@@ -224,8 +225,8 @@ Act 2's MonAIs (MonStats AI on levels 40..74, MonAI table 0x73ca18 + ai × 16: `
 | PantherJavelin | 95 | FUN_005e1080 | throws at its second target (FUN_005ddc30; none: 0x7fffffff off) |
 
 - **Other thinks.** A MonAI row's fourth word is a second think: FUN_005b0e00 called with the AI it already runs swaps the think for it, and from it back (re-running the init). FUN_00570530 does that as a unit comes back. The BatDemon's (FUN_005f4fd0) and SandMaggot's (FUN_005f1750) aren't ported.
-- **Checked.** `tools/emu/mon_ais.py` runs each think natively on random scenes, every helper hooked at its entry (the seed draws of FUN_005df7d0 / FUN_005de200 / FUN_005df530 made as they make them), and dumps the distinct paths as `tests/mon_ais_cases.inc`; `test_monsters` runs `rules::mon_think` on them: the act, its unit, wait and event, the pace, the effects, the AI control and seed. 3 × 150 000 runs (seeds 7, 13, 21), ~800 paths each, all match.
-- **In d2d.** `ai.cpp think`: the searches over the monsters within 80 subtiles; Duriel's aura through Aura Enchanted's (`Monster::aura`); a walk at a kin; S3 / S4. Act 2's skills have no sequence in `kSeqs` yet, so a skill act stands (Fire Hit, Charge, Leap, the maggots', the Summoner's spells). Left out: states 0x5a / 0x5b, overlays, regen (stat 0x4a), FUN_005fd470 (always usable), Radament's wider reach, a wait counted from the mode's end. Not ported: Vulture (23), NpcStationary (54, Tyrael).
+- **Checked.** `tools/emu/mon_ais.py` runs each think natively on random scenes, every helper hooked at its entry (the seed draws of FUN_005df7d0 / FUN_005de200 / FUN_005df530 made as they make them), and dumps the distinct paths as `tests/mon_ais_cases.inc`; `test_monsters` runs `rules::mon_think` on them: the act, its unit, wait and event, the pace, the effects, the AI control and seed. 3 × 150 000 runs (seeds 7, 13, 21), ~800 paths each, all match; the Vulture 2 × 20 000 more.
+- **In d2d.** `ai.cpp think`: the searches over the monsters within 80 subtiles; Duriel's aura through Aura Enchanted's (`Monster::aura`); a walk at a kin; S3 / S4. Act 2's skills have no sequence in `kSeqs` yet, so a skill act stands (Fire Hit, Charge, Leap, the maggots', the Summoner's spells). Left out: states 0x5a / 0x5b, overlays, regen (stat 0x4a), FUN_005fd470 (always usable), Radament's wider reach, a wait counted from the mode's end; the Vulture always lands (no flying collision), one free-spot search, its landing move onto itself a stand. Not ported: NpcStationary (54, Tyrael).
 
 ## Doors — FUN_005b0f50
 
@@ -260,6 +261,6 @@ Approximated (`ponytail:` in ai.cpp, fight.cpp, monsters.hpp):
 - Confuse's and Attract's duration is auralen's, not FUN_005c37a0's; FUN_0056e2f0's test is unread.
 - Movement is floats in cells, blocked as `monster_step` has it, and the target's +0x68 offset is taken as 0.
 - A dead pet is skipped (game.exe takes it off the list), and a dead monster leaves list 9.
-- An untraced AI (in Acts 1 and 2 only the Vulture and Tyrael's NpcStationary) goes at what it found from the next frame on.
+- An untraced AI (in Acts 1 and 2 only Tyrael's NpcStationary) goes at what it found from the next frame on.
 - A pace (`ThinkIn::pace` → `Monster::move_pct`) adds to the move's speed %; Spider Lay's −100 % leaves it creeping at the 10 % floor, and its slowed state on those about is left out. A foe's life % (`Foe::life_pct`) is the player's only.
 - The Vampire's second target (FUN_005ddc30) is its target. VampireFirewall / VampireMeteor stand (no Act 1 vampire casts them). The Fetish's leader commands never come, and the pathers 2 / 0xd and FUN_005defe0's steps are `path_to`'s.

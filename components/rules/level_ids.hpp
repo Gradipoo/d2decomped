@@ -66,6 +66,7 @@ inline constexpr int kMaggotLairLevel3 = 64;
 inline constexpr int kAncientTunnels = 65;
 inline constexpr int kFirstTalRashasTomb = 66;
 inline constexpr int kLastTalRashasTomb = 72;
+inline constexpr int kDurielsLair = 73;
 inline constexpr int kArcaneSanctuary = 74;
 inline constexpr int kTravincal = 83;
 inline constexpr int kBloodyFoothills = 110;

@@ -44,7 +44,8 @@ inline constexpr int kTrapObject = 30;      // FUN_00581cd0: the exploding chest
 inline constexpr int kSunAltar = 24;
 inline constexpr int kTeleportPad = 27;     // FUN_00581bf0: the Arcane Sanctuary's pads
 inline constexpr int kSanctuaryPortal = 34; // FUN_005846b0: Palace Cellar 3 <-> the Arcane Sanctuary
-inline constexpr int kJournal = 42;         // FUN_0059b970: Horazon's Journal        // FUN_0059a7e0: the Tainted Sun's altar
+inline constexpr int kJournal = 42;         // FUN_0059b970: Horazon's Journal
+inline constexpr int kOrifice = 25;         // FUN_0059dc70: where the Horadric Staff goes        // FUN_0059a7e0: the Tainted Sun's altar
 inline constexpr int kStash = 32;
 inline constexpr int kCubeChest = 39, kScrollChest = 40, kShaftChest = 41;   // the Horadric Staff's chests (FUN_00599df0 / FUN_00599c10 / FUN_00599cf0)
 }  // namespace operate_fn

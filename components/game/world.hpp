@@ -169,10 +169,11 @@ struct World {
     // (FUN_0056d130 / FUN_0056cf40); a new one closes the old pair. [2]:
     // the Cairn Stones' portal to Tristram (object 60, FUN_005a9930), [3]
     // its twin in Tristram back to them; [4] the Arcane Sanctuary's way to
-    // the Canyon of the Magi (object 60, FUN_0056d130), [5] its twin. A
-    // portal's other end is k ^ 1.
+    // the Canyon of the Magi (object 60, FUN_0056d130), [5] its twin; [6]
+    // the true tomb's way down to Duriel (object 100, OperateFn 43: one
+    // way). A portal's other end is k ^ 1.
     struct Portal { const Level* level = nullptr; float x = 0, y = 0; std::uint32_t born = 0; };
-    std::array<Portal, 6> portal{};
+    std::array<Portal, 8> portal{};
     int take_portal = -1;                  // the portal (0..3) the player is walking to
     // The player's corpses (FUN_0057f700): where they fell, what they wore
     // and had in hand, 75% of the experience the death took; at most 16.
@@ -216,6 +217,7 @@ struct World {
     d2d::rules::HoradricStaffQuest staff;  // and the Horadric Staff
     d2d::rules::ArcaneQuest arcane;        // and the Arcane Sanctuary
     d2d::rules::SummonerQuest summoner;    // and the Summoner
+    d2d::rules::SevenTombsQuest tombs;     // and the Seven Tombs
     int guard_line = 186;                  // the palace guard's line as last rolled (the talk's, for what's heard)
     [[nodiscard]] d2d::rules::HoradricStaffQuest::Items staff_items() const { return { carries("tr1"), carries("msf"), carries("box"), carries("vip"), carries("hst") }; }
     d2d::rules::QuestBits game_bits{};
@@ -387,6 +389,7 @@ struct World {
     void radament_died(const Fight::Kill& kill, std::uint32_t now_ms);
     void transmute(std::uint32_t now_ms);
     void canyon_portal(std::uint32_t now_ms);
+    void durielportal_open(std::uint32_t now_ms);
     void kashya_merc();
     void countess_died(std::uint32_t now_ms);
     // The Countess's treasure (missile 332, towerchestspawner, one a chest

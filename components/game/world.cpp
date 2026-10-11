@@ -14,6 +14,7 @@
 #include <combat.hpp>
 #include <cube.hpp>
 #include <d2s_items.hpp>
+#include <drlg.hpp>
 #include <drops.hpp>
 #include <level_ids.hpp>
 #include <monster_ids.hpp>
@@ -134,9 +135,11 @@ auto World::view() const -> View {
             if (corpses[k].level == level) view.corpses.push_back({ corpses[k].x, corpses[k].y, corpses[k].dir, corpses[k].gfx, int(k) });
         for (int k = 0; k < int(portal.size()); ++k)
             if (portal[std::size_t(k)].level == level)
-                view.portals.push_back({ portal[std::size_t(k)].x, portal[std::size_t(k)].y, portal[std::size_t(k ^ 1)].level ? portal[std::size_t(k ^ 1)].level->id : d2d::rules::CainQuest::kTristram,
+                view.portals.push_back({ portal[std::size_t(k)].x, portal[std::size_t(k)].y,
+                                         k == 6 ? d2d::rules::SevenTombsQuest::kLair
+                                                : portal[std::size_t(k ^ 1)].level ? portal[std::size_t(k ^ 1)].level->id : d2d::rules::CainQuest::kTristram,
                                          portal[std::size_t(k)].born, k });
-        if (cain_portal.level == level) view.portals.push_back({ cain_portal.x, cain_portal.y, 1, cain_portal.born, 6 });
+        if (cain_portal.level == level) view.portals.push_back({ cain_portal.x, cain_portal.y, 1, cain_portal.born, 8 });
         view.npc_states = npc_states;
         grow_states(view.npc_states, *level);
         view.npc_states.resize(level->npcs.size());
@@ -167,6 +170,7 @@ auto World::view() const -> View {
             view.quest_log[d2d::rules::HoradricStaffQuest::kQuest] = std::uint8_t(staff.log_state(quest_bits, staff_items(), tainted.used));
             view.quest_log[d2d::rules::ArcaneQuest::kQuest] = std::uint8_t(arcane.log_state(quest_bits));
             view.quest_log[d2d::rules::SummonerQuest::kQuest] = std::uint8_t(summoner.log_state(quest_bits));
+            view.quest_log[d2d::rules::SevenTombsQuest::kQuest] = std::uint8_t(tombs.log_state(quest_bits));
             for (int quest = 1; quest < 15; ++quest) {
                 const bool bit0 = d2d::rules::qbit(quest_bits, quest, 0) || d2d::rules::qbit(quest_bits, quest, 15);
                 if (bit0 && !d2d::rules::qbit(quest_bits, quest, 13) && !d2d::rules::qbit(quest_bits, quest, 14)) view.quest_log[std::size_t(quest)] = 0;
@@ -408,6 +412,23 @@ auto World::operate(int npc_index, std::uint32_t now_ms, int force ) -> void {  
             for (std::uint32_t gold = fight.spawning.quests.next() % 5 + 5; gold > 0; --gold) drops.push_back({ .code = "gld" });
             for (const auto& dropped : drops) loot.put(dropped, object.x, object.y, here, fight.spawning.game, now_ms);
             d2d::log::info("The Tainted Sun: the altar, the sun's back ({} drops)", drops.size() + std::size_t(use.amulets));
+            return;
+        }
+        // The orifice (OperateFn 25, FUN_0059dc70): with the Horadric Staff
+        // carried it takes it (FUN_0059dd80: the staff and its parts gone,
+        // the Horadric Staff done, the way down to Duriel after its timer);
+        // without, "I can't" (voice).
+        // ponytail: game.exe opens a panel to drop the staff into (C->S 0x44 3); d2d places it on use.
+        if (object.operate_fn == d2d::rules::operate_fn::kOrifice) {
+            if (operated.contains({ level, npc_index }) || hosted_quests) return;
+            if (!carries("hst")) { d2d::log::info("I can't use this yet."); return; }
+            if (held && held->code == "hst") held.reset();
+            for (const char* code : { "hst", "vip", "msf" })
+                if (const auto part = std::ranges::find(character.items, std::string(code), &d2d::d2s::Item::code); part != character.items.end()) character.items.erase(part);
+            operated[{ level, npc_index }] = now_ms;
+            to_mode(1);
+            tombs.staff_in(quests());
+            d2d::log::info("The Horadric Staff: placed in the orifice");
             return;
         }
         // Horazon's Journal (OperateFn 42, FUN_0059b970): opened once (mode
@@ -756,6 +777,9 @@ auto World::new_game() -> void {
         arcane.join(quests(), game_bits, carries("hst"));
         summoner = {};
         summoner.join(quests());
+        tombs = {};
+        { auto act = d2d::drlg::act_seed(game_data->map_seed); tombs.true_tomb = d2d::drlg::roll_act2_tombs(act).boss; }   // FUN_0061aeb0: act +0x94
+        tombs.join(quests());
         staff = {};
         staff.join(quests(), staff_items(), false);
         den = {};
@@ -826,7 +850,10 @@ auto World::swap_npcs(const Level* from) -> void {
         if (from && from != level) cain.enter(quests(), from->id, level->id);
         if (from && from != level) radament.enter(quests(), from->id);
         if (from && from != level && from->id == d2d::rules::level_ids::kLutGholein) staff.rewarded = false;   // LAB_00599a00
-        if (from && from != level) { arcane.enter(quests(), from->id, level->id); summoner.enter(from->id, level->id); }
+        if (from && from != level) { arcane.enter(quests(), from->id, level->id); summoner.enter(from->id, level->id); tombs.enter(quests(), from->id, level->id); }
+        if (from && from != level && level->id == tombs.true_tomb)   // the orifice's InitFn 21 (FUN_0059db50): the level's rooms all come up
+            for (std::size_t index = 0; index < level->npcs.size(); ++index)
+                if (level->npcs[index].operate_fn == d2d::rules::operate_fn::kOrifice && tombs.orifice_seen()) operated.try_emplace({ level, int(index) }, now);
         if (from && from != level && tainted.enter(from->id, level->id)) tainted.dark_in = int(fight.spawning.quests(17));
         if (from && from != level && level->id == d2d::rules::TaintedSunQuest::kTemple)   // the altar's InitFn 20 (FUN_0059a3f0): the level's rooms all come up
             for (const auto& object : level->npcs) if (object.root == "objects" && object.object_id == d2d::rules::TaintedSunQuest::kAltar) tainted.altar_seen();
@@ -939,6 +966,7 @@ auto World::quest_talk(int hc_idx, bool fresh) -> std::vector<d2d::rules::QuestM
                               return std::uint32_t(guard_line - 187);
                           }), std::back_inserter(out));
         std::ranges::copy(summoner.talk(quests(), hc_idx), std::back_inserter(out));
+        std::ranges::copy(tombs.talk(quests(), hc_idx, d2d::rules::qbit(game_bits, d2d::rules::SummonerQuest::kQuest, 13)), std::back_inserter(out));
         return out;
     }
 
@@ -1027,6 +1055,17 @@ auto World::transmute(std::uint32_t now_ms) -> void {
                 loot.place(std::move(*held_item), player.x, player.y, now_ms);
         }
         d2d::log::info("transmute: {} ({} made)", recipe.description, made.items.size());
+    }
+
+// The way down to Duriel (FUN_0059d870): object 100 13 subtiles left of the
+// orifice and 3 down (FUN_00555230), in the true tomb.
+auto World::durielportal_open(std::uint32_t now_ms) -> void {
+        const Level* tomb = game_data->level(tombs.true_tomb);
+        if (!tomb) return;
+        const auto orifice = std::ranges::find(tomb->npcs, d2d::rules::operate_fn::kOrifice, &Npc::operate_fn);
+        if (orifice == tomb->npcs.end()) return;
+        portal[6] = { tomb, orifice->x - 13.f / 5, orifice->y + 3.f / 5, now_ms };
+        d2d::log::info("The Seven Tombs: the way down to Duriel opens");
     }
 
 // The way to the Canyon of the Magi (FUN_0056d130: object 60 to level 46):
@@ -1472,6 +1511,15 @@ auto World::use_portal(std::uint32_t now_ms) -> void {
             arrive(tristram, portal[3].x, portal[3].y + 0.6f, "the Cairn Stones' portal");
             return;
         }
+        if (take_portal == 6) {                       // down to Duriel (OperateFn 43: into level 73)
+            take_portal = -1;
+            const Level* lair = game_data->level(d2d::rules::SevenTombsQuest::kLair);
+            if (!lair || lair->ds1.width() == 0) { d2d::log::info("not implemented: level 73 (Duriel's Lair)"); return; }
+            const auto [to_x, to_y] = lair->portal_spot.first >= 0 ? lair->nearest_free(lair->portal_spot.first, lair->portal_spot.second)
+                                                                  : lair->nearest_free(float(lair->ds1.width()) / 2, float(lair->ds1.height()) / 2);
+            arrive(lair, to_x, to_y, "the way down to Duriel");
+            return;
+        }
         if (take_portal >= 3) {                       // back to the Cairn Stones; the Canyon's pair
             const auto& twin = portal[std::size_t(take_portal ^ 1)];
             take_portal = -1;
@@ -1639,6 +1687,7 @@ auto World::deal(const Command& command) -> bool {
                 cain.talk_closed(quests(), level->npcs[std::size_t(talking[0])].hc_idx);
                 radament.talk_closed(quests(), level->npcs[std::size_t(talking[0])].hc_idx);
                 arcane.talk_closed(quests(), level->npcs[std::size_t(talking[0])].hc_idx);
+                tombs.talk_closed(quests(), level->npcs[std::size_t(talking[0])].hc_idx);
             }
             talking = { chat->npc, -1, -1 };
             return true;
@@ -1717,12 +1766,25 @@ auto World::deal(const Command& command) -> bool {
                 if (burial_was != 5 && burial.state == 5) chain(2);   // FUN_00590980
             }
             d2d::rules::ActTwoOpening::said(quests(), game_bits, hc_idx, message->string);
+            const int radament_was = radament.state;
             radament.said(quests(), game_bits, hc_idx, message->string);
+            if (radament_was != 5 && radament.state == 5) tombs.chain();        // Radament's +0xf0: on to record 13's
             const int tainted_was = tainted.state;
             tainted.said(quests(), game_bits, hc_idx, message->string);
-            if (tainted_was != 5 && tainted.state == 5) arcane.chain();          // the Tainted Sun's +0xf0: on to record 11's
+            if (tainted_was != 5 && tainted.state == 5 && arcane.chain()) tombs.chain();   // the Tainted Sun's +0xf0: on to record 11's, then 13's
             arcane.said(quests(), game_bits, hc_idx, message->string, room_of(*level, player.x, player.y));
             summoner.said(quests(), game_bits, message->string);
+            if (const auto heard = tombs.said(quests(), game_bits, hc_idx, message->string, level->id == d2d::rules::SevenTombsQuest::kLair); heard.town_portal) {
+                open_portal_at(player.x, player.y + 0.6f, now);              // Tyrael's (FUN_0056d130: object 59 to level 40)
+                if (heard.act3) {                                             // FUN_00538680: Act 3 open
+                    const int diff = character.header.active_difficulty();
+                    character.header.progression = std::uint8_t(std::max<int>(character.header.progression, diff * (character.header.expansion() ? 5 : 4) + 2));
+                }
+                d2d::log::info("The Seven Tombs: Tyrael's portal");
+            } else if (heard.take_staff) {
+                for (const char* code : { "hst", "vip", "msf" })              // FUN_00544160 each
+                    if (const auto part = std::ranges::find(character.items, std::string(code), &d2d::d2s::Item::code); part != character.items.end()) character.items.erase(part);
+            }
             if (hc_idx == d2d::rules::ArcaneQuest::kDrognan || hc_idx == d2d::rules::ArcaneQuest::kJerhyn) show_palace();   // the guard steps aside
             if (staff.said(quests(), hc_idx, message->string)) {     // the scroll read: it goes
                 if (held && held->code == "tr1") held.reset();
@@ -1849,7 +1911,8 @@ auto World::apply(const Command& command, std::uint32_t now_ms) -> void {
             const bool menu = std::ranges::any_of(kNpcMenus, [&](const NpcMenu& menu_entry) { return menu_entry.hc_idx == npc.hc_idx; });
             const bool usable = is_door(npc.operate_fn) || npc.operate_fn == d2d::rules::operate_fn::kWell || npc.operate_fn == d2d::rules::operate_fn::kMoldyTome || (operable(npc.operate_fn) && !npc.preoperated && !operated.contains({ level, interact->npc }));
             const bool quest_object = npc.operate_fn == d2d::rules::operate_fn::kCairnStone || npc.operate_fn == d2d::rules::operate_fn::kGibbet || npc.operate_fn == d2d::rules::operate_fn::kInifussTree
-                                      || npc.operate_fn == d2d::rules::operate_fn::kSunAltar;   // the quest says what it does
+                                      || npc.operate_fn == d2d::rules::operate_fn::kSunAltar || npc.operate_fn == d2d::rules::operate_fn::kOrifice
+                                      || npc.operate_fn == d2d::rules::operate_fn::kJournal || npc.operate_fn == d2d::rules::operate_fn::kSanctuaryPortal;   // the quest says what it does
             if (npc.operate_fn == d2d::rules::operate_fn::kStash || npc.operate_fn == d2d::rules::operate_fn::kWaypoint || npc.operate_fn == d2d::rules::ToolsQuest::kStand || usable || quest_object || (npc.root == "monsters" && menu)) interact_npc = interact->npc;
             return;
         }
@@ -1928,6 +1991,7 @@ auto World::tick(const std::vector<Command>& cmds, std::uint32_t now_ms, std::ui
             burial.tick();
             radament.tick();
             tainted.tick(quests());
+            if (tombs.tick()) durielportal_open(day_at);
             if (summoner.tick() && d2d::rules::qbit(quests(), d2d::rules::SummonerQuest::kQuest, 13) && level->id == d2d::rules::SummonerQuest::kSanctuary
                 && character.header.cls < 7) {
                 static constexpr const char* kClass[7] = { "amazon", "sorceress", "necromancer", "paladin", "barbarian", "druid", "assassin" };
@@ -2001,7 +2065,8 @@ auto World::tick(const std::vector<Command>& cmds, std::uint32_t now_ms, std::ui
             const float npc_x = npc.path.empty() ? npc.x : state.x, npc_y = npc.path.empty() ? npc.y : state.y;
             if (std::hypot(npc_x - player.x, npc_y - player.y) < 2.f) {
                 if (operable(npc.operate_fn) || npc.operate_fn == d2d::rules::operate_fn::kMoldyTome || npc.operate_fn == d2d::rules::ToolsQuest::kStand || npc.operate_fn == d2d::rules::operate_fn::kCairnStone || npc.operate_fn == d2d::rules::operate_fn::kGibbet || npc.operate_fn == d2d::rules::operate_fn::kInifussTree
-                    || npc.operate_fn == d2d::rules::operate_fn::kSunAltar) {
+                    || npc.operate_fn == d2d::rules::operate_fn::kSunAltar || npc.operate_fn == d2d::rules::operate_fn::kOrifice
+                    || npc.operate_fn == d2d::rules::operate_fn::kJournal || npc.operate_fn == d2d::rules::operate_fn::kSanctuaryPortal) {
                     operate(interact_npc, now_ms);
                 } else if (npc.operate_fn == d2d::rules::operate_fn::kStash) {
                     events.push_back(ev::OpenUI{ ev::OpenUI::stash, interact_npc });
@@ -2101,7 +2166,8 @@ auto World::tick(const std::vector<Command>& cmds, std::uint32_t now_ms, std::ui
                                   || cain.alert(quests(), level->npcs[i].hc_idx, carries("bks"))
                                   || d2d::rules::ActTwoOpening::alert(quests(), level->npcs[i].hc_idx) || radament.alert(quests(), level->npcs[i].hc_idx)
                                   || tainted.alert(quests(), level->npcs[i].hc_idx) || d2d::rules::HoradricStaffQuest::alert(quests(), level->npcs[i].hc_idx, staff_items())
-                                  || arcane.alert(quests(), level->npcs[i].hc_idx) || d2d::rules::SummonerQuest::alert(quests(), level->npcs[i].hc_idx);
+                                  || arcane.alert(quests(), level->npcs[i].hc_idx) || d2d::rules::SummonerQuest::alert(quests(), level->npcs[i].hc_idx)
+                                  || tombs.alert(quests(), level->npcs[i].hc_idx);
         // The player's mode as the merc's think reads it: 2 walk, 3 run, 6 walk in town.
         fight.owner_mode = !player.walking ? 1 : running && character.stats.values[d2d::d2s::kStamina] > 0 ? 3 : in_moor ? 2 : 6;
         fight.world(in_moor, now_ms, elapsed, crowd);
@@ -2121,6 +2187,10 @@ auto World::tick(const std::vector<Command>& cmds, std::uint32_t now_ms, std::ui
             if (kill.type == d2d::rules::monster_ids::kBloodRaven) blood_raven_died(now_ms);
             if (kill.type == d2d::rules::monster_ids::kRadament) radament_died(kill, now_ms);
             // The Summoner (FUN_0059c150). N-player gap: "by him" is the player in the Sanctuary.
+            if (kill.type == d2d::rules::SevenTombsQuest::kDuriel) {     // FUN_0059d050. N-player gap: "by him" is the player in the Lair.
+                tombs.duriel_died(quests(), level->id == d2d::rules::SevenTombsQuest::kLair);
+                d2d::log::info("The Seven Tombs: Duriel is dead");
+            }
             if (kill.type == d2d::rules::monster_ids::kSummoner && summoner.killed(quests(), level->id == d2d::rules::SummonerQuest::kSanctuary))
                 d2d::log::info("The Summoner: dead");
             if (kill.super == d2d::rules::TowerQuest::kCountess) countess_died(now_ms);

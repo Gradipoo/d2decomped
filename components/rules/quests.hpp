@@ -924,6 +924,217 @@ struct SummonerQuest {
     void enter(int from, int dest) { if (open && dest >= level_ids::kLutGholein && from == level_ids::kLutGholein) rewarded = false; }   // LAB_0059c200
 };
 
+// The Seven Tombs (a2q6.cpp, the record at FUN_0059d5b0): quest 14. Open
+// on the chain (Radament's done, the Arcane Sanctuary opened); the true
+// tomb (the act's boss tomb, act +0x94) and the Canyon move it on; the
+// staff in the orifice (OperateFn 25) finishes the Horadric Staff and
+// opens the way down to Duriel (object 100); his death, Tyrael's 302 (a
+// town portal; Act 3 opened), Jerhyn's 442, the town's lines (444..452:
+// bits 6..11), Meshif's 450: done. Bits: 0 done, 2 under way, 3 Tyrael's
+// heard, 4 Jerhyn's reward heard, 5 at Duriel's death, 6..11 the town's
+// lines heard, 13 took part, 14 by others, 15 closed. Its log is its own
+// (+0xe8, FUN_0059ca50).
+// N-player gaps: one player (the rewarded bool, no party credit); the
+// orifice's panel (the staff dragged in: C->S 0x44) is skipped — using it
+// with the staff places it; the log override (data+0x10 / +0x14) isn't
+// traced; Tyrael's prison (data+0x2c) isn't opened.
+struct SevenTombsQuest {
+    static constexpr int kQuest = 14, kJerhyn = monster_ids::kJerhyn, kTyrael = monster_ids::kTyrael, kMeshif = monster_ids::kMeshif;
+    static constexpr int kLair = level_ids::kDurielsLair, kCanyon = level_ids::kCanyonOfTheMagi, kDuriel = monster_ids::kDuriel;
+    static constexpr int kStart = 430, kReward = 442, kTyraelLine = 302, kMeshifLine = 450;
+    bool open = true;
+    int state = 0;             // +0xc: 1 open, 2 the true tomb / the Canyon, 3 Duriel dead, 4 Tyrael spoke, 5 rewarded
+    int log = 0;
+    int true_tomb = 0;         // data+0x34
+    bool duriel_dead = false;  // data+1
+    bool tyrael_talks = false; // data+0x18 2
+    bool tyrael_portal = false;   // data+0xf
+    bool jerhyn_pending = false, reward_pending = false, tyrael_pending = false;   // data+8, +10, +9
+    bool staff_placed = false; // data+0xd: placed, the way down not open yet
+    bool lair_open = false;    // data+0xb
+    bool later = false;        // data+0xc: placed in an earlier game
+    bool timer_started = false;   // data+3
+    int open_in = -1;          // the orifice's timer (FUN_0059d870)
+    int log_in = 0;            // Duriel's death's 8-tick timer (LAB_0059cee0)
+    bool rewarded = false;
+    void mark(QuestBits& quest_bits) const {    // FUN_0059c6c0
+        if (!qbit(quest_bits, kQuest, 0) && state > 1) qset(quest_bits, kQuest, 2);
+    }
+    bool chain() { if (state == 0 && open) state = 1; return true; }   // FUN_0059d450, on to +0x10's
+    void join(QuestBits& quest_bits) {           // LAB_0059d4f0
+        qset(quest_bits, 10, 9, false);
+        if (qbit(quest_bits, 10, 0)) { later = true; staff_placed = true; }
+        if (qbit(quest_bits, kQuest, 0) || qbit(quest_bits, kQuest, 15)) { open = false; return; }
+        if (qbit(quest_bits, kQuest, 2)) { log = 1; state = 2; }
+        else if (qbit(quest_bits, kQuest, 3)) { log = 5; state = 5; }
+        else if (qbit(quest_bits, kQuest, 4)) { log = 6; state = 5; }
+    }
+    // The log (+0xe8, FUN_0059ca50).
+    [[nodiscard]] int log_state(const QuestBits& quest_bits) const {
+        if (!qbit(quest_bits, 7, 0) || qbit(quest_bits, kQuest, 0)) return 0;
+        if (qbit(quest_bits, kQuest, 3)) return 5;
+        if (qbit(quest_bits, kQuest, 4)) return 6;
+        if (!open) return 0;
+        if (qbit(quest_bits, kQuest, 5) || state < 3) return log;
+        return 0xc;
+    }
+    // The player went from `from` to `dest` (FUN_0059d1c0): levels 40..74.
+    void enter(QuestBits& quest_bits, int from, int dest) {
+        if (dest < level_ids::kLutGholein || dest > level_ids::kArcaneSanctuary) return;
+        if (from == level_ids::kLutGholein) rewarded = false;
+        if (!open) return;
+        if (!duriel_dead && true_tomb) {
+            if (dest == true_tomb) {
+                if (state == 2) return;
+                state = 2;
+                if (log <= 1) log = 2;
+                mark(quest_bits);
+                return;
+            }
+            if (dest == kCanyon) {
+                if (state == 0) { state = 2; mark(quest_bits); }
+                if (log == 0) log = 1;
+                return;
+            }
+        }
+        if (dest != kLair || state > 1) return;
+        state = 2;
+        if (log <= 1) log = 2;
+        mark(quest_bits);
+    }
+    // FUN_0059c3c0.
+    struct E { int npc, string; bool greet; };
+    static inline const std::vector<E> kBlocks[7] = {
+        { { kJerhyn, 430, true } },
+        { { 176, 434, false }, { 175, 433, false }, { 198, 441, false }, { 199, 432, false }, { kJerhyn, 431, false }, { 177, 439, false },
+          { 202, 438, false }, { 244, 440, false }, { kMeshif, 436, false }, { 200, 435, false }, { 178, 437, false } },
+        { { kTyrael, 302, true } },
+        { { 176, 445, false }, { 175, 446, false }, { 198, 451, false }, { 199, 443, false }, { 177, 449, false }, { kJerhyn, 442, true },
+          { kTyrael, 302, true }, { 202, 444, false }, { 244, 452, false }, { kMeshif, 450, false }, { 200, 448, false }, { 178, 447, false } },
+        { { 176, 445, false }, { 175, 446, false }, { 198, 451, false }, { 199, 443, false }, { 177, 449, false }, { kJerhyn, 442, false },
+          { kTyrael, 302, true }, { 202, 444, false }, { 244, 452, false }, { 200, 448, false }, { 178, 447, false } },
+        { { kMeshif, 450, true } },
+        { { 176, 445, true }, { 175, 446, true }, { 177, 449, true }, { 202, 444, true }, { 244, 452, true }, { 178, 447, true } },
+    };
+    // The town's first lines after Tyrael, by the bit each sets.
+    static constexpr std::array<std::pair<int, int>, 6> kTownLines{ { { 176, 6 }, { 175, 7 }, { 177, 8 }, { 202, 9 }, { 244, 10 }, { 178, 11 } } };
+    // `summoner_done`: the game's quest 13 bit 13 (Drognan stays quiet in block 1).
+    [[nodiscard]] std::vector<QuestMsg> talk(const QuestBits& quest_bits, int npc, bool summoner_done) const {
+        auto lines = [&](int block) {
+            std::vector<QuestMsg> out;
+            for (const auto& entry : kBlocks[block]) if (entry.npc == npc) out.push_back({ entry.string, entry.greet });
+            return out;
+        };
+        if (npc == kTyrael) return tyrael_talks ? lines(2) : std::vector<QuestMsg>{};
+        if (qbit(quest_bits, kQuest, 13))
+            for (const auto& [who, bit] : kTownLines) if (who == npc && !qbit(quest_bits, kQuest, bit)) return lines(6);
+        if (qbit(quest_bits, kQuest, 3)) return lines(3);
+        if (qbit(quest_bits, kQuest, 4)) return npc == kMeshif ? lines(5) : lines(4);
+        if (rewarded) return lines(4);
+        if (state == 0) return {};
+        const bool b13 = qbit(quest_bits, kQuest, 13);
+        if ((qbit(quest_bits, kQuest, 0) && !b13) || (state > 3 && !b13)) return {};
+        const int block = state - 1;
+        if (block == 1 && npc == 177 && summoner_done) return {};
+        if (block < 0 || block > 4) return {};
+        return lines(block);
+    }
+    // FUN_0059d300.
+    [[nodiscard]] bool alert(const QuestBits& quest_bits, int npc) const {
+        if (npc == kJerhyn) {
+            if (qbit(quest_bits, kQuest, 0)) return false;
+            return (state == 1 && !qbit(quest_bits, kQuest, 3) && !qbit(quest_bits, kQuest, 4)) || qbit(quest_bits, kQuest, 3);
+        }
+        if (npc == kMeshif) return qbit(quest_bits, kQuest, 4);
+        if (npc == kTyrael) return open && duriel_dead && !tyrael_portal;
+        if (!qbit(quest_bits, kQuest, 13)) return false;
+        for (const auto& [who, bit] : kTownLines) if (who == npc) return !qbit(quest_bits, kQuest, bit);
+        return false;
+    }
+    // What hearing `string` from `npc` does (FUN_0059cb20).
+    struct Heard { bool town_portal = false, act3 = false, take_staff = false; };
+    Heard said(QuestBits& quest_bits, QuestBits& game_bits, int npc, int string, bool in_lair) {
+        Heard out;
+        if (npc == kTyrael) {
+            if (!open || string != kTyraelLine || tyrael_portal) return out;
+            out.town_portal = true;
+            state = 4;
+            if (!qbit(quest_bits, kQuest, 13) && !qbit(quest_bits, kQuest, 3) && !qbit(quest_bits, kQuest, 4) && in_lair) {   // FUN_0059c860
+                qset(quest_bits, kQuest, 13);
+                qset(quest_bits, kQuest, 3);
+                out.act3 = true;
+            }
+            if (!qbit(quest_bits, kQuest, 0) && !qbit(quest_bits, kQuest, 3) && !qbit(quest_bits, kQuest, 4)) qset(quest_bits, kQuest, 14);   // LAB_0059c9f0
+            tyrael_portal = true;
+            tyrael_pending = true;
+            return out;
+        }
+        if (npc == kJerhyn && string == kStart) { state = 2; jerhyn_pending = true; return out; }
+        if (npc == kJerhyn && string == kReward) {
+            if (!qbit(quest_bits, kQuest, 3)) return out;
+            if (qbit(quest_bits, kQuest, 13)) state = 5;
+            reward_pending = true;
+            qset(quest_bits, kQuest, 4);
+            qset(quest_bits, kQuest, 3, false);
+            return out;
+        }
+        if (npc == kMeshif && string == kMeshifLine) {
+            if (!qbit(quest_bits, kQuest, 4)) return out;
+            out.take_staff = qbit(quest_bits, 10, 0);
+            if (qbit(quest_bits, kQuest, 13)) { qset(game_bits, kQuest, 13); state = 5; log = 0xd; }
+            qset(quest_bits, kQuest, 0);
+            qset(quest_bits, kQuest, 4, false);
+            rewarded = true;
+            return out;
+        }
+        static constexpr std::array<std::pair<int, int>, 6> kLineBits{ { { 444, 9 }, { 445, 6 }, { 446, 7 }, { 447, 11 }, { 449, 8 }, { 452, 10 } } };
+        for (const auto& [line, bit] : kLineBits) if (string == line) qset(quest_bits, kQuest, bit);
+        return out;
+    }
+    void talk_closed(QuestBits& quest_bits, int npc) {   // LAB_0059c760
+        if (npc == kTyrael) { if (tyrael_pending) { log = 4; tyrael_pending = false; } return; }
+        if (npc != kJerhyn) return;
+        if (jerhyn_pending) { log = 1; jerhyn_pending = false; }
+        else if (reward_pending) { log = 6; reward_pending = false; }
+        else return;
+        mark(quest_bits);
+    }
+    // Duriel died (FUN_0059d050). `by_him`: the player at his death without
+    // bit 0 / 3 / 4 / 5 gets bit 5 (FUN_0059cfb0: in the Lair).
+    void duriel_died(QuestBits& quest_bits, bool by_him) {
+        if (open) { state = 3; if (log_in == 0) log_in = 8; }
+        if (by_him && !qbit(quest_bits, kQuest, 0) && !qbit(quest_bits, kQuest, 3) && !qbit(quest_bits, kQuest, 4)) qset(quest_bits, kQuest, 5);
+        duriel_dead = true;
+        tyrael_talks = true;
+    }
+    // The staff into the orifice (FUN_0059dd80). The Horadric Staff done
+    // (quest 10 bits 0, 13; the staff and its parts taken), the timer to the
+    // way down (FUN_0059d870) once.
+    void staff_in(QuestBits& quest_bits) {
+        qset(quest_bits, 10, 0);
+        qset(quest_bits, 10, 13);
+        staff_placed = true;
+        if (!timer_started) { timer_started = true; open_in = 1; }
+    }
+    // The orifice's room comes up (InitFn 21, FUN_0059db50). True: it's
+    // open (mode 2).
+    bool orifice_seen() {
+        if (lair_open) return true;
+        if (state != 0 && !timer_started) { timer_started = true; open_in = 1; return true; }
+        return false;
+    }
+    // A tick. True: the way down opens (object 100 by the orifice).
+    bool tick() {
+        if (log_in > 0 && --log_in == 0 && log != 3 && log != 4 && log != 5) log = 3;
+        if (open_in < 0 || open_in-- > 0) return false;
+        timer_started = false;
+        if (!staff_placed) return false;
+        staff_placed = false;
+        lair_open = true;
+        return true;
+    }
+};
+
 // The Tainted Sun (a2q3.cpp, the record at FUN_0059eea0): quest 11. The
 // sun goes out a while after a player first reaches the Lost City or the
 // Valley of Snakes; the altar in the Claw Viper Temple's second level

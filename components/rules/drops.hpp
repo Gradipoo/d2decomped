@@ -9,7 +9,9 @@
 #include <algorithm>
 #include <array>
 #include <cstddef>
+#include <cstdint>
 #include <cstdlib>
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -232,6 +234,43 @@ inline void add_auto_treasure(Tables& tables, const std::vector<std::string>& ty
             tables.treasure.try_emplace(type_code + std::to_string(level), std::move(treasure_class));
         }
     }
+}
+
+// A vendor's item (FUN_00576330) for a fill's ask: in Nightmare above clvl
+// 25 rand(100000) on the proxy seed under ilvl * 64 + 4000 takes the
+// ubercode, else the NightmareUpgrade; in Hell an expansion game's roll under
+// ilvl * 16 + 1000 the ultracode, else under ilvl * 128 + 5000 the ubercode,
+// then the HellUpgrade wins. Made as a drop (FUN_00559ce0 -> FUN_00558d90:
+// two game seed steps, the type flags, generate_item); a "Cracked" low one
+// (LowQualityItems row 1) is thrown away and made again, five tries.
+// ponytail: FUN_00576330's other remake (the base came out another code) never
+// happens with these flags and isn't here.
+inline std::optional<d2d::d2s::Item> make_store_item(const Tables& tables, const StoreAsk& ask, int difficulty, int clvl, bool expansion,
+                                                     Rng& proxy, Rng& game, std::vector<bool>* found_uniques) {
+    std::string code = ask.code;
+    const auto found = tables.item_base.find(code);
+    if (found == tables.item_base.end()) return std::nullopt;
+    auto usable = [&](const std::string& other) { return !other.empty() && other != "xxx" && tables.item_base.contains(other); };
+    if (difficulty > 0 && clvl > 25) {
+        const auto& base = found->second;
+        const auto roll = proxy.next() % 100000;
+        if (difficulty == 1) {
+            if (roll < std::uint32_t(ask.ilvl * 64 + 4000) && usable(base.ubercode)) code = base.ubercode;
+            else if (usable(base.nightmare_upgrade)) code = base.nightmare_upgrade;
+        } else {
+            if (expansion && roll < std::uint32_t(ask.ilvl * 16 + 1000) && usable(base.ultracode)) code = base.ultracode;
+            else if (roll < std::uint32_t(ask.ilvl * 128 + 5000) && usable(base.ubercode)) code = base.ubercode;
+            if (usable(base.hell_upgrade)) code = base.hell_upgrade;
+        }
+    }
+    for (int tries = 0; tries < 5; ++tries) {
+        Rng unit_seed{ game.next() }, item_seed{ game.next() };
+        auto item = generate_item(tables, code, ask.ilvl, made_quality(tables, code, ask.quality), item_seed, &unit_seed, found_uniques, false, difficulty);
+        if (item.quality == 1 && item.qsub == 1) continue;
+        if (ask.fill && found->second.max_stack > 0) item.quantity = found->second.max_stack;
+        return item;
+    }
+    return std::nullopt;
 }
 
 }  // namespace d2d::rules

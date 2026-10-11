@@ -56,6 +56,7 @@ struct ItemType {
     std::array<int, 3> max_sock{};     // MaxSock1 / 25 / 40: by ilvl <= 25, <= 40, above
     int staff_mods = 7;                // StaffMods class (ama .. ass = 0 .. 6), 7 none
     int var_inv_gfx = 0;               // VarInvGfx: pictures to pick from
+    int store_page = -1;               // StorePage: armo 0, weap 1 (spilling to 2), misc 3; -1 never stocked
 };
 // TreasureClassEx.txt row: picks, the NoDrop weight, quality modifiers
 // (Unique, Set, Rare, Magic, in 1024ths off the odds) and the weighted
@@ -91,6 +92,7 @@ struct ItemBase {
     bool has_inv = false, no_durability = false;          // hasinv (+0x137), nodurability (+0x113)
     bool quest_diff = false;                              // questdiffcheck (+0x12b): stat 356 = the difficulty made in
     int max_1h = 0, max_2h = 0;                           // weapons.txt maxdam (+0xff) / 2handmaxdam (+0x103)
+    std::string nightmare_upgrade, hell_upgrade;       // NightmareUpgrade / HellUpgrade ("xxx" none): a store's base in those difficulties
 };
 // Prices (FUN_0062efb0, docs/research/re/store.md): npc.txt by MonStats Id.
 struct NpcPrice { int buy = 1024, sell = 1024, rep = 1024; std::array<int, 3> qflag{}, qbuy{}, qsell{}, qrep{}, max_buy{}; };
@@ -222,10 +224,8 @@ struct Tables {
     std::unordered_map<std::string, Potion> potions;
 };
 
-// ponytail: stock = each listed item <Vendor>Min..Max times plus the
-// PermStoreItems once, packed first-fit by kind (armour tab 0, weapons
-// 1 then 2, misc 3) — the server's roll isn't located yet, no magic
-// stock.
+// A vendor's window: its stock (game::open_store fills it as game.exe,
+// rules::store_fill / make_store_item) by page.
 struct Store {
     int npc = -1, vendor = -1, tab = 0;        // npc: the caller's NPC index
     int hc_idx = -1;                            // the vendor's MonStats hcIdx
@@ -356,26 +356,6 @@ inline bool is_repair_vendor(int hc_idx) {
     return hc_idx == kCharsi || hc_idx == kFara || hc_idx == kHratli || hc_idx == kHalbu || hc_idx == kLarzuk;
 }
 
-inline Store open_store(const Tables& tables, int hc_idx, std::string npc_id, Rng& rng) {
-    Store store;
-    store.npc_id = std::move(npc_id);
-    store.hc_idx = hc_idx;
-    store.vendor = vendor_index(hc_idx);
-    if (store.vendor < 0) return store;
-    for (const auto& vendor_item : tables.vendor_items[std::size_t(store.vendor)]) {
-        if (vendor_item.perm) store.perm.push_back(vendor_item.code);
-        int count = vendor_item.perm ? 1 : rng.range(vendor_item.min, vendor_item.max);
-        while (count-- > 0) {
-            d2d::d2s::Item item;
-            item.code = vendor_item.code;
-            if (const auto found = tables.item_base.find(vendor_item.code); found != tables.item_base.end() && store_tab_for(tables, vendor_item.code) == 0)
-                item.defense = found->second.minac;
-            store_place(tables, store, store_tab_for(tables, vendor_item.code), std::move(item));
-        }
-    }
-    for (int i = 0; i < 4; ++i) if (!store.tabs[std::size_t(i)].empty()) { store.tab = i; break; }
-    return store;
-}
 
 // Buy (sell = false) or sell price of an item at the NPC with MonStats Id
 // npc_id, for the player's header (difficulty, quest flags).

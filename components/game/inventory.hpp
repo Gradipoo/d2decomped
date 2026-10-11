@@ -7,6 +7,7 @@
 #include "gamedata.hpp"
 
 #include <d2s_items.hpp>
+#include <drops.hpp>
 #include <rules.hpp>
 
 #include <cstddef>
@@ -57,11 +58,33 @@ inline int belt_index(const GameData& game_data, const std::vector<d2d::d2s::Ite
     return 2;
 }
 
-// The store for world NPC npc (stock rolled from rng).
-inline Store open_store(const GameData& game_data, const Level& level, int npc, d2d::rules::Rng& rng) {
+// The store for world NPC npc as game.exe fills it (FUN_00576980,
+// rules::store_fill): the asks on the proxy seed, each item made off the
+// game seed (rules::make_store_item), put on its type's page (ItemTypes
+// StorePage: FUN_0062e880; weapons spill onto page 2), one that has no page
+// or no room failing. The permanent items stay buyable.
+// ponytail: FUN_00560200's own spot search isn't traced; first fit by
+// column, as d2d's grid.
+inline Store open_store(const GameData& game_data, const Level& level, int npc, int act, int difficulty, int clvl, bool expansion,
+                        d2d::rules::Rng& proxy, d2d::rules::Rng& game, std::vector<bool>* found_uniques) {
     const auto& vendor = level.npcs[std::size_t(npc)];
-    Store store = d2d::rules::open_store(game_data.rules, vendor.hc_idx, vendor.id, rng);
+    const auto& tables = game_data.rules;
+    Store store;
     store.npc = npc;
+    store.npc_id = vendor.id;
+    store.hc_idx = vendor.hc_idx;
+    store.vendor = d2d::rules::vendor_index(vendor.hc_idx);
+    if (store.vendor < 0) return store;
+    for (const auto& item : tables.vendor_items[std::size_t(store.vendor)]) if (item.perm) store.perm.push_back(item.code);
+    d2d::rules::store_fill(tables, store.vendor, d2d::rules::store_level(clvl, act, difficulty), expansion, proxy, [&](const d2d::rules::StoreAsk& ask) {
+        auto made = d2d::rules::make_store_item(tables, ask, difficulty, clvl, expansion, proxy, game, found_uniques);
+        if (!made) return false;
+        const auto info = tables.item_info.find(made->code);
+        const auto type = info != tables.item_info.end() ? tables.types.find(info->second.type) : tables.types.end();
+        const int page = type != tables.types.end() ? type->second.store_page : -1;
+        return page >= 0 && d2d::rules::store_place(tables, store, page, std::move(*made));
+    });
+    for (int i = 0; i < 4; ++i) if (!store.tabs[std::size_t(i)].empty()) { store.tab = i; break; }
     return store;
 }
 

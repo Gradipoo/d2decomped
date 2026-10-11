@@ -730,8 +730,9 @@ leftovers (act1-gaps.md) and hosting a game wait.
    The town's thinks match game.exe (`diff_drlg.py 1-20 40 npcs`, 20/20).
    The hire lists are game.exe's (npc-menu.md "Hire": entries on the game
    seed, ten offered, the offers off each entry's seed; checked by
-   tools/emu/hire.py). Left: JarJar's think, the vendors' real stock roll
-   (store.md "Not yet", act 1's too),
+   tools/emu/hire.py). The vendors' stock is game.exe's fill (store.md;
+   tools/emu/store.py 10200 / 10200) with game.exe's magic affixes
+   (drops.md "Magic", 9994 / 9995). Left: JarJar's think,
    Lut Gholein's container drops (`LEVELS=40 diff_drlg.py 1-1 0 game`
    differs only there).
 3. The desert (LevelType 16: 41–46): the outdoor generator with act 2's

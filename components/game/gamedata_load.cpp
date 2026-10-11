@@ -733,6 +733,8 @@ void load_tables(GameData& game_data, const d2d::mpq::Stack& mpqs) {
             types.get(row, "TreasureClass") == "1", std::atoi(std::string(types.get(row, "Rarity")).c_str()) };
         auto& item_type = game_data.rules.types[code];
         item_type.throwable = types.get(row, "Throwable") == "1";
+        const auto page = types.get(row, "StorePage");
+        item_type.store_page = page == "armo" ? 0 : page == "weap" ? 1 : page == "misc" ? 3 : -1;
         item_type.autostack = types.get(row, "AutoStack") == "1";
         item_type.max_sock = { std::atoi(std::string(types.get(row, "MaxSock1")).c_str()), std::atoi(std::string(types.get(row, "MaxSock25")).c_str()),
                                std::atoi(std::string(types.get(row, "MaxSock40")).c_str()) };
@@ -784,6 +786,8 @@ void load_tables(GameData& game_data, const d2d::mpq::Stack& mpqs) {
                 auto& base = game_data.rules.item_base[code];
                 base.gem_sockets = number("gemsockets");
                 base.auto_prefix = table == &misc ? 0 : number("auto prefix");
+                base.nightmare_upgrade = std::string(table->get(row, "NightmareUpgrade"));
+                base.hell_upgrade = std::string(table->get(row, "HellUpgrade"));
                 base.magic_lvl = table == &misc ? 0 : number("magic lvl");
                 base.has_inv = table->get(row, "hasinv") == "1";
                 base.no_durability = table->get(row, "nodurability") == "1";

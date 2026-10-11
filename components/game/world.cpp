@@ -1285,7 +1285,8 @@ auto World::deal(const Command& command) -> bool {
             if (std::size_t(trade->npc) >= level->npcs.size()) return true;
             if (trade->gamble) store = d2d::rules::open_gamble(tables, level->npcs[std::size_t(trade->npc)].id, clvl);
             else if (const auto kept = stocks.find(trade->npc); kept != stocks.end()) { store = kept->second; store.mode = 0; store.tab = 0; store.pressed = {}; }
-            else store = open_store(*game_data, *level, trade->npc, rng);
+            else store = open_store(*game_data, *level, trade->npc, act(), character.header.active_difficulty(), clvl, character.expansion,
+                                    fight.spawning.proxy, fight.spawning.game, &loot.found_uniques);
             store.npc = trade->npc;
             store.header = character.header;
             events.push_back(ev::OpenUI{ ev::OpenUI::trade, trade->npc });

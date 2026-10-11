@@ -78,14 +78,14 @@ int main() {
     assert(!store_place(tables, full, 0, item("cap")));
     assert(store_tab_for(tables, "cap") == 0 && store_tab_for(tables, "hax") == 1 && store_tab_for(tables, "gem") == 3);
 
-    // Stock: Charsi (hcIdx 0x9a) is vendor 2; perm items stay after a buy.
+    // A stock (as rules::store_fill / game::open_store lay it): Charsi (hcIdx
+    // 0x9a) is vendor 2; perm items stay after a buy. The store level caps in Normal.
     assert(vendor_index(0x9a) == 2 && vendor_index(1) == -1);
-    tables.vendor_items[2] = { { .code = "hax", .min = 2, .max = 2 }, { .code = "key", .perm = true } };
+    assert(store_level(1, 0, 0) == 6 && store_level(30, 0, 0) == 12 && store_level(30, 1, 0) == 20 && store_level(30, 0, 1) == 35);
     Rng rng{ 1 };
-    Store shop = open_store(tables, 0x9a, "Charsi", rng);
-    assert(shop.vendor == 2 && shop.npc_id == "Charsi");
-    assert(shop.tabs[1].size() == 2 && shop.tabs[3].size() == 1 && shop.tab == 1);
-    assert(open_store(tables, 1, "Nobody", rng).vendor == -1);
+    Store shop;
+    shop.vendor = 2; shop.npc_id = "Charsi"; shop.hc_idx = 0x9a; shop.perm = { "key" }; shop.tab = 1;
+    assert(store_place(tables, shop, 1, item("hax")) && store_place(tables, shop, 1, item("hax")) && store_place(tables, shop, 3, item("key")));
 
     // Buying: carried gold first, then the stash.
     std::vector<Item> inv;

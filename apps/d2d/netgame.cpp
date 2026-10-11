@@ -365,6 +365,19 @@ auto NetGame::handle(const d2d::net::Bytes& packet) -> void {
         break;
     case 0x27:   // NPC info: +1 mode, +2 unit id (the answer to an 0x13 on an NPC)
         if (size >= 6) npc_info = read_u32(packet, 2);
+        // Mode 1, its quest lines (FUN_004a1600 -> FUN_00661510; built by the
+        // host's records, FUN_00543790): +6 u8 count (< 8), from +8 four
+        // bytes each, u8 kind (0 greets, 2 a topic) and u16 message at +10.
+        // A lone kind 3 is a number over the NPC (not quest lines).
+        if (size >= 40 && packet[1] == 1 && packet[6] < 8 && !(packet[6] == 1 && packet[8] == 3)) {
+            NpcQuest npc_quest{ .id = read_u32(packet, 2) };
+            for (std::size_t line = 0; line < packet[6]; ++line)
+                npc_quest.lines.push_back({ int(read_u16(packet, 10 + 4 * line)), packet[8 + 4 * line] == 0 });
+            npc_quests.push_back(std::move(npc_quest));
+        }
+        break;
+    case 0x8a:   // NPC interaction: +1 type, +2 id (the host's NPC think, FUN_00544660: one of its quests has something for us)
+        if (size >= 6 && packet[1] == 1) npc_alerts.push_back(read_u32(packet, 2));
         break;
     case 0x81:   // assign merc: +2 u16 class, +4 u32 owner, +8 u32 merc id
         if (size >= 12 && read_u32(packet, 4) == self_id) merc_id = read_u32(packet, 8);

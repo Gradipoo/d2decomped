@@ -181,7 +181,10 @@ struct Town {
     std::uint32_t net_trade_ms = 0, frame_now = 0;           // when it began; walk()'s frame time for send()
     std::unordered_map<std::uint32_t, Loot::GroundItem> net_ground;   // the host's ground items as drawn, labels made once
     int talking_sent = -1;                 // the NPC last reported as talked to (cmd::Chat)
-    std::uint32_t net_chat_npc = 0;   // a joined game: the host NPC our talk is open with (0x2f sent, 0x30 due), 0 none
+    std::uint32_t net_chat_npc = 0;
+    std::unordered_map<std::uint32_t, std::uint32_t> net_alert_ms;   // a joined game: when the host last ballooned each NPC (0x8a), by its id
+    NetGame::NpcQuest net_early_quest;    // the host's quest lines that came before d2d's menu opened
+    std::uint32_t net_early_ms = 0;   // a joined game: the host NPC our talk is open with (0x2f sent, 0x30 due), 0 none
     bool press_on_ui = false;              // the held left button was pressed on the UI
     std::uint32_t world_ms = 0;            // the World's clock: when it last ticked
     float prev_x = 0, prev_y = 0;          // the player a tick before: the camera slides between the two
@@ -260,6 +263,8 @@ struct Town {
     // A fresh game for the character: the Blood Moor's monsters at its
     // difficulty, no loot about.
     void net_overlay();                   // the joined host's units into `view`
+    void net_quests(std::uint32_t frame_ms);                    // ... and its NPCs' quest lines and balloons
+    void take_npc_quest(int npc, std::vector<d2d::rules::QuestMsg> lines, std::uint32_t frame_ms);   // an NPC's quest lines: a greeting plays, the rest under Talk
     void new_game();
 
     // The game menu (FUN_0047e090 / FUN_0047e200): opening closes the

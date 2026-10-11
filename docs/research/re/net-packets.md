@@ -481,13 +481,23 @@ ids).
 ### NPCs, UI, waypoints, portals
 
 - **0x27 NPC info** (40; `0x45e0a0` → `FUN_004a1600`): +1 u8 mode (1 /
-  2), +2 u32 unit id, +6 u16 **(?)**, +8 u16 (checked against 3), +10
-  u16 **(?)**; the rest **(?)**. The server's `FUN_005456a0` (the
+  2), +2 u32 unit id. Mode 1 is the NPC's quest lines for this player
+  (the host's records' +0xa0 build them with `FUN_00543790` →
+  `FUN_006612f0(list, message, kind)`, kind 1 sent as 0): +6 u8 count
+  (< 8), then from +8 four bytes a line, u8 kind (0 greets as the menu
+  opens, 2 a topic under Talk) and u16 message at +10; the client keeps
+  the list (`FUN_00661510`, sorted by `FUN_006616e0`). A lone line of
+  kind 3 is a number over the NPC (`FUN_00661110`), not quest lines.
+  d2d: `NetGame::npc_quests` → `Town::net_quests` / `take_npc_quest`. The server's `FUN_005456a0` (the
   Moldy Tome's message 127) sends mode 2, the object's unit id, +8 byte
   0, +10 u16 the message; the client's mode 2 (+8 not 3) keeps the id
   (0x7bf206) and opens the speech box (`FUN_004a1320`, 0x145 wide at
   y 12; message 0x7f flags 0x7bf230). d2d: `ev::Speech`.
-- **0x8a NPC interaction** (6; `FUN_004b3380`): +1 type, +2 u32 id.
+- **0x8a NPC interaction** (6; `FUN_004b3380`): +1 type, +2 u32 id. The
+  host's NPC think sends it (`FUN_00544660`) when one of the act's quests
+  (+0xec) has something for the player: the client puts overlay 0x48
+  (`npcalert`, the "!") on the NPC once (`FUN_00470390`). d2d:
+  `NetGame::npc_alerts` → the balloon for 16 frames.
   Class 0x216 closes the UI (`FUN_004b9a00`); if it isn't the unit being
   talked to, the player resets (`FUN_00470390(3)`); class 0x14b runs
   quest checks.

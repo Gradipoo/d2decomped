@@ -1127,7 +1127,7 @@ auto Town::update(std::vector<std::uint8_t>& framebuffer, const Mouse& frame_mou
                 else { imbue_with = who; inv_open = true; char_open = stash_open = cube_open = quest_log.open = false; }
             } else if (action == NpcMenuState::kQuest) {
                 speech = start_speech(*scene, who, std::uint16_t(npc_menu_arg), frame_ms);
-                net.send(cmd::QuestMessage{ who, npc_menu_arg });
+                send(cmd::QuestMessage{ who, npc_menu_arg });
             } else if (action == NpcMenuState::kIntro || action == NpcMenuState::kGossip) {
                 const auto found = std::ranges::find_if(kNpcTalk, [&](const NpcTalk& entry) { return entry.hc_idx == npc.hc_idx; });
                 if (found != kNpcTalk.end() && !found->topics.empty()) {
@@ -1538,6 +1538,7 @@ auto Town::walk(const Mouse& mouse, bool over_ui, std::uint32_t frame_ms, std::u
         // What the World said, handled once the View it came in is here
         // (the hire list's offers come with it).
         for (const auto& event : view.events) handle(event, frame_ms);
+        if (net_game) net_quests(frame_ms);
         if (frame_ms - world_ms >= kTickMs) world_ms = frame_ms - (frame_ms - world_ms) % kTickMs;
     }
 
@@ -1564,7 +1565,7 @@ auto Town::handle(const Event& event, std::uint32_t frame_ms) -> void {
         }
         if (const auto* object_speech = std::get_if<ev::Speech>(&event)) {   // FUN_004a1600 mode 2: the speech box, heard at once
             speech = start_speech(*scene, object_speech->npc, std::uint16_t(object_speech->string), frame_ms);
-            net.send(cmd::QuestMessage{ object_speech->npc, object_speech->string });
+            send(cmd::QuestMessage{ object_speech->npc, object_speech->string });
             menu_after_speech = -1;
             return;
         }
@@ -1580,18 +1581,54 @@ auto Town::handle(const Event& event, std::uint32_t frame_ms) -> void {
             inv_open = char_open = stash_open = cube_open = quest_log.open = false;
             return;
         }
-        // A quest message for the player plays at once (FUN_004a10e0 on
-        // the first kind-0 one; hearing it is what the server acts on), the
-        // menu after it.
-        npc_quest = open_ui.quest;
+        // A joined game's lines are the host's (0x27, net_quests): ones that
+        // came first, else none till they come.
+        auto lines = open_ui.quest;
+        if (net_game) {
+            const auto* host_npc = net_npc(open_ui.npc);
+            const bool early = host_npc && host_npc->id == net_early_quest.id && world_ms - net_early_ms < 3000;
+            lines = early ? net_early_quest.lines : std::vector<d2d::rules::QuestMsg>{};
+            net_early_quest = {};
+        }
+        open_menu(open_ui.npc);
+        take_npc_quest(open_ui.npc, std::move(lines), frame_ms);
+    }
+
+// A quest message for the player plays at once (FUN_004a10e0 on the first
+// kind-0 one; hearing it is what the server acts on), the menu after it.
+auto Town::take_npc_quest(int npc, std::vector<d2d::rules::QuestMsg> lines, std::uint32_t frame_ms) -> void {
+        npc_quest = std::move(lines);
         for (const auto& message : npc_quest)
             if (message.greet) {
-                speech = start_speech(*scene, open_ui.npc, std::uint16_t(message.string), frame_ms);
-                net.send(cmd::QuestMessage{ open_ui.npc, message.string });
-                menu_after_speech = open_ui.npc;
+                npc_menu = {};
+                speech = start_speech(*scene, npc, std::uint16_t(message.string), frame_ms);
+                send(cmd::QuestMessage{ npc, message.string });
+                menu_after_speech = npc;
                 return;
             }
-        open_menu(open_ui.npc);
+    }
+
+// A joined game's quest talk (the host runs the quests): each NPC's lines
+// as it sends them (0x27 mode 1) — the one we're talking to takes them
+// now, one that comes first waits for d2d's menu — and its "!" (0x8a):
+// npcalert once over that NPC (16 frames, ~1.8 s), as game.exe's client
+// puts the overlay on (FUN_004b3380 -> FUN_00470390, overlay 0x48).
+// ponytail: the balloon plays from wherever d2d's loop is, not frame 0;
+// 0x8a's palace guard check (class 0x14b, FUN_004b1620) isn't here.
+auto Town::net_quests(std::uint32_t frame_ms) -> void {
+        for (auto& host_quest : net_game->npc_quests) {
+            const auto* host_npc = npc_menu.npc >= 0 ? net_npc(npc_menu.npc) : nullptr;
+            if (host_npc && host_npc->id == host_quest.id) take_npc_quest(npc_menu.npc, std::move(host_quest.lines), frame_ms);
+            else { net_early_quest = std::move(host_quest); net_early_ms = world_ms; }
+        }
+        net_game->npc_quests.clear();
+        for (const std::uint32_t id : net_game->npc_alerts) net_alert_ms[id] = world_ms;
+        net_game->npc_alerts.clear();
+        for (std::size_t i = 0; level && i < view.npc_states.size() && i < level->npcs.size(); ++i) {
+            const auto* host_npc = level->npcs[i].root != "objects" ? net_npc(int(i)) : nullptr;
+            const auto shown = host_npc ? net_alert_ms.find(host_npc->id) : net_alert_ms.end();
+            view.npc_states[i].alert = shown != net_alert_ms.end() && world_ms - shown->second < 16 * 111;
+        }
     }
 
 auto Town::den_ambient() const -> int {

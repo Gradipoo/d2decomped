@@ -11,6 +11,7 @@
 #include <d2s_items.hpp>
 #include <join.hpp>
 #include <net_log.hpp>
+#include <quests.hpp>
 #include <tcp.hpp>
 
 #include <array>
@@ -161,6 +162,11 @@ struct NetGame {
     struct Overhead { int type = 0; std::uint32_t id = 0; std::string text; };   // 0x26 type 5: over a unit
     std::vector<Overhead> overheads;
     std::vector<int> quest_news;               // quests whose log state the host sent (0x5d, no flags): the Quest Log button
+    // An NPC's quest lines as the host has them for us (0x27 mode 1), for
+    // the client to take: what its menu greets with and lists under Talk.
+    struct NpcQuest { std::uint32_t id = 0; std::vector<d2d::rules::QuestMsg> lines; };
+    std::vector<NpcQuest> npc_quests;
+    std::vector<std::uint32_t> npc_alerts;     // NPCs the host balloons for us (0x8a: the "!"), for the client to take
 
 private:
     bool socket_gone = false;

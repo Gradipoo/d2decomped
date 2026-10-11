@@ -292,14 +292,20 @@ bool move_frame(const Level& level, Monster& monster, const Foe* chased, bool sp
 // toward (dx, dy) cells, its Missiles.txt row's damage at skill level `lvl`
 // (rules::monster_skill_level): physical in 256ths (SrcDamage 0: none of hers), its
 // poison per frame over ELen as the total, another element in 256ths.
-// ToHit 0: it always hits. A Fallen Shaman's fire bolts too.
+// ToHit 0: it always hits. A Fallen Shaman's fire bolts too. A row naming a
+// Skill (`carried`: the Summoner's Fire Ball, Glacial Spike, Frost Nova)
+// carries that skill's element at the level instead (FUN_0064b860).
+// ponytail: a carried skill's physical damage (MinDam..) left out; the
+// Act 2 casters' skills have none.
 void andariel_missile(const GameData& game_data, const Monster& monster, const std::string& name, float dx, float dy, std::uint32_t now_ms,
-                      std::vector<Missile>& missiles, int lvl) {
+                      std::vector<Missile>& missiles, int lvl, const d2d::rules::Skill* carried = nullptr) {
     const auto found = game_data.missiles.find(name);
     if (found == game_data.missiles.end()) return;
     const auto& missile_info = found->second;
-    const auto poison = d2d::rules::row_damage(missile_info.etype, missile_info.emin, missile_info.emax, missile_info.emin_lev, missile_info.emax_lev,
-                                               missile_info.hitshift, missile_info.elen, missile_info.elen_lev, lvl);
+    const auto poison = carried && !missile_info.skill.empty()
+        ? d2d::rules::row_damage(carried->etype, carried->emin, carried->emax, carried->emin_lev, carried->emax_lev, carried->hitshift, carried->elen, carried->elen_lev, lvl)
+        : d2d::rules::row_damage(missile_info.etype, missile_info.emin, missile_info.emax, missile_info.emin_lev, missile_info.emax_lev,
+                                 missile_info.hitshift, missile_info.elen, missile_info.elen_lev, lvl);
     d2d::rules::MonStats stats;
     stats.level = monster.stats.level;
     stats.to_hit = 1 << 20;
@@ -321,6 +327,13 @@ int skill_id(const GameData& game_data, const std::string& name) {
 // Its skill `id`'s MonSeq sequence (its Sk*mode names one; MonSeq.txt,
 // GameData::mon_seqs): the rows played, a frame each; null for a plain mode.
 using SeqRows = std::vector<GameData::MonSeqFrame>;
+// A plain-mode skill d2d casts for a monster (no sequence; the Summoner's
+// SC skills): a srvmissile at the target, a nova (22), a fire wall (24).
+// ponytail: other do-funcs (Weaken's curse on the player, 30) stand.
+bool castable(const d2d::rules::Skill& skill) {
+    using d2d::rules::ServerDoFunction;
+    return !skill.srvmissile.empty() || skill.srvdofunc == ServerDoFunction::kNova || skill.srvdofunc == ServerDoFunction::kMissileWall;
+}
 // Its skill `id`'s level (Sk*lvl + the difficulty's bonus), 1 when not its own.
 int skill_level(const GameData& game_data, const Monster& monster, int id) {
     const auto& type_info = game_data.monsters.types[std::size_t(monster.type)];
@@ -741,7 +754,9 @@ bool think(const GameData& game_data, const Level& level, Monster& monster, std:
             // ponytail: later acts: VampireFirewall / VampireMeteor (srvdofunc
             // 24 / 28) stand, as no Act 1 vampire's aip5 lets it cast them.
             const SeqRows* seq = skill_seq(game_data, type_info, id);
-            const bool plain = name == "SpiderLay" || name == "VampireFireball" || name == "VampireMissile";
+            const auto* plain_skill = seq ? nullptr : game_data.skills.get(id);
+            const bool plain = name == "SpiderLay" || name == "VampireFireball" || name == "VampireMissile"
+                            || (plain_skill && type_info.sk_mode[std::size_t(act.n)] == "SC" && castable(*plain_skill));
             // ponytail: a charge (its sequence walks first: Charge's srvstfunc 31
             // moves it) stands.
             const bool charge = seq && seq->front().mode == "WL";
@@ -775,9 +790,12 @@ bool think(const GameData& game_data, const Level& level, Monster& monster, std:
 // The Countess's firewall at (skill_x, skill_y) subtiles (srvdofunc 24,
 // FUN_005c9ea0, flags 0x21 / 1): a countessfirewallmaker each way across
 // the line from her, the countessfirewall on the point, at her skill level.
-void countess_firewall(const GameData& game_data, const Monster& monster, std::uint32_t now_ms, std::vector<Missile>& missiles) {
-    const auto maker = game_data.missiles.find("countessfirewallmaker"), fire = game_data.missiles.find("countessfirewall");
-    if (maker == game_data.missiles.end() || fire == game_data.missiles.end()) return;
+void countess_firewall(const GameData& game_data, const Monster& monster, std::uint32_t now_ms, std::vector<Missile>& missiles,
+                       const std::string& maker_name = "countessfirewallmaker") {
+    const auto maker = game_data.missiles.find(maker_name);
+    if (maker == game_data.missiles.end()) return;
+    const auto fire = game_data.missiles.find(maker->second.sub);       // its SubMissile1 (countessfirewall, vampirefirewall)
+    if (fire == game_data.missiles.end()) return;
     const int lvl = skill_level(game_data, monster, monster.skill);
     const auto& fire_info = fire->second;
     const float x = (float(monster.skill_x) + 0.5f) / 5, y = (float(monster.skill_y) + 0.5f) / 5;
@@ -942,6 +960,29 @@ bool monster_update(const GameData& game_data, const Level& level, Monster& mons
             } else if (const int fireball = skill_id(game_data, "VampireFireball"); monster.skill >= 0 && (monster.skill == fireball || monster.skill == skill_id(game_data, "VampireMissile"))) {
                 // srvmissile vampirefireball / firehead at the target.
                 andariel_missile(game_data, monster, monster.skill == fireball ? "vampirefireball" : "firehead", dx, dy, now_ms, missiles, skill_level(game_data, monster, monster.skill));
+            } else if (const auto* cast = !seq && monster.mode == "SC" && monster.skill >= 0 ? game_data.skills.get(monster.skill) : nullptr; cast && castable(*cast)) {
+                // A plain SC cast (FUN_0056f7f0: its do-func, then its
+                // srvmissile): the nova's ring of 64 srvmissilea out to its
+                // range + LevRange a level + calc1 (FUN_005c9b50 ->
+                // FUN_0056d400); the fire wall (FUN_005c9ea0, the Countess's);
+                // else its srvmissile at the target.
+                using d2d::rules::ServerDoFunction;
+                const int lvl = skill_level(game_data, monster, monster.skill);
+                if (cast->srvdofunc == ServerDoFunction::kNova) {
+                    const auto ring = game_data.missiles.find(cast->srvmissilea);
+                    const int reach = ring == game_data.missiles.end() ? 0
+                        : ring->second.range + ring->second.lev_range * lvl + d2d::rules::eval_calc(game_data.skills, cast->calc[0], {}, monster.skill, lvl);
+                    for (int k = 0; k < 64; ++k) {
+                        const float angle = float(k) * 2 * 3.14159265f / 64;
+                        const std::size_t had = missiles.size();
+                        andariel_missile(game_data, monster, cast->srvmissilea, std::cos(angle), std::sin(angle), now_ms, missiles, lvl, cast);
+                        if (missiles.size() > had) { missiles.back().dies = now_ms + std::uint32_t(std::max(reach, 1)) * 40; missiles.back().to.reset(); }
+                    }
+                } else if (cast->srvdofunc == ServerDoFunction::kMissileWall) {
+                    countess_firewall(game_data, monster, now_ms, missiles, cast->srvmissilea);
+                } else {
+                    andariel_missile(game_data, monster, cast->srvmissile, dx, dy, now_ms, missiles, lvl, cast);
+                }
             } else if (monster.skill >= 0 && monster.skill == skill_id(game_data, "SpiderLay")) {
                 // srvdofunc 23 (FUN_005c9c10): its aurastate spiderlay for
                 // auralen 300 frames, aurastat velocitypercent -100.

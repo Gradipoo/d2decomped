@@ -859,7 +859,7 @@ auto World::hire_list(int list_act) -> std::vector<d2d::rules::HireEntry>& {
         auto& entries = hire_lists[std::size_t(list_act)];
         if (std::ranges::none_of(entries, d2d::rules::for_hire))      // FUN_00577010 -> FUN_00576070
             entries = d2d::rules::hire_entries(d2d::rules::hire_names(game_data->rules, character.expansion, list_act, character.header.active_difficulty()),
-                                               fight.spawning.game);
+                                               fight.spawning.proxy);
         return entries;
     }
 

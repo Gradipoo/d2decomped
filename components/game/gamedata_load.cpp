@@ -764,7 +764,7 @@ void load_tables(GameData& game_data, const d2d::mpq::Stack& mpqs) {
                 if (table->get(row, "spawnable") == "1" && std::atoi(std::string(table->get(row, "quest")).c_str()) == 0)
                     auto_bases.push_back({ std::string(table->get(row, "code")), std::string(table->get(row, "type")), std::string(table->get(row, "type2")),
                                            std::atoi(std::string(table->get(row, "level")).c_str()) });
-        for (const auto* table : { &armor, &weapons, &misc })
+        for (const auto* table : { &weapons, &armor, &misc })                  // Items table order (the vendors' lists, FUN_00536d50)
             for (std::size_t row = 0; row < table->size(); ++row) {
                 const std::string code(table->get(row, "code"));
                 auto number = [&](std::string column) { return std::atoi(std::string(table->get(row, column)).c_str()); };
@@ -796,7 +796,8 @@ void load_tables(GameData& game_data, const d2d::mpq::Stack& mpqs) {
                 for (std::size_t vendor = 0; vendor < 17; ++vendor) {
                     const std::string vendor_name = kVendorCol[vendor];
                     d2d::rules::VendorItem vendor_item{ code, number(vendor_name + "Min"), number(vendor_name + "Max"), number(vendor_name + "MagicMin"), number(vendor_name + "MagicMax"),
-                                          number(vendor_name + "MagicLvl"), table->get(row, "PermStoreItem") == "1" };
+                                          number(vendor_name + "MagicLvl"), table->get(row, "PermStoreItem") == "1", number("level"), number("version"),
+                                          (number("bitfield1") & 1) != 0 };
                     if (vendor_item.max > 0 || vendor_item.magic_max > 0) game_data.rules.vendor_items[vendor].push_back(std::move(vendor_item));
                 }
             }

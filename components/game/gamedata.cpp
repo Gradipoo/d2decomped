@@ -193,7 +193,8 @@ Spawning start_spawning(const GameData& game_data, int difficulty) {
     spawning.game = d2d::rules::Rng{ game_data.map_seed };
     d2d::rules::Rng region_seed{ spawning.game.next() };
     spawning.objects = d2d::rules::Rng{ spawning.game.next() };   // object_seed()
-    for (int step = 0; step < 2; ++step) spawning.game.next();
+    spawning.proxy = d2d::rules::Rng{ spawning.game.next() };     // sunitproxy
+    spawning.game.next();                                         // quests
     spawning.regions.resize(game_data.level_mon.size());
     for (std::size_t id = 1; id < game_data.level_mon.size(); ++id)
         spawning.regions[id] = d2d::rules::monster_region(game_data.monsters, game_data.level_mon[id], spawning.difficulty, region_seed);

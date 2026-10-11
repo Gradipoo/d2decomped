@@ -68,8 +68,9 @@ seller's first hireling.txt row for the difficulty and version
 (FUN_006564d0: Seller +0x14, Difficulty +0x10) gives its name range
 (NameFirst..NameLast, +0x114 / +0x116; FUN_00575ff0); one 16-byte entry
 per name `{u16 name, seed, hired (+8), offered (+0xc)}`, each seed a step
-of the game seed (game +0x1d24 +8); then ten picks of rand(names) on the
-game seed, each moving on (wrapping) past a taken entry, offered = 1;
+of the sunitproxy seed (game +0x1d24 +8, FUN_00536b40: made at game start
+by FUN_00536070 from a game seed step); then ten picks of rand(names) on
+it, each moving on (wrapping) past a taken entry, offered = 1;
 back at the start the picking stops. FUN_00577010: once no entry is
 offered and unhired, the list is freed and rolled anew. An offer's stats
 come from its entry (FUN_005770e0 → FUN_00663750: the name's row's act;
@@ -79,8 +80,8 @@ no other draw; the name is the entry's. The window's list widget
 shows eight rows and scrolls.
 
 d2d: `rules::hire_entries` / `for_hire` / `hire_names` / `merc_offer`
-(rules.hpp), `World::hire_list` / `hire_offers` (per act, on the game
-seed: `fight.spawning.game`), `open_hire_menu(..., scroll)` (the wheel).
+(rules.hpp), `World::hire_list` / `hire_offers` (per act, on the proxy
+seed: `fight.spawning.proxy`), `open_hire_menu(..., scroll)` (the wheel).
 Checked: `tools/emu/hire.py` — 720 offers (seeds × acts 1–2 × difficulties
 × clvl 1 / 9 / 30 / 75) against `drlg-dump ... hire`, and 400 lists
 (entries_dump, 41 and 21 names) against `drlg-dump ... hirelist`: all

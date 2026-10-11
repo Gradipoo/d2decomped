@@ -94,7 +94,10 @@ struct ItemBase {
 };
 // Prices (FUN_0062efb0, docs/research/re/store.md): npc.txt by MonStats Id.
 struct NpcPrice { int buy = 1024, sell = 1024, rep = 1024; std::array<int, 3> qflag{}, qbuy{}, qsell{}, qrep{}, max_buy{}; };
-struct VendorItem { std::string code; int min = 0, max = 0, magic_min = 0, magic_max = 0, magic_lvl = 0; bool perm = false; };
+// level (Items +0xfd) and version (+0xf6: 100 an expansion item), magic:
+// bitfield1 bit 0 (FUN_00629c80), what a vendor may sell magic.
+struct VendorItem { std::string code; int min = 0, max = 0, magic_min = 0, magic_max = 0, magic_lvl = 0; bool perm = false;
+                    int level = 0, version = 0; bool magic = false; };
 
 // A class skill for the skill tree: Skills.txt (reqlevel, reqskill1..3,
 // maxlvl) joined with SkillDesc.txt (SkillPage = tab 1..3, SkillRow 1..6,
@@ -234,6 +237,54 @@ struct Store {
     bool gamble = false;                        // Gheed's gamble list: buying rolls a new item
     int reduced = 0;                            // the player's item_reducedprices (stat 87), 0..99: off buy, gamble and repair
 };
+
+// What a vendor's fill asks the item maker for (FUN_00576980 -> FUN_00576330):
+// a base, its quality (1 low, 2 normal, 3 superior, 4 magic) at the store
+// level; `fill` a permanent quiver's quantity set to its max (stat 0x46).
+struct StoreAsk { std::string code; int quality = 2, ilvl = 0; bool fill = false; };
+
+// The store level (FUN_00576890): clvl + 5, capped in Normal by the act
+// (12, 20, 28, 36, 45).
+[[nodiscard]] inline int store_level(int clvl, int act, int difficulty) {
+    static constexpr std::array<int, 5> kCap = { 12, 20, 28, 36, 45 };
+    const int level = clvl + 5;
+    return difficulty == 0 && act >= 0 && act < 5 ? std::min(level, kCap[std::size_t(act)]) : level;
+}
+// FUN_004bc500: low..high - 1 on the seed (no draw when high <= low).
+inline int store_range(Rng& seed, int low, int high) { return high <= low ? low : low + seed(high - low); }
+// FUN_00576900: a normal copy's quality by the store level.
+inline int store_quality(Rng& seed, int level) {
+    const int roll = int(seed.next() % 100);
+    if (level < 5) return roll > 90 ? 1 : 2;
+    return roll > (level < 10 ? 85 : 74) ? 3 : 2;
+}
+// The fill (FUN_00576980, SUNITNPC.CPP) on the proxy seed: each candidate
+// (Items table order, weapons, armor, misc) up to the store level rolls
+// Min..Max normal copies (none from store level 25), each its quality;
+// a base that can be magic and whose MagicLvl is reached rolls
+// MagicMin..MagicMax (+ 1 or 2 more from store level 25) magic ones; an
+// expansion base only in an expansion game. Then each permanent item once,
+// normal (quivers filled). `make` makes one and says whether it took; over
+// 32 failures end the fill.
+template <class Make>
+void store_fill(const Tables& tables, int vendor, int level, bool expansion, Rng& seed, Make&& make) {
+    if (vendor < 0 || vendor >= 17) return;
+    int failed = 0;
+    auto ask = [&](StoreAsk request) { if (!make(request) && ++failed > 32) return false; return true; };
+    for (const auto& item : tables.vendor_items[std::size_t(vendor)]) {
+        if (item.perm || item.level > level) continue;
+        const int normals = level < 25 ? store_range(seed, item.min, item.max + 1) : 0;
+        if (item.version >= 100 && !expansion) continue;
+        for (int copy = 0; copy < normals; ++copy)
+            if (!ask({ item.code, store_quality(seed, level), level })) return;
+        if (!item.magic || item.magic_lvl > level) continue;
+        const int extra = level > 24 ? store_range(seed, 1, 3) + 1 : 1;
+        for (int copy = store_range(seed, item.magic_min, item.magic_max + extra); copy > 0; --copy)
+            if (!ask({ item.code, 4, level })) return;
+    }
+    for (const auto& item : tables.vendor_items[std::size_t(vendor)])
+        if (item.perm && !ask({ item.code, 2, level, item.code == "cqv" || item.code == "aqv" })) return;
+}
 
 // FUN_0062efb0's last step for a buy, a gamble or a repair: the player's
 // reduced prices (stat 87, at most 99) off, at least 1.

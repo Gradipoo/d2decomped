@@ -798,6 +798,9 @@ struct Spawning {
     // The game's object seed (game +0x10f0, FUN_00546c60): every room's
     // objects, shrines, chests and every container opened step it, game-wide.
     d2d::rules::Rng objects;
+    // The sunitproxy seed (FUN_00536070: {a game seed step, 666}, game
+    // +0x1d24 +8, FUN_00536b40): the hire lists and the vendors' stock roll on it.
+    d2d::rules::Rng proxy;
     std::vector<d2d::rules::Region> regions;               // by Levels.txt Id
     std::unordered_map<const Level*, LevelState> levels;
     std::bitset<128> superuniques;                         // spawned this game (game +0x1d30)

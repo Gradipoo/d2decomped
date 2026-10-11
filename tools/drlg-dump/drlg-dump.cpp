@@ -425,6 +425,32 @@ int main(int argc, char** argv) {
         }
         return 0;
     }
+    if (argc > 3 && std::string(argv[argc - 1]) == "store") {
+        // rules::store_fill's asks as tools/emu store.py prints FUN_00576980's (every item made).
+        const char* patch = std::getenv("D2_PATCH_INSTALLER");
+        auto game = d2d::game::load_game_data(dir, patch ? fs::path(patch) : fs::path{}, 0);
+        if (!game) return 1;
+        const auto dash = range.find('-');
+        const auto first = std::uint32_t(std::stoul(range.substr(0, dash), nullptr, 0));
+        const auto last = dash == std::string::npos ? first : std::uint32_t(std::stoul(range.substr(dash + 1), nullptr, 0));
+        static constexpr std::array<std::array<int, 3>, 6> kJobs = { { { 0, 0, 1 }, { 1, 0, 18 }, { 2, 0, 40 }, { 1, 1, 30 }, { 3, 2, 70 }, { 4, 2, 90 } } };
+        for (auto index = first;; ++index) {
+            const std::uint32_t seed = index * 0x9e3779b1u;
+            for (int vendor = 0; vendor < 17; ++vendor)
+                for (const auto& [act, diff, clvl] : kJobs) {
+                    d2d::rules::Rng proxy{ seed };
+                    std::string line = std::format("{:08x} {} {} {} {}:", seed, vendor, act, diff, clvl);
+                    d2d::rules::store_fill(game->rules, vendor, d2d::rules::store_level(clvl, act, diff), true, proxy, [&](const d2d::rules::StoreAsk& ask) {
+                        line += std::format(" {}:{}@{}", ask.code, ask.quality, ask.ilvl);
+                        if (ask.fill) line += " =7";
+                        return true;
+                    });
+                    std::printf("%s | %08x\n", line.c_str(), proxy.low);
+                }
+            if (index == last) break;
+        }
+        return 0;
+    }
     if (argc > 3 && std::string(argv[argc - 1]) == "hirelist") {
         // rules::hire_entries as tools/emu hire.py entries_dump prints FUN_00576070's (41 and 21 names).
         const auto dash = range.find('-');

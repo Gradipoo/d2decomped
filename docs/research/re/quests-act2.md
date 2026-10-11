@@ -304,3 +304,67 @@ leads to the Canyon of the Magi. Gaps: the Summoner's AI isn't ported
 (awareness stands in for its first attack think); "by him" is the player
 in the Sanctuary; the portal draws as a town portal, not object 60's red
 one; the palace door's mode; one player.
+
+## The Seven Tombs (a2q6.cpp, record 13, quest 14)
+
+`FUN_0059d5b0`: open, state 0, its own log (+0xe8, `FUN_0059ca50`). The
+true tomb is the act's boss tomb (act +0x94, `FUN_0061aeb0`; drlg.md
+"Act 2's layout"). Bits: 0 done, 2 under way, 3 Tyrael's heard (Act 3
+open), 4 Jerhyn's reward heard, 5 at Duriel's death, 6..11 the town's
+lines after Tyrael, 13 took part, 14 by others, 15 closed.
+
+- **Open** (`FUN_0059d450`): the chain from Radament's +0xf0, and from
+  the Tainted Sun's through the Arcane Sanctuary's: state 0 → 1.
+- **Join** (`LAB_0059d4f0`): quest 10 bit 9 off; quest 10 done → the
+  staff was placed in an earlier game (data+0xc, +0xd); bit 0 / 15 →
+  closed; bit 2 → log 1, state 2; bit 3 → 5 / 5; bit 4 → 6 / 5.
+- **Log** (+0xe8): Act 2 not opened (quest 8 bit 0) or done → 0; bit 3 →
+  5; bit 4 → 6; closed → 0; bit 5 or state < 3 → the record's; else 0xc.
+- **+0xac** (`FUN_0059d1c0`, levels 40..74): out of 40 → off the rewarded
+  list; Duriel alive: into the true tomb → state 2, log 2 (from ≤ 1),
+  mark; into the Canyon → state 2 (from 0), log 1 (from 0); into the Lair
+  (73) at state ≤ 1 → state 2, log 2, mark.
+- **Mark** (`FUN_0059c6c0`): state > 1, not done → bit 2.
+- **+0xa0** (`FUN_0059c3c0`): blocks by state − 1: 0 Jerhyn's 430
+  (greeting); 1 the town's 431..441 (Drognan quiet with the game's
+  quest 13 bit 13); 2 Tyrael's 302; 3 the town's 442..452 with Jerhyn's
+  442 and Tyrael's 302 as greetings; 4 the same, Jerhyn's not; 5 Meshif's
+  450; 6 the six town lines (444..449, 452) as greetings. Nothing when
+  done or past state 3 without bit 13.
+- **+0xec** (`FUN_0059d300`): Jerhyn in state 1 (no bit 3 / 4) or with
+  bit 3; Meshif with bit 4; Tyrael from Duriel's death till his portal;
+  with bit 13, the town's six till their bit.
+- **+0xcc** (`FUN_0059cb20`): Tyrael's 302 (once) → a town portal by the
+  player (`FUN_0056d130`: object 59 to level 40), state 4; heard in the
+  Lair without bits 13 / 3 / 4 → bits 13, 3 and Act 3 open
+  (`FUN_0059c860` → `FUN_00538680`); not done and no bit 3 / 4 → bit 14
+  (`LAB_0059c9f0`). Jerhyn's 430 → state 2; his 442 with bit 3 → state 5
+  (bit 13), bit 4 on, bit 3 off. Meshif's 450 with bit 4 → the staff and
+  its parts taken if quest 10 is done; bit 13: the game's bit 13, state
+  5, log 0xd; done, bit 4 off, rewarded. The town's 444..449, 452 → bits
+  9, 6, 7, 11, 8, 10.
+- **+0xa8** (`LAB_0059c760`): talk shut: Tyrael's → log 4; Jerhyn's 430 →
+  log 1, his 442 → log 6; mark.
+- **Duriel's death** (+0xc0, `FUN_0059d050`): open → state 3, an
+  8-tick timer once (`LAB_0059cee0`: log 3 unless 3..5); players by him
+  (`FUN_0059cfb0`, the Lair) without bit 0 / 3 / 4 → bit 5; Tyrael talks
+  (data+0x18 2).
+- **The orifice** (objects.txt 152, InitFn 21 `FUN_0059db50`, OperateFn
+  25 `FUN_0059dc70`): with the Horadric Staff carried, a panel takes it
+  (C→S 0x44 3); placed (`FUN_0059dd80`): quest 10 bits 0 and 13, the staff
+  and its parts gone, a timer once (`FUN_0059d870`) that opens the way
+  down: object 100 thirteen subtiles left of the orifice and three down
+  (`FUN_00555230`), OperateFn 43 into level 73. Without the staff: "I
+  can't use this yet" (voice). Its room coming up opens it (mode 2) on
+  data+0xc: the staff placed in an earlier game.
+- **Tyrael** is the Lair's DS1 preset (`1:251`, NpcStationary) by
+  objects 352 / 353; he stands there from the start.
+
+d2d: `rules::SevenTombsQuest`, the orifice in `World::operate`,
+`World::durielportal_open`, portal slot 6. Checked headless (devctl,
+2026-10-11, quests 8..13 done by `debug quest`): into the Lair → state
+2, log 2 (bit 2); Duriel's death → 3 / 3 (bit 5); Tyrael → 4 / 4, bits
+3 and 13, his portal; Jerhyn → 5 / 6 (bit 4); Meshif → done (bits 0, 2,
+5, 13). Gaps: the orifice's panel (using it with the staff places it);
+Tyrael's prison (data+0x2c) isn't opened; the log override (data+0x10 /
++0x14) isn't traced; Meshif's Sail East (Act 3) isn't there; one player.

@@ -768,7 +768,7 @@ monsters and MonAI, Duriel.
 flag that moves him into the palace) and Radament's Lair (Atma, the kill,
 the Book of Skill, the log's Act 2 tab) are game.exe's records
 (quests-act2.md), checked live. Next: the Horadric Staff (record 9),
-then Tainted Sun, Arcane Sanctuary, the Summoner, the Seven Tombs.
+then Tainted Sun, Arcane Sanctuary, the Summoner, the Seven Tombs (all five in by 2026-10-11, quests-act2.md). Next: Act 2's MonAI thinks.
 
 ## Earlier list (as of 2026-09-26; superseded by "Road to a whole Act 1")
 

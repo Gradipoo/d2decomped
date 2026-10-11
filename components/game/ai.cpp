@@ -1100,12 +1100,14 @@ bool monster_update(const GameData& game_data, const Level& level, Monster& mons
                     for (auto& element : stats.elements) element.mode = element.mode == "S1" ? "A1" : "";
                 }
                 // Charge's hit (FUN_005cf900): sure to hit (flags 9), calc1 % more
-                // damage, the skill's element at its level (FUN_0056e0c0).
-                if (struck_with && struck_with->srvdofunc == d2d::rules::ServerDoFunction::kCharge) {
+                // damage, the skill's element at its level (FUN_0056e0c0). Jab's
+                // (do 7, FUN_005db2d0): the same on a hit it rolls.
+                const bool jab = struck_with && struck_with->srvdofunc == d2d::rules::ServerDoFunction::kJab;
+                if (struck_with && (jab || struck_with->srvdofunc == d2d::rules::ServerDoFunction::kCharge)) {
                     const int lvl = skill_level(game_data, monster, monster.skill);
                     const int more = d2d::rules::eval_calc(game_data.skills, struck_with->calc[0], {}, monster.skill, lvl);
                     for (int* damage : { &stats.a1_min, &stats.a1_max }) *damage = std::max(*damage * (100 + more) / 100, 0);
-                    stats.to_hit = 1 << 20;
+                    if (!jab) stats.to_hit = 1 << 20;
                     const auto added = d2d::rules::row_damage(struck_with->etype, struck_with->emin, struck_with->emax, struck_with->emin_lev, struck_with->emax_lev,
                                                               struck_with->hitshift, struck_with->elen, struck_with->elen_lev, lvl);
                     if (added.etype >= 0)

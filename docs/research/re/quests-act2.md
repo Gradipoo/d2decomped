@@ -358,7 +358,8 @@ lines after Tyrael, 13 took part, 14 by others, 15 closed.
   can't use this yet" (voice). Its room coming up opens it (mode 2) on
   data+0xc: the staff placed in an earlier game.
 - **Tyrael** is the Lair's DS1 preset (`1:251`, NpcStationary) by
-  objects 352 / 353; he stands there from the start.
+  objects 352 / 353; he stands there from the start, and leaves once his
+  portal is open and no player is within 12 of him (monster-ai.md).
 
 d2d: `rules::SevenTombsQuest`, the orifice in `World::operate`,
 `World::durielportal_open`, portal slot 6. Checked headless (devctl,

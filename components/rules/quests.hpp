@@ -949,6 +949,7 @@ struct SevenTombsQuest {
     bool duriel_dead = false;  // data+1
     bool tyrael_talks = false; // data+0x18 2
     bool tyrael_portal = false;   // data+0xf
+    bool tyrael_gone = false;     // Tyrael has left the Lair (his NpcStationary think, FUN_005e73a0)
     bool jerhyn_pending = false, reward_pending = false, tyrael_pending = false;   // data+8, +10, +9
     bool staff_placed = false; // data+0xd: placed, the way down not open yet
     bool lair_open = false;    // data+0xb

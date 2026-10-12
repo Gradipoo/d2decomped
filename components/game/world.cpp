@@ -868,6 +868,9 @@ auto World::swap_npcs(const Level* from) -> void {
         }
         grow_states(npc_states, *level);
         show_palace();
+        if (level->id == d2d::rules::SevenTombsQuest::kLair && tombs.tyrael_gone)   // Tyrael has left (FUN_0059df50: record +0x3d)
+            for (std::size_t i = 0; i < level->npcs.size() && i < npc_states.size(); ++i)
+                if (level->npcs[i].hc_idx == d2d::rules::SevenTombsQuest::kTyrael) npc_states[i].hidden = true;
         for (std::size_t i = 0; i < level->npcs.size() && i < npc_states.size(); ++i)   // camp Cain (FUN_00592960)
             if (level->npcs[i].quest == d2d::rules::CainQuest::kQuest)
                 npc_states[i].hidden = level->npcs[i].hc_idx == d2d::rules::monster_ids::kCain && level->id == d2d::rules::CainQuest::kTristram
@@ -1996,6 +1999,19 @@ auto World::tick(const std::vector<Command>& cmds, std::uint32_t now_ms, std::ui
             radament.tick();
             tainted.tick(quests());
             if (tombs.tick()) durielportal_open(day_at);
+            // Tyrael's think (NpcStationary, FUN_005e73a0): once his portal is
+            // open (FUN_0059df50: record +0xf) and no player is within 12 of
+            // him (FUN_006416d0, the sweep at 0x59df30), not in a talk
+            // (FUN_00572dc0), he leaves (FUN_005ddfc0 mode 0), for good.
+            // ponytail: the takers' unit event 0x36 (LAB_0059c710) unread.
+            if (level->id == d2d::rules::SevenTombsQuest::kLair && tombs.tyrael_portal && !tombs.tyrael_gone)
+                for (std::size_t i = 0; i < level->npcs.size() && i < npc_states.size(); ++i)
+                    if (level->npcs[i].hc_idx == d2d::rules::SevenTombsQuest::kTyrael && talking[0] != int(i)
+                        && std::hypot(level->npcs[i].x - player.x, level->npcs[i].y - player.y) * 5 >= 12) {
+                        npc_states[i].hidden = true;
+                        tombs.tyrael_gone = true;
+                        d2d::log::info("The Seven Tombs: Tyrael leaves");
+                    }
             if (summoner.tick() && d2d::rules::qbit(quests(), d2d::rules::SummonerQuest::kQuest, 13) && level->id == d2d::rules::SummonerQuest::kSanctuary
                 && character.header.cls < 7) {
                 static constexpr const char* kClass[7] = { "amazon", "sorceress", "necromancer", "paladin", "barbarian", "druid", "assassin" };

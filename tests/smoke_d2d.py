@@ -177,7 +177,7 @@ try:
                 if done(state()):
                     return
         walk_to("Warriv", lambda st: st["menu"] != "0")
-        assert state()["menu"] == "3", "Warriv's menu did not open"
+        assert state()["menu"] in ("3", "4"), "Warriv's menu did not open"   # 4 with Go East (Andariel dead)
         # talk -> the talk submenu (talk, introduction, gossip, cancel);
         # introduction -> his speech scrolls; Esc ends it.
         def menu_line(text):

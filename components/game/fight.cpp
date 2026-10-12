@@ -42,6 +42,41 @@
 
 namespace d2d::game {
 
+namespace {
+
+// A state's end on a monster (its stat list off, FUN_006269f0: the
+// callback; FUN_005c3370 toggles an AI-swapping one's AI back).
+void end_state(const GameData& game_data, Monster& monster, Monster::SkillState& slot) {
+    if (slot.swaps) ai_toggle(game_data, monster, 0);
+    slot = {};
+}
+
+// A timed state put on a monster in its slot (FUN_0056e970): the same
+// skill at the same level only runs longer, one at a higher level stays
+// (the put fails); else the one there comes off (end_state).
+// ponytail: d2d keeps one curse and one other state; game.exe's other
+// states don't take each other's place.
+bool put_state(const GameData& game_data, Monster& monster, Monster::SkillState& slot, Monster::SkillState next, std::uint32_t now_ms) {
+    if (slot.skill >= 0 && now_ms < slot.until && slot.skill == next.skill) {
+        if (slot.level == next.level) { slot.until = next.until; return true; }
+        if (slot.level > next.level) return false;
+    }
+    end_state(game_data, monster, slot);
+    slot = next;
+    return true;
+}
+
+// Cloak of Shadows on a monster (FUN_005d6520): its state, with the AI
+// toggle at its end whatever the monster, then special AI 10 on one
+// swaps_ai lets.
+void cloak(const GameData& game_data, Monster& monster, int skill, int lvl, std::uint32_t until, std::uint32_t now_ms) {
+    if (put_state(game_data, monster, monster.cry, { skill, lvl, until, true }, now_ms) && swaps_ai(game_data, monster)) ai_toggle(game_data, monster, 10);
+}
+
+constexpr int kTerror = 77;                     // Skills.txt Terror: Howl's state (FUN_005ddd00, 0x4d)
+
+}  // namespace
+
 auto Fight::monster_index(int id) const -> int {
         if (id < 0) return -1;
         const auto found = std::ranges::find(monsters, id, &Monster::id);
@@ -719,7 +754,7 @@ auto Fight::hit(std::uint32_t now_ms, float reach ) -> void {
         if (blow.hit && skill && skill->srvdofunc == ServerDoFunction::kConversion && monsters[target].alive()) {
             const int lvl = skill_level ? skill_level(skill->id) : 1;
             if (int(rng(100)) < calc(*skill, skill->calc[0], lvl))
-                monsters[target].cry = { skill->id, lvl, now_ms + std::uint32_t(std::max(calc(*skill, skill->auralen, lvl), 25)) * 40 };
+                put_state(*game_data, monsters[target], monsters[target].cry, { skill->id, lvl, now_ms + std::uint32_t(std::max(calc(*skill, skill->auralen, lvl), 25)) * 40 }, now_ms);
         }
         // Sacrifice's price (FUN_005ce8e0): calc2 % of the physical dealt,
         // no more than the target had left, off the player's life.
@@ -881,7 +916,10 @@ auto Fight::spot(const d2d::rules::Skill& skill, std::uint32_t now_ms, const Cas
             // curses whose state is dimvision (23) or terror (56)
             // (FUN_005c3400) divide it by DifficultyLevels AiCurseDivisor
             // (FUN_005c37a0, +0x1c).
-            // ponytail: FUN_0056e2f0's AI test unread.
+            // Dim Vision and Terror (FUN_005c35c0 with FUN_005c3400's flag)
+            // land only on a monster swaps_ai lets, not neutral
+            // (FUN_006259b0), and put it on special AI 10 / 11
+            // (FUN_005c34b0); their end toggles it back (FUN_005c3370).
             case ServerDoFunction::kCurse: case ServerDoFunction::kConfuse: case ServerDoFunction::kStateAroundCaster: case ServerDoFunction::kAttract: case ServerDoFunction::kTaunt: {
                 int length = calc(skill, skill.auralen, lvl);
                 if (const int divisor = game_data->curse_divisor[std::size_t(std::clamp(game_difficulty, 0, 2))];
@@ -893,10 +931,13 @@ auto Fight::spot(const d2d::rules::Skill& skill, std::uint32_t now_ms, const Cas
                 const auto set = [&](Monster& monster, int kind, int id) {
                     if (game_data->monsters.types[std::size_t(monster.type)].switch_ai) monster.set_kind = kind, monster.set_id = id, monster.set_until = until;
                 };
+                const int special = skill.srvdofunc != ServerDoFunction::kCurse ? 0 : skill.auratarget == "dimvision" ? 10 : skill.auratarget == "terror" ? 11 : 0;
                 auto put = [&](std::size_t monster_index) {
                     auto& monster = monsters[monster_index];
                     if (skill.srvdofunc == ServerDoFunction::kConfuse && monster.align) return;
-                    (curse ? monster.curse : monster.cry) = { skill.id, lvl, until };
+                    if (special && (monster.align == 1 || !swaps_ai(*game_data, monster))) return;
+                    if (!put_state(*game_data, monster, curse ? monster.curse : monster.cry, { skill.id, lvl, until, special != 0 }, now_ms)) return;
+                    if (special) ai_toggle(*game_data, monster, special);
                     if (skill.srvdofunc == ServerDoFunction::kConfuse) { monster.align = 1; set(monster, 3, 0); }
                 };
                 if (skill.srvdofunc == ServerDoFunction::kAttract || skill.srvdofunc == ServerDoFunction::kTaunt) {
@@ -997,7 +1038,7 @@ auto Fight::start_state(const d2d::rules::Skill& skill, int lvl, std::uint32_t n
         if (skill.srvdofunc == ServerDoFunction::kCloakOfShadows)
             for (auto& monster : monsters)
                 if (monster.targetable() && std::hypot(monster.unit.x - player.x, monster.unit.y - player.y) * 5 <= float(calc(skill, skill.aurarange, lvl)))
-                    monster.cry = { skill.id, lvl, until };
+                    cloak(*game_data, monster, skill.id, lvl, until, now_ms);
     }
 
 auto Fight::state_of(std::string_view name) const -> const SelfState* {
@@ -1118,9 +1159,10 @@ auto Fight::monster_states(std::uint32_t now_ms) -> void {
         for (auto& monster : monsters) {
             monster.dmg_pct = monster.speed_pct = monster.reflect_pct = 0;
             monster.align = 0;                                // Confuse's / Attract's end (FUN_005c3db0 / 0x5c3b00), or another curse in its place
+            monster.afraid = false;
             for (auto* effect : { &monster.curse, &monster.cry }) {
                 if (effect->skill < 0) continue;
-                if (now_ms >= effect->until) { *effect = {}; continue; }
+                if (now_ms >= effect->until) { end_state(*game_data, monster, *effect); continue; }
                 const auto* skill = game_data->skills.get(effect->skill);
                 if (!skill) continue;
                 for (std::size_t aura_stat = 0; aura_stat < skill->aurastat.size(); ++aura_stat) {
@@ -1129,8 +1171,8 @@ auto Fight::monster_states(std::uint32_t now_ms) -> void {
                 }
                 const auto& targets = skill->auratarget;
                 if (targets == "ironmaiden") monster.reflect_pct += calc(*skill, skill->calc[0], effect->level);
-                if (targets == "terror") monster.flee_until = std::max(monster.flee_until, effect->until);
-                if (targets == "dimvision" || targets == "cloaked" || targets == "conversion") monster.blind_until = effect->until;
+                if (targets == "terror") monster.afraid = true;
+                if (targets == "conversion") monster.blind_until = effect->until;
                 if (targets == "confuse" || targets == "attract") monster.align = 1;
             }
             if (monster.set_kind && now_ms >= monster.set_until) monster.set_kind = 0;   // event 10 (0x5a7f70 -> FUN_00573120)
@@ -2352,17 +2394,26 @@ auto Fight::skill_missile_hits(Missile& missile, std::size_t monster_index, std:
         // the monster for auralen frames; 17 (FUN_005aafb0, Howl) sends one
         // below the caster's level + calc1 + the skill level running for
         // Param3 + Param4 x (level - 1) frames (FUN_004cc7c0); neither hurts.
+        // Howl's run (FUN_005ddd00): on a monster swaps_ai lets, alive,
+        // Terror's state (0x38, skill 77 level 1) for those frames with no
+        // AI toggle at its end (FUN_0056e900), special AI 11 (FUN_005b0e00)
+        // and a think next frame; Terror's think toggles back once it's
+        // gone.
         // ponytail: Howl's level sum (FUN_004efc20) read as calc1 + level.
         if (missile_info.hit_func == 18) return false;
         if (missile_info.hit_func == 21) {
             if (monsters[monster_index].cry.skill != skill->id || now_ms >= monsters[monster_index].cry.until)
-                monsters[monster_index].cry = { skill->id, missile.level, now_ms + std::uint32_t(std::max(calc(*skill, skill->auralen, missile.level), 1)) * 40 };
+                put_state(*game_data, monsters[monster_index], monsters[monster_index].cry,
+                          { skill->id, missile.level, now_ms + std::uint32_t(std::max(calc(*skill, skill->auralen, missile.level), 1)) * 40 }, now_ms);
             return false;
         }
         if (missile_info.hit_func == 17) {
             const int clvl = int(character.stats.get(d2d::d2s::kLevel));
-            if (monsters[monster_index].stats.level < clvl + calc(*skill, skill->calc[0], missile.level) + missile.level)
-                monsters[monster_index].flee_until = std::max(monsters[monster_index].flee_until, now_ms + std::uint32_t(std::max(skill->par[2] + (missile.level - 1) * skill->par[3], 25)) * 40);
+            if (auto& howled = monsters[monster_index]; howled.stats.level < clvl + calc(*skill, skill->calc[0], missile.level) + missile.level && howled.alive() && swaps_ai(*game_data, howled)) {
+                put_state(*game_data, howled, howled.curse, { kTerror, 1, now_ms + std::uint32_t(std::max(skill->par[2] + (missile.level - 1) * skill->par[3], 25)) * 40 }, now_ms);
+                ai_toggle(*game_data, howled, 11);
+                howled.next_act = now_ms + 40;
+            }
             missile.struck->push_back(int(monster_index));
             return false;
         }
@@ -3642,7 +3693,7 @@ auto Fight::shadow_cast(Pet& pet, std::uint32_t now_ms, const Crowd& crowd) -> v
             if (skill->srvdofunc == ServerDoFunction::kCloakOfShadows)
                 for (auto& other : monsters)
                     if (other.alive() && std::hypot(other.unit.x - monster.unit.x, other.unit.y - monster.unit.y) * 5 <= float(calc(*skill, skill->aurarange, lvl)))
-                        other.cry = { skill->id, lvl, until };
+                        cloak(*game_data, other, skill->id, lvl, until, now_ms);
             return;
         }
         // Its traps and Blade Sentinel (do 45 / 44): laid at its target (else
@@ -3823,6 +3874,7 @@ auto Fight::world(bool in_moor, std::uint32_t now_ms, float elapsed, const Crowd
             std::vector<Foe> foes{ Foe{ player.x, player.y, int(character.stats.get(d2d::d2s::kLevel)), true, player.walking, player_combat },
                                    Foe{ merc ? merc->unit.x : 0, merc ? merc->unit.y : 0, merc_st.level, merc && merc->mode != "DT",
                                         merc && merc->unit.walking, merc_fighter() } };
+            foes[0].running = owner_mode == 3;                   // RN (World: walking with run on and stamina)
             foes[0].life_pct = int(std::int64_t(character.stats.get(d2d::d2s::kLife)) * 100 / std::max<std::int64_t>(character.stats.get(d2d::d2s::kMaxLife), 1));
             foes[1].pet = true;                                  // the merc: its MonStats class's size
             foes[1].life_pct = merc ? int(std::int64_t(merc->hit_points) * 100 / std::max(merc_max_life(), 1)) : 0;

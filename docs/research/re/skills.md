@@ -868,7 +868,8 @@ lines (missile names aren't passed in). What it does:
 - Curses: do **30** (FUN_005c37c0) and **61** (FUN_005c3f20, Confuse):
   auratargetstate (+0x82) with its aurastats for auralen frames on every
   unit within aurarange of the target (FUN_0056e780 -> FUN_005c35c0 /
-  FUN_005c3de0). **59** (FUN_005c3b90, Attract) on the one unit. **6**
+  FUN_005c3de0). Dim Vision and Terror swap the monster's AI (special 10 / 11)
+  and land only where FUN_0056e2f0 lets (monster-ai.md "Curse thinks"). **59** (FUN_005c3b90, Attract) on the one unit. **6**
   (FUN_005db1c0, Inner Sight / Slow Missiles) round the caster. **71**
   (FUN_005d8570, Taunt) on the monster (or the nearest within 20).
 - War cries: do **68** (FUN_005d83e0): a nova of srvmissilea (FUN_0056d400)

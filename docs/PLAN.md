@@ -26,7 +26,7 @@ reading ("Reference projects" below).
 
 ## Phases
 
-Status as of 2026-10-06.
+Status as of 2026-10-12.
 
 1. **Bootstrap** — repo skeleton, CMake root, docs seeded. *Done.*
 2. **Launcher (install path)** — one Qt6 app (`apps/launcher/`, target
@@ -52,14 +52,17 @@ Status as of 2026-10-06.
    done, the `bin/` import will be dropped from the launcher — redistributing
    Blizzard's binaries is not permitted, so no release will include them.
 5. **Core loop**: main menu, character select, load act 1 rogue camp,
-   render tiles. *Done for Act 1:* frontend, town, NPCs, panels, trade,
-   waypoints, all 38 levels (maps, monsters, objects and drops match
-   game.exe), the six quests, saving. Left: Acts 2–5.
+   render tiles. *Done for Acts 1 and 2:* frontend, both towns, NPCs,
+   panels, trade, hiring, waypoints across acts, all 38 + 35 levels (maps,
+   monsters, objects and drops match game.exe), the twelve quests, saving.
+   Act 3 is reached (Meshif to Kurast Docks). Left: Acts 3–5.
 6. **Combat + AI**: actor state machine, packet-equivalent events,
    monster AI from game.exe. *Implemented:* monsters and their fights,
    gear in combat, drops, experience, the merc, and the skills (phases 0–6
-   in `docs/research/re/skills.md`). Left: the per-type AI think
-   functions, the unique behaviour mods, the gaps each skill section lists.
+   in `docs/research/re/skills.md`); Acts 1 and 2's MonAI thinks, run
+   against game.exe's own (`tools/emu/mon_ais.py`, `npcs.py`, `jarjar.py`).
+   Left: later acts' thinks, the unique mods still untraced (thief, the act
+   bosses' deaths), the gaps each skill section lists.
 7. **Cross-platform polish** — Linux/macOS/Windows CI, controller,
    high-DPI, rebindable input.
 
@@ -734,8 +737,8 @@ leftovers (act1-gaps.md) and hosting a game wait.
    tools/emu/store.py 10200 / 10200) with game.exe's magic affixes
    (drops.md "Magic", 9994 / 9995). Lut Gholein's container drops are
    game.exe's (a container rolls its level's act's chest class, FUN_00585b90;
-   `LEVELS=40 diff_drlg.py 1-5 0 game` 5/5). Left: JarJar's think (the
-   palace guard: kept to his post, 3 north once aside; town-npcs.md).
+   `LEVELS=40 diff_drlg.py 1-5 0 game` 5/5). JarJar's think (the palace
+   guard) is game.exe's too (tools/emu/jarjar.py, town-npcs.md).
 3. The desert (LevelType 16: 41–46): the outdoor generator with act 2's
    border and exit rules (drlg.md: exits in pairs from 0x6f112c, columns
    2 / 3 of 0x6f0630), its LvlSub / presets. *Built (2026-10-10):*
@@ -756,9 +759,11 @@ act byte set), a save left in act 2 starts there, town portals and
 respawns go to the act's town (`GameData::town_of`), every town counts
 as town (`in_town`), the palette follows the act (`load_act_palettes`),
 the quest log opens on the act's tab; `tests/quests_d2d.py` rides the
-caravan; Warriv takes the player back west. Left: game.exe swaps the
-whole act (the old act's DRLG freed; d2d keeps act 1's levels built),
-waypoints across acts, Meshif east.
+caravan; Warriv takes the player back west; waypoints cross acts; Meshif
+sails to Kurast Docks and back. An act left is made anew on the way back,
+as game.exe frees it (World::leave_act, GameData::refresh_act: the same
+maps, monsters and objects afresh; quests, waypoints and the superuniques
+spawned kept).
 
 **Step 3 — Act 2's content:** the town (Atma, Drognan, Elzix, Fara,
 Geglash, Greiz' hire list: act 2 mercs and their auras, Jerhyn, Lysander,
@@ -769,7 +774,28 @@ monsters and MonAI, Duriel.
 flag that moves him into the palace) and Radament's Lair (Atma, the kill,
 the Book of Skill, the log's Act 2 tab) are game.exe's records
 (quests-act2.md), checked live. Next: the Horadric Staff (record 9),
-then Tainted Sun, Arcane Sanctuary, the Summoner, the Seven Tombs (all five in by 2026-10-11, quests-act2.md). Next: Act 2's MonAI thinks.
+then Tainted Sun, Arcane Sanctuary, the Summoner, the Seven Tombs (all five in by 2026-10-11, quests-act2.md).
+*Done (2026-10-12, PRs #17–#19):* Act 2's MonAI thinks (17, run against
+game.exe's own), MonSeq skill sequences row by row, Act 2's objgroups,
+monster curses on the player, Smite's stun, buried maggots and aloft
+vultures, the Maggot Queen's poison hit, Radament's corpse reach, the
+Seven Tombs' log, Meshif taking the staff's parts, and in a joined game the
+host's quests, travel and every unit's states.
+
+## Checkpoint 2026-10-12: Act 2 done, what's still open
+
+Act 2 plays from Lut Gholein to Duriel and Meshif's boat. Known gaps, none
+blocking:
+
+- Monster other thinks of Acts 3–5 (MonAI rows 51, 52, 61, 65, 128, 135,
+  140, 145, 147, 152): `rules::other_think` has Act 2's two.
+- Act bosses of Acts 3–5 (FUN_005b1cf0 by BaseId: Mephisto, Diablo, Izual,
+  Baal, the Council's quest hooks): not in `rules::act_boss` yet.
+- Waiting on a live host: the joined game's checklist (quests, travel,
+  other units' states).
+
+Next: Act 3, the same road as Act 2's (levels on demand and diffed, the
+town, the quests, the thinks).
 
 ## Earlier list (as of 2026-09-26; superseded by "Road to a whole Act 1")
 

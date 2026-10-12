@@ -509,7 +509,8 @@ bool think(const GameData& game_data, const Level& level, Monster& monster, std:
     const auto& type_info = game_data.monsters.types[std::size_t(monster.type)];
     const auto& per_difficulty = type_info.diff[std::size_t(monster.difficulty)];
     const bool andariel = type_info.ai_name == "Andariel", nest = type_info.ai_name == "FoulCrowNest" || type_info.ai_name == "GargoyleTrap";
-    if (!andariel && !d2d::rules::traced_ai(type_info.ai_name)) return false;
+    const bool cursed = monster.special == 10 || monster.special == 11;   // the curse thinks run whatever its own
+    if (!andariel && !cursed && !d2d::rules::traced_ai(type_info.ai_name)) return false;
     auto idle = [&](int frames) {                                  // FUN_005de080
         if (monster.mode != "NU") set_mode(game_data, monster, "NU", now_ms);
         monster.wandering = false;
@@ -712,6 +713,14 @@ bool think(const GameData& game_data, const Level& level, Monster& monster, std:
             case AndarielAct::idle: act = { MonAct::idle, 5 }; break;
             case AndarielAct::walk: act = { MonAct::walk, 7 }; break;
         }
+    } else if (cursed) {
+        input.swings = !type_info.interact && game_data.npc_timing(monster.npc, "A1").directions > 0;
+        input.runs = has_run; input.afraid = monster.afraid;
+        act = monster.special == 10 ? d2d::rules::dim_vision_think(input, monster.seed) : d2d::rules::terror_think(input, monster.seed, away);
+    } else if (monster.other) {
+        int word = 0;                                              // the SandMaggot's command 14 +0x18 (never set)
+        input.in_s4 = monster.mode == "S4"; input.cast_word = &word;
+        act = d2d::rules::other_think(type_info.ai_name, input);
     } else if (monster.special == 0xd) {                          // the Countess: rooms are the level's (FUN_0061b130)
         auto room = [&](float at_x, float at_y) { return room_at(level, at_x, at_y); };
         const int home = room(monster.home_x, monster.home_y);
@@ -727,6 +736,12 @@ bool think(const GameData& game_data, const Level& level, Monster& monster, std:
     // (regen) left out; the Summoner's quest reads his first think (ai_state).
     for (const auto& effect : effects) {
         if (effect.kind == d2d::rules::ThinkEffect::command_done) monster.ai_command = 0;
+        if (effect.kind == d2d::rules::ThinkEffect::unset) monster.set_kind = 0;   // FUN_00573120
+        if (effect.kind == d2d::rules::ThinkEffect::toggle) {
+            const int kept = monster.ai_state3;
+            ai_toggle(game_data, monster, effect.id);
+            if (effect.value) monster.ai_state3 = kept;
+        }
         // The Vulture's take-off (FUN_005f2eb0) and landing (FUN_005f2fc0:
         // at the free spot nearest, FUN_00554ea0; pattern 1, mask 0x3c01).
         if (effect.kind == d2d::rules::ThinkEffect::take_off) { monster.aloft = true; unit.shape.pattern = 5; unit.shape.mask = 0; }
@@ -1172,7 +1187,7 @@ bool monster_update(const GameData& game_data, const Level& level, Monster& mons
                 }
                 for (int* damage : { &stats.a1_min, &stats.a1_max }) *damage = std::max(*damage * (100 + monster.dmg_pct + monster.aura_dmg) / 100, 0);
                 stats.to_hit += stats.to_hit * monster.aura_th / 100;
-                const auto taken = d2d::rules::monster_blow(foe.fighter, foe.level, foe.moving, stats, false, rng);
+                const auto taken = d2d::rules::monster_blow(foe.fighter, foe.level, foe.motion(), stats, false, rng);
                 foe.take(taken);
                 if (taken.hit && smite) foe.stun_ticks = std::max(foe.stun_ticks, d2d::rules::eval_calc(game_data.skills, struck_with->calc[1], {}, monster.skill, skill_level(game_data, monster, monster.skill)));
                 if (taken.hit && monster.mana_hi > 0) foe.mana_burn += rng.range(monster.mana_lo, monster.mana_hi);   // Mana Burn
@@ -1382,6 +1397,18 @@ Monster make_monster(const GameData& game_data, int type, float x, float y, d2d:
 // MonLvl damage x MonUMod constants rows 0x10 / 0x13 + difficulty, or
 // 0x1c / 0x1f with the hook's unique flag; poisonlength (59) = (mlvl x 5 +
 // 150) x 2.
+bool swaps_ai(const GameData& game_data, const Monster& monster) {
+    const auto& type_info = game_data.monsters.types[std::size_t(monster.type)];
+    using d2d::rules::Boss;
+    return game_data.npc_timing(monster.npc, "WL").directions > 0 && !type_info.boss_column && type_info.switch_ai
+        && (monster.targetable() || !monster.alive()) && monster.boss != Boss::unique && monster.boss != Boss::superunique;
+}
+
+void ai_toggle(const GameData& game_data, Monster& monster, int special) {
+    d2d::rules::ai_toggle(monster.special, monster.other, { &monster.ai_state, &monster.ai_state2, &monster.ai_state3 }, special,
+                          d2d::rules::has_other_think(game_data.monsters.types[std::size_t(monster.type)].ai_name));
+}
+
 void poison_hit(const GameData& game_data, Monster& monster, int difficulty, bool unique) {
     if (game_data.monsters.lvl.empty()) return;
     const auto level = std::clamp<std::size_t>(std::size_t(std::max(monster.stats.level, 1)), 1, game_data.monsters.lvl.size() - 1);

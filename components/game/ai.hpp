@@ -480,8 +480,8 @@ void missiles_update(const Level& level, std::vector<Missile>& ms_, std::span<Fo
                 missile.struck->push_back(key);
                 const auto& row = *missile.row;
                 const int burn = std::max(d2d::rules::resisted(rng.range(row.elo, row.ehi), foe.fighter.res[std::size_t(std::clamp(row.etype, 0, 2))]) - foe.fighter.mdr * 256, 0);
-                foe.damage += burn >> 8; foe.elemental += burn >> 8;
-                if (int(rng(256)) < (burn & 255)) ++foe.damage;
+                const int dealt = (burn >> 8) + (int(rng(256)) < (burn & 255) ? 1 : 0);
+                foe.damage += dealt; foe.elemental += dealt;
             }
             return false;
         }

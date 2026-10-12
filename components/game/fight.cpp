@@ -1097,6 +1097,9 @@ auto Fight::buff_events(Foe& foe, std::uint32_t now_ms) -> void {
                      true, now_ms);
             }
         }
+    }
+
+auto Fight::return_fire(const Foe& foe, std::uint32_t now_ms) -> void {
         // Chilling Armor (event 1, FUN_005cab40): a ReturnFire missile's
         // owner, alive and hostile, gets the skill's srvmissilea (+0x48)
         // back from the wearer at where it stands.
@@ -3975,6 +3978,7 @@ auto Fight::world(bool in_moor, std::uint32_t now_ms, float elapsed, const Crowd
                 }
                 return false;
             });
+            return_fire(foes[0], now_ms);                          // the missiles that reached the player just now
             std::ranges::move(pending, std::back_inserter(missiles));
             pending.clear();
             if (merc && foes[1].damage > 0 && merc->mode != "DT") {

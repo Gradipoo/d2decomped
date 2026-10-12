@@ -538,6 +538,8 @@ struct Fight {
     // ponytail: Thunder Storm's pace and reach are the published ones.
     int absorb(const Foe& foe);
     void buff_events(Foe& foe, std::uint32_t now_ms);
+    // Chilling Armor's answer, after the frame's missiles have struck.
+    void return_fire(const Foe& foe, std::uint32_t now_ms);
     void buff_tick(std::uint32_t now_ms);
     // The skill states on the monsters (their curse and cry slots): what
     // they add up to this frame. Aurastats damagepercent (25) and

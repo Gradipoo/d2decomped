@@ -413,6 +413,22 @@ int main(int argc, char** argv) {
         const auto last = dash == std::string::npos ? first : std::uint32_t(std::stoul(range.substr(dash + 1), nullptr, 0));
         for (auto seed = first;; ++seed) {
             std::ostringstream out;
+            if (id >= level_ids::kKurastDocks) {     // act 3, as drlg.act3_layout_dump
+                const auto act3 = act3_layout(defs, act_seed(seed));
+                for (const auto& placement : act3.levels) {
+                    out << "level " << placement.level << " at " << placement.x << ',' << placement.y << " size " << placement.width << 'x' << placement.height << '\n';
+                    if (placement.level < level_ids::kSpiderForest || placement.level > level_ids::kFlayerJungle) continue;
+                    const auto& cells = act3.jungle[std::size_t(placement.level - level_ids::kSpiderForest)];
+                    out << "  cells";
+                    for (const int def_id : cells.presets) out << ' ' << def_id;
+                    out << " specials " << cells.specials << '\n';
+                }
+                out << "roll " << act3.roll << '\n';
+                if (argc > 5) std::ofstream(fs::path(argv[4]) / (std::to_string(seed) + ".txt")) << out.str();
+                else std::fputs(out.str().c_str(), stdout);
+                if (seed == last) break;
+                continue;
+            }
             auto layout = act2_layout(defs, act_seed(seed));
             std::ranges::sort(layout, {}, &Placed::level);
             for (const auto& placement : layout)

@@ -782,6 +782,20 @@ vultures, the Maggot Queen's poison hit, Radament's corpse reach, the
 Seven Tombs' log, Meshif taking the staff's parts, and in a joined game the
 host's quests, travel and every unit's states.
 
+## Road to Act 3 (from 2026-10-12, branch `act3`)
+
+Same road as Act 2's: the levels diffed against game.exe, then the town,
+the quests, the thinks.
+
+**Step 1 — the act's levels, checked with `diff_drlg.py`:**
+1. The layout (FUN_006789b0): the docks, the jungle's three pieces and
+   their cells, Kurast stacked above. *Done (2026-10-12):* `act3_layout`
+   (drlg.md "Act 3's layout"); `diff_drlg.py 1-2000 75 layout`: 2000/2000.
+2. The Kurast Docks (75, LvlPrest 529) as a town.
+3. The jungle (76–78) built from its cells.
+4. Kurast (79–83).
+5. The dungeons, sewers, temples and the Durance (84–102).
+
 ## Checkpoint 2026-10-12: Act 2 done, what's still open
 
 Act 2 plays from Lut Gholein to Duriel and Meshif's boat. Known gaps, none

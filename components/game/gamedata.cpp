@@ -1267,6 +1267,14 @@ std::vector<int> walk_links(const GameData& game_data, int id) {
 // levels it walks into.
 void install_level(const GameData& game_data, int id, std::unique_ptr<Level> level) {
     auto in_act = [&](int level_id) { return std::ranges::contains(game_data.layout_of(id), level_id, &d2d::drlg::Placed::level); };
+    if (game_data.stale.erase(id)) {                     // a rebuild after an act change: into the old one's place
+        if (auto& kept = game_data.levels[id]; kept && level) {
+            auto nearby = std::move(kept->nearby);           // its links stand: its neighbours are the same objects
+            *kept = std::move(*level);
+            kept->nearby = std::move(nearby);
+        }
+        return;
+    }
     if (level) {
         const auto walks = walk_links(game_data, id);
         auto linked = [&](int level_id) { return (in_act(id) && in_act(level_id)) || std::ranges::contains(walks, level_id); };
@@ -1277,14 +1285,6 @@ void install_level(const GameData& game_data, int id, std::unique_ptr<Level> lev
             level->nearby.push_back({ other_level, other_level->world_x - level->world_x, other_level->world_y - level->world_y });
             other_level->nearby.push_back({ level.get(), level->world_x - other_level->world_x, level->world_y - other_level->world_y });
         }
-    }
-    if (game_data.stale.erase(id)) {                     // a rebuild after an act change: into the old one's place
-        if (auto& kept = game_data.levels[id]; kept && level) {
-            auto nearby = std::move(kept->nearby);           // its neighbours are the same objects, rebuilt too
-            *kept = std::move(*level);
-            kept->nearby = std::move(nearby);
-        }
-        return;
     }
     game_data.levels[id] = std::move(level);
 }

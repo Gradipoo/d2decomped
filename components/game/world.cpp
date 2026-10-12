@@ -1432,7 +1432,7 @@ auto World::leave_act(int act) -> void {
         const auto gone = [&](const Level* which) { return std::ranges::contains(old, which); };
         for (const Level* which : old) {
             fight.kept.erase(which);
-            fight.spawning.levels.erase(which);
+            if (which != &game_data->town) fight.spawning.levels.erase(which);   // the camp isn't remade: its NPCs keep their seeds
             loot.kept.erase(which);
         }
         std::erase_if(operated, [&](const auto& entry) { return gone(entry.first.first) && entry.first.first != &game_data->town; });

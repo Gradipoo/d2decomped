@@ -64,7 +64,8 @@ struct MonType {
     };
     std::array<Diff, 3> diff{};
     // MonStats2.
-    int size = 2, melee_rng = 0;                // SizeX, MeleeRng (in melee: unit_distance within it + 1)
+    int size = 2, melee_rng = 0;                // SizeX (at least 1), MeleeRng (in melee: unit_distance within it + 1)
+    bool footprint = true;                      // SizeX above 0: it stamps the collision grid (FUN_0064ea90)
     std::string base_w;                         // BaseW
     std::array<std::vector<std::string>, 16> parts;   // HDv..S8v components, per layer present
     std::array<std::uint8_t, 16> choices{};     // HDv..S8v list lengths, every layer (MonStats2 +0x15)

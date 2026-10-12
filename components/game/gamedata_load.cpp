@@ -220,7 +220,7 @@ void load_monsters(GameData& game_data, const d2d::mpq::Stack& mpqs) {
         const auto found = ms2_rows.find(std::string(text("MonStatsEx")));
         if (found != ms2_rows.end()) {
             const auto monstats2_row = found->second;
-            type_info.size = std::max(num(ms2.get(monstats2_row, "SizeX")), 1); type_info.melee_rng = num(ms2.get(monstats2_row, "MeleeRng"));
+            type_info.size = std::max(num(ms2.get(monstats2_row, "SizeX")), 1); type_info.footprint = num(ms2.get(monstats2_row, "SizeX")) > 0; type_info.melee_rng = num(ms2.get(monstats2_row, "MeleeRng"));
             type_info.base_w = ms2.get(monstats2_row, "BaseW");
             type_info.can_block = ms2.get(monstats2_row, "mBL") == "1";
             type_info.pieces = num(ms2.get(monstats2_row, "TotalPieces"));

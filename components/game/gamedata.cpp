@@ -713,6 +713,7 @@ void add_object(const GameData& game_data, const d2d::txt::Table& objects, const
         const auto& area_levels = game_data.area_level;
         npc.trap = d2d::rules::roll_trap(std::size_t(into.id) < area_levels.size() ? area_levels[std::size_t(into.id)][3] : 1, rgn);
     }
+    if (objects.get(row, "InitFn") == "27") npc.trap = rgn.next() % 1000 <= 0x14c ? 3 : 0;   // a goo pile (FUN_0054fc50): trap 3, 333 in 1000
     // The gold placeholder (InitFn 28, FUN_0054f8c0): ON, then 1..9 piles
     // at rand(4), rand(4) subtiles off it, where free in its room.
     // ponytail: only its seed steps; the piles (FUN_00559300) aren't dropped and it stays NU (a dummy: nothing draws it).

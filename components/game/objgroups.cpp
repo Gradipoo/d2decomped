@@ -406,8 +406,11 @@ struct ObjectRooms {
     std::pair<int, int> last_spot;                       // and where it stood
     d2d::rules::Rng made(int type, int at_x, int at_y) {
         const auto& types = game_data.monsters.types;
-        stamp_shape(at_x, at_y, size_of(type), 0x100);
-        stamp_shape(at_x, at_y, size_of(type) - 1, 0x1000);
+        // FUN_0064ea90 by its pattern (DAT_006eb3dc: SizeX 0 none, 1 or 2 a plus, 3 its box), 0x1000 a size down.
+        const auto* info = type_at(type);
+        const int shape = info && !info->footprint ? 0 : size_of(type) == 3 ? 3 : 2;
+        stamp_shape(at_x, at_y, shape, 0x100);
+        stamp_shape(at_x, at_y, shape - 1, 0x1000);
         // FUN_005b1cf0: a boss's mods, each FUN_005a4850(mod, 1); FUN_005a0320
         // counts a unique only as it first sets flag 8, so one a boss.
         // ponytail: Act 1's bosses by BaseId (Andariel, Blood Raven, the Maggot Queen); later acts' aren't.

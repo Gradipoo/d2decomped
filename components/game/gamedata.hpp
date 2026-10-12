@@ -31,6 +31,7 @@
 #include <algorithm>
 #include <array>
 #include <bitset>
+#include <set>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -536,6 +537,14 @@ struct GameData {
     }
     void want_level(int id) const;
     void poll_levels() const;
+    // An act left (game.exe frees its levels, FUN_0053ac70 makes them anew
+    // on the way back): each built level of `act` is rebuilt from the map
+    // seed in place (its address kept), unpopulated, its build started now
+    // and waited for when next wanted. The camp's `town` isn't (its NPCs
+    // keep their spots). Returns the levels so marked.
+    // ponytail: the camp isn't rebuilt; it has no monsters or objects to reset.
+    std::vector<const Level*> refresh_act(int act) const;
+    mutable std::set<int> stale;                       // built levels whose rebuild hasn't landed yet
     // SuperUniques.txt (without its Expansion row): name, MonStats row of
     // its Class, minions.
     struct SuperUnique { std::string name; int type = -1, min_grp = 0, max_grp = 0; std::vector<int> mods; std::array<std::string, 3> treasure_classes;

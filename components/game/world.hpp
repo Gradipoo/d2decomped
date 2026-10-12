@@ -207,7 +207,7 @@ struct World {
     std::vector<d2d::rules::HireEntry>& hire_list(int list_act);
     [[nodiscard]] std::vector<d2d::rules::MercOffer> hire_offers(int list_act) const;
     // The player's act (0-based): the act of the level they're on.
-    [[nodiscard]] int act() const { return level && level->id >= d2d::rules::level_ids::kLutGholein ? 1 : 0; }
+    [[nodiscard]] int act() const { return level ? d2d::rules::level_ids::act_of(level->id) : 0; }
     int next_item_id = 1;                  // the next item's unit id
     d2d::rules::DenQuest den;              // this game's Den of Evil
     d2d::rules::AndyQuest andy;            // and Sisters to the Slaughter
@@ -386,6 +386,8 @@ struct World {
     // Into level `to` near (ax, ay): everything with the player (merc, pets)
     // comes along; the automap and monsters are the new level's.
     void arrive(const Level* destination, float arrive_x, float arrive_y, const char* how);
+    // The act just left: its levels rebuilt and what was kept of them let go.
+    void leave_act(int act);
     std::vector<d2d::rules::QuestMsg> quest_talk(int hc_idx, bool fresh = true);   // every quest's messages from that NPC (fresh: rolls the guard's line)
     void andariel_died(const Fight::Kill& kill, std::uint32_t now_ms);
     void blood_raven_died(std::uint32_t now_ms);

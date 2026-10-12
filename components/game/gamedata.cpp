@@ -1278,7 +1278,27 @@ void install_level(const GameData& game_data, int id, std::unique_ptr<Level> lev
             other_level->nearby.push_back({ level.get(), level->world_x - other_level->world_x, level->world_y - other_level->world_y });
         }
     }
+    if (game_data.stale.erase(id)) {                     // a rebuild after an act change: into the old one's place
+        if (auto& kept = game_data.levels[id]; kept && level) {
+            auto nearby = std::move(kept->nearby);           // its neighbours are the same objects, rebuilt too
+            *kept = std::move(*level);
+            kept->nearby = std::move(nearby);
+        }
+        return;
+    }
     game_data.levels[id] = std::move(level);
+}
+
+std::vector<const Level*> GameData::refresh_act(int act) const {
+    std::vector<const Level*> marked;
+    if (!builder) return marked;
+    for (const auto& [id, built] : levels) {
+        if (!built || d2d::rules::level_ids::act_of(id) != act || builder->jobs.contains(id)) continue;
+        stale.insert(id);
+        marked.push_back(built.get());
+        builder->jobs.emplace(id, std::async(std::launch::async, [this, id] { return build_level(*this, *builder, id); }));
+    }
+    return marked;
 }
 
 std::unique_ptr<Level> finish_job(std::future<std::unique_ptr<Level>>& job, int id) {
@@ -1303,7 +1323,15 @@ void GameData::poll_levels() const {
 
 const Level* GameData::level(int id) const {
     if (id == town.id) return &town;
-    if (const auto found = levels.find(id); found != levels.end()) return found->second.get();
+    if (const auto found = levels.find(id); found != levels.end()) {
+        if (stale.contains(id) && builder)
+            if (const auto job = builder->jobs.find(id); job != builder->jobs.end()) {   // its rebuild: waited for
+                install_level(*this, id, finish_job(job->second, id));
+                builder->jobs.erase(job);
+            }
+        stale.erase(id);
+        return found->second.get();
+    }
     want_level(id);
     const auto job = builder ? builder->jobs.find(id) : decltype(builder->jobs.end()){};
     if (!builder || job == builder->jobs.end()) return nullptr;

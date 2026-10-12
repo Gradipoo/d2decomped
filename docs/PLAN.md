@@ -760,8 +760,10 @@ respawns go to the act's town (`GameData::town_of`), every town counts
 as town (`in_town`), the palette follows the act (`load_act_palettes`),
 the quest log opens on the act's tab; `tests/quests_d2d.py` rides the
 caravan; Warriv takes the player back west; waypoints cross acts; Meshif
-sails to Kurast Docks and back. Left: game.exe swaps the whole act (the old
-act's DRLG freed; d2d keeps the earlier acts' levels built).
+sails to Kurast Docks and back. An act left is made anew on the way back,
+as game.exe frees it (World::leave_act, GameData::refresh_act: the same
+maps, monsters and objects afresh; quests, waypoints and the superuniques
+spawned kept).
 
 **Step 3 — Act 2's content:** the town (Atma, Drognan, Elzix, Fara,
 Geglash, Greiz' hire list: act 2 mercs and their auras, Jerhyn, Lysander,
@@ -785,7 +787,6 @@ host's quests, travel and every unit's states.
 Act 2 plays from Lut Gholein to Duriel and Meshif's boat. Known gaps, none
 blocking:
 
-- The act swap: game.exe frees the old act's levels; d2d keeps them.
 - Monster second thinks (FUN_005b0e00, monster-ai.md "Other thinks"):
   they run only as a curse ends after the think left the curse's AI;
   d2d's curses don't swap thinks, so they aren't ported.

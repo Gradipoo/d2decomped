@@ -1282,18 +1282,50 @@ int main() {
         using d2d::rules::NpcAct;
         d2d::rules::NpcBrain brain;
         Rng seed{ 9 };
-        auto act = d2d::rules::jarjar_think(brain, seed, 50, 50, 1, false, false, {});
+        auto act = d2d::rules::jarjar_think(brain, 50, 50, 1, false, false, {});
         assert(act.kind == NpcAct::Kind::stand && act.frames == 20 && brain.home_x == 50);
-        act = d2d::rules::jarjar_think(brain, seed, 53, 50, 2, false, false, {});              // the first 200 frames: stand
+        act = d2d::rules::jarjar_think(brain, 53, 50, 2, false, false, {});              // the first 200 frames: stand
         assert(act.kind == NpcAct::Kind::stand && act.frames == 20);
-        act = d2d::rules::jarjar_think(brain, seed, 53, 50, 250, false, false, {});            // 3 off: home, the frame kept
+        act = d2d::rules::jarjar_think(brain, 53, 50, 250, false, false, {});            // 3 off: home, the frame kept
         assert(act.kind == NpcAct::Kind::walk && act.x == 50 && act.y == 50 && brain.guard_frame == 250);
-        act = d2d::rules::jarjar_think(brain, seed, 50, 50, 300, false, false, {});            // within 200 frames: stand
-        assert(act.kind == NpcAct::Kind::stand && act.frames == 20 && seed.low == 9);
-        act = d2d::rules::jarjar_think(brain, seed, 50, 50, 400, true, true, {});              // aside: 3 north of home
+        act = d2d::rules::jarjar_think(brain, 50, 50, 300, false, false, {});            // within 200 frames: stand
+        assert(act.kind == NpcAct::Kind::stand && act.frames == 20);
+        act = d2d::rules::jarjar_think(brain, 50, 50, 400, true, true, {});              // aside: 3 north of home
         assert(act.kind == NpcAct::Kind::walk && act.x == 50 && act.y == 47);
-        act = d2d::rules::jarjar_think(brain, seed, 50, 47, 401, true, true, {});              // there: a wander or stand 120
-        assert(act.frames == 120);
+        act = d2d::rules::jarjar_think(brain, 50, 47, 401, true, true, {});              // there: stand 120
+        assert(act.kind == NpcAct::Kind::stand && act.frames == 120);
+        // game.exe's own runs (tools/emu/jarjar.py --dump): the scene | kind
+        // (0 stand, 1 walk, 2 the heed's), frames, x, y, a stand after the
+        // heed, the home and last frame after (the seed's never drawn).
+        static constexpr std::string_view kCases[] = {
+#include "jarjar_cases.inc"
+        };
+        int checked = 0;
+        for (const std::string_view case_line : kCases) {
+            const std::string line(case_line);
+            std::istringstream fields(line.substr(0, line.find('|'))), tail(line.substr(line.find('|') + 1));
+            int homed = 0, home_x = 0, home_y = 0, x = 0, y = 0, frame = 0, last = 0, aside = 0, stood = 0, present = 0, reach = 0;
+            fields >> homed >> home_x >> home_y >> x >> y >> frame >> last >> aside >> stood >> present >> reach;
+            int kind = 0, frames = 0, to_x = 0, to_y = 0, heed_stand = 0, after_x = 0, after_y = 0, after_last = 0;
+            tail >> kind >> frames >> to_x >> to_y >> heed_stand >> after_x >> after_y >> after_last;
+            d2d::rules::NpcBrain guard;
+            guard.homed = homed != 0;
+            if (homed) { guard.home_x = home_x; guard.home_y = home_y; }
+            guard.guard_frame = last;
+            const d2d::rules::NpcVisitor visitor{ .present = present != 0, .x = x + 6, .y = y, .distance = reach };
+            auto peek = guard;
+            const auto heeded = d2d::rules::npc_heed(peek, x, y, visitor);
+            const auto got = d2d::rules::jarjar_think(guard, x, y, frame, aside != 0, stood != 0, visitor);
+            if (kind == 2 && !heed_stand) {                                              // the heed's own act
+                assert(heeded && got.kind == heeded->kind && got.frames == heeded->frames && got.x == heeded->x && got.y == heeded->y);
+            } else {
+                assert(int(got.kind) == (kind == 1 ? 1 : 0) && got.frames == frames);
+                if (kind == 1) assert(got.x == to_x && got.y == to_y);
+            }
+            assert(guard.home_x == after_x && guard.home_y == after_y && guard.guard_frame == after_last);
+            ++checked;
+        }
+        assert(checked > 30);
     }
     {   // A town NPC's think (MonAI Npc, FUN_005e7130; tools/emu npcs.py).
         using d2d::rules::NpcAct;

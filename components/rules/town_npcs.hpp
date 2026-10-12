@@ -194,12 +194,11 @@ inline NpcAct vendor_think(Rng& seed) {
 // heeded). Till he stands aside (FUN_0059b8b0: record 0xb's data+0x40 is
 // 2, +0x18 / +0x19 clear): once 200 frames, back home from over 1 off, else
 // heed the player; stand 20. Aside (or no record): to 3 north of home when
-// over 7 off (over 2 once data+0x40 is 2); else heed the player; else a
-// player he'd heed within 12: 100 in 1000 a spot 2 about it (FUN_005df530)
-// and stand 200; else 50 in 1000 a wander 3 (FUN_005de200); stand 120.
+// over 7 off (over 2 once data+0x40 is 2); else heed the player; stand 120.
+// Checked against game.exe by tools/emu jarjar.py.
 // ponytail: data+0x18 / +0x19's spot (FUN_0059b8f0: data+0x30, +0x34, 4
 // up for +0x19; no heeding) isn't kept: what sets them isn't traced.
-inline NpcAct jarjar_think(NpcBrain& brain, Rng& seed, int x, int y, int frame, bool aside, bool stood_aside, const NpcVisitor& visitor) {
+inline NpcAct jarjar_think(NpcBrain& brain, int x, int y, int frame, bool aside, bool stood_aside, const NpcVisitor& visitor) {
     auto stand = [](int frames) { return NpcAct{ .frames = frames }; };
     auto walk = [](int to_x, int to_y) { return NpcAct{ .kind = NpcAct::Kind::walk, .x = to_x, .y = to_y, .fail = 15 }; };
     if (!brain.homed) {                                  // FUN_005e6800
@@ -215,32 +214,13 @@ inline NpcAct jarjar_think(NpcBrain& brain, Rng& seed, int x, int y, int frame, 
     }
     const int gap = npc_distance(x, y, brain.home_x, brain.home_y - 3);
     if ((stood_aside && gap > 2) || gap > 7) return walk(brain.home_x, brain.home_y - 3);
-    if (auto heeded = npc_heed(brain, x, y, visitor)) return *heeded;
-    // The roll below needs a player he heeds that FUN_005e68f0 didn't act on:
-    // with an interact holder (the guard's, MonStats interact) it acts on
-    // every one, so in game.exe too this never runs. Kept as written.
+    // A heed's own walk is cut by the stand 120 after it (FUN_005de080 sets
+    // NU at once); its greet and facing stand. game.exe's roll after a heed
+    // that didn't act (FUN_005df530 / FUN_005de200) never runs: the guard's
+    // interact holder makes FUN_005e68f0 act on any player by, and with none
+    // FUN_005ddf20 gives the guard himself (tools/emu jarjar.py).
     NpcAct act = stand(120);
-    if (visitor.present) {
-        if (visitor.distance < 12) {
-            if (seed(1000) < 100) {
-                int off_x = 0, off_y = 0;
-                if ((seed.next() & 1) == 0) { off_x = seed(2); off_y = 2; } else { off_x = 2; off_y = seed(2); }
-                if (seed.next() & 1) off_x = -off_x;
-                if (seed.next() & 1) off_y = -off_y;
-                act = walk(visitor.x + off_x, visitor.y + off_y);
-            }
-            act.frames = 200;
-            return act;
-        }
-    }
-    if (seed(1000) < 50) {
-        int off_x = 3, off_y = 3;
-        if ((seed.next() & 1) == 0) off_x = seed(3); else off_y = seed(3);
-        if (seed.next() & 1) off_x = -off_x;
-        if (seed.next() & 1) off_y = -off_y;
-        act = walk(x + off_x, y + off_y);
-        act.frames = 120;
-    }
+    if (const auto heeded = npc_heed(brain, x, y, visitor)) { act.greet = heeded->greet; act.face = heeded->face; }
     return act;
 }
 

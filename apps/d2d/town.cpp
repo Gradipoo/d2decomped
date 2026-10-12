@@ -21,6 +21,7 @@
 #include <level_ids.hpp>
 #include <light.hpp>
 #include <log.hpp>
+#include <monster_ids.hpp>
 #include <quests.hpp>
 #include <rules.hpp>
 #include <sound_ids.hpp>

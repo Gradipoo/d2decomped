@@ -349,8 +349,10 @@ lines (missile names aren't passed in). What it does:
   element; hit check FUN_0057ec10 with no bonus, then flags | 1: **always
   hits** (a block still stops it: FUN_0057dbf0 needs flags & 0x8380 clear);
   record flags 2, so FUN_0057dbf0 **skips FUN_0057b7d0** (no crit, gear
-  elements, leech, conversion); hit class 0x65. Monsters' Smite
-  (FUN_005a4f50) differs.
+  elements, leech, conversion); hit class 0x65. A monster's Smite:
+  FUN_005a4f50 mode 5 (A2's damage, elements and to-hit), stun calc2,
+  FUN_0057ec10's hit roll (not sure to hit), the skill's ResultFlags /
+  HitFlags on a hit, hit class 0x65.
 - Record flags seen: 1 = the physical is built (FUN_0057b7d0 doesn't roll
   the weapon), 2 = don't run FUN_0057b7d0 at all, 0x1000 = self damage;
   FUN_0057b7d0 marks 0x20.

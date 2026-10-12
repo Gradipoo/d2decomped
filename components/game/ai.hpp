@@ -264,6 +264,7 @@ struct Foe {
     int damage = 0;                           // life lost this frame, whole points
     int poison = 0, poison_ticks = 0;         // poison taken this frame: life per tick (256ths), for ticks
     int chill_ticks = 0;                      // chilled this frame, ticks
+    int stun_ticks = 0;                       // stunned this frame (a monster's Smite), ticks
     bool blocked = false;                     // blocked a hit this frame
     std::vector<const Monster*> melee_by;     // who struck at it in melee this frame (Frozen / Shiver Armor)
     int missile_hits = 0;                     // missiles that reached it this frame (Chilling Armor)

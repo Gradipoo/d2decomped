@@ -203,7 +203,7 @@ void load_monsters(GameData& game_data, const d2d::mpq::Stack& mpqs) {
                   num(text("A2MinD" + x)), num(text("A2MaxD" + x)), num(text("A2TH" + x)),
                   num(text("aidel" + x)), num(text("aidist" + x)), {}, std::string(text("TreasureClass1" + x)) };
             for (int i = 0; i < 8; ++i) per_difficulty.aip[std::size_t(i)] = num(text("aip" + std::to_string(i + 1) + x));
-            per_difficulty.s1_min = num(text("S1MinD" + x)); per_difficulty.s1_max = num(text("S1MaxD" + x));
+            per_difficulty.s1_min = num(text("S1MinD" + x)); per_difficulty.s1_max = num(text("S1MaxD" + x)); per_difficulty.s1_th = num(text("S1TH" + x));
             static constexpr const char* kRes[6] = { "ResDm", "ResMa", "ResFi", "ResLi", "ResCo", "ResPo" };
             for (int i = 0; i < 6; ++i) per_difficulty.res[std::size_t(i)] = num(text(kRes[i] + x));
             per_difficulty.to_block = num(text("ToBlock" + x));

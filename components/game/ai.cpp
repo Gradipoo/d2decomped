@@ -1107,14 +1107,23 @@ bool monster_update(const GameData& game_data, const Level& level, Monster& mons
                 // ponytail: the skill's ResultFlags / HitFlags / HitClass unread.
                 const auto* struck_with = monster.skill >= 0 ? game_data.skills.get(monster.skill) : nullptr;
                 if (monster.leaping) monster.seq_once = true;               // Leap's hit at its start (FUN_005d9c80), its later rows only fly (do 77)
-                if (seq && struck_with && struck_with->srvstfunc == d2d::rules::ServerStartFunction::kFireHit) {
-                    stats.a1_min = stats.s1_min; stats.a1_max = stats.s1_max;
+                // FUN_005a4f50 builds the hit by the mode: A2's damage, to-hit
+                // and elements for an A2 swing and Smite (do 150, FUN_005ce9f0:
+                // mode 5, a normal hit roll, calc2 frames of stun).
+                // ponytail: Smite's ResultFlags / HitFlags and hit class 0x65 unread.
+                // Jab's (do 7, FUN_005db2d0) is mode 8's, S1's; Charge's the mode it swings in.
+                const bool smite = struck_with && struck_with->srvdofunc == d2d::rules::ServerDoFunction::kSmite;
+                const bool jab = struck_with && struck_with->srvdofunc == d2d::rules::ServerDoFunction::kJab;
+                if (jab || (seq && struck_with && struck_with->srvstfunc == d2d::rules::ServerStartFunction::kFireHit)) {
+                    stats.a1_min = stats.s1_min; stats.a1_max = stats.s1_max; stats.to_hit = stats.to_hit_s1;
                     for (auto& element : stats.elements) element.mode = element.mode == "S1" ? "A1" : "";
+                } else if (smite || monster.mode == "A2") {
+                    stats.a1_min = stats.a2_min; stats.a1_max = stats.a2_max; stats.to_hit = stats.to_hit2;
+                    for (auto& element : stats.elements) element.mode = element.mode == "A2" ? "A1" : "";
                 }
                 // Charge's hit (FUN_005cf900): sure to hit (flags 9), calc1 % more
                 // damage, the skill's element at its level (FUN_0056e0c0). Jab's
                 // (do 7, FUN_005db2d0): the same on a hit it rolls.
-                const bool jab = struck_with && struck_with->srvdofunc == d2d::rules::ServerDoFunction::kJab;
                 if (struck_with && (jab || struck_with->srvdofunc == d2d::rules::ServerDoFunction::kCharge)) {
                     const int lvl = skill_level(game_data, monster, monster.skill);
                     const int more = d2d::rules::eval_calc(game_data.skills, struck_with->calc[0], {}, monster.skill, lvl);
@@ -1130,6 +1139,7 @@ bool monster_update(const GameData& game_data, const Level& level, Monster& mons
                 stats.to_hit += stats.to_hit * monster.aura_th / 100;
                 const auto taken = d2d::rules::monster_blow(foe.fighter, foe.level, foe.moving, stats, false, rng);
                 foe.take(taken);
+                if (taken.hit && smite) foe.stun_ticks = std::max(foe.stun_ticks, d2d::rules::eval_calc(game_data.skills, struck_with->calc[1], {}, monster.skill, skill_level(game_data, monster, monster.skill)));
                 if (taken.hit && monster.mana_hi > 0) foe.mana_burn += rng.range(monster.mana_lo, monster.mana_hi);   // Mana Burn
                 // Cursed (FUN_005a2530, the hit hook): 3 in 4 on its own seed
                 // (a draw's low 2 bits), Amplify Damage (skill 66) at level

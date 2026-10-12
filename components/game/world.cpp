@@ -112,6 +112,7 @@ auto World::view() const -> View {
         view.poisoned = std::ranges::any_of(fight.regen, [](const Fight::Regen& regen_entry) { return regen_entry.poison; });
         view.chilled = fight.chill_rate(now) != 0;
         view.curse = now < fight.curses[0].until ? fight.curses[0].skill : -1;
+        view.stunned = now < fight.stunned;
         view.pmode = fight.pmode;
         view.prate = fight.prate;
         view.seq.assign(fight.seq.begin(), fight.seq.end()); view.seq_frame_ms = fight.seq_frame_ms; view.seq_loop = fight.seq_loop;

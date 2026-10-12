@@ -65,6 +65,7 @@ auto Fight::new_game(int difficulty) -> void {
         area_seen.clear();
         curses = {};
         chilled = 0;
+        stunned = 0;
         kept.clear();
         next_id = 1;
         missiles.clear();
@@ -104,6 +105,7 @@ auto Fight::revive(std::uint32_t now_ms) -> void {
         charges.clear();
         self_states.clear();
         curses[0] = {};
+        stunned = 0;
         pmode = -1; player.mode_ms = now_ms; attack_mon = -1;
         if (merc) { merc->unit.x = player.x + 1; merc->unit.y = player.y + 1; merc->unit.path.clear(); merc->mode = "NU"; merc_target = -1; }
     }
@@ -3924,6 +3926,7 @@ auto Fight::world(bool in_moor, std::uint32_t now_ms, float elapsed, const Crowd
                 else if (poison.life <= old->life) *old = poison;
             }
             if (foe.chill_ticks > 0) chilled = std::max(chilled, now_ms + std::uint32_t(foe.chill_ticks) * 40);   // only ever lengthened (FUN_0057af80)
+            if (foe.stun_ticks > 0) stunned = now_ms + std::uint32_t(std::min(foe.stun_ticks, 250)) * 40;          // state 21, a new one's length (FUN_0057aae0)
             for (std::size_t k = 0; k < 2; ++k)                  // a monster's curse: its auralen (dimvision / terror's over AiCurseDivisor)
                 if (const auto* skill = game_data->skills.get(foes[k].cursed.skill)) {
                     int length = calc(*skill, skill->auralen, foes[k].cursed.level);

@@ -165,6 +165,9 @@ struct Fight {
     struct Curse { int skill = -1, level = 0; std::uint32_t until = 0; };
     std::array<Curse, 2> curses{};
     std::uint32_t chilled = 0;                       // the player's chill (state 11, a monster's cold) runs out
+    // The player's stun (state 21, FUN_0057aae0: a monster's Smite) runs out.
+    // ponytail: unverified what it stops a player doing; only its state (the overlay) is kept.
+    std::uint32_t stunned = 0;
     // Chill's -50 attackrate / velocitypercent (FUN_0057af80 -> FUN_00623f50).
     [[nodiscard]] int chill_rate(std::uint32_t now_ms) const { return now_ms < chilled ? -50 : 0; }
     // A healer's and a well's cure (FUN_00578d30 / FUN_00585720): poison

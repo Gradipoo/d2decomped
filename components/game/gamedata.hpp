@@ -530,7 +530,9 @@ struct GameData {
     const Level* level(int id) const;
     // The town of level `id`'s act: the camp, or Lut Gholein (built on
     // demand like any level).
-    [[nodiscard]] const Level* town_of(int id) const { return id < d2d::rules::level_ids::kLutGholein ? &town : level(d2d::rules::level_ids::kLutGholein); }
+    [[nodiscard]] const Level* town_of(int id) const {
+        return id < d2d::rules::level_ids::kLutGholein ? &town : level(id < d2d::rules::level_ids::kKurastDocks ? d2d::rules::level_ids::kLutGholein : d2d::rules::level_ids::kKurastDocks);
+    }
     void want_level(int id) const;
     void poll_levels() const;
     // SuperUniques.txt (without its Expansion row): name, MonStats row of

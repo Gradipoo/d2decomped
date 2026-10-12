@@ -588,7 +588,7 @@ auto Fight::skill_swing(const d2d::rules::Skill& skill_row, int lvl, const d2d::
 auto Fight::land(std::size_t monster_index, const d2d::rules::Blow& blow, bool by_player, std::uint32_t now_ms) -> void {
         using namespace d2d::d2s;
         auto& target = monsters[monster_index];
-        if (target.buried) return;                              // under the sand: nothing reaches it
+        if (!target.targetable()) return;                       // under the sand, aloft: nothing reaches it
         if (blow.blocked) { block_anim(*game_data, target, now_ms); return; }
         if (!blow.hit) return;
         if (by_player) {
@@ -3883,7 +3883,7 @@ auto Fight::world(bool in_moor, std::uint32_t now_ms, float elapsed, const Crowd
                 const bool moving = missile.velocity_x != 0 || missile.velocity_y != 0;
                 for (std::size_t i = 0; i < monsters.size(); ++i) {
                     auto& monster = monsters[i];
-                    if (!monster.alive()) continue;
+                    if (!monster.targetable()) continue;
                     if (moving ? !missile_struck(*level, missile, monster.unit.x, monster.unit.y, game_data->monsters.types[std::size_t(monster.type)].size)
                                : std::hypot(monster.unit.x - missile.x, monster.unit.y - missile.y) > 0.5f) continue;
                     if (missile.row) {                             // a shrine's potion: everyone in its burst

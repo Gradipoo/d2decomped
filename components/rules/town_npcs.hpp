@@ -216,6 +216,9 @@ inline NpcAct jarjar_think(NpcBrain& brain, Rng& seed, int x, int y, int frame, 
     const int gap = npc_distance(x, y, brain.home_x, brain.home_y - 3);
     if ((stood_aside && gap > 2) || gap > 7) return walk(brain.home_x, brain.home_y - 3);
     if (auto heeded = npc_heed(brain, x, y, visitor)) return *heeded;
+    // The roll below needs a player he heeds that FUN_005e68f0 didn't act on:
+    // with an interact holder (the guard's, MonStats interact) it acts on
+    // every one, so in game.exe too this never runs. Kept as written.
     NpcAct act = stand(120);
     if (visitor.present) {
         if (visitor.distance < 12) {

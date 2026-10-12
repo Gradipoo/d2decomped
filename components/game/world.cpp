@@ -733,8 +733,10 @@ auto World::enter(const Character& entering) -> void {
         // A game starts in the town of the save's act (its difficulty byte:
         // 0x80 and the act in the low bits); the camp when that isn't built.
         const auto act_byte = character.header.difficulty[std::size_t(std::clamp(character.header.active_difficulty(), 0, 2))];
-        const Level* act2_town = (act_byte & 0x80) && (act_byte & 7) == 1 ? game_data->level(d2d::rules::level_ids::kLutGholein) : nullptr;
-        level = act2_town && act2_town->start.first >= 0 ? act2_town : &game_data->town;   // set_map_seed may have rebuilt the camp
+        const int save_act = act_byte & 0x80 ? act_byte & 7 : 0;
+        const Level* act_town = save_act == 1 ? game_data->level(d2d::rules::level_ids::kLutGholein)
+                              : save_act == 2 ? game_data->level(d2d::rules::level_ids::kKurastDocks) : nullptr;
+        level = act_town && act_town->start.first >= 0 ? act_town : &game_data->town;   // set_map_seed may have rebuilt the camp
         // A corpse in the save (its corpse list, FUN_00533850) lies by the
         // town's start.
         // ponytail: where game.exe puts it isn't traced; the save's x / y

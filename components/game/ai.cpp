@@ -1377,7 +1377,7 @@ void make_boss(const GameData& game_data, Monster& monster, d2d::rules::Boss kin
     if (boss.phys_resist >= 0) monster.boss_res[0] = boss.phys_resist - type_info.diff[std::size_t(std::clamp(difficulty, 0, 2))].res[0];
     monster.stats.exp *= boss.exp_mult;
     for (int* damage : { &monster.stats.a1_min, &monster.stats.a1_max, &monster.stats.a2_min, &monster.stats.a2_max }) *damage += *damage * boss.dmg_pct / 100;
-    monster.stats.to_hit += monster.stats.to_hit * boss.tohit_pct / 100;
+    for (int* to_hit : { &monster.stats.to_hit, &monster.stats.to_hit2, &monster.stats.to_hit_s1 }) *to_hit += *to_hit * boss.tohit_pct / 100;   // every mode's
     if (boss.double_defense) monster.stats.armor_class *= 2;
     if (boss.phys_resist < 0) monster.boss_res = boss.res_add;
     else { const int set = monster.boss_res[0]; monster.boss_res = boss.res_add; monster.boss_res[0] = set; }
@@ -1419,7 +1419,7 @@ void make_boss(const GameData& game_data, Monster& monster, d2d::rules::Boss kin
 }
 
 bool hurt(const GameData& game_data, Monster& monster, int damage, std::uint32_t now_ms) {
-    if (!monster.alive() || monster.buried || damage <= 0) return false;
+    if (!monster.targetable() || damage <= 0) return false;
     monster.hit_points -= damage;
     monster.aware = true;
     if (!monster.alive()) set_mode(game_data, monster, "DT", now_ms);

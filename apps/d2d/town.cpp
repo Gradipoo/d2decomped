@@ -411,11 +411,28 @@ auto Town::send(const Command& command) -> void {
                 net_game->store_items.clear();
                 net_store_shown = 0;
                 net_trade_pending = int(vendor->id);
-                net_trade_gamble = trade->gamble;
+                net_trade_kind = trade->gamble ? 2 : 1; net_trade_extra = 0;
                 net_trade_ms = frame_now;
             } else {
                 net_game->log.note("no host NPC near " + npc.name + " to trade with");
             }
+        } else if (const auto* caravan = std::get_if<cmd::Caravan>(&command); caravan && caravan->npc >= 0 && std::size_t(caravan->npc) < level->npcs.size()) {
+            // Travel (Warriv, Meshif): the host's NPC as a trade's, then 0x38
+            // kind 0 with the handler's level (0x4b5140 / 0x4b51a0 / 0x4b5260 /
+            // 0x4b52c0); the host moves us (FUN_00579d60).
+            namespace monster_ids = d2d::rules::monster_ids;
+            const int hc_idx = level->npcs[std::size_t(caravan->npc)].hc_idx;
+            if (const auto* host_npc = net_npc(caravan->npc)) {
+                const float from_x = net_game->host_x - host_npc->x, from_y = net_game->host_y - host_npc->y, apart = std::max(std::hypot(from_x, from_y), 1.f);
+                net_game->move_to(host_npc->x + from_x / apart * 3.f, host_npc->y + from_y / apart * 3.f, view.running);
+                net_trade_pending = int(host_npc->id);
+                net_trade_kind = 0;
+                net_trade_extra = hc_idx == monster_ids::kMeshif ? 0x4b : hc_idx == monster_ids::kWarrivAct2 ? 1 : 0x28;
+                net_trade_ms = frame_now;
+            } else {
+                net_game->log.note("no host NPC near " + level->npcs[std::size_t(caravan->npc)].name + " to travel with");
+            }
+            return;                                         // the host moves us, not the local World
         } else if ((std::holds_alternative<cmd::Buy>(command) || std::holds_alternative<cmd::Sell>(command) || std::holds_alternative<cmd::Repair>(command))
                    && !net_game->trade_npc) {
             net_game->log.note("a trade with no host NPC: not made (d2d's own store would make it here only)");
@@ -1134,7 +1151,7 @@ auto Town::update(std::vector<std::uint8_t>& framebuffer, const Mouse& frame_mou
             } else if (action == NpcMenuState::kRespecOk) {
                 net.send(cmd::Respec{ who });
             } else if (action == NpcMenuState::kCaravan) {
-                net.send(cmd::Caravan{ who });
+                send(cmd::Caravan{ who });                      // a joined game: the host's NPC (Town::send)
             } else if (action == NpcMenuState::kResurrectMerc) {
                 net.send(cmd::ResurrectMerc{ who });
             } else if (action == NpcMenuState::kImbue) {
@@ -1450,12 +1467,13 @@ auto Town::walk(const Mouse& mouse, bool over_ui, std::uint32_t frame_ms, std::u
                                            c2s::interact(1, std::uint32_t(net_trade_pending)) });
                     net_trade_asked = true;
                 } else if (net_trade_asked && net_game->npc_info == std::uint32_t(net_trade_pending)) {
-                    // Talking: start the chat, then the trade (1) or gamble (2: unverified).
+                    // Talking: start the chat, then the trade (1), gamble (2: unverified) or travel (0).
                     namespace c2s = d2d::net::d2gs::c2s;
-                    net_game->trade_npc = std::uint32_t(net_trade_pending);
-                    if (net_chat_npc != net_game->trade_npc) net_game->send_items({ c2s::npc_chat(true, 1, net_game->trade_npc) });   // the talk's open already
-                    net_chat_npc = net_game->trade_npc;
-                    net_game->send_items({ c2s::npc_action(net_trade_gamble ? 2 : 1, net_game->trade_npc) });
+                    const auto host_npc = std::uint32_t(net_trade_pending);
+                    if (net_trade_kind != 0) net_game->trade_npc = host_npc;
+                    if (net_chat_npc != host_npc) net_game->send_items({ c2s::npc_chat(true, 1, host_npc) });   // the talk's open already
+                    net_chat_npc = host_npc;
+                    net_game->send_items({ c2s::npc_action(std::uint32_t(net_trade_kind), host_npc, std::uint32_t(net_trade_extra)) });
                     net_trade_pending = -1;
                     net_trade_asked = false;
                 }

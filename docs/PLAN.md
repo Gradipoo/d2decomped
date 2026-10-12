@@ -797,7 +797,13 @@ the quests, the thinks.
    Natalya's markers make them as the game's quest words stand
    (town-npcs.md "The Kurast Docks"); the act palette follows any act.
 3. The jungle (76–78) built from its cells. *Done (2026-10-12):* drlg.md
-   "Act 3's jungle"; tiles 10/10, units 5/5 on all three.
+   "Act 3's jungle"; tiles 10/10, units 5/5 on all three. Builds in
+   play; the docks walk into the Spider Forest and back. MonPlace
+   fetish / fetish shaman / tentacle heads (FUN_0054e600) placed.
+   Open: the population isn't game.exe's yet (`LEVELS=75,76 game`
+   drifts from room 0,48): the outdoor collision past act 1 isn't
+   game.exe's (`diff_drlg.py 41|76 collision` fail; the desert's
+   population happens not to touch it).
 4. Kurast (79–83).
 5. The dungeons, sewers, temples and the Durance (84–102).
 

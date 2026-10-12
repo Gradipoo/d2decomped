@@ -703,8 +703,17 @@ struct ObjectRooms {
             if (unit.id < nmon) {
                 const bool stay = unit.id == 0xe5 || (unit.id >= 0x11c && unit.id <= 0x120) || unit.id == 0x188 || unit.id == 0x189;   // FUN_0054e3a0
                 monster_or_npc(unit.id, unit, stay ? 0 : 4);
-            } else if (const int code = unit.id - nmon - nsu; code == 0x11 || code == 0x12 || code == 0x05) {
-                monster(code == 0x05 ? int(game_data.mon_bin[0x10b]) : own(code == 0x11 ? 0x13 : 0x3a), unit.x, unit.y, code == 0x05 ? 0 : 4);   // Fallen, shamans, Blood Raven
+            } else if (const int code = unit.id - nmon - nsu; code == 0x11 || code == 0x12 || code == 0x16 || code == 0x17 || code == 0x05) {
+                // Fallen, shamans, fetishes, fetish shamans (FUN_0054e600's 0x54eb74: the level's of that base), Blood Raven
+                const int base = code == 0x11 ? 0x13 : code == 0x12 ? 0x3a : code == 0x16 ? 0x8d : 0x116;
+                monster(code == 0x05 ? int(game_data.mon_bin[0x10b]) : own(base), unit.x, unit.y, code == 0x05 ? 0 : 4);
+            }
+            else if (code == 10 || code == 11) {                                                       // a tentacle head (0x105, FUN_0054da60):
+                const int depth = level.id >= 0x4c && level.id <= 0x4e ? 1 : level.id >= 0x5c && level.id <= 0x5d ? 2 : 0;   // 0x54eb60 by level
+                int row = int(game_data.mon_bin[0x105]);
+                // ponytail: NextInClass as the next row of its base (tentaclehead1..3 are)
+                for (int step = 0; step < depth && std::size_t(row + 1) < types.size() && types[std::size_t(row + 1)].base == types[std::size_t(row)].base; ++step) ++row;
+                monster(row, unit.x, unit.y, 0);                                                         // its spot only; NS (10) in mode 4
             }
             else if ((code == 0x02 || code == 0x03) && !level.mon.umon.empty())                         // FUN_005bde80: normal's pick is a umon
                 monster(level.mon.umon[std::size_t(seed(int(level.mon.umon.size())))], unit.x, unit.y, 0, -1, code);

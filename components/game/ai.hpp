@@ -496,6 +496,8 @@ std::string unique_name(const GameData& game_data, int name_seed);
 // resistances, speed, an element; its name. At full life.
 void make_boss(const GameData& game_data, Monster& monster, d2d::rules::Boss kind, const std::vector<int>& mods, int super, int name_seed,
                int difficulty, d2d::rules::Rng& rng);
+// MonUMod poison hit's init (FUN_005a1e00): its own poison stats.
+void poison_hit(const GameData& game_data, Monster& monster, int difficulty, bool unique);
 
 // A plain monster of MonStats row `type` at (x, y) cells: its components
 // and stats rolled (a boss's by make_boss instead: `stats` false).

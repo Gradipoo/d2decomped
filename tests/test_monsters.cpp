@@ -236,6 +236,7 @@ int main() {
         assert(andariel && andariel->mods == std::vector<int>{ 22 } && !andariel->half_freeze);
         assert(blood_raven && (blood_raven->mods == std::vector<int>{ 12, 22 }) && blood_raven->half_freeze);
         assert(act_boss(0x192, 0x192) && act_boss(0x192, 0x192)->mods == std::vector<int>{ 22 });
+        assert(act_boss(0x11c, 0x11c) && (act_boss(0x11c, 0x11c)->mods == std::vector<int>{ 23, 22 }));   // the Maggot Queen: poison hit
         assert(!act_boss(0x2c3, 0x9c) && !act_boss(5, 5) && bar_name_colour(Boss::unique, "andariel") == kNameGold);
         // A monster's sound set (FUN_004ca410): the Countess's own; a boss
         // or minion zombie's UMonSound; a plain one's MonSound.

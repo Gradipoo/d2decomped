@@ -370,6 +370,9 @@ struct MonStats {
     int to_hit2 = 0, to_hit_s1 = 0;            // A2TH's, S1TH's: the hit's mode's (FUN_005a4f50 flags 0x10 / 0x20)
     struct El { int type = -1, pct = 0, min = 0, max = 0, dur = 0; std::string_view mode; };
     std::array<El, 3> elements{};
+    // Its own poison stats 57 / 58 / 59 (MonUMod poison hit, FUN_005a1e00),
+    // on every hit it lands (FUN_0057b7d0): per tick in 256ths, ticks.
+    int poison_min = 0, poison_max = 0, poison_len = 0;
 };
 inline MonStats monster_stats(const Monsters& monsters, int type, int difficulty, Rng& rng, int level_add = 0) {
     MonStats stats;

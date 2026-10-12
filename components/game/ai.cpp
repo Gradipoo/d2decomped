@@ -139,6 +139,12 @@ std::vector<Monster> spawn_monsters(const GameData& game_data, std::span<const d
             monster.boss = d2d::rules::Boss::unique;
             monster.mods = std::move(act_boss->mods);
             monster.half_freeze = act_boss->half_freeze;
+            if (std::ranges::contains(monster.mods, d2d::rules::umod::poisonhit)) {   // its init, FUN_005a1e00(1): then FUN_005a1370's +75
+                poison_hit(game_data, monster, difficulty, true);
+                int immune = 0;
+                for (std::size_t i = 0; i < 6; ++i) immune += type_info.diff[std::size_t(std::clamp(difficulty, 0, 2))].res[i] + monster.boss_res[i] > 99;
+                if (immune < 2) monster.boss_res[5] += 75;
+            }
         }
         monster.leader = spawn.leader;
         monster.seed = unit_seed;
@@ -1372,6 +1378,20 @@ Monster make_monster(const GameData& game_data, int type, float x, float y, d2d:
     return monster;
 }
 
+// Poison hit (FUN_005a1e00): poisonmindam / maxdam (stats 57 / 58) =
+// MonLvl damage x MonUMod constants rows 0x10 / 0x13 + difficulty, or
+// 0x1c / 0x1f with the hook's unique flag; poisonlength (59) = (mlvl x 5 +
+// 150) x 2.
+void poison_hit(const GameData& game_data, Monster& monster, int difficulty, bool unique) {
+    if (game_data.monsters.lvl.empty()) return;
+    const auto level = std::clamp<std::size_t>(std::size_t(std::max(monster.stats.level, 1)), 1, game_data.monsters.lvl.size() - 1);
+    const int difficulty_index = std::clamp(difficulty, 0, 2), damage_pct = game_data.monsters.lvl[level].damage[std::size_t(difficulty_index)];
+    const int base = unique ? 28 : 16;
+    monster.stats.poison_min = damage_pct * game_data.umods.constants[std::size_t(base + difficulty_index)] / 100;
+    monster.stats.poison_max = damage_pct * game_data.umods.constants[std::size_t(base + 3 + difficulty_index)] / 100;
+    monster.stats.poison_len = (int(level) * 5 + 150) * 2;
+}
+
 void make_boss(const GameData& game_data, Monster& monster, d2d::rules::Boss kind, const std::vector<int>& mods, int super, int name_seed,
                int difficulty, d2d::rules::Rng& rng) {
     const auto& type_info = game_data.monsters.types[std::size_t(monster.type)];
@@ -1409,6 +1429,7 @@ void make_boss(const GameData& game_data, Monster& monster, d2d::rules::Boss kin
         monster.mana_lo = damage_pct * game_data.umods.constants[std::size_t(base + difficulty_index)] / 100;
         monster.mana_hi = std::max(damage_pct * game_data.umods.constants[std::size_t(base + 3 + difficulty_index)] / 100, monster.mana_lo);
     }
+    if (std::ranges::contains(mods, d2d::rules::umod::poisonhit)) poison_hit(game_data, monster, difficulty, kind != d2d::rules::Boss::minion);
     if (std::ranges::contains(mods, d2d::rules::umod::aura)) {
         const auto aura = d2d::rules::boss_aura(monster.stats.level, name_seed, super);
         monster.aura = aura.skill; monster.aura_lvl = aura.level;

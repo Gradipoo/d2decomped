@@ -400,6 +400,10 @@ inline Taken monster_blow(const Fighter& defender, int dlvl, bool moving, const 
             default: taken.damage += std::max(resisted(roll, defender.res[std::size_t(element.type)]) - defender.mdr, 0); break;
         }
     }
+    if (attacker.poison_max > 0)
+        if (const int per = resisted(rng.range(attacker.poison_min, attacker.poison_max), defender.res[3]); per >= taken.poison) {
+            taken.poison = per; taken.poison_ticks = resisted(attacker.poison_len, defender.plr);
+        }
     return taken;
 }
 

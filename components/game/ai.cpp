@@ -151,6 +151,7 @@ std::vector<Monster> spawn_monsters(const GameData& game_data, std::span<const d
 void set_mode(const GameData& game_data, Monster& monster, std::string_view mode, std::uint32_t now_ms) {
     if (monster.mode != "NU") monster.left_mode = monster.mode;
     monster.mode = mode;
+    monster.seq_frame = -1;                                   // a sequence's row: drawn again as it plays
     monster.unit.mode_ms = now_ms;
     monster.unit.walking = mode == "WL" || mode == "RN";
     monster.mode_until = mode == "NU" || mode == "WL" || mode == "DD" ? 0 : now_ms + game_data.npc_timing(monster.npc, mode).length_ms();
@@ -816,8 +817,8 @@ bool think(const GameData& game_data, const Level& level, Monster& monster, std:
             } else if (start && start->srvstfunc == d2d::rules::ServerStartFunction::kMaggotDown) {
                 monster.buried = true;
             }
-            // ponytail: the sequence plays its first row's mode throughout
-            // (Duriel's and the vipers' charges walk, then swing).
+            // Its rows' own modes are drawn row by row (Monster::seq_mode);
+            // the first row's mode stands for it in the logic.
             const std::string_view played = seq ? std::string_view(seq->front().mode) : std::string_view(type_info.sk_mode[std::size_t(act.n)]);
             use(played, id);
             if (seq) monster.mode_until = now_ms + std::uint32_t(seq->size()) * game_data.npc_timing(monster.npc, played).ms_per_frame();
@@ -941,6 +942,8 @@ bool monster_update(const GameData& game_data, const Level& level, Monster& mons
         int due = 0;
         if (seq) {
             const int reached = std::min(int((now_ms - unit.mode_ms) / std::max<std::uint32_t>(timing.ms_per_frame(), 1)), int(seq->size()) - 1);
+            monster.seq_mode = (*seq)[std::size_t(reached)].mode;
+            monster.seq_frame = (*seq)[std::size_t(reached)].frame;
             for (; monster.seq_done <= reached; ++monster.seq_done) {
                 const int event = (*seq)[std::size_t(monster.seq_done)].event;
                 if (event == 4 || ((event == 1 || event == 2) && !monster.seq_once)) ++due;

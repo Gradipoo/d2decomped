@@ -229,6 +229,10 @@ struct Monster {
     // (unit flag 0x40: no more of its events 1 / 2, FUN_005a8670).
     int seq_done = 0;
     bool seq_once = false;
+    // The row it's on, as drawn: its own mode and frame (FUN_00663410), so
+    // a jab's A1 rows then its A2 ones; -1 while no sequence plays.
+    std::string_view seq_mode;
+    int seq_frame = -1;
     int charging = -1;                        // Charge (srvstfunc 31) under way: its skill, swung at its end
     // Leap (srvstfunc 40) under way: where it rose and where it lands (cells).
     bool leaping = false;

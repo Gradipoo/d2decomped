@@ -1746,7 +1746,8 @@ Think mon_think(std::string_view ai_name, const ThinkIn& input, Rng& rng, Away&&
     // A2; hit aip2 % backs off 12 (state 2); aip3 %: aip4 % A2, else A1;
     // else stands 10; other states within 15 walk in (state 3), else state 4
     // and stand 15.
-    // ponytail: its other think (FUN_005f4fd0, after a reset of its AI) isn't ported.
+    // ponytail: its other think (FUN_005f4fd0) runs only as a curse ends
+    // after its think left the curse's AI (monster-ai.md "Other thinks"); not ported.
     if (ai_name == "BatDemon") {
         const int life = input.life_pct;
         auto mode = [&](MonAct act, int wait) { Think out{ act }; out.unit = ThinkUnit::none; out.wait = wait; return out; };
@@ -1897,8 +1898,9 @@ Think mon_think(std::string_view ai_name, const ThinkIn& input, Rng& rng, Away&&
     // circles 6; under aip3 eggs laid (state3) aip1 %: not circled (state
     // 2) it circles 6 (state 2), else Skill3 (an egg, event 20; state 1);
     // else waits 12.
-    // ponytail: its other think (FUN_005f1750: Skill1 at its group's
-    // command) isn't ported.
+    // ponytail: its other think (FUN_005f1750) runs only as a curse ends
+    // after its think left the curse's AI (monster-ai.md "Other thinks");
+    // d2d's curses don't swap thinks, so it isn't ported.
     if (ai_name == "SandMaggot") {
         const bool ready = *input.state2 < input.frame;
         const int second_dist = input.second ? input.second_dist : 0x7fffffff;

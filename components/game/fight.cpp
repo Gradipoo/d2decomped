@@ -3945,18 +3945,19 @@ auto Fight::world(bool in_moor, std::uint32_t now_ms, float elapsed, const Crowd
             foe.damage = absorb(foe.damage);
             foe.damage += int(self_hurt >> 8);
             self_hurt &= 255;
+            using namespace d2d::d2s;
+            bool died = false;
             if (foe.damage > 0) {
-                using namespace d2d::d2s;
                 character.stats.values[kLife] -= std::int64_t(foe.damage) << 8;
-                if (character.stats.values[kLife] <= 0) {
-                    die(now_ms);
-                } else if ((std::int64_t(foe.damage) * 12 >= character.stats.fixed(kMaxLife) || now_ms < stunned) && !attack_mode(pmode) && pmode != kModeBL) {
-                    // Stunned, every hit is a get-hit, however small (FUN_0057cee0:
-                    // state 21 skips FUN_0057cb00's too-small test). That's all a
-                    // stun does to a player: no input is refused.
-                    set_pmode(kModeGH, now_ms);
-                }
+                if (character.stats.values[kLife] <= 0) { die(now_ms); died = true; }
             }
+            // Stunned, every landed hit is a get-hit, however small, even one
+            // absorbed to nothing (FUN_0057cee0: state 21 skips FUN_0057cb00's
+            // too-small test; result flag 4 is the hit landing, FUN_0057ec10,
+            // before any damage). That's all a stun does to a player: no input
+            // is refused.
+            const bool big = foe.damage > 0 && std::int64_t(foe.damage) * 12 >= character.stats.fixed(kMaxLife);
+            if (!died && (big || (foe.hits > 0 && now_ms < stunned)) && !attack_mode(pmode) && pmode != kModeBL) set_pmode(kModeGH, now_ms);
         }
         if (!in_moor) {                                      // pets follow the player about camp
             const auto save_class = std::size_t(std::max(character.character_class, 0));

@@ -1313,7 +1313,7 @@ int main() {
             guard.homed = homed != 0;
             if (homed) { guard.home_x = home_x; guard.home_y = home_y; }
             guard.guard_frame = last;
-            const d2d::rules::NpcVisitor visitor{ .present = present != 0, .x = x + 6, .y = y, .distance = reach };
+            const d2d::rules::NpcVisitor visitor{ .present = present != 0 && reach < 16, .x = x + 6, .y = y, .distance = reach };   // as ai.cpp: within 16
             auto peek = guard;
             const auto heeded = d2d::rules::npc_heed(peek, x, y, visitor);
             const auto got = d2d::rules::jarjar_think(guard, x, y, frame, aside != 0, stood != 0, visitor);

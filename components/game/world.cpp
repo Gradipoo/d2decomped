@@ -1677,7 +1677,8 @@ auto World::deal(const Command& command) -> bool {
                     if (!qbit(quests(), 10, 0)) {
                         d2d::rules::qset(quests(), 10, 0); d2d::rules::qset(quests(), 10, 13);
                         for (const char* code : { "msf", "vip" })                    // FUN_00544160 each
-                            if (const auto part = std::ranges::find(character.items, std::string(code), &d2d::d2s::Item::code); part != character.items.end()) character.items.erase(part);
+                            if (held && held->code == code) held.reset();   // FUN_00558110: the cursor item first
+                            else if (const auto part = std::ranges::find(character.items, std::string(code), &d2d::d2s::Item::code); part != character.items.end()) character.items.erase(part);
                     }
                     d2d::rules::qset(quests(), 15, 0); d2d::rules::qset(quests(), 15, 13);
                 }
@@ -1821,7 +1822,8 @@ auto World::deal(const Command& command) -> bool {
                 d2d::log::info("The Seven Tombs: Tyrael's portal");
             } else if (heard.take_staff) {
                 for (const char* code : { "hst", "vip", "msf" })              // FUN_00544160 each
-                    if (const auto part = std::ranges::find(character.items, std::string(code), &d2d::d2s::Item::code); part != character.items.end()) character.items.erase(part);
+                    if (held && held->code == code) held.reset();   // FUN_00558110: the cursor item first
+                    else if (const auto part = std::ranges::find(character.items, std::string(code), &d2d::d2s::Item::code); part != character.items.end()) character.items.erase(part);
             }
             if (hc_idx == d2d::rules::ArcaneQuest::kDrognan || hc_idx == d2d::rules::ArcaneQuest::kJerhyn) show_palace();   // the guard steps aside
             if (staff.said(quests(), hc_idx, message->string)) {     // the scroll read: it goes

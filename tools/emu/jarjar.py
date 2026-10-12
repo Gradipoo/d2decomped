@@ -49,10 +49,11 @@ def install(e):
     e.hook(0x5dc5c0, gap, 1)
     e.hook(0x5ded90, lambda _e: out("walk", e.arg(0), e.arg(1)), 2)
     e.hook(0x5de080, lambda _e: out("stand", e.arg(0)), 1)
-    e.hook(0x5ddf20, lambda _e: cur["foe"] if cur["s"]["visitor"] else cur["mon"], 1)
+    near = lambda: cur["s"]["visitor"] and cur["s"]["reach"] < 16                # FUN_005dde80: a player within 16
+    e.hook(0x5ddf20, lambda _e: cur["foe"] if near() else cur["mon"], 1)
     e.hook(0x5dc380, lambda _e: cur["s"]["reach"] if e.mu.reg_read(UC_X86_REG_EDX) == cur["foe"] else 0, 0)
     def heed(_e):
-        if not cur["s"]["visitor"]: return 0
+        if not near(): return 0
         out("heed")
         return 1
     e.hook(0x5e68f0, heed, 1)

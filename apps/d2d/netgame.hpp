@@ -67,7 +67,8 @@ struct NetGame {
     // Connects, uploads the save and waits (up to timeout_ms) until the host
     // has put the player in the world (0x04). The log goes to `log_path`.
     static auto join(const std::string& host, const std::filesystem::path& game_exe, std::vector<std::uint8_t> save,
-                     const std::filesystem::path& log_path, int timeout_ms, const d2d::d2s::ItemTables* item_tables, bool auto_party = true)
+                     const std::filesystem::path& log_path, int timeout_ms, const d2d::d2s::ItemTables* item_tables, bool auto_party = true,
+                     std::vector<std::pair<int, int>> send_bits = {})
         -> std::expected<std::unique_ptr<NetGame>, JoinError>;
 
     // What arrived, the ping when due, units walked on by `elapsed_ms`.

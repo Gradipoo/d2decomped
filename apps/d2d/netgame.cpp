@@ -72,7 +72,8 @@ NetGame::NetGame(d2d::net::JoinSession joined, d2d::net::TcpConnection socket, c
     : session(std::move(joined)), connection(std::move(socket)), log(log_path, used_ids()) {}
 
 auto NetGame::join(const std::string& host, const std::filesystem::path& game_exe, std::vector<std::uint8_t> save,
-                   const std::filesystem::path& log_path, int timeout_ms, const d2d::d2s::ItemTables* item_tables, bool auto_party)
+                   const std::filesystem::path& log_path, int timeout_ms, const d2d::d2s::ItemTables* item_tables, bool auto_party,
+                   std::vector<std::pair<int, int>> send_bits)
     -> std::expected<std::unique_ptr<NetGame>, JoinError> {
     const auto tables = d2d::net::d2gs::load_exe_tables(game_exe);
     if (!tables) return std::unexpected(JoinError{ tables.error() });
@@ -83,6 +84,7 @@ auto NetGame::join(const std::string& host, const std::filesystem::path& game_ex
     std::unique_ptr<NetGame> game(new NetGame(std::move(*session), std::move(*connection), log_path));
     game->item_tables = item_tables;
     game->auto_party = auto_party;
+    game->stat_send_bits = std::move(send_bits);   // before the first 0xaa: join pumps the world in
     game->log.note("joining " + host + " as " + game->session.name());
     const auto deadline = steady_ms() + std::uint32_t(timeout_ms);
     while (game->session.state() != d2d::net::JoinState::InGame) {

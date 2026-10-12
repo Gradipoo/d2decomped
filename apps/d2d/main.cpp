@@ -654,8 +654,10 @@ int run_windowed(std::vector<std::uint8_t>& framebuffer,
                         std::vector<std::uint8_t> save{ std::istreambuf_iterator<char>(save_file), {} };
                         const auto log_path = g_user_dir / std::format("net-{:%Y%m%dT%H%M%SZ}.log", std::chrono::floor<std::chrono::seconds>(std::chrono::system_clock::now()));
                         d2d::log::info("Joining {} as {} (net log {})", g_join_host, header.name, log_path.string());
+                        std::vector<std::pair<int, int>> send_bits;
+                        for (const auto& desc : scene->stat_desc) send_bits.emplace_back(desc.send_bits, desc.send_param);
                         auto joined = NetGame::join(g_join_host, g_game_exe, std::move(save), log_path, 10000,
-                                                    scene->item_tables ? &*scene->item_tables : nullptr, g_autoparty);
+                                                    scene->item_tables ? &*scene->item_tables : nullptr, g_autoparty, std::move(send_bits));
                         if (!joined) {
                             d2d::log::error("join failed: {}", joined.error().what);
                             csu.popup = join_error_text(*scene, joined.error(), header.expansion());
@@ -672,7 +674,6 @@ int run_windowed(std::vector<std::uint8_t>& framebuffer,
                             town.world.characters = nullptr;
                             town.world.fight.remote_monsters = true;
                             for (const auto& type_info : scene->monsters.types) net.monster_velocity.push_back(type_info.velocity);
-                            for (const auto& desc : scene->stat_desc) net.stat_send_bits.emplace_back(desc.send_bits, desc.send_param);
                             town.net_game = std::move(*joined);
                             town.net_chat_npc = 0;
                             town.world.hosted_quests = true;

@@ -175,11 +175,11 @@ int facing16(int dir64) {
 }  // namespace
 
 void npc_patrol(const GameData& game_data, const Level& level, std::vector<UnitState>& npcs, std::array<int, 3> busy,
-                std::uint32_t now_ms, float elapsed, const Crowd& crowd, const UnitState* player) {
+                std::uint32_t now_ms, float elapsed, const Crowd& crowd, const UnitState* player, bool guard_aside) {
     constexpr std::uint32_t kFrameMs = 40;
     for (std::size_t i = 0; i < npcs.size() && i < level.npcs.size(); ++i) {
         const auto& npc = level.npcs[i];
-        if (npc.town_ai == TownAi::none || (npc.town_ai != TownAi::vendor && npc.path.empty())) continue;
+        if (npc.town_ai == TownAi::none || ((npc.town_ai == TownAi::npc || npc.town_ai == TownAi::towner) && npc.path.empty())) continue;
         auto& state = npcs[i];
         // A talk starting (FUN_00548b00): its path stopped, AI control +0x14
         // = 40, the think next frame.
@@ -215,7 +215,9 @@ void npc_patrol(const GameData& game_data, const Level& level, std::vector<UnitS
         }
         // ponytail: act.greet (unit sound 0x12, the client's greeting through
         // FUN_004e0590) plays nothing yet.
-        const auto act = npc.town_ai == TownAi::vendor ? d2d::rules::vendor_think(npc.seed)
+        // The palace guard (JarJar): aside as record 0xb's data+0x40 is 2 (rules::ArcaneQuest::guard_state).
+        const auto act = npc.town_ai == TownAi::jarjar ? d2d::rules::jarjar_think(state.brain, npc.seed, x, y, int(now_ms / kFrameMs), guard_aside, guard_aside, visitor)
+                       : npc.town_ai == TownAi::vendor ? d2d::rules::vendor_think(npc.seed)
                                                        : d2d::rules::npc_think(state.brain, npc.seed, points, x, y, npc.hc_idx, npc.modes, 1, visitor, npc.town_ai == TownAi::towner);
         if (act.face >= 0) state.dir = facing16(act.face);
         switch (act.kind) {

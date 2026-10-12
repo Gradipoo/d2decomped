@@ -98,7 +98,7 @@ struct Crowd {
 // Velocity.
 // ponytail: an NPC's first think comes at once.
 void npc_patrol(const GameData& game_data, const Level& level, std::vector<UnitState>& npcs, std::array<int, 3> busy,
-                std::uint32_t now_ms, float elapsed, const Crowd& crowd = {}, const UnitState* player = nullptr);
+                std::uint32_t now_ms, float elapsed, const Crowd& crowd = {}, const UnitState* player = nullptr, bool guard_aside = false);
 
 // A player's walk from (x, y) to (gx, gy), in cells: game.exe's path type 7
 // (rules::player_path: the toward pather, the search when close) over

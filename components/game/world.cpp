@@ -2174,7 +2174,7 @@ auto World::tick(const std::vector<Command>& cmds, std::uint32_t now_ms, std::ui
                                  && (player.x != before_x || player.y != before_y);
             }
         }
-        npc_patrol(*game_data, *level, npc_states, talking, now_ms, elapsed, crowd, &player);
+        npc_patrol(*game_data, *level, npc_states, talking, now_ms, elapsed, crowd, &player, arcane.guard_state == 2);
         cain_step(now_ms, elapsed);
         for (const auto& neighbour : level->nearby) {           // over the edge, still in play
             auto& states = other_npcs[neighbour.level];

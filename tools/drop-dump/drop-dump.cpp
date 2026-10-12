@@ -64,8 +64,9 @@ int main(int argc, char** argv) {
             const auto [seed, unit_low, operate_fn, id, lid, diff, locked, sparkle] = std::array<int, 8>{ job[0], job[1], job[2], job[3], job[4], job[5], job[6], job[7] };
             const auto& area = data->area_level;
             auto alvl = [&](int level) { return area[std::size_t(level)][std::size_t(diff)]; };
-            const auto [low, high] = d2d::rules::kChestLevels[0];
-            const auto treasure_class = d2d::rules::chest_tc(0, diff, alvl(lid), alvl(low), alvl(high));
+            const int act = d2d::rules::level_act(lid);
+            const auto [low, high] = d2d::rules::kChestLevels[std::size_t(act)];
+            const auto treasure_class = d2d::rules::chest_tc(act, diff, alvl(lid), alvl(low), alvl(high));
             d2d::rules::Rng object_seed{ std::uint32_t(seed) }, unit{ std::uint32_t(unit_low) };
             std::vector<d2d::rules::Drop> drops;
             const auto opened = d2d::rules::open_container(operate_fn, id, locked, sparkle, object_seed,
@@ -97,17 +98,19 @@ int main(int argc, char** argv) {
             d2d::d2s::Item item;
             int gold = 0;
             if (code == "gld") gold = d2d::rules::gold_amount(level, 0, unit);
-            else item = d2d::rules::generate_item(rules, code, level, wanted, own, &unit, &found_uniques, bovine == "1", diff.empty() ? 0 : std::stoi(diff));
-            if (wanted <= 3) {
+            else item = d2d::rules::generate_item(rules, code, level, wanted == 4 ? d2d::rules::made_quality(rules, code, wanted) : wanted, own, &unit,
+                                                  &found_uniques, bovine == "1", diff.empty() ? 0 : std::stoi(diff));   // a magic ask: FUN_00557450's type flags first
+            if (wanted <= 4) {
                 std::map<std::pair<int, int>, int> props;      // the item's one modifier list, (stat, param) summed
                 for (const auto& prop : item.props) props[{ prop.stat, prop.param }] += prop.value;
                 std::string list;
                 for (const auto& [key, value] : props)
                     if (value) list += (list.empty() ? "" : ",") + std::to_string(key.first) + ":" + std::to_string(key.second) + "=" + std::to_string(value);
                 const int flags = (item.socketed ? 0x800 : 0) | (item.ethereal ? 0x400000 : 0);
+                if (diff.empty()) diff = "0";
                 std::printf("%08x %s i%d q%d d%s: seeds %08x %08x qty %d dur %d/%d def %d | q%d sub %d flags %x sock %d pic %d auto %d [%s] -> %08x %08x %08x\n",
                             unsigned(std::stoul(seed)), code.c_str(), level, wanted, diff.c_str(), unit_low, own_low, std::max(item.quantity, 0), item.durability,
-                            item.max_durability, std::max(item.defense, 0), item.quality, item.qsub, flags, item.sockets, std::max(item.picture, 0),
+                            item.max_durability, std::max(item.defense, 0), item.quality, item.quality == 7 ? item.unique_id : item.qsub, flags, item.sockets, std::max(item.picture, 0),
                             item.class_affix < 0 ? 0 : item.class_affix, list.c_str(), game.low, unit.low, own.low);
                 continue;
             }

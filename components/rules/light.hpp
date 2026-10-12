@@ -18,29 +18,54 @@ namespace d2d::rules {
 struct DayPhase { int start, type; };
 inline constexpr std::array<DayPhase, 6> kDay{ { { 320, 3 }, { 340, 3 }, { 0, 0 }, { 160, 1 }, { 180, 1 }, { 200, 2 } } };
 inline constexpr int kDayScale = 128;
+// The eclipse's phases (0x744480: Tainted Sun's dark sky).
+inline constexpr std::array<DayPhase, 6> kEclipse{ { { 300, 3 }, { 0, 0 }, { 60, 1 }, { 120, 2 }, { 180, 2 }, { 240, 2 } } };
 
 // A game's clock; a new game starts at sunrise (FUN_0061be40).
-// ponytail: Acts 1, 2 and 5; Act 3's faster nights, Act 4's clock and
-// the eclipse aren't here. The phases' colours aren't used: the software
-// renderer draws intensity only.
+// The eclipse (+0x30) as the client has it from S->C 0x53 (FUN_0061c240):
+// its own phases, no night's extra frame, and the light falling 8 a frame
+// to 32 (FUN_0061bb80), whatever the hour.
+// ponytail: Acts 1, 2 and 5; Act 3's faster nights and Act 4's clock
+// aren't here. The phases' colours aren't used: the software renderer
+// draws intensity only.
 struct Day {
     int phase = 2, time = 0;                   // time: frames into the day
+    bool eclipse = false;
+    int dimmed = 255;                          // the eclipse's intensity (+0xc), falling
     // A client frame (FUN_0061bee0): one frame, two at night. Past the
     // next phase's start the phase moves on and the clock snaps to that
     // start. game.exe bug (bugs.md #9): phase 2 starts at 0°, so phase 1
     // moves on at its first frame and the day is 340° long.
     void step() {
-        time += kDay[std::size_t(phase)].type == 2 ? 2 : 1;
+        const auto& phases = eclipse ? kEclipse : kDay;
+        time += !eclipse && phases[std::size_t(phase)].type == 2 ? 2 : 1;
         if (time >= 360 * kDayScale) time = 0;
-        const auto& next = kDay[std::size_t((phase + 1) % 6)];
+        const auto& next = phases[std::size_t((phase + 1) % 6)];
         if (next.start * kDayScale < time) { phase = (phase + 1) % 6; time = next.start * kDayScale; }
+        if (eclipse) dim();
     }
+    // S->C 0x53 (FUN_0061c240): the phase, the time (past a day: 0) and the
+    // eclipse; going dark starts from the sun's light and dims a step.
+    void set(int new_phase, int new_time, bool dark) {
+        phase = std::clamp(new_phase, 0, 5);
+        time = new_time > 360 * kDayScale ? 0 : std::max(new_time, 0);
+        dimmed = sun();
+        eclipse = dark;
+        if (eclipse) dim();
+    }
+    [[nodiscard]] int intensity() const { return eclipse ? dimmed : sun(); }
     // FUN_0061bb80: sin(angle) · 128 + 128, the sine halved past 180°;
     // 0..255. Sunrise 128, noon 255, midnight 64.
-    [[nodiscard]] int intensity() const {
+    [[nodiscard]] int sun() const {
         auto sine = float(std::sin(double(time) / kDayScale / 180.0 * 3.1415927410125732));
         if (time >= 180 * kDayScale) sine = float(sine * 0.5);
         return std::clamp(int(double(sine) * 128.0 + 128.0 + 0.5), 0, 255);
+    }
+
+private:
+    void dim() {
+        if (dimmed > 32) dimmed -= 8;
+        if (dimmed < 32) dimmed = 32;
     }
 };
 

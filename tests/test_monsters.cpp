@@ -634,6 +634,95 @@ int main() {
                 }
                 assert(checked > 100);
             }
+            // Act 2's monster thinks (rules::mon_think; tools/emu/mon_ais.py --dump:
+            // game.exe's own runs, the back-offs' answers replayed): the scene,
+            // what it comes to, its effects, the AI control and seed after.
+            {
+                static constexpr std::string_view kCases[] = {
+#include "mon_ais_cases.inc"
+                };
+                static constexpr std::array<std::string_view, 18> kAis{ "Duriel", "Swarm", "PinHead", "Mummy", "SandLeaper", "ClawViper", "PantherWoman", "PantherJavelin",
+                                                                       "Scarab", "BatDemon", "Baboon", "SandRaider", "GreaterMummy", "SandMaggot", "Summoner", "Vulture",
+                                                                       "MaggotEgg", "MaggotLarva" };
+                using d2d::rules::ThinkEffect;
+                int checked = 0;
+                for (const std::string_view case_line : kCases) {
+                    const std::string line(case_line);
+                    const auto bar = line.find('|'), bar2 = line.find('|', bar + 1), bar3 = line.rfind('|');
+                    std::istringstream fields(line.substr(0, bar));
+                    auto read = [&] { long long value = 0; fields >> value; return int(value); };
+                    const int which = read();
+                    std::array<int, 3> ctrl{};
+                    int pace = 0, steps = 0, command = 0;
+                    bool rally = false;
+                    std::vector<ThinkEffect> effects;
+                    d2d::rules::ThinkIn input;
+                    input.difficulty = read(); input.frame = read(); (void)read();
+                    input.dist = read(); input.in_melee = read() != 0; input.got_hit = read() != 0; input.life_pct = read();
+                    for (auto& value : ctrl) value = read();
+                    for (auto& value : input.aip) value = read();
+                    for (auto& value : input.skill) value = read() != 0;
+                    for (auto& value : input.skill45) value = read() != 0;
+                    input.velocity = read(); input.run = read(); input.aidel = read();
+                    input.regen = read(); (void)read(); (void)read(); (void)read();
+                    input.target_fire_res = read(); input.target_cold_res = read();
+                    input.second = read() != 0; input.second_dist = read(); input.kin = read() != 0; input.kin_dist = read();
+                    input.corpse = read() != 0; input.aid = read() != 0; (void)read(); input.in_reach = read();
+                    input.usable = read() != 0; command = read(); input.leader = read() != 0; input.aura_on = read() != 0;
+                    input.self_x = read(); input.self_y = read(); input.target_x = read(); input.target_y = read();
+                    input.same_room = read() != 0; input.can_land = read() != 0; input.victim = read() != 0; input.grouped = read() != 0;
+                    for (auto& spot : input.free_spot) {
+                        const bool found = read() != 0;
+                        const int spot_x = read(), spot_y = read();
+                        if (found) spot = std::pair{ spot_x, spot_y };
+                    }
+                    d2d::rules::Rng seed;
+                    seed.low = std::uint32_t(std::stoll([&] { std::string text; fields >> text; return text; }()));
+                    seed.high = std::uint32_t(std::stoll([&] { std::string text; fields >> text; return text; }()));
+                    input.state = &ctrl[0]; input.state2 = &ctrl[1]; input.state3 = &ctrl[2];
+                    input.pace = &pace; input.steps = &steps; input.command = &command; input.rally = &rally; input.effects = &effects;
+                    std::vector<std::pair<int, int>> asks;
+                    std::istringstream ask_text(line.substr(bar + 1, bar2 - bar - 1));
+                    for (std::string ask; std::getline(ask_text, ask, ';');) {
+                        std::istringstream pair(ask);
+                        int reach = 0, ok = 0;
+                        if (pair >> reach >> ok) asks.emplace_back(reach, ok);
+                    }
+                    std::size_t asked = 0;
+                    auto away = [&](int reach, bool) {
+                        assert(asked < asks.size() && asks[asked].first == reach);
+                        return asks[asked++].second != 0;
+                    };
+                    const auto act = d2d::rules::mon_think(kAis[std::size_t(which)], input, seed, away);
+                    assert(asked == asks.size());
+                    std::vector<std::array<int, 3>> want_effects;
+                    std::istringstream effect_text(line.substr(bar2 + 1, bar3 - bar2 - 1));
+                    for (std::string effect; std::getline(effect_text, effect, ';');) {
+                        std::istringstream three(effect);
+                        std::array<int, 3> value{};
+                        if (three >> value[0] >> value[1] >> value[2]) want_effects.push_back(value);
+                    }
+                    if (effects.size() != want_effects.size()) std::fprintf(stderr, "mon_ais %s: %s\n  got %zu effects\n", std::string(kAis[std::size_t(which)]).c_str(), line.c_str(), effects.size());
+                    assert(effects.size() == want_effects.size());
+                    for (std::size_t k = 0; k < effects.size(); ++k)
+                        if (int(effects[k].kind) != want_effects[k][0] || effects[k].id != want_effects[k][1] || effects[k].value != want_effects[k][2])
+                            std::fprintf(stderr, "mon_ais %s: %s\n  got effect %d %d %d\n", std::string(kAis[std::size_t(which)]).c_str(), line.c_str(), int(effects[k].kind), effects[k].id, effects[k].value);
+                    for (std::size_t k = 0; k < effects.size(); ++k)
+                        assert(int(effects[k].kind) == want_effects[k][0] && effects[k].id == want_effects[k][1] && effects[k].value == want_effects[k][2]);
+                    std::istringstream tail(line.substr(bar3 + 1));
+                    std::array<long long, 16> want{};
+                    for (auto& value : want) tail >> value;
+                    const int y = act.spot ? 1 : act.y;
+                    const bool same = int(act.act) == want[0] && act.n == want[1] && act.x == want[2] && y == want[3] && int(act.unit) == want[4] && act.wait == want[5] && act.event == want[6]
+                                   && pace == want[7] && steps == want[8] && ctrl[0] == want[9] && ctrl[1] == want[10] && ctrl[2] == want[11]
+                                   && seed.low == std::uint32_t(want[12]) && seed.high == std::uint32_t(want[13]);
+                    if (!same) std::fprintf(stderr, "mon_ais %s: %s\n  got %d %d %d %d %d %d %d | %d %d | %d %d %d | %u %u\n", std::string(kAis[std::size_t(which)]).c_str(), line.c_str(),
+                                            int(act.act), act.n, act.x, y, int(act.unit), act.wait, act.event, pace, steps, ctrl[0], ctrl[1], ctrl[2], seed.low, seed.high);
+                    assert(same);
+                    ++checked;
+                }
+                assert(checked > 300);
+            }
             // The Shadows (tools/emu/shadow_init.py / shadow_master.py --dump:
             // game.exe's own runs): the Warrior's init and the Master's, then the
             // Master's think (the log of what it asks and does), then its scan.

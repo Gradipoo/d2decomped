@@ -51,8 +51,37 @@ Vendor index by NPC hcIdx (`FUN_00536f80`):
 - `FUN_00536070` copies those lists to each vendor NPC
   (NPC record +0x1d24).
 - `FUN_00537230` restocks after 240 000 ms (4 minutes).
-- The function that rolls counts and creates the items hasn't been
-  located yet.
+- The fill is FUN_00576980 (SUNITNPC.CPP), from the trade deal
+  (FUN_00579430: when the NPC's proxy record +0x27 says restock, the old
+  stock goes (FUN_00536d10) and it fills; Kashya, Greiz and Larzuk's
+  records don't). On the proxy seed (game +0x1d24 +8, FUN_00536b40: a game
+  seed step at game start, FUN_00536070):
+  - the store level (FUN_00576890): clvl + 5, in Normal at most 12, 20,
+    28, 36, 45 by the act (proxy record +0x22);
+  - each candidate (Items order: weapons, armor, misc) whose level
+    (Items +0xfd) is reached: normal copies min + rand(max + 1 − min)
+    (FUN_004bc500; none from store level 25); an expansion base (+0xf6
+    version 100) only in an expansion game; each copy's quality
+    (FUN_00576900: rand(100), store level < 5: > 90 low; < 10: > 85
+    superior; else > 74 superior; else normal); then, when the base can
+    be magic (bitfield1 bit 0, FUN_00629c80) and MagicLvl is reached,
+    magicMin + rand(magicMax + e − magicMin) magic copies, e = 1, or 1 +
+    rand(2) + 1 from store level 25;
+  - each permanent item once, normal; a quiver (cqv / aqv) filled to its
+    max stack (stat 0x46, FUN_006295b0);
+  - each copy is FUN_00576330; over 32 that don't take end the fill.
+- FUN_00576330 (the maker): in Nightmare above clvl 25, rand(100000) on
+  the proxy seed under ilvl·64 + 4000 takes the ubercode, else the
+  NightmareUpgrade; in Hell, an expansion game's roll under ilvl·16 +
+  1000 the ultracode, else under ilvl·128 + 5000 the ubercode, then the
+  HellUpgrade wins. FUN_00559ce0 → FUN_00558d90 makes it (unit seeds off
+  the game seed, as a drop); a low one named "Cracked" is thrown away and
+  made again (5 tries); one that came out another base is made again
+  normal; then its store page (FUN_0062e880: ItemTypes +0x22) and a spot
+  in the NPC's grid (FUN_00560200; page 1 full: page 2).
+- Checked: `tools/emu/store.py 1-100` (FUN_00576980 native, the maker
+  hooked) against `drlg-dump ... store` (`rules::store_fill`): 10200 /
+  10200 lines, every vendor, Normal to Hell, clvl 1 to 90.
 
 ## Panel (`FUN_00488400`)
 
@@ -87,8 +116,9 @@ The base y is 539 (= 60 + 255 + 224):
     misc → 3;
   - rolled at the first opening and kept for the game (the vendor's own
     inventory on the server), what a trade leaves in it included.
-- Kashya's hire list (`FUN_00576070`) is rolled once; a hired offer leaves
-  it, and an empty list is rolled anew (`FUN_00577010`).
+- The hire lists (`FUN_00576070`, npc-menu.md "Hire"): game.exe's, on
+  the game seed, ten of the seller's names offered; an empty list is
+  rolled anew (`FUN_00577010`).
 - Cain's identify fee and other payments take the purse first, then the
   stash (`FUN_00576d90`).
 - Prices (hover: "Cost: " 0xd01 in the store, "Sell value: " 0xd03 on
@@ -125,7 +155,13 @@ The base y is 539 (= 60 + 255 + 224):
   - selling adds the sell value to carried gold (capped at clvl × 10000)
     and puts the item into the vendor's stock.
   - All in memory; the save isn't written.
-- Not yet: magic stock, quest-item refusal, messages, and the real roll.
+- The World's stores are game.exe's (2026-10-11): `game::open_store`
+  runs `rules::store_fill` on the proxy seed and makes each ask with
+  `rules::make_store_item` (the upgrades, the item off the game seed as a
+  drop, magic affixes as drops.md "Magic", the Cracked retry), on its
+  type's StorePage. Not yet: FUN_00560200's own spot search (first fit by
+  column), the 4-minute restock (FUN_00537230: the stock lasts the game),
+  quest-item refusal, messages.
 
 ## Repair (FUN_0062efb0 mode 3)
 

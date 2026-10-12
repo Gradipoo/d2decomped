@@ -7,6 +7,7 @@
 
 #include <combat.hpp>
 #include <level_ids.hpp>
+#include <monster_ids.hpp>
 #include <monsters.hpp>
 #include <rules.hpp>
 #include <skills.hpp>
@@ -21,6 +22,7 @@
 #include <cstdlib>
 #include <format>
 #include <initializer_list>
+#include <limits>
 #include <span>
 #include <string>
 #include <string_view>
@@ -177,7 +179,7 @@ void npc_patrol(const GameData& game_data, const Level& level, std::vector<UnitS
     constexpr std::uint32_t kFrameMs = 40;
     for (std::size_t i = 0; i < npcs.size() && i < level.npcs.size(); ++i) {
         const auto& npc = level.npcs[i];
-        if (!npc.npc_ai || npc.path.empty()) continue;
+        if (npc.town_ai == TownAi::none || (npc.town_ai != TownAi::vendor && npc.path.empty())) continue;
         auto& state = npcs[i];
         // A talk starting (FUN_00548b00): its path stopped, AI control +0x14
         // = 40, the think next frame.
@@ -213,7 +215,8 @@ void npc_patrol(const GameData& game_data, const Level& level, std::vector<UnitS
         }
         // ponytail: act.greet (unit sound 0x12, the client's greeting through
         // FUN_004e0590) plays nothing yet.
-        const auto act = d2d::rules::npc_think(state.brain, npc.seed, points, x, y, npc.hc_idx, npc.modes, 1, visitor);
+        const auto act = npc.town_ai == TownAi::vendor ? d2d::rules::vendor_think(npc.seed)
+                                                       : d2d::rules::npc_think(state.brain, npc.seed, points, x, y, npc.hc_idx, npc.modes, 1, visitor, npc.town_ai == TownAi::towner);
         if (act.face >= 0) state.dir = facing16(act.face);
         switch (act.kind) {
         case d2d::rules::NpcAct::Kind::stand: state.wait_until = now_ms + std::uint32_t(act.frames) * kFrameMs; break;
@@ -290,14 +293,20 @@ bool move_frame(const Level& level, Monster& monster, const Foe* chased, bool sp
 // toward (dx, dy) cells, its Missiles.txt row's damage at skill level `lvl`
 // (rules::monster_skill_level): physical in 256ths (SrcDamage 0: none of hers), its
 // poison per frame over ELen as the total, another element in 256ths.
-// ToHit 0: it always hits. A Fallen Shaman's fire bolts too.
+// ToHit 0: it always hits. A Fallen Shaman's fire bolts too. A row naming a
+// Skill (`carried`: the Summoner's Fire Ball, Glacial Spike, Frost Nova)
+// carries that skill's element at the level instead (FUN_0064b860).
+// ponytail: a carried skill's physical damage (MinDam..) left out; the
+// Act 2 casters' skills have none.
 void andariel_missile(const GameData& game_data, const Monster& monster, const std::string& name, float dx, float dy, std::uint32_t now_ms,
-                      std::vector<Missile>& missiles, int lvl) {
+                      std::vector<Missile>& missiles, int lvl, const d2d::rules::Skill* carried = nullptr) {
     const auto found = game_data.missiles.find(name);
     if (found == game_data.missiles.end()) return;
     const auto& missile_info = found->second;
-    const auto poison = d2d::rules::row_damage(missile_info.etype, missile_info.emin, missile_info.emax, missile_info.emin_lev, missile_info.emax_lev,
-                                               missile_info.hitshift, missile_info.elen, missile_info.elen_lev, lvl);
+    const auto poison = carried && !missile_info.skill.empty()
+        ? d2d::rules::row_damage(carried->etype, carried->emin, carried->emax, carried->emin_lev, carried->emax_lev, carried->hitshift, carried->elen, carried->elen_lev, lvl)
+        : d2d::rules::row_damage(missile_info.etype, missile_info.emin, missile_info.emax, missile_info.emin_lev, missile_info.emax_lev,
+                                 missile_info.hitshift, missile_info.elen, missile_info.elen_lev, lvl);
     d2d::rules::MonStats stats;
     stats.level = monster.stats.level;
     stats.to_hit = 1 << 20;
@@ -316,12 +325,16 @@ int skill_id(const GameData& game_data, const std::string& name) {
     const auto found = game_data.skills.by_name.find(name);
     return name.empty() || found == game_data.skills.by_name.end() ? -1 : found->second;
 }
-// The Act 1 skills' MonSeq sequences (their Sk1mode..3): the mode played,
-// its frames and the frame of its event.
-struct Seq { std::string_view name, mode; std::uint32_t frames, event; };
-constexpr std::array<Seq, 5> kSeqs{ { { "seq_shamanresurrect", "A2", 17, 12 }, { "seq_nestlay", "S1", 31, 25 },
-                                      { "seq_bloodravencast", "S1", 20, 15 }, { "seq_brquickstrike", "A1", 7, 6 },
-                                      { "seq_gargoyletrap", "A1", 5, 0 } } };
+// Its skill `id`'s MonSeq sequence (its Sk*mode names one; MonSeq.txt,
+// GameData::mon_seqs): the rows played, a frame each; null for a plain mode.
+using SeqRows = std::vector<GameData::MonSeqFrame>;
+// A plain-mode skill d2d casts for a monster (no sequence; the Summoner's
+// SC skills): a srvmissile at the target, a nova (22), a fire wall (24).
+// ponytail: other do-funcs (Weaken's curse on the player, 30) stand.
+bool castable(const d2d::rules::Skill& skill) {
+    using d2d::rules::ServerDoFunction;
+    return !skill.srvmissile.empty() || skill.srvdofunc == ServerDoFunction::kNova || skill.srvdofunc == ServerDoFunction::kMissileWall;
+}
 // Its skill `id`'s level (Sk*lvl + the difficulty's bonus), 1 when not its own.
 int skill_level(const GameData& game_data, const Monster& monster, int id) {
     const auto& type_info = game_data.monsters.types[std::size_t(monster.type)];
@@ -330,10 +343,10 @@ int skill_level(const GameData& game_data, const Monster& monster, int id) {
     return 1;
 }
 // The sequence a monster's skill `id` plays, else nullptr.
-const Seq* skill_seq(const GameData& game_data, const d2d::rules::MonType& type_info, int id) {
+const SeqRows* skill_seq(const GameData& game_data, const d2d::rules::MonType& type_info, int id) {
     for (std::size_t slot = 0; slot < type_info.skill.size(); ++slot)
         if (id >= 0 && skill_id(game_data, type_info.skill[slot]) == id)
-            for (const auto& seq : kSeqs) if (seq.name == type_info.sk_mode[slot]) return &seq;
+            if (const auto found = game_data.mon_seqs.find(type_info.sk_mode[slot]); found != game_data.mon_seqs.end() && !found->second.empty()) return &found->second;
     return nullptr;
 }
 
@@ -446,6 +459,19 @@ Search search_target(const GameData& game_data, const Level& level, Monster& mon
     return found;
 }
 
+// Charge's swing (FUN_005cf6b0 in melee, FUN_005cf900 at the charge's end):
+// A2 for Duriel and class 0x49, else A1, with the skill (its hit:
+// skill_hit).
+void charge_swing(const GameData& game_data, Monster& monster, const Foe& foe, int skill, std::uint32_t now_ms, d2d::rules::Rng& rng) {
+    const bool second = monster.type == int(game_data.mon_bin[std::size_t(d2d::rules::monster_ids::kDuriel)]) || monster.type == int(game_data.mon_bin[0x49]);
+    const std::string_view mode = second ? "A2" : "A1";
+    monster.unit.dir = direction16(foe.x - monster.unit.x, foe.y - monster.unit.y);
+    set_mode(game_data, monster, mode, now_ms);
+    monster.skill = skill; monster.struck = false; monster.wandering = false; monster.seq_done = 0; monster.seq_once = false;
+    monster.skill_frame = 0; monster.skill_x = subtile(foe.x); monster.skill_y = subtile(foe.y);
+    attack_starts(game_data, monster, mode, rng);
+}
+
 // A traced MonAI's frame outside an attack (the driver FUN_005b1740:
 // target search FUN_005de890 / FUN_005dd7f0, then the AI's think; Andariel
 // MonAI 34 FUN_005f5830 -> rules::andariel_think, the rest
@@ -502,6 +528,12 @@ bool think(const GameData& game_data, const Level& level, Monster& monster, std:
         if (move_frame(level, monster, monster.wandering ? nullptr : chased, monster.wandering, type_info.size, monster.mode == "RN" ? run : walk, crowd)) return true;
         set_mode(game_data, monster, "NU", now_ms);
         monster.wandering = false;
+        // A charge's end (srvdofunc 67, FUN_005cf900): at its target it
+        // swings with the skill (charge_swing).
+        if (const int with = std::exchange(monster.charging, -1); with >= 0 && chased && std::hypot(chased->x - unit.x, chased->y - unit.y) <= kMeleeReach + 0.3f) {
+            charge_swing(game_data, monster, *chased, with, now_ms, rng);
+            return true;
+        }
     }
     if (now_ms < monster.next_act) return true;
     // The driver's first step (FUN_005b10e0 → FUN_005b0f50): with opendoors
@@ -577,11 +609,67 @@ bool think(const GameData& game_data, const Level& level, Monster& monster, std:
     input.laying = now_ms < monster.laid_until;
     input.velocity = type_info.velocity; input.run = type_info.run;
     input.aidel = per_difficulty.aidel ? per_difficulty.aidel : 15;
+    // Act 2's: Skill4 / 5; the target's fire / cold resists (stats 0x27 /
+    // 0x2b); the second target (FUN_005ddc30) as the target; Duriel's aura
+    // on; the searches (FUN_005dd0b0) over the monsters within 80 subtiles:
+    // the nearest living kin of its class (FUN_005b0d00, the Panthers'),
+    // any other living one (FUN_005f06b0, the Sand Raider's), by squared
+    // distance (FUN_005b0bd0); the Greater Mummy's (FUN_005f2a00) within
+    // aip5: the count, a corpse (DD, not raised) and a hurt one, the last
+    // found.
+    // ponytail: regen (stat 0x4a) is 0, d2d's monsters having none; a
+    // skill is always usable (FUN_005fd470); the near rooms as 80 subtiles;
+    // Radament's wider reach (aip5 + 10) left out.
+    input.skill45 = { !type_info.skill[3].empty(), !type_info.skill[4].empty() };
+    input.target_fire_res = target->fighter.res[0]; input.target_cold_res = target->fighter.res[2];
+    input.second = true; input.second_dist = best;
+    input.aura_on = monster.aura != 0;
+    std::vector<d2d::rules::ThinkEffect> effects;
+    input.effects = &effects;
+    int kin = -1, aid = -1;
+    {
+        const bool panther = type_info.ai_name == "PantherWoman" || type_info.ai_name == "PantherJavelin";
+        const bool raider = type_info.ai_name == "SandRaider", mummy = type_info.ai_name == "GreaterMummy";
+        int kin_dist = std::numeric_limits<int>::max();
+        for (std::size_t i = 0; (panther || raider || mummy) && i < pack.size(); ++i) {
+            const auto& other = pack[i];
+            const int off_x = subtile(other.unit.x) - x, off_y = subtile(other.unit.y) - y, squared = off_x * off_x + off_y * off_y;
+            if (&other == &monster || d2d::rules::ai_distance(off_x, off_y) >= 80) continue;
+            if (mummy) {
+                if (squared > input.aip[4] * input.aip[4]) continue;
+                ++input.in_reach;
+                if (!other.alive() && other.mode == "DD" && !other.corpse_used) corpse = int(i);
+                else if (other.alive() && other.hit_points < other.stats.hit_points) aid = int(i);
+            } else if (other.alive() && (raider || other.type == monster.type) && squared < kin_dist) { kin = int(i); kin_dist = squared; }
+        }
+        if (mummy) { input.corpse = corpse >= 0; input.aid = aid >= 0; }
+        else { input.kin = kin >= 0; input.kin_dist = kin_dist; }
+    }
+    // The Vulture's: the spots, the rooms, a weak foe within 11 (squared
+    // 0x79) at most aip3 % life (FUN_005f30f0), its group, the free spot
+    // nearest its circling point.
+    // ponytail: it can always land (FUN_005f2fc0's flying collision isn't
+    // kept); a weak one is a foe (players and monsters both, in game.exe);
+    // one free-spot search (the level's nearest), not one per room.
+    if (type_info.ai_name == "Vulture") {
+        input.self_x = x; input.self_y = y; input.target_x = target_x; input.target_y = target_y;
+        input.same_room = room_at(level, unit.x, unit.y) == room_at(level, target->x, target->y);
+        input.can_land = true;
+        input.grouped = monster.leader >= 0;
+        for (const auto& foe : foes) {
+            const int off_x = subtile(foe.x) - x, off_y = subtile(foe.y) - y;
+            if (foe.alive && off_x * off_x + off_y * off_y <= 0x79 && foe.life_pct <= input.aip[2]) input.victim = true;
+        }
+        if (monster.ai_state2 != 0 && monster.ai_state3 != 0) {
+            const auto [free_x, free_y] = level.nearest_free((float(monster.ai_state2) + 0.5f) / 5, (float(monster.ai_state3) + 0.5f) / 5);
+            input.free_spot[0] = std::pair{ subtile(free_x), subtile(free_y) };
+        }
+    }
     auto use = [&](std::string_view mode, int skill) {             // FUN_005dead0 / FUN_005ddf90: against the target (mode ctx +8)
         monster.chase = int(target - foes.data());
         unit.dir = direction16(dx, dy);
         set_mode(game_data, monster, mode, now_ms);
-        monster.skill = skill; monster.struck = false; monster.wandering = false;
+        monster.skill = skill; monster.struck = false; monster.wandering = false; monster.seq_done = 0; monster.seq_once = false;
         monster.skill_frame = 0; monster.skill_x = target_x; monster.skill_y = target_y;
         attack_starts(game_data, monster, mode, rng);
     };
@@ -615,6 +703,21 @@ bool think(const GameData& game_data, const Level& level, Monster& monster, std:
         act = d2d::rules::mon_think(type_info.ai_name, input, monster.seed, away);
     }
     monster.move_pct = pace;                                       // the next mode takes it (FUN_005a63f0)
+    // Its effects: the leader's command done; Duriel's aura (Skill4) on.
+    // ponytail: states 0x5a / 0x5b and the overlays (looks) and stat 0x4a
+    // (regen) left out; the Summoner's quest reads his first think (ai_state).
+    for (const auto& effect : effects) {
+        if (effect.kind == d2d::rules::ThinkEffect::command_done) monster.ai_command = 0;
+        if (effect.kind == d2d::rules::ThinkEffect::aura) { monster.aura = skill_id(game_data, type_info.skill[std::size_t(effect.id)]); monster.aura_lvl = std::max(input.aip[0], 1); }
+    }
+    // The unit it's at: its kin (a walk to it), the hurt one or corpse it
+    // casts on; the second target is the target.
+    using d2d::rules::ThinkUnit;
+    const Monster* at_unit = act.unit == ThinkUnit::kin ? (kin >= 0 ? &pack[std::size_t(kin)] : corpse >= 0 ? &pack[std::size_t(corpse)] : nullptr)
+                           : act.unit == ThinkUnit::aid && aid >= 0 ? &pack[std::size_t(aid)] : nullptr;
+    // FUN_005de0f0 / FUN_005de130: its next think n frames on (a wait after its mode).
+    // ponytail: a wait counts from now, not the mode's end.
+    if (act.wait > 0 || act.event > 0) monster.next_act = std::max(monster.next_act, now_ms + std::uint32_t(std::max(act.wait, act.event)) * 40);
     if (rally)                                                     // FUN_0058f730 / FUN_0058ef40: its leader's group, itself too
         for (auto& other : pack)
             if (other.alive() && other.leader == monster.leader) other.ai_command = 1;
@@ -623,7 +726,10 @@ bool think(const GameData& game_data, const Level& level, Monster& monster, std:
         case MonAct::a1: use("A1", -1); return true;
         case MonAct::a2: use("A2", -1); return true;
         case MonAct::s2: use("S2", -1); return true;
+        case MonAct::s3: use("S3", -1); return true;
+        case MonAct::s4: use("S4", -1); return true;
         case MonAct::walk: case MonAct::approach: case MonAct::run:  // FUN_005deb60 at the target
+            if (at_unit) { walk_to(subtile(at_unit->unit.x) - x, subtile(at_unit->unit.y) - y, act.act == MonAct::run); return true; }
             if (set_off(act.act == MonAct::run, target)) {
                 monster.chase = int(target - foes.data());
                 return true;
@@ -641,7 +747,9 @@ bool think(const GameData& game_data, const Level& level, Monster& monster, std:
             monster.skill_x = act.x; monster.skill_y = act.y;
             unit.dir = direction16(float(act.x - x), float(act.y - y));
             return true;
+        case MonAct::fly: walk_to(act.x - x, act.y - y, false); return true;   // FUN_005de440: to the point (mode n: the Vulture's S1)
         case MonAct::keep: {                                       // FUN_005de4e0: toward, or from, the target to keep x off
+            if (act.unit == ThinkUnit::self) { idle(0); return true; }   // the Vulture's landing: a move onto itself
             const int stride = std::min(std::abs(best - act.x), act.n), sign = best < act.x ? -1 : 1;
             const int across = std::abs(target_x - x), down = std::abs(target_y - y), sum = std::max(across + down, stride);
             int step_x = sum ? across * stride / sum : 0, step_y = sum ? down * stride / sum : 0;
@@ -655,7 +763,8 @@ bool think(const GameData& game_data, const Level& level, Monster& monster, std:
             set_off(false, nullptr);
             return true;
         }
-        case MonAct::skill: {                                      // its Sk mode's sequence (kSeqs) plays out
+        case MonAct::seq:                                          // FUN_005de000: the skill's own sequence (the Greater Mummy's raise)
+        case MonAct::skill: {                                      // its Sk mode's sequence (MonSeq) plays out
             // ponytail: later acts: a skill without a sequence here stands
             // instead (none in Act 1: cr_archer / cr_lancer carry no Skill1..3, so their
             // thinks' skill tests draw nothing).
@@ -664,17 +773,45 @@ bool think(const GameData& game_data, const Level& level, Monster& monster, std:
             // Spider Lay and the vampires' shots play their Sk mode itself.
             // ponytail: later acts: VampireFirewall / VampireMeteor (srvdofunc
             // 24 / 28) stand, as no Act 1 vampire's aip5 lets it cast them.
-            const Seq* seq = skill_seq(game_data, type_info, id);
-            const bool plain = name == "SpiderLay" || name == "VampireFireball" || name == "VampireMissile";
-            if ((!seq && !plain) || (name == "Resurrect" && corpse < 0)) { idle(0); return true; }
-            use(seq ? seq->mode : std::string_view(type_info.sk_mode[std::size_t(act.n)]), id);
-            if (seq) monster.mode_until = now_ms + seq->frames * game_data.npc_timing(monster.npc, seq->mode).ms_per_frame();
-            monster.skill_unit = name == "Resurrect" ? corpse : -1;
+            const SeqRows* seq = skill_seq(game_data, type_info, id);
+            const auto* plain_skill = seq ? nullptr : game_data.skills.get(id);
+            const bool plain = name == "SpiderLay" || name == "VampireFireball" || name == "VampireMissile"
+                            || (plain_skill && type_info.sk_mode[std::size_t(act.n)] == "SC" && castable(*plain_skill));
+            // ponytail: a charge (its sequence walks first: Charge's srvstfunc 31
+            // moves it) stands.
+            // Charge (srvstfunc 31, FUN_005cf6b0): in melee it swings at once;
+            // else it runs at the target (MonStats Run), swinging at the end.
+            // ponytail: its charge path (type 0x14) and state 0x12 are the
+            // run's; a sequence that walks first and isn't Charge stands.
+            if (seq && seq->front().mode == "WL") {
+                const auto* start = game_data.skills.get(id);
+                if (start && start->srvstfunc == d2d::rules::ServerStartFunction::kCharge) {
+                    if (input.in_melee) { charge_swing(game_data, monster, *target, id, now_ms, rng); return true; }
+                    if (set_off(true, target)) { monster.chase = int(target - foes.data()); monster.charging = id; return true; }
+                }
+                idle(0);
+                return true;
+            }
+            if ((!seq && !plain) || ((name == "Resurrect" || name == "Resurrect2") && corpse < 0)) { idle(0); return true; }
+            // ponytail: the sequence plays its first row's mode throughout
+            // (Duriel's and the vipers' charges walk, then swing).
+            const std::string_view played = seq ? std::string_view(seq->front().mode) : std::string_view(type_info.sk_mode[std::size_t(act.n)]);
+            use(played, id);
+            if (seq) monster.mode_until = now_ms + std::uint32_t(seq->size()) * game_data.npc_timing(monster.npc, played).ms_per_frame();
+            // Leap (srvstfunc 40, FUN_005d9d50): it lands at twice the target's
+            // spot less its own, on the free spot nearest (mask 0x3c01).
+            // ponytail: the nearest free spot, not FUN_0064e7b0's search.
+            if (const auto* start = game_data.skills.get(id); start && start->srvstfunc == d2d::rules::ServerStartFunction::kLeap) {
+                const auto [land_x, land_y] = level.nearest_free((float(2 * target_x - x) + 0.5f) / 5, (float(2 * target_y - y) + 0.5f) / 5);
+                monster.leaping = true;
+                monster.leap_from_x = unit.x; monster.leap_from_y = unit.y; monster.leap_to_x = land_x; monster.leap_to_y = land_y;
+            }
+            monster.skill_unit = name == "Resurrect" || name == "Resurrect2" ? corpse : act.unit == ThinkUnit::aid ? aid : -1;
             // Where a Nest's young come out: Blood Raven's spot off the
             // target, else spawnx / spawny off itself.
             monster.skill_x = act.x || act.y ? target_x + act.x : x + type_info.spawn_x;
             monster.skill_y = act.x || act.y ? target_y + act.y : y + type_info.spawn_y;
-            if (monster.skill_unit >= 0) unit.dir = direction16(pack[std::size_t(corpse)].unit.x - unit.x, pack[std::size_t(corpse)].unit.y - unit.y);
+            if (monster.skill_unit >= 0) unit.dir = direction16(pack[std::size_t(monster.skill_unit)].unit.x - unit.x, pack[std::size_t(monster.skill_unit)].unit.y - unit.y);
             if (type_info.ai_name == "GargoyleTrap") {                 // square on (FUN_005f9490): along the axis it's nearer the target's
                 const bool down = std::abs(target_x - x) < std::abs(target_y - y);
                 monster.skill_x = down ? x : target_x; monster.skill_y = down ? target_y : y;
@@ -693,9 +830,12 @@ bool think(const GameData& game_data, const Level& level, Monster& monster, std:
 // The Countess's firewall at (skill_x, skill_y) subtiles (srvdofunc 24,
 // FUN_005c9ea0, flags 0x21 / 1): a countessfirewallmaker each way across
 // the line from her, the countessfirewall on the point, at her skill level.
-void countess_firewall(const GameData& game_data, const Monster& monster, std::uint32_t now_ms, std::vector<Missile>& missiles) {
-    const auto maker = game_data.missiles.find("countessfirewallmaker"), fire = game_data.missiles.find("countessfirewall");
-    if (maker == game_data.missiles.end() || fire == game_data.missiles.end()) return;
+void countess_firewall(const GameData& game_data, const Monster& monster, std::uint32_t now_ms, std::vector<Missile>& missiles,
+                       const std::string& maker_name = "countessfirewallmaker") {
+    const auto maker = game_data.missiles.find(maker_name);
+    if (maker == game_data.missiles.end()) return;
+    const auto fire = game_data.missiles.find(maker->second.sub);       // its SubMissile1 (countessfirewall, vampirefirewall)
+    if (fire == game_data.missiles.end()) return;
     const int lvl = skill_level(game_data, monster, monster.skill);
     const auto& fire_info = fire->second;
     const float x = (float(monster.skill_x) + 0.5f) / 5, y = (float(monster.skill_y) + 0.5f) / 5;
@@ -741,6 +881,7 @@ bool monster_update(const GameData& game_data, const Level& level, Monster& mons
         return false;
     }
     if (monster.mode == "GH" || monster.mode == "BL") {
+        monster.leaping = false;                                       // struck mid-leap: it stays where it is
         if (now_ms < monster.mode_until) return false;
         set_mode(game_data, monster, "NU", now_ms);
     }
@@ -763,15 +904,29 @@ bool monster_update(const GameData& game_data, const Level& level, Monster& mons
         monster.skill = -1;
         monster.next_act = now_ms + std::uint32_t(type_info.diff[std::size_t(monster.difficulty)].aidel) * 40;
     }
-    // An attack, a taunt (the Fallen's S2), a skill's sequence (kSeqs, its
-    // event frame), a young one coming out (spawnmode S1).
+    // An attack, a taunt (the Fallen's S2), a skill's sequence (MonSeq: its
+    // event rows), a young one coming out (spawnmode S1).
     const bool attack = monster.mode == "A1" || monster.mode == "A2";
-    if (attack || monster.mode == "S1" || monster.mode == "S2" || monster.mode == "SC") {
+    if (attack || monster.mode == "S1" || monster.mode == "S2" || monster.mode == "SC" || (monster.mode == "DT" && monster.skill >= 0)) {   // DT alive: a sequence (the egg's hatch)
         const auto& timing = game_data.npc_timing(monster.npc, monster.mode);
-        const Seq* seq = skill_seq(game_data, type_info, monster.skill);
+        const SeqRows* seq = skill_seq(game_data, type_info, monster.skill);
+        if (seq && seq->front().mode == "WL") seq = nullptr;               // a charge's swing: one hit (its flag 0x40 after the first)
         const auto skill = [&](const char* name) { return seq && monster.skill == skill_id(game_data, name); };
-        if (!monster.struck && now_ms >= unit.mode_ms + (seq ? seq->event * timing.ms_per_frame() : timing.action_ms())) {
+        // A sequence's rows, one a frame (FUN_005a8670, SQ's event function):
+        // event 4, or 1 / 2 till a shot has marked it done (unit flag 0x40),
+        // runs its skill; a plain mode strikes on its action frame.
+        int due = 0;
+        if (seq) {
+            const int reached = std::min(int((now_ms - unit.mode_ms) / std::max<std::uint32_t>(timing.ms_per_frame(), 1)), int(seq->size()) - 1);
+            for (; monster.seq_done <= reached; ++monster.seq_done) {
+                const int event = (*seq)[std::size_t(monster.seq_done)].event;
+                if (event == 4 || ((event == 1 || event == 2) && !monster.seq_once)) ++due;
+            }
+        } else if (!monster.struck && now_ms >= unit.mode_ms + timing.action_ms()) {
             monster.struck = true;
+            due = 1;
+        }
+        for (; due > 0; --due) {
             const auto& shot = monster.mode == "A1" ? type_info.miss_a1 : type_info.miss_a2;   // MissA1 / MissA2
             const auto fired = shot.empty() || !attack ? game_data.missiles.end() : game_data.missiles.find(shot);
             // Quick Strike (srvdofunc 92, FUN_005cbf90 -> FUN_0056ecb0): its
@@ -802,8 +957,15 @@ bool monster_update(const GameData& game_data, const Level& level, Monster& mons
                         y.to = { unit.x + side_x, unit.y + side_y };
                         missiles.push_back(y);
                     }
-            } else if (skill("ShamanFire")) {                                 // srvdofunc 85: srvmissilea shafire1, + TransLvl
-                andariel_missile(game_data, monster, "shafire" + std::to_string(1 + type_info.trans_lvl), dx, dy, now_ms, missiles, skill_level(game_data, monster, monster.skill));
+            } else if (const auto* fired_skill = seq ? game_data.skills.get(monster.skill) : nullptr;
+                       fired_skill && fired_skill->srvdofunc == d2d::rules::ServerDoFunction::kTransMissile) {
+                // srvdofunc 85 (FUN_005cb0c0; ShamanFire, UnHolyBolt): its
+                // srvmissilea's row + TransLvl at the target, once (flag 0x40).
+                const auto& base = fired_skill->srvmissilea;
+                const auto stem = base.substr(0, base.find_last_not_of("0123456789") + 1);
+                const int first = base.size() > stem.size() ? std::atoi(base.c_str() + stem.size()) : 1;
+                andariel_missile(game_data, monster, stem + std::to_string(first + type_info.trans_lvl), dx, dy, now_ms, missiles, skill_level(game_data, monster, monster.skill));
+                monster.seq_once = true;
             } else if (skill("GargoyleTrap")) {                               // srvdofunc 93 (FUN_005cc050): srvmissilea shafire3 square on at its target
                 const auto [from_x, from_y, off_x, off_y] = d2d::rules::gargoyle_shot(subtile(unit.x), subtile(unit.y), subtile(foe.x), subtile(foe.y));
                 const std::size_t had = missiles.size();
@@ -823,7 +985,63 @@ bool monster_update(const GameData& game_data, const Level& level, Monster& mons
                     if (type_info.spawn_mode != "NU" && !type_info.spawn_mode.empty()) set_mode(game_data, laid, type_info.spawn_mode, now_ms);
                     born->push_back(std::move(laid));
                 }
-            } else if (skill("Resurrect")) {                                  // srvdofunc 97 (FUN_005ccb10 / FUN_005cc960): the corpse back at full life
+            } else if (const auto* done = seq ? game_data.skills.get(monster.skill) : nullptr; done && done->srvdofunc == d2d::rules::ServerDoFunction::kMaggotLay) {
+                // MagottLay (srvdofunc 87, FUN_005cb3c0): its MonStats spawn (an
+                // egg) in spawnmode two subtiles toward the target: the 64-way
+                // direction (FUN_0064fdc0) in 8 (DAT_00745600), the ring-2 step
+                // (DAT_006e3138 into DAT_006ea998 / DAT_006ea978).
+                // ponytail: the egg's flag 0x4000000 unread.
+                static constexpr std::array<int, 8> kRing{ 10, 8, 22, 20, 18, 16, 14, 12 };
+                static constexpr std::array<int, 24> kStepX{ 0, -1, -1, -1, 0, 1, 1, 1, 0, -1, -2, -2, -2, -2, -2, -1, 0, 1, 2, 2, 2, 2, 2, 1 };
+                static constexpr std::array<int, 24> kStepY{ -1, -1, 0, 1, 1, 1, 0, -1, -2, -2, -2, -1, 0, 1, 2, 2, 2, 2, 2, 1, 0, -1, -2, -2 };
+                const int at_x = subtile(unit.x), at_y = subtile(unit.y);
+                const int ring = kRing[std::size_t(((d2d::rules::direction64(at_x, at_y, monster.skill_x, monster.skill_y) + 4) >> 3) & 7)];
+                if (const auto young = game_data.monsters.by_id.find(type_info.spawn); born && young != game_data.monsters.by_id.end()) {
+                    auto laid = make_monster(game_data, young->second, (float(at_x + kStepX[std::size_t(ring)]) + 0.5f) / 5, (float(at_y + kStepY[std::size_t(ring)]) + 0.5f) / 5, rng, monster.difficulty);
+                    laid.aware = true;
+                    laid.seed = d2d::rules::Rng{ rng.next() };
+                    if (type_info.spawn_mode != "NU" && !type_info.spawn_mode.empty()) set_mode(game_data, laid, type_info.spawn_mode, now_ms);
+                    born->push_back(std::move(laid));
+                }
+            } else if (done && done->srvdofunc == d2d::rules::ServerDoFunction::kHatch) {
+                // MaggotEgg (srvdofunc 84, FUN_005cafa0): calc1 of its MonStats
+                // spawn (FUN_0056e620), the first on its spot, the rest on rings
+                // out to 4 as spots fill (FUN_005b23c0, 2 x calc1 tries), each
+                // flag 0x4000000; then it dies (FUN_0057ccb0).
+                // ponytail: each larva at the nearest free spot to the egg, not
+                // FUN_005b23c0's ring search; the flag unread.
+                const int lvl = skill_level(game_data, monster, monster.skill);
+                const int count = d2d::rules::eval_calc(game_data.skills, done->calc[0], {}, monster.skill, lvl);
+                if (const auto young = game_data.monsters.by_id.find(type_info.spawn); born && young != game_data.monsters.by_id.end())
+                    for (int made = 0; made < count; ++made) {
+                        const auto [free_x, free_y] = level.nearest_free(unit.x + float(made % 3 - 1) * 0.4f, unit.y + float(made / 3 % 3 - 1) * 0.4f);
+                        auto larva = make_monster(game_data, young->second, free_x, free_y, rng, monster.difficulty);
+                        larva.aware = true;
+                        larva.seed = d2d::rules::Rng{ rng.next() };
+                        born->push_back(std::move(larva));
+                    }
+                monster.hit_points = 0;                                        // no loot, no experience
+            } else if (done && done->srvdofunc == d2d::rules::ServerDoFunction::kMaggotDown) {
+                // MagottDown (srvdofunc 86, FUN_005cb300): calc1 % of its life back, once (flag 0x40).
+                // ponytail: burrowed it stays hittable (no underground state).
+                const int lvl = skill_level(game_data, monster, monster.skill);
+                const int back = d2d::rules::eval_calc(game_data.skills, done->calc[0], {}, monster.skill, lvl);
+                if (back > 0) monster.hit_points = std::min(monster.hit_points + monster.stats.hit_points * back / 100, monster.stats.hit_points);
+                monster.seq_once = true;
+            } else if (done && done->srvdofunc == d2d::rules::ServerDoFunction::kBestow) {
+                // Bestow (srvdofunc 96, FUN_005cc840): the one it's at gets
+                // lo + rand(hi - lo) % of its life back on the caster's seed (hi:
+                // calc2 in 0..100, lo: calc1 in 0..hi), within 1..its life; once.
+                const int lvl = skill_level(game_data, monster, monster.skill);
+                const int high = std::min(std::max(d2d::rules::eval_calc(game_data.skills, done->calc[1], {}, monster.skill, lvl), 0), 100);
+                const int low = std::min(std::max(d2d::rules::eval_calc(game_data.skills, done->calc[0], {}, monster.skill, lvl), 0), high);
+                const int pct = monster.seed(high - low) + low;
+                if (monster.skill_unit >= 0 && std::size_t(monster.skill_unit) < pack.size()) {
+                    auto& healed = pack[std::size_t(monster.skill_unit)];
+                    if (healed.alive()) healed.hit_points = std::clamp(healed.hit_points + healed.stats.hit_points * pct / 100, 1, healed.stats.hit_points);
+                }
+                monster.seq_once = true;
+            } else if (skill("Resurrect") || skill("Resurrect2")) {           // srvdofunc 97 (FUN_005ccb10 / FUN_005cc960): the corpse back at full life
                 // ponytail: the revived state's look (FUN_005cc960's state) left out.
                 if (monster.skill_unit >= 0 && std::size_t(monster.skill_unit) < pack.size()) {
                     auto& raised = pack[std::size_t(monster.skill_unit)];
@@ -840,6 +1058,29 @@ bool monster_update(const GameData& game_data, const Level& level, Monster& mons
             } else if (const int fireball = skill_id(game_data, "VampireFireball"); monster.skill >= 0 && (monster.skill == fireball || monster.skill == skill_id(game_data, "VampireMissile"))) {
                 // srvmissile vampirefireball / firehead at the target.
                 andariel_missile(game_data, monster, monster.skill == fireball ? "vampirefireball" : "firehead", dx, dy, now_ms, missiles, skill_level(game_data, monster, monster.skill));
+            } else if (const auto* cast = !seq && monster.mode == "SC" && monster.skill >= 0 ? game_data.skills.get(monster.skill) : nullptr; cast && castable(*cast)) {
+                // A plain SC cast (FUN_0056f7f0: its do-func, then its
+                // srvmissile): the nova's ring of 64 srvmissilea out to its
+                // range + LevRange a level + calc1 (FUN_005c9b50 ->
+                // FUN_0056d400); the fire wall (FUN_005c9ea0, the Countess's);
+                // else its srvmissile at the target.
+                using d2d::rules::ServerDoFunction;
+                const int lvl = skill_level(game_data, monster, monster.skill);
+                if (cast->srvdofunc == ServerDoFunction::kNova) {
+                    const auto ring = game_data.missiles.find(cast->srvmissilea);
+                    const int reach = ring == game_data.missiles.end() ? 0
+                        : ring->second.range + ring->second.lev_range * lvl + d2d::rules::eval_calc(game_data.skills, cast->calc[0], {}, monster.skill, lvl);
+                    for (int k = 0; k < 64; ++k) {
+                        const float angle = float(k) * 2 * 3.14159265f / 64;
+                        const std::size_t had = missiles.size();
+                        andariel_missile(game_data, monster, cast->srvmissilea, std::cos(angle), std::sin(angle), now_ms, missiles, lvl, cast);
+                        if (missiles.size() > had) { missiles.back().dies = now_ms + std::uint32_t(std::max(reach, 1)) * 40; missiles.back().to.reset(); }
+                    }
+                } else if (cast->srvdofunc == ServerDoFunction::kMissileWall) {
+                    countess_firewall(game_data, monster, now_ms, missiles, cast->srvmissilea);
+                } else {
+                    andariel_missile(game_data, monster, cast->srvmissile, dx, dy, now_ms, missiles, lvl, cast);
+                }
             } else if (monster.skill >= 0 && monster.skill == skill_id(game_data, "SpiderLay")) {
                 // srvdofunc 23 (FUN_005c9c10): its aurastate spiderlay for
                 // auralen 300 frames, aurastat velocitypercent -100.
@@ -849,6 +1090,30 @@ bool monster_update(const GameData& game_data, const Level& level, Monster& mons
                 // Melee: block, reductions, resistances; a hit that lands
                 // pays the foe's thorns (lightning ones less its resistance).
                 auto stats = monster.stats;                                  // Weaken, Decrepify, Battle Cry, Taunt, a boss's aura: its damage %
+                // Fire Hit (srvstfunc 42, FUN_005cae40, the Sand Raiders'): the hit
+                // is its S1 damage and S1 elements (FUN_005a4f50 mode 8).
+                // ponytail: the skill's ResultFlags / HitFlags / HitClass unread.
+                const auto* struck_with = monster.skill >= 0 ? game_data.skills.get(monster.skill) : nullptr;
+                if (monster.leaping) monster.seq_once = true;               // Leap's hit at its start (FUN_005d9c80), its later rows only fly (do 77)
+                if (seq && struck_with && struck_with->srvstfunc == d2d::rules::ServerStartFunction::kFireHit) {
+                    stats.a1_min = stats.s1_min; stats.a1_max = stats.s1_max;
+                    for (auto& element : stats.elements) element.mode = element.mode == "S1" ? "A1" : "";
+                }
+                // Charge's hit (FUN_005cf900): sure to hit (flags 9), calc1 % more
+                // damage, the skill's element at its level (FUN_0056e0c0). Jab's
+                // (do 7, FUN_005db2d0): the same on a hit it rolls.
+                const bool jab = struck_with && struck_with->srvdofunc == d2d::rules::ServerDoFunction::kJab;
+                if (struck_with && (jab || struck_with->srvdofunc == d2d::rules::ServerDoFunction::kCharge)) {
+                    const int lvl = skill_level(game_data, monster, monster.skill);
+                    const int more = d2d::rules::eval_calc(game_data.skills, struck_with->calc[0], {}, monster.skill, lvl);
+                    for (int* damage : { &stats.a1_min, &stats.a1_max }) *damage = std::max(*damage * (100 + more) / 100, 0);
+                    if (!jab) stats.to_hit = 1 << 20;
+                    const auto added = d2d::rules::row_damage(struck_with->etype, struck_with->emin, struck_with->emax, struck_with->emin_lev, struck_with->emax_lev,
+                                                              struck_with->hitshift, struck_with->elen, struck_with->elen_lev, lvl);
+                    if (added.etype >= 0)
+                        for (auto& element : stats.elements)
+                            if (element.type < 0) { element = { added.etype, 100, added.elo >> 8, added.ehi >> 8, added.elen, "A1" }; break; }
+                }
                 for (int* damage : { &stats.a1_min, &stats.a1_max }) *damage = std::max(*damage * (100 + monster.dmg_pct + monster.aura_dmg) / 100, 0);
                 stats.to_hit += stats.to_hit * monster.aura_th / 100;
                 const auto taken = d2d::rules::monster_blow(foe.fighter, foe.level, foe.moving, stats, false, rng);
@@ -876,7 +1141,14 @@ bool monster_update(const GameData& game_data, const Level& level, Monster& mons
                 if (taken.hit && thorns > 0 && hurt(game_data, monster, thorns, now_ms)) return true;
             }
         }
+        if (monster.leaping) {                                          // Leap's flight (do 77, FUN_005d9f70): along the sequence to its landing
+            const float span = float(std::max<std::uint32_t>(monster.mode_until - unit.mode_ms, 1));
+            const float done = std::clamp(float(now_ms - unit.mode_ms) / span, 0.f, 1.f);
+            unit.x = monster.leap_from_x + (monster.leap_to_x - monster.leap_from_x) * done;
+            unit.y = monster.leap_from_y + (monster.leap_to_y - monster.leap_from_y) * done;
+        }
         if (now_ms < monster.mode_until) return false;
+        if (monster.leaping) { monster.leaping = false; unit.x = monster.leap_to_x; unit.y = monster.leap_to_y; }
         set_mode(game_data, monster, "NU", now_ms);
         monster.skill = -1;
         monster.next_act = now_ms + std::uint32_t(type_info.diff[std::size_t(monster.difficulty)].aidel) * 40;

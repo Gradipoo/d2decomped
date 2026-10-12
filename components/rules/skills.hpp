@@ -241,7 +241,9 @@ enum class ServerStartFunction : int {
     kRepeatedHit = 37,             // FUN_005daf40: Zeal, Fury; calc1 hits stored
     kWhirlwind = 38,               // FUN_005d8f50
     kBerserk = 39,                 // FUN_005d97f0
+    kLeap = 40,                    // FUN_005d9d50: a monster hits its target, then leaps past it (twice its spot less its own)
     kLeapAttack = 41,              // FUN_005da540
+    kFireHit = 42,                 // FUN_005cae40: a monster's hit with its S1 damage (FUN_005a4f50 mode 8)
     kStackingStrike = 56,          // Feral Rage, Maul
     kRabies = 57,
     kFireClaws = 58,               // FUN_005c7e00
@@ -332,7 +334,12 @@ enum class ServerDoFunction : int {
     kFistOfTheHeavens = 80,        // FUN_005d0670
     kHolyFreeze = 81,              // FUN_005d0920
     kRedemption = 82,
+    kHatch = 84,                   // FUN_005cafa0: calc1 of its MonStats spawn about it, then it dies (MaggotEgg)
+    kTransMissile = 85,            // FUN_005cb0c0: srvmissilea's row + the monster's TransLvl, once (ShamanFire, UnHolyBolt)
+    kMaggotDown = 86,              // FUN_005cb300: burrowed, it heals calc1 % of its life
+    kMaggotLay = 87,               // FUN_005cb3c0: its MonStats spawn two subtiles toward the target
     kMonsterBreath = 95,           // FUN_005cc4e0: FetishInferno, the inferno sentries
+    kBestow = 96,                  // FUN_005cc840: heals the one it's at calc1..calc2 % of its life
     kBookOrScroll = 113,           // Identify, Town Portal
     kRaven = 114,
     kVine = 115,                   // FUN_005c6a80: Plague Poppy, Cycle of Life, Vines

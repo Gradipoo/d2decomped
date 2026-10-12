@@ -30,7 +30,9 @@ using LevelDefs = std::unordered_map<int, LevelDef>;   // by Levels.txt Id
 struct Placed { int level = 0, x = 0, y = 0, width = 0, height = 0, dir = -1, flip = 0; std::uint32_t flags = 0; };
 
 // How a record places its level against its link (game.exe's callbacks).
-enum class Place { Anchor, Beside, BloodMoor, Town, Fixed };
+// Act 2's: RockyWaste (FUN_006769a0), Shifted (FUN_00676280), Flush
+// (FUN_00676ae0).
+enum class Place { Anchor, Beside, BloodMoor, Town, Fixed, RockyWaste, Shifted, Flush };
 struct Record { Place how; int level; int link; };
 
 // Act 1's two chains (0x6f0750, 0x6f0840): Stony Field anchors Cold
@@ -42,6 +44,14 @@ inline const std::vector<Record> kAct1Outdoors = {
 inline const std::vector<Record> kAct1Highlands = {
     { Place::Anchor, 39, -1 }, { Place::Anchor, 26, -1 }, { Place::Fixed, 7, 1 }, { Place::Beside, 6, 2 },
     { Place::Beside, 5, 3 } };
+
+// Act 2's chains (0x6f0930, 0x6f0a20; FUN_00677790): Lut Gholein anchors
+// the Rocky Waste, Dry Hills, Far Oasis, Lost City and the Valley of
+// Snakes; the Canyon of the Magi stands alone. No outdoor flags.
+inline const std::vector<Record> kAct2Outdoors = {
+    { Place::Anchor, 40, -1 }, { Place::RockyWaste, 41, 0 }, { Place::Shifted, 42, 1 }, { Place::Shifted, 43, 2 },
+    { Place::Shifted, 44, 3 }, { Place::Flush, 45, 4 } };
+inline const std::vector<Record> kAct2Canyon = { { Place::Anchor, 46, -1 } };
 
 // Which (town dir, town flip, Blood Moor dir, Blood Moor flip) are allowed
 // (0x6f1158), indexed dir + 4 flip + 8 bm_dir + 32 bm_flip.
@@ -76,7 +86,7 @@ inline bool apart(const Placed& first, const Placed& second, int gap = 0) {
 // 1 — game.exe's check for that chain (FUN_00676eb0) shifts by 200 tiles
 // first, not ported.
 inline std::vector<Placed> place_chain(const std::vector<Record>& recs, const LevelDefs& defs, d2d::rules::Rng seed,
-                                       bool town_rules) {
+                                       bool town_rules, bool act1_flags = true) {
     const int count = int(recs.size());
     std::vector<Placed> placed(static_cast<std::size_t>(count));
     std::vector<int> start_dir(static_cast<std::size_t>(count), -1), start_flip(static_cast<std::size_t>(count), -1);
@@ -89,15 +99,22 @@ inline std::vector<Placed> place_chain(const std::vector<Record>& recs, const Le
     }
     // Roll a first side (and alignment), else step to the next; false once
     // every one has been tried.
-    auto next_side = [&](int index, bool with_flip) {
+    auto next_side = [&](int index, bool with_flip, int sides) {
         auto& placement = placed[std::size_t(index)];
+        if (sides == 2) {                                          // the Rocky Waste: left (1) or above (2)
+            if (start_dir[std::size_t(index)] == -1) { start_dir[std::size_t(index)] = placement.dir = int(seed.next() & 1) + 1; return true; }
+            const int next = 3 - placement.dir;
+            if (next == start_dir[std::size_t(index)]) return false;
+            placement.dir = next;
+            return true;
+        }
         if (start_dir[std::size_t(index)] == -1) {
-            start_dir[std::size_t(index)] = placement.dir = int(seed.next() & 3);
+            start_dir[std::size_t(index)] = placement.dir = int(seed.next() & std::uint32_t(sides - 1));
             if (with_flip) start_flip[std::size_t(index)] = placement.flip = int(seed.next() & 1);
             return true;
         }
         if (!with_flip) {
-            const int next = (placement.dir + 1) & 3;
+            const int next = (placement.dir + 1) & (sides - 1);
             if (next == start_dir[std::size_t(index)]) return false;
             placement.dir = next;
             return true;
@@ -124,13 +141,31 @@ inline std::vector<Placed> place_chain(const std::vector<Record>& recs, const Le
             return true;
         }
         const bool flips = record.how == Place::BloodMoor || record.how == Place::Town;
-        if (!next_side(index, flips)) return false;
+        const int sides = record.how == Place::RockyWaste ? 2 : record.how == Place::Shifted || record.how == Place::Flush ? 8 : 4;
+        if (!next_side(index, flips, sides)) return false;
         if (record.how == Place::BloodMoor) {                      // 96x56 left/right, 56x96 above/below
             placement.width = placement.dir & 1 ? 96 : 56;
             placement.height = placement.dir & 1 ? 56 : 96;
         }
         const int width = placement.width, height = placement.height, left = linked.x, top = linked.y, right = linked.x + linked.width, bottom = linked.y + linked.height;
         auto put_at = [&](int x, int y) { placement.x = x; placement.y = y; };
+        if (record.how == Place::RockyWaste) {                     // left, top-aligned; or above, left-aligned
+            put_at(placement.dir == 1 ? left - width : left, placement.dir == 1 ? top : top - height);
+            return true;
+        }
+        if (record.how == Place::Shifted) {                        // a side, half the level plus 8 off its corner
+            const int along_x = width / 2 + 8, along_y = height / 2 + 8;
+            const std::array<std::pair<int, int>, 8> spot = { { { left - along_x, bottom }, { left + along_x, bottom }, { left - width, top - along_y },
+                                                                { left - width, top + along_y }, { left - along_x, top - height }, { left + along_x, top - height },
+                                                                { right, top - along_y }, { right, top + along_y } } };
+            put_at(spot[std::size_t(placement.dir)].first, spot[std::size_t(placement.dir)].second);
+            return true;
+        }
+        if (record.how == Place::Flush) {                          // two rolls a side: below, left, above, right
+            const std::array<std::pair<int, int>, 4> spot = { { { left, bottom }, { left - width, top }, { left, top - height }, { right, top } } };
+            put_at(spot[std::size_t(placement.dir / 2)].first, spot[std::size_t(placement.dir / 2)].second);
+            return true;
+        }
         if (record.how == Place::Beside || (record.how == Place::BloodMoor && placement.flip == 1)) {   // FUN_00676150 / 00676650
             const std::array<std::pair<int, int>, 4> spot = { { { left - 16, bottom }, { left - width, top - 16 },
                                                                 { right - width + 16, top - height }, { right, bottom - height + 16 } } };
@@ -178,7 +213,7 @@ inline std::vector<Placed> place_chain(const std::vector<Record>& recs, const Le
         }
         if (fits(i)) ++i;
     }
-    for (int i = 0; i < count; ++i) {                         // FUN_00677180, both chains
+    for (int i = 0; act1_flags && i < count; ++i) {           // FUN_00677180, act 1's chains
         const int dir = placed[std::size_t(i)].dir, next_dir = i + 1 < count ? placed[std::size_t(i + 1)].dir : -1;
         const int level = placed[std::size_t(i)].level;
         if (const auto found = defs.find(level); found == defs.end() || !found->second.outdoor) continue;
@@ -195,6 +230,38 @@ inline std::vector<Placed> act1_layout(const LevelDefs& defs, const d2d::rules::
     const auto highlands = place_chain(kAct1Highlands, defs, act_seed, false);
     outdoors.insert(outdoors.end(), highlands.begin(), highlands.end());
     return outdoors;
+}
+
+// Act 2's two Tal Rasha's Tombs (FUN_00642da0, before the layout): the
+// boss tomb (act +0x94) and the staff tomb (+0x484), each rand(7) + 66 on
+// the act seed, rolled in pairs until they differ.
+struct Act2Tombs { int boss = 0, staff = 0; };
+inline Act2Tombs roll_act2_tombs(d2d::rules::Rng& act_seed) {
+    Act2Tombs tombs;
+    do {
+        tombs.boss = int(act_seed.next() % 7) + 66;
+        tombs.staff = int(act_seed.next() % 7) + 66;
+    } while (tombs.boss == tombs.staff);
+    return tombs;
+}
+
+// Act 2's outdoor levels (FUN_00677790), both chains from the act seed
+// after the tombs' rolls. The chain check (FUN_00676f50) is the plain
+// overlap one.
+inline std::vector<Placed> act2_layout(const LevelDefs& defs, d2d::rules::Rng act_seed) {
+    roll_act2_tombs(act_seed);
+    auto outdoors = place_chain(kAct2Outdoors, defs, act_seed, false, false);
+    const auto canyon = place_chain(kAct2Canyon, defs, act_seed, false, false);
+    outdoors.insert(outdoors.end(), canyon.begin(), canyon.end());
+    return outdoors;
+}
+
+// Lut Gholein's preset file (LvlPrest File1 / File2): the side the Rocky
+// Waste went (FUN_006772c0 reads the next record's dir for level 40):
+// 1 left, 2 above.
+inline int lut_gholein_file(const std::vector<Placed>& layout) {
+    for (const auto& placement : layout) if (placement.level == level_ids::kRockyWaste) return placement.dir;
+    return -1;
 }
 
 // The town's preset, from the side of the Blood Moor it went to

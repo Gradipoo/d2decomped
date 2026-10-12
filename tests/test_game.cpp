@@ -177,9 +177,9 @@ int main() {
         assert(!first.empty() && codes() == first);
         world.apply(d2d::game::cmd::CloseTrade{}, 27 * kTickMs);
         world.apply(d2d::game::cmd::OpenHire{ kashya }, 27 * kTickMs);
-        const auto offers = world.hire_offers;
+        const auto offers = world.hire_offers(0);
         world.apply(d2d::game::cmd::OpenHire{ kashya }, 27 * kTickMs);
-        assert(!offers.empty() && world.hire_offers.size() == offers.size() && world.hire_offers.front().seed == offers.front().seed);
+        assert(!offers.empty() && world.hire_offers(0).size() == offers.size() && world.hire_offers(0).front().seed == offers.front().seed);
         std::printf("OK: Charsi's stock and Kashya's offers outlast their windows\n");
     }
     {   // gold find (FUN_005589a0): the coins times (100 + stat 79) / 100
@@ -263,7 +263,7 @@ int main() {
     assert(spot_x == int(std::floor(gibbet->x * 5)) + 3 && spot_y == int(std::floor(gibbet->y * 5)) + 3);
     assert(world.cain_portal.level == tristram && world.cain_portal.x == (float(spot_x) + 0.5f) / 5 && world.cain_portal.y == (float(spot_y) + 0.5f) / 5);
     const auto cain_view = world.view();
-    assert(std::ranges::count_if(cain_view.portals, [&](const auto& shown) { return shown.which == 4 && shown.x == world.cain_portal.x && shown.y == world.cain_portal.y; }) == 1);
+    assert(std::ranges::count_if(cain_view.portals, [&](const auto& shown) { return shown.which == 8 && shown.x == world.cain_portal.x && shown.y == world.cain_portal.y; }) == 1);
     std::printf("OK: Tristram Cain walked %.2f cells and took his portal at subtile (%d, %d)\n", cain_moved, spot_x, spot_y);
     // A spot no room near his holds (FUN_00463740 null): it moves on 3 and
     // no portal opens; he steps in at once, his own spot the target.

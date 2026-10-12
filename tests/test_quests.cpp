@@ -367,5 +367,138 @@ int main() {
     assert(late_game.andy.start_in == 20);
     for (int i = 0; i < 20; ++i) late_game.andy.tick();
     assert(late_game.andy.state == 1);
+
+    // Lut Gholein's palace (a2q4.cpp): a fresh act 2 has Jerhyn outside and
+    // the guard at the gate; the Arcane Sanctuary done here moves him in
+    // (west of the gate while the Seven Tombs wait), the Seven Tombs given
+    // moves him east, and act 3 open sends the guard away.
+    QuestBits act2{}, game{};
+    auto spots = palace_spots(act2, game);
+    assert(spots.outside && spots.guard && !spots.palace);
+    qset(act2, 12, 13);
+    qset(game, 9, 13);
+    spots = palace_spots(act2, game);
+    assert(!spots.outside && spots.palace && spots.palace_west);
+    qset(act2, 14, 2);
+    spots = palace_spots(act2, game);
+    assert(!spots.outside && spots.palace && !spots.palace_west);
+    qset(act2, 14, 13);
+    assert(!palace_spots(act2, game).guard);
+
+    // Act 2's opening: Jerhyn greets with his "!" until heard, which is
+    // the player's bit 0 and the game's bit 13 (him into the palace).
+    QuestBits opening{}, opening_game{};
+    assert(ActTwoOpening::alert(opening, ActTwoOpening::kJerhyn) && ActTwoOpening::talk(opening, ActTwoOpening::kJerhyn).size() == 1);
+    ActTwoOpening::said(opening, opening_game, ActTwoOpening::kJerhyn, ActTwoOpening::kGreeting);
+    assert(qbit(opening, 8, 0) && qbit(opening_game, 8, 13) && !ActTwoOpening::alert(opening, ActTwoOpening::kJerhyn));
+    assert(palace_spots(QuestBits{}, opening_game).palace);
+
+    // Radament's Lair: Atma's "!" from the start; her 304 heard (talk shut)
+    // logs it; out of town is under way; the kill marks 13 / 1 / 5 and drops
+    // the book; her thanks is done; reading the book is the skill point.
+    QuestBits lair{}, lair_game{};
+    RadamentQuest radament;
+    radament.join(lair, lair_game, false);
+    assert(radament.alert(lair, RadamentQuest::kAtma) && radament.talk(lair, RadamentQuest::kAtma)[0].string == 304);
+    radament.said(lair, lair_game, RadamentQuest::kAtma, RadamentQuest::kInit);
+    radament.talk_closed(lair, RadamentQuest::kAtma);
+    assert(radament.state == 2 && radament.log == 1 && qbit(lair, 9, 2));
+    radament.enter(lair, level_ids::kLutGholein);
+    assert(radament.state == 3 && qbit(lair, 9, 3));
+    const auto kill = radament.killed(lair, lair_game, true, false);
+    assert(kill.books == 1 && kill.took_part && qbit(lair, 9, 13) && qbit(lair, 9, 1) && qbit(lair, 9, 5) && qbit(lair_game, 9, 13));
+    for (int i = 0; i < 12; ++i) radament.tick();
+    assert(radament.log == 3 && radament.alert(lair, RadamentQuest::kAtma) && radament.talk(lair, RadamentQuest::kAtma)[0].string == 334);
+    radament.said(lair, lair_game, RadamentQuest::kAtma, RadamentQuest::kSuccess);
+    assert(radament.state == 5 && radament.log == 0xd && qbit(lair, 9, 0) && !qbit(lair, 9, 1));
+    assert(RadamentQuest::read_book(lair) && !qbit(lair, 9, 5) && !RadamentQuest::read_book(lair));
+    QuestBits lost = lair;                    // done, the book unread and gone: done again later
+    qset(lost, 9, 5);
+    RadamentQuest relost;
+    relost.join(lost, lair_game, false);
+    assert(!relost.open && !qbit(lost, 9, 0) && !qbit(lost, 9, 5));
+
+    // The Tainted Sun: the Lost City starts the timer; dark, Drognan tells
+    // it, out of town, the temple, the altar (credit, an amulet), the log's
+    // timer, any thanks with the reward due is done. Having it with the
+    // amulet: refused.
+    QuestBits sun{}, sun_game{};
+    TaintedSunQuest tainted;
+    tainted.join(sun, sun_game);
+    assert(!tainted.enter(level_ids::kLutGholein, level_ids::kRockyWaste) && tainted.enter(43, TaintedSunQuest::kLostCity));
+    tainted.dark_in = 3;
+    for (int i = 0; i < 4; ++i) tainted.tick(sun);
+    assert(tainted.dark && tainted.state == 1 && tainted.log == 1 && qbit(sun, 11, 2));
+    assert(tainted.alert(sun, TaintedSunQuest::kDrognan) && tainted.talk(sun, TaintedSunQuest::kDrognan)[0].string == 348);
+    tainted.said(sun, sun_game, TaintedSunQuest::kDrognan, TaintedSunQuest::kTold);
+    assert(tainted.state == 2 && tainted.log == 2 && qbit(sun, 11, 3));
+    tainted.enter(level_ids::kLutGholein, level_ids::kRockyWaste);
+    assert(tainted.state == 3);
+    tainted.altar_seen();
+    const auto altar = tainted.use_altar(sun, sun_game, false, false);
+    assert(altar.used && altar.amulets == 1 && altar.took_part && !tainted.dark && tainted.state == 4 && qbit(sun, 11, 1) && qbit(sun_game, 11, 13));
+    assert(!tainted.use_altar(sun, sun_game, false, false).used && tainted.use_altar(sun, sun_game, true, false).refused);
+    for (int i = 0; i < 10; ++i) tainted.tick(sun);
+    assert(tainted.log == 3 && tainted.talk(sun, 176)[0].string == 368);
+    tainted.said(sun, sun_game, 176, 368);
+    assert(tainted.state == 5 && tainted.log == 0xd && qbit(sun, 11, 0) && !qbit(sun, 11, 1));
+
+    // The Horadric Staff: Cain greets with the first part not shown (the
+    // Cube, then the scroll, the amulet, the shaft); the scroll read goes;
+    // the log follows what's carried; the chests give each part once.
+    QuestBits horadric{};
+    qset(horadric, 7, 0);                     // Act 1 over: the log shows it
+    HoradricStaffQuest staff;
+    HoradricStaffQuest::Items carried{ .scroll = true };
+    assert(staff.log_state(horadric, carried, false) == 1 && HoradricStaffQuest::alert(horadric, HoradricStaffQuest::kCain, carried));
+    assert(staff.talk(horadric, HoradricStaffQuest::kCain, carried)[0].string == 335 && staff.talk(horadric, HoradricStaffQuest::kCain, carried)[0].greet);
+    assert(staff.said(horadric, HoradricStaffQuest::kCain, 335) && qbit(horadric, 10, 3));
+    carried = { .shaft = true, .cube = true };
+    assert(staff.talk(horadric, HoradricStaffQuest::kCain, carried)[0].string == 338);
+    assert(!staff.said(horadric, HoradricStaffQuest::kCain, 338) && staff.talk(horadric, HoradricStaffQuest::kCain, carried)[0].string == 337);
+    staff.said(horadric, HoradricStaffQuest::kCain, 337);
+    assert(!HoradricStaffQuest::alert(horadric, HoradricStaffQuest::kCain, carried) && !staff.talk(horadric, HoradricStaffQuest::kCain, carried)[0].greet);
+    carried.amulet = true;
+    assert(staff.log_state(horadric, carried, true) == 3);
+    assert(staff.chest(HoradricStaffQuest::kCubeChest, horadric, {}) == "box" && staff.chest(HoradricStaffQuest::kCubeChest, horadric, carried).empty());
+    assert(staff.log_state(horadric, {}, false) == 2);
+    staff.join(horadric, { .cube = true }, false);
+    assert(!qbit(horadric, 10, 5) && qbit(horadric, 10, 6));   // the shaft's gone: not shown any more
+
+    // The Arcane Sanctuary: the staff made opens it; Drognan, Jerhyn, the
+    // Sanctuary, the journal (done for a player there), its 396 in the
+    // journal's room opens the way to the Canyon once.
+    QuestBits sanctuary{}, sanctuary_game{};
+    ArcaneQuest arcane;
+    arcane.staff_made(sanctuary);
+    assert(arcane.state == 1 && arcane.log == 1 && arcane.alert(sanctuary, ArcaneQuest::kDrognan));
+    auto roll = [] { return 1u; };
+    assert(arcane.talk(sanctuary, ArcaneQuest::kGuard, roll)[0].string == 186 && arcane.alert(sanctuary, ArcaneQuest::kGuard));
+    arcane.said(sanctuary, sanctuary_game, ArcaneQuest::kDrognan, ArcaneQuest::kToJerhyn, 0);
+    arcane.talk_closed(sanctuary, ArcaneQuest::kDrognan);
+    assert(arcane.state == 2 && arcane.log == 2 && arcane.guard_in && qbit(sanctuary, 12, 2) && arcane.talk(sanctuary, ArcaneQuest::kGuard, roll)[0].string == 188);
+    arcane.said(sanctuary, sanctuary_game, ArcaneQuest::kJerhyn, ArcaneQuest::kToPalace, 0);
+    assert(arcane.state == 3 && arcane.log == 3 && qbit(sanctuary, 12, 3));
+    arcane.enter(sanctuary, 54, ArcaneQuest::kSanctuary);
+    assert(arcane.state == 4 && arcane.log == 4 && qbit(sanctuary, 12, 5));
+    arcane.journal(sanctuary, 7, true);
+    assert(arcane.state == 5 && qbit(sanctuary, 12, 0) && qbit(sanctuary, 12, 1) && qbit(sanctuary, 12, 13) && !qbit(sanctuary, 12, 5));
+    assert(!arcane.said(sanctuary, sanctuary_game, -1, ArcaneQuest::kJournal, 3) && arcane.log == 5);
+    assert(arcane.said(sanctuary, sanctuary_game, -1, ArcaneQuest::kJournal, 7) && qbit(sanctuary_game, 12, 13));
+    assert(!arcane.said(sanctuary, sanctuary_game, -1, ArcaneQuest::kJournal, 7));
+    arcane.said(sanctuary, sanctuary_game, 176, 406, 0);
+    assert(!qbit(sanctuary, 12, 1) && arcane.rewarded);
+
+    // The Summoner: going for the player opens it; his death credits a
+    // player by him; three ticks on, log 4; the town's thanks are done.
+    QuestBits summoning{}, summoning_game{};
+    SummonerQuest summoner;
+    summoner.engaged(summoning);
+    assert(summoner.state == 1 && summoner.log == 2 && qbit(summoning, 13, 2) && summoner.talk(summoning, 176)[0].string == 414);
+    assert(summoner.killed(summoning, true) && qbit(summoning, 13, 13) && qbit(summoning, 13, 1) && summoner.state == 2);
+    assert(!summoner.tick() && !summoner.tick() && summoner.tick() && summoner.log == 4);
+    assert(SummonerQuest::alert(summoning, 176) && summoner.talk(summoning, 176)[0].string == 427 && summoner.talk(summoning, 176)[0].greet);
+    summoner.said(summoning, summoning_game, 427);
+    assert(summoner.state == 3 && summoner.log == 0xd && qbit(summoning, 13, 0) && !qbit(summoning, 13, 1));
     std::puts("ok");
 }

@@ -7,7 +7,7 @@ Usage: quests_d2d.py <path-to-d2d>
 A new Amazon (made sturdy: 400 Vitality) plays Act 1's six quests
 through the World: the NPC talks, the quest objects (Tree of Inifuss,
 Cairn Stones, Cain's Gibbet, the Moldy Tome, the Malus), the kills, the
-rewards (Charsi's imbue on the held item), Warriv's way east, checking
+rewards (Charsi's imbue on the held item), Warriv's way east to Lut Gholein, checking
 each quest's flag bits
 (docs/research/re/quests.md, act1-end.md). Travel is `debug goto`; each
 level's monsters go by `debug kill`. Skips without the MPQs or the 1.14d
@@ -310,6 +310,15 @@ try:
     open_menu("Warriv")
     assert any(l.split("\t")[0].lower().startswith(("go east", "east")) for l in cmd("menu").splitlines()), f"no way east: {cmd('menu')!r}"
     print("OK: Sisters to the Slaughter (Warriv offers the way east)")
+    east = [l.split("\t") for l in cmd("menu").splitlines() if l.split("\t")[0].lower().startswith(("go east", "east"))]
+    cmd(f"click {east[0][1]} {east[0][2]}")
+    until("the caravan lands in Lut Gholein", lambda: level() == 40, 30)
+    assert "through Warriv's caravan" in log_text(), "no caravan arrival logged"
+    print("OK: Warriv's caravan lands in Lut Gholein")
+    open_menu("Warriv")                                 # Lut Gholein's Warriv: back west
+    menu_pick("go west")
+    until("the caravan lands in the camp", lambda: level() == 1, 30)
+    print("OK: Warriv's caravan goes back west")
     cmd("quit")
 finally:
     if proc.poll() is None:

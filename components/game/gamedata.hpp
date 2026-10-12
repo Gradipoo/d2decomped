@@ -7,10 +7,12 @@
 #include "game.hpp"
 
 #include <cof.hpp>
+#include <cube.hpp>
 #include <compcode.hpp>
 #include <d2s_items.hpp>
 #include <drlg.hpp>
 #include <ds1.hpp>
+#include <level_ids.hpp>
 #include <dt1.hpp>
 #include <monsters.hpp>
 #include <montypes.hpp>
@@ -77,6 +79,10 @@ struct UnitShape {
     }
 };
 
+// The town AIs (MonAI 32 Npc FUN_005e7130, 41 Towner FUN_005e7540, 42
+// Vendor FUN_005e9e00; town-npcs.md).
+enum class TownAi { none, npc, towner, vendor };
+
 // Things the DS1 places (its object list): NPCs (type 1, from
 // data\global\monsters) and objects (type 2 — torches, fires, the
 // waypoint..., from data\global\objects). Both are composites.
@@ -92,7 +98,7 @@ struct Npc {
     std::vector<std::pair<float, float>> path;   // DS1 patrol points, cells
     std::vector<int> actions;            // each path point's DS1 action (town_npcs.hpp)
     float velocity = 3;                  // MonStats Velocity
-    bool npc_ai = false;                 // MonStats AI "Npc" (FUN_005e7130): thinks with rules::npc_think
+    TownAi town_ai = TownAi::none;       // MonStats AI Npc / Towner / Vendor: thinks with rules::npc_think / vendor_think
     std::uint32_t modes = 0;             // MonStats2 mS1 / mS2 as bits 8 / 9 (FUN_0046c140)
     int operate_fn = 0;                  // objects.txt OperateFn (32: the town stash)
     UnitShape shape;                     // an NPC's collision (MonStats / MonStats2)
@@ -110,6 +116,10 @@ struct Npc {
     int hc_idx = -1;                     // MonStats hcIdx (NPC menu table key)
     std::string id;                      // MonStats Id (npc.txt key)
     int quest = 0;                       // shown once this Act 1 quest is done (Cain: 4), 0 = always
+    // Lut Gholein's palace NPCs, shown by rules::palace_spots: 1 Jerhyn by
+    // object 121, 2 / 3 Jerhyn in the palace (object 122's x - 10 / x + 15),
+    // 4 the gate guard; 0 = none.
+    int palace = 0;
     int op_frames = 0;                   // objects.txt FrameCnt1 when it has an OP mode (Mode1)
     int shrine = 0;                      // a shrine's Shrines.txt row (roll_shrine)
     int trap = 0;                        // a chest's trap type (roll_chest), 0 none
@@ -142,6 +152,13 @@ struct LevelDt1s {
 // (style, seq, type) -> tile lookup for the compositor, the walk grid, the
 // units the DS1 places, where players arrive, and its sound environment.
 // Empty when the assets aren't found (headless / bad data dir).
+// Level::spawn_at before any spawn tile is found.
+constexpr std::array<std::pair<float, float>, 12> no_spawns() {
+    std::array<std::pair<float, float>, 12> none{};
+    for (auto& spot : none) spot = { -1.f, -1.f };
+    return none;
+}
+
 struct Level {
     int id = 0;                                        // Levels.txt Id (1: the Rogue Encampment)
     std::string name;                                  // Levels.txt LevelName
@@ -244,6 +261,9 @@ struct Level {
     }
     std::pair<float, float> start{ -1.f, -1.f };            // cells: where a player joining arrives; see load_world
     std::pair<float, float> portal_spot{ -1.f, -1.f };      // cells: a town's portal arrival (DS1 special 33, spawn index 11)
+    // Every spawn index's spot (the first tile of each; -1 none): 5 is where
+    // an act change of kind 5 lands (Warriv's way back west, FUN_0054b830).
+    std::array<std::pair<float, float>, 12> spawn_at = no_spawns();
     // Its warps (the units its hidden warp tiles make): cell, the level
     // it leads to (Levels.txt Vis), its LvlWarp ExitWalk (cells), and where
     // its tile unit stands (cells: the cell x 5 + LvlWarp Offset subtiles).
@@ -507,6 +527,9 @@ struct GameData {
     // builds and links outdoor neighbours (Level::nearby). load.hpp.
     mutable std::map<int, std::unique_ptr<Level>> levels;
     const Level* level(int id) const;
+    // The town of level `id`'s act: the camp, or Lut Gholein (built on
+    // demand like any level).
+    [[nodiscard]] const Level* town_of(int id) const { return id < d2d::rules::level_ids::kLutGholein ? &town : level(d2d::rules::level_ids::kLutGholein); }
     void want_level(int id) const;
     void poll_levels() const;
     // SuperUniques.txt (without its Expansion row): name, MonStats row of
@@ -515,6 +538,7 @@ struct GameData {
                          std::array<int, 3> utrans{}; bool autopos = false, stacks = false;   // Utrans by difficulty: its colour; AutoPos, Stacks
                          std::string sound; };                                                   // MonSound: its own MonSounds row (rules::boss_sound)
     std::vector<SuperUnique> superuniques;
+    std::vector<d2d::rules::CubeRecipe> cube_recipes;    // cubemain.txt, compiled (rules::compile_cube_input / _output)
     d2d::rules::UMods umods;                           // MonUMod.txt: champion / unique mods and constants
     std::array<std::vector<std::string>, 3> unique_names;   // UniquePrefix / Suffix / Appellation, resolved
     std::array<std::string, 2> unique_formats;         // strings 0x6b9 ("%0 %1"), 0x6ba ("%0 %1 %2")
@@ -526,6 +550,12 @@ struct GameData {
     std::vector<std::uint8_t> field;                   // expfield.d2: 256 x 256 directions (0-7, 8 the centre) toward (128, 128)
     std::uint32_t map_seed = 3;                        // act layout + levels (3: townE1)
     std::vector<d2d::drlg::Placed> act1_layout;        // where act 1's levels sit (act tiles)
+    std::vector<d2d::drlg::Placed> act2_layout;        // act 2's (its own act tiles: the acts overlap)
+    // The layout level `id`'s act placed it in (empty for acts not laid out).
+    [[nodiscard]] const std::vector<d2d::drlg::Placed>& layout_of(int id) const {
+        static const std::vector<d2d::drlg::Placed> kNone;
+        return id < d2d::rules::level_ids::kLutGholein ? act1_layout : id < d2d::rules::level_ids::kKurastDocks ? act2_layout : kNone;
+    }
     // Mercenary units by hireling.txt Id (the save's merc type): the
     // monster, and the first name key (merc01, merca201, MercX101, ...).
     struct Merc { Npc npc; std::string name_first; };
@@ -727,8 +757,10 @@ struct GameData::LevelBuilder {
 // The Blood Moor from the map seed (components/drlg): act 1's layout
 // places it against the town, the generator fills it, its tiles come from
 // the Act 1 wilderness DT1s (LvlTypes).
-// The levels d2d builds so far (the rest of Act 1 comes with its research).
-constexpr std::array kBuiltLevels{ 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39 };
+// The levels d2d builds so far: Act 1's (the town is GameData::town) and
+// Act 2's but the Arcane Sanctuary (74).
+constexpr std::array kBuiltLevels{ 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55,
+                                    56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74 };
 
 // A composite's COF and timing (the World's part of a composite).
 struct CofAnim { d2d::cof::Cof cof; GameData::AnimTiming timing; std::string path; bool ok = false; };
@@ -768,6 +800,10 @@ struct Spawning {
     // The game's object seed (game +0x10f0, FUN_00546c60): every room's
     // objects, shrines, chests and every container opened step it, game-wide.
     d2d::rules::Rng objects;
+    // The sunitproxy seed (FUN_00536070: {a game seed step, 666}, game
+    // +0x1d24 +8, FUN_00536b40): the hire lists and the vendors' stock roll on it.
+    d2d::rules::Rng proxy;
+    d2d::rules::Rng quests;                 // the quests' seed (game +0x10f4 +0x18): its timers and drops (FUN_005438b0)
     std::vector<d2d::rules::Region> regions;               // by Levels.txt Id
     std::unordered_map<const Level*, LevelState> levels;
     std::bitset<128> superuniques;                         // spawned this game (game +0x1d30)
@@ -851,6 +887,10 @@ std::pair<int, int> drop_spot(const std::vector<std::uint8_t>& field, int x, int
 void add_object(const GameData& game_data, const d2d::txt::Table& objects, const std::unordered_map<std::string, std::size_t>& obj_row,
                 Level& into, int oid, int spot_x, int spot_y, d2d::rules::Rng& rgn);
 void finish_level(Level& level);
+// A town of any act: no monsters, no running drain, no town portal.
+[[nodiscard]] inline bool in_town(const Level* level) { return level && d2d::rules::level_ids::is_town(level->id); }
+// A town's spawn spots from its DS1 specials: Level::start, portal_spot.
+void find_spawn_spots(Level& level);
 LevelDt1s load_level_dt1s(Level& level, d2d::mpq::Stack& mpqs, d2d::drlg::OutdoorAssets& assets, int type, d2d::dt1::Pixels pixels);
 std::size_t set_level_tiles(Level& level, const d2d::drlg::OutdoorAssets& assets, const LevelDt1s& dt1s,
                             const std::vector<d2d::drlg::Outdoor::RoomSeed>& made, const std::vector<d2d::drlg::PlainRoom>& plain,

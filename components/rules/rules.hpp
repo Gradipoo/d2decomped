@@ -56,6 +56,7 @@ struct ItemType {
     std::array<int, 3> max_sock{};     // MaxSock1 / 25 / 40: by ilvl <= 25, <= 40, above
     int staff_mods = 7;                // StaffMods class (ama .. ass = 0 .. 6), 7 none
     int var_inv_gfx = 0;               // VarInvGfx: pictures to pick from
+    int store_page = -1;               // StorePage: armo 0, weap 1 (spilling to 2), misc 3; -1 never stocked
 };
 // TreasureClassEx.txt row: picks, the NoDrop weight, quality modifiers
 // (Unique, Set, Rare, Magic, in 1024ths off the odds) and the weighted
@@ -91,10 +92,17 @@ struct ItemBase {
     bool has_inv = false, no_durability = false;          // hasinv (+0x137), nodurability (+0x113)
     bool quest_diff = false;                              // questdiffcheck (+0x12b): stat 356 = the difficulty made in
     int max_1h = 0, max_2h = 0;                           // weapons.txt maxdam (+0xff) / 2handmaxdam (+0x103)
+    std::string nightmare_upgrade, hell_upgrade;       // NightmareUpgrade / HellUpgrade ("xxx" none): a store's base in those difficulties
+    bool spawnable = false;                            // spawnable (+0x133)
+    int version = 0;                                   // version (+0xf6): 100 an expansion item
+    std::string type2;                                 // type2 (+0x120)
 };
 // Prices (FUN_0062efb0, docs/research/re/store.md): npc.txt by MonStats Id.
 struct NpcPrice { int buy = 1024, sell = 1024, rep = 1024; std::array<int, 3> qflag{}, qbuy{}, qsell{}, qrep{}, max_buy{}; };
-struct VendorItem { std::string code; int min = 0, max = 0, magic_min = 0, magic_max = 0, magic_lvl = 0; bool perm = false; };
+// level (Items +0xfd) and version (+0xf6: 100 an expansion item), magic:
+// bitfield1 bit 0 (FUN_00629c80), what a vendor may sell magic.
+struct VendorItem { std::string code; int min = 0, max = 0, magic_min = 0, magic_max = 0, magic_lvl = 0; bool perm = false;
+                    int level = 0, version = 0; bool magic = false; };
 
 // A class skill for the skill tree: Skills.txt (reqlevel, reqskill1..3,
 // maxlvl) joined with SkillDesc.txt (SkillPage = tab 1..3, SkillRow 1..6,
@@ -116,12 +124,14 @@ struct Affix {
     bool spawnable = false, rare = false;
     std::vector<std::string> itypes, etypes;
     std::vector<Mod> mods;
+    int class_specific = -1;                    // classspecific (ama .. ass = 0 .. 6), -1 any (row +0x66)
 };
 // UniqueItems / SetItems row (without separators, as the save's IDs).
 // UniqueItems / SetItems row: ladder (flag 8) never drops outside a ladder
 // game, nolimit (flag 2) isn't one per game; set: its Sets.txt row.
 struct Special {
     std::string code; int level = 0, rarity = 1; bool enabled = true; std::vector<Mod> mods; bool ladder = false, nolimit = false; int set = -1;
+    std::string index;                                     // its "index" name (cubemain's names, FUN_006bd3c0)
     std::vector<Mod> bonus;                                // a set's aprop1a..aprop5b, all 10 (unused: no code)
     bool bonus_apart = false;                              // add func: the bonuses go to their own lists (else the item's)
 };
@@ -201,6 +211,7 @@ struct Tables {
     std::vector<std::pair<int, int>> skill_levels;         // Skills.txt reqlevel, maxlvl by Id (FUN_00644710 / FUN_004aa8b0)
     std::array<int, 7> class_first_skill{};                // per class its first skill Id (FUN_006460f0)
     std::vector<Special> uniques, sets;
+    std::vector<std::string> item_order;                  // item codes in the Items table's order (weapons, armor, misc)
     std::vector<SetBonus> set_bonuses;                    // by Sets.txt row
     std::unordered_map<std::string, std::vector<PropFunc>> properties;
     std::unordered_map<std::string, int> skill_id;         // Skills.txt skill name -> Id
@@ -218,10 +229,8 @@ struct Tables {
     std::unordered_map<std::string, Potion> potions;
 };
 
-// ponytail: stock = each listed item <Vendor>Min..Max times plus the
-// PermStoreItems once, packed first-fit by kind (armour tab 0, weapons
-// 1 then 2, misc 3) — the server's roll isn't located yet, no magic
-// stock.
+// A vendor's window: its stock (game::open_store fills it as game.exe,
+// rules::store_fill / make_store_item) by page.
 struct Store {
     int npc = -1, vendor = -1, tab = 0;        // npc: the caller's NPC index
     int hc_idx = -1;                            // the vendor's MonStats hcIdx
@@ -234,6 +243,54 @@ struct Store {
     bool gamble = false;                        // Gheed's gamble list: buying rolls a new item
     int reduced = 0;                            // the player's item_reducedprices (stat 87), 0..99: off buy, gamble and repair
 };
+
+// What a vendor's fill asks the item maker for (FUN_00576980 -> FUN_00576330):
+// a base, its quality (1 low, 2 normal, 3 superior, 4 magic) at the store
+// level; `fill` a permanent quiver's quantity set to its max (stat 0x46).
+struct StoreAsk { std::string code; int quality = 2, ilvl = 0; bool fill = false; };
+
+// The store level (FUN_00576890): clvl + 5, capped in Normal by the act
+// (12, 20, 28, 36, 45).
+[[nodiscard]] inline int store_level(int clvl, int act, int difficulty) {
+    static constexpr std::array<int, 5> kCap = { 12, 20, 28, 36, 45 };
+    const int level = clvl + 5;
+    return difficulty == 0 && act >= 0 && act < 5 ? std::min(level, kCap[std::size_t(act)]) : level;
+}
+// FUN_004bc500: low..high - 1 on the seed (no draw when high <= low).
+inline int store_range(Rng& seed, int low, int high) { return high <= low ? low : low + seed(high - low); }
+// FUN_00576900: a normal copy's quality by the store level.
+inline int store_quality(Rng& seed, int level) {
+    const int roll = int(seed.next() % 100);
+    if (level < 5) return roll > 90 ? 1 : 2;
+    return roll > (level < 10 ? 85 : 74) ? 3 : 2;
+}
+// The fill (FUN_00576980, SUNITNPC.CPP) on the proxy seed: each candidate
+// (Items table order, weapons, armor, misc) up to the store level rolls
+// Min..Max normal copies (none from store level 25), each its quality;
+// a base that can be magic and whose MagicLvl is reached rolls
+// MagicMin..MagicMax (+ 1 or 2 more from store level 25) magic ones; an
+// expansion base only in an expansion game. Then each permanent item once,
+// normal (quivers filled). `make` makes one and says whether it took; over
+// 32 failures end the fill.
+template <class Make>
+void store_fill(const Tables& tables, int vendor, int level, bool expansion, Rng& seed, Make&& make) {
+    if (vendor < 0 || vendor >= 17) return;
+    int failed = 0;
+    auto ask = [&](StoreAsk request) { if (!make(request) && ++failed > 32) return false; return true; };
+    for (const auto& item : tables.vendor_items[std::size_t(vendor)]) {
+        if (item.perm || item.level > level) continue;
+        const int normals = level < 25 ? store_range(seed, item.min, item.max + 1) : 0;
+        if (item.version >= 100 && !expansion) continue;
+        for (int copy = 0; copy < normals; ++copy)
+            if (!ask({ item.code, store_quality(seed, level), level })) return;
+        if (!item.magic || item.magic_lvl > level) continue;
+        const int extra = level > 24 ? store_range(seed, 1, 3) + 1 : 1;
+        for (int copy = store_range(seed, item.magic_min, item.magic_max + extra); copy > 0; --copy)
+            if (!ask({ item.code, 4, level })) return;
+    }
+    for (const auto& item : tables.vendor_items[std::size_t(vendor)])
+        if (item.perm && !ask({ item.code, 2, level, item.code == "cqv" || item.code == "aqv" })) return;
+}
 
 // FUN_0062efb0's last step for a buy, a gamble or a repair: the player's
 // reduced prices (stat 87, at most 99) off, at least 1.
@@ -304,26 +361,6 @@ inline bool is_repair_vendor(int hc_idx) {
     return hc_idx == kCharsi || hc_idx == kFara || hc_idx == kHratli || hc_idx == kHalbu || hc_idx == kLarzuk;
 }
 
-inline Store open_store(const Tables& tables, int hc_idx, std::string npc_id, Rng& rng) {
-    Store store;
-    store.npc_id = std::move(npc_id);
-    store.hc_idx = hc_idx;
-    store.vendor = vendor_index(hc_idx);
-    if (store.vendor < 0) return store;
-    for (const auto& vendor_item : tables.vendor_items[std::size_t(store.vendor)]) {
-        if (vendor_item.perm) store.perm.push_back(vendor_item.code);
-        int count = vendor_item.perm ? 1 : rng.range(vendor_item.min, vendor_item.max);
-        while (count-- > 0) {
-            d2d::d2s::Item item;
-            item.code = vendor_item.code;
-            if (const auto found = tables.item_base.find(vendor_item.code); found != tables.item_base.end() && store_tab_for(tables, vendor_item.code) == 0)
-                item.defense = found->second.minac;
-            store_place(tables, store, store_tab_for(tables, vendor_item.code), std::move(item));
-        }
-    }
-    for (int i = 0; i < 4; ++i) if (!store.tabs[std::size_t(i)].empty()) { store.tab = i; break; }
-    return store;
-}
 
 // Buy (sell = false) or sell price of an item at the NPC with MonStats Id
 // npc_id, for the player's header (difficulty, quest flags).
@@ -872,7 +909,26 @@ inline void apply_mod(const Tables& tables, const Mod& mod, std::vector<d2d::d2s
                     if (const int most = more + more * percent / 100; most > 0) target->item->durability = most;
                 }
                 break;
-            case 14: if (target && first < 1) draw(); break;
+            case 14: {                                     // FUN_0065f590: sockets, at most the grid (6) and FUN_0062bc20
+                if (!target) break;
+                const auto info = tables.item_info.find(target->item->code);
+                const int grid = info != tables.item_info.end() ? info->second.width * info->second.height : 0;
+                if (grid == 0) break;
+                int most = std::min(grid, 6);
+                if (const auto type_found = info != tables.item_info.end() ? tables.types.find(info->second.type) : tables.types.end(); type_found != tables.types.end()) {
+                    const int ilvl = target->item->ilvl;
+                    const int sockets_max = std::min(target->base->gem_sockets, type_found->second.max_sock[std::size_t(ilvl <= 25 ? 0 : ilvl <= 40 ? 1 : 2)]);
+                    if (sockets_max <= most) most = sockets_max;
+                }
+                int amount = first >= 1 ? first : draw();
+                if (amount < 1) amount = par;
+                const int sockets = std::max(amount, 1) < most ? std::max(amount, 1) : most;
+                if (sockets < 1) break;
+                target->item->socketed = true;
+                target->item->sockets = sockets;
+                result = sockets;
+                break;
+            }
             case 15: result = mod.min; if (stat == kMinDamage) damage(kMinDamage, kSecondaryMinDamage, kThrowMinDamage, result); else put(stat, 0, result); break;
             case 16: result = mod.max; if (stat == kMaxDamage) damage(kMaxDamage, kSecondaryMaxDamage, kThrowMaxDamage, result); else put(stat, 0, result); break;
             case 17:
@@ -1082,7 +1138,9 @@ inline d2d::d2s::Item generate_item(const Tables& tables, const std::string& cod
     };
     // Low / normal / superior: no affixes; stacks (arrows, bolts, keys) roll
     // their quantity.
-    if (quality <= 3) {
+    // Low / normal / superior (also magic's fallback, FUN_00557320).
+    auto plain = [&](int plain_quality) {
+        quality = plain_quality;
         item.quality = std::max(quality, 1);
         if (!unit_seed && base && base->stackable) item.quantity = rng.range(base->min_stack, base->max_stack);
         if (!unit_seed || !base) return item;
@@ -1127,7 +1185,8 @@ inline d2d::d2s::Item generate_item(const Tables& tables, const std::string& cod
         if (!made) { rng = Rng(start); item.quality = 2; item.qsub = -1; }
         if (item.quality == 2) staff_mods();
         return finish();
-    }
+    };
+    if (quality <= 3) return plain(quality);
     auto special = [&](const std::vector<Special>& list) {
         auto fits = [&](const Special& row) { return row.enabled && !row.ladder && row.code == code && row.level <= item.ilvl && (row.set != 29 || bovine); };
         int total = 0, pick = -1;
@@ -1201,14 +1260,69 @@ inline d2d::d2s::Item generate_item(const Tables& tables, const std::string& cod
         }
         return item;
     }
+    if (quality == 4 && unit_seed && base) {
+        // Magic (FUN_00557450 case 4 -> FUN_005565e0): a prefix, then a
+        // suffix (one at least: the suffix is forced when no prefix came),
+        // each FUN_005c1560 on the own seed: a coin (one step: even and not
+        // forced, none); the affix level (as the class affix'); the rows
+        // spawnable, in the level window, of the type, the item's class or
+        // none, frequency > 0, not rare-only on a non-rare, no group the
+        // item has (FUN_005c1500); weight frequency (x level with MagicLvl);
+        // rand(total + 1), the last when it runs past; its mods at once.
+        // Then the staff mods (FUN_005c1260) and the tail.
+        item.quality = 4;
+        static constexpr std::array<std::string_view, 7> kClass = { "ama", "sor", "nec", "pal", "bar", "dru", "ass" };
+        const int item_class = item_type ? int(std::ranges::find(kClass, std::string_view(item_type->cls)) - kClass.begin()) : 7;
+        const int level = std::max(item.ilvl, qlvl);
+        const int magic_alvl = std::clamp(base->magic_lvl ? level + base->magic_lvl : level < 99 - qlvl / 2 ? level - qlvl / 2 : 2 * level - 99, 1, 99);
+        // FUN_0065e620: an affix whose first mod sets the sockets (stat 0xc2)
+        // only on an item that can hold some (hasinv and a socket count).
+        const int by_ilvl = item_type ? item_type->max_sock[std::size_t(item.ilvl <= 25 ? 0 : item.ilvl <= 40 ? 1 : 2)] : 0;
+        const bool socketable = base->has_inv && std::min(base->gem_sockets, by_ilvl) > 0;
+        auto sockets_mod = [&](const Affix& affix) {
+            if (affix.mods.empty()) return false;
+            const auto property = tables.properties.find(lower_case(affix.mods.front().code));
+            return property != tables.properties.end() && !property->second.empty() && property->second.front().stat == 0xc2;
+        };
+        auto magic_affix = [&](const std::vector<Affix>& list, bool must) {
+            const auto coin = rng.next();
+            if (!(coin & 1) && !must) return 0;
+            std::vector<std::pair<int, int>> fits;
+            int total = 0;
+            for (std::size_t row = 0; row < list.size(); ++row) {
+                const auto& affix = list[row];
+                if (!affix.spawnable || affix.frequency <= 0 || affix.level > magic_alvl || (affix.max_level > 0 && affix.max_level < magic_alvl)) continue;
+                if (affix.class_specific >= 0 && item_class != 7 && affix.class_specific != item_class) continue;
+                if (std::ranges::none_of(affix.itypes, [&](const auto& wanted_type) { return type_is(tables, type, wanted_type); })) continue;
+                if (std::ranges::any_of(affix.etypes, [&](const auto& excluded_type) { return type_is(tables, type, excluded_type); })) continue;
+                if (std::ranges::find(groups, affix.group) != groups.end()) continue;
+                if (!socketable && sockets_mod(affix)) continue;
+                const int weight = base->magic_lvl ? affix.frequency * affix.level : affix.frequency;
+                fits.push_back({ int(row), weight });
+                total += weight;
+            }
+            if (fits.empty()) return 0;
+            int roll = rng(total + 1), chosen = fits.back().first;
+            for (const auto& [fit_row, weight] : fits) if ((roll -= weight) < 0) { chosen = fit_row; break; }
+            groups.push_back(list[std::size_t(chosen)].group);
+            const ModItem target{ &item, base, kind, item_type && item_type->throwable, false };
+            for (const auto& mod : list[std::size_t(chosen)].mods) apply_mod(tables, mod, item.props, rng, &target);
+            return chosen;
+        };
+        item.prefix = magic_affix(tables.prefixes, false);
+        item.suffix = magic_affix(tables.suffixes, item.prefix == 0);
+        // Neither (FUN_00557320): the affixes cleared, the own seed back to
+        // its start, remade superior (and normal when that doesn't take).
+        if (!item.prefix && !item.suffix) { rng = Rng(start); return plain(3); }
+        staff_mods();
+        return finish();
+    }
     item.quality = 4;
-    const int shape = rng(4);                              // 0 prefix, 1 suffix, 2-3 both
+    const int shape = rng(4);                              // 0 prefix, 1 suffix, 2-3 both (no unit seed: stores' gambles and imbues)
     if (shape != 1) item.prefix = add(true);
     if (shape != 0) item.suffix = add(false);
-    // No affix fits (FUN_005565e0 returns 0): game.exe remakes it superior
-    // (FUN_00557320), and normal when that doesn't take (FUN_005572a0).
     if (!item.prefix && !item.suffix) return generate_item(tables, code, ilvl, 3, rng, unit_seed, found_uniques, bovine, difficulty);
-    return item;                                           // ponytail: magic / rare affixes aren't game.exe's, so no tail (ethereal, class affix)
+    return item;                                           // ponytail: without a unit seed magic isn't game.exe's
 }
 
 // Whether Charsi's imbue takes `item` (FUN_0062c590): Items bitfield1
@@ -1336,7 +1450,39 @@ struct MercOffer {
     int name = 0;                                       // index from NameFirst
 };
 
-// One offer for act (0-based) and difficulty (0-2): FUN_00656580 lists
+// A hire list's entry (FUN_00576070, SUNITNPC.CPP): one per name of the
+// seller's (hireling.txt NameFirst..NameLast), its seed a step of the game
+// seed; `offered` (+0xc) the ten picked for the list, `hired` (+8) taken.
+struct HireEntry { int name = 0; std::uint32_t seed = 0; bool offered = false, hired = false; };
+// The list: the entries in name order, each a game seed step, then ten
+// picks of rand(names) on the game seed, each moving on past a taken
+// entry (wrapping; back at its start the picking ends).
+inline std::vector<HireEntry> hire_entries(int names, Rng& game) {
+    std::vector<HireEntry> entries;
+    for (int name = 0; name < names; ++name) entries.push_back({ name, game.next() });
+    for (int pick = 0; pick < 10 && names > 0; ++pick) {
+        const int start = game(names);
+        int slot = start;
+        while (entries[std::size_t(slot)].offered || entries[std::size_t(slot)].hired) {
+            slot = (slot + 1) % names;
+            if (slot == start) return entries;
+        }
+        entries[std::size_t(slot)].offered = true;
+    }
+    return entries;
+}
+// The seller's names (FUN_00575ff0: its first row's NameFirst..NameLast)
+// for act (0-based), difficulty and version.
+[[nodiscard]] inline int hire_names(const Tables& tables, bool expansion, int act, int diff) {
+    for (const auto& hireling : tables.hirelings)
+        if (hireling.act == act + 1 && hireling.difficulty == diff + 1 && hireling.version == (expansion ? 100 : 0)) return hireling.names;
+    return 0;
+}
+// An entry still for hire (FUN_00577010 counts them: none left, the list's rolled anew).
+[[nodiscard]] inline bool for_hire(const HireEntry& entry) { return entry.offered && !entry.hired; }
+
+// An entry's offer (FUN_006637f0) for act (0-based) and difficulty (0-2),
+// on its own seed {seed, 666}: FUN_00656580 lists
 // the rows of that act, difficulty and version (100 = LoD) sharing the
 // first one's Level; one is picked, the level is clvl - 5 + rand(5)
 // (at least 2), and with d = level - the row's Level:
@@ -1344,7 +1490,8 @@ struct MercOffer {
 //   (>= 10), cost = Gold * (15d + 100) / 100 (>= Gold), exp =
 //   (level + 1) * Exp/Lvl * level^2, def = Def + Def/Lvl * d, damage =
 //   Dmg-Min/Max + (Dmg/Lvl * d >> 3).
-inline std::optional<MercOffer> merc_offer(const Tables& tables, bool expansion, int act, int diff, int clvl, Rng& rng) {
+inline std::optional<MercOffer> merc_offer(const Tables& tables, bool expansion, int act, int diff, int clvl, const HireEntry& entry) {
+    Rng rng{ entry.seed };
     std::vector<const Hireling*> rows;
     for (const auto& hireling : tables.hirelings)
         if (hireling.act == act + 1 && hireling.difficulty == diff + 1 && hireling.version == (expansion ? 100 : 0)
@@ -1354,7 +1501,7 @@ inline std::optional<MercOffer> merc_offer(const Tables& tables, bool expansion,
     const auto& hireling = *rows[std::size_t(rng(int(rows.size())))];
     MercOffer offer;
     offer.id = hireling.id;
-    offer.seed = std::uint32_t(rng(0x7fffffff)) | 1;
+    offer.seed = entry.seed;
     offer.level = std::max(2, clvl - 5 + rng(5));
     const int level_delta = offer.level - hireling.level;
     offer.life = std::max(40, hireling.hit_points + hireling.hp_per_level * level_delta);
@@ -1365,7 +1512,7 @@ inline std::optional<MercOffer> merc_offer(const Tables& tables, bool expansion,
     offer.def = std::max(0, hireling.def + hireling.def_per_level * level_delta);
     offer.dmg_min = std::max(0, hireling.dmg_min + (hireling.dmg_per_level * level_delta >> 3));
     offer.dmg_max = std::max(1, hireling.dmg_max + (hireling.dmg_per_level * level_delta >> 3));
-    offer.name = rng(std::max(1, hireling.names));
+    offer.name = entry.name;
     return offer;
 }
 

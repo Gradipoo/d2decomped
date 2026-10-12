@@ -31,7 +31,7 @@ namespace d2d::client {
 // centred in their body slot's box. Palette: the act's, like the world.
 // The item under (mx, my) gets its hover text.
 // Items draw through their inventory colormap (Scene::item_pal).
-// ponytail: no cube.
+// (the Cube: draw_storage)
 void draw_inventory(std::vector<std::uint8_t>& framebuffer, const Scene& scene, const Scene::InvLayout& layout,
                     const std::vector<d2d::d2s::Item>& items, int mouse_x = -1, int mouse_y = -1, const d2d::rules::Wearer* wearer = nullptr,
                     const std::function<std::string(const d2d::d2s::Item&)>* price = nullptr);
@@ -142,9 +142,12 @@ void draw_level_buttons(std::vector<std::uint8_t>& framebuffer, const Scene& sce
 std::array<int, 4> grid_rect(const Scene& scene, const Scene::InvLayout& layout, const d2d::d2s::Item& item);
 
 // A left-side storage panel: the stash (panel 5) or the cube (panel 4).
+// The Cube's also has its Transmute button (FUN_0048edf0, state 0xe).
 void draw_storage(std::vector<std::uint8_t>& framebuffer, const Scene& scene, const std::vector<d2d::d2s::Item>& items,
                   const d2d::dc6::Sprite& art, const Scene::InvLayout& layout, int panel,
-                  int mouse_x, int mouse_y, const d2d::rules::Wearer* wearer);
+                  int mouse_x, int mouse_y, const d2d::rules::Wearer* wearer, bool transmute_down = false);
+// Over the Cube's Transmute button (FUN_0048a000)?
+bool transmute_at(const Scene& scene, int mouse_x, int mouse_y);
 
 // A trade with another player (a joined game; NetGame::Trade's state):
 // 1 / 2 a box (waiting on them / their request, accept or decline);
@@ -294,7 +297,7 @@ struct QuestLog {
     // log is shut (FUN_004a2cb0): on, held (0x7bf2b0), and its quest waiting
     // for the log to open (0x7bf298 1).
     bool button = false, button_down = false, notified = false;
-    std::array<std::uint8_t, 7> sent{};      // the log states last told, to spot a new one (S->C 0x5d)
+    std::array<std::uint8_t, 15> sent{};      // the log states last told, to spot a new one (S->C 0x5d)
     bool sent_known = false;
 };
 

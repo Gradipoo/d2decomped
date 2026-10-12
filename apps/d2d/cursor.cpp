@@ -71,7 +71,7 @@ CursorClick item_cursor_command(const Scene& scene, const std::vector<d2d::d2s::
 void draw_held(std::vector<std::uint8_t>& framebuffer, const Scene& scene, const d2d::d2s::Item& item, int mouse_x, int mouse_y) {
     const auto* spr = scene.item_sprite(item);
     if (!spr || spr->frames_per_direction() == 0) return;
-    const auto& pal = scene.act1_pal.entries().empty() ? scene.pal : scene.act1_pal;
+    const auto& pal = scene.act_pal.entries().empty() ? scene.pal : scene.act_pal;
     const auto& frame = spr->frame(0, 0);
     blit_sprite(framebuffer, frame, scene.item_pal(item, pal), mouse_x - int(frame.width) / 2, mouse_y - int(frame.height) / 2);
 }

@@ -6,6 +6,7 @@
 #include "log.hpp"
 
 #include <compcode.hpp>
+#include <cube.hpp>
 #include <d2s_items.hpp>
 #include <drlg.hpp>
 #include <drops.hpp>
@@ -93,27 +94,8 @@ void load_town(GameData& game_data, d2d::mpq::Stack& mpqs, const char* ds1_path)
         }
     }
     finish_level(game_data.town);
+    find_spawn_spots(game_data.town);
     const auto& map = game_data.town.ds1;
-    // The town start, as game.exe picks it on joining: DS1 special walls
-    // (orientation 10/11) with main index 30..33 become the level's spawn
-    // list (code at 0x667d09: main 30 sub n -> index n, 31 -> n+5,
-    // 32 -> 10, 33 -> 11 (town-portal arrival)); a join asks for index 0,
-    // which matches any of group 0 (indices 0..4) at random
-    // (FUN_0066ac40), at subtile tile*5+3 (FUN_0061b060), then the nearest
-    // free spot. ponytail: first match instead of a random one — each
-    // Act 1 town DS1 has exactly one.
-    for (const auto& layer : map.walls())
-        for (std::size_t i = 0; i < layer.cells.size() && game_data.town.start.first < 0; ++i) {
-            const auto& tile = layer.cells[i];
-            if ((tile.wall_type == 10 || tile.wall_type == 11) && tile.style == 30 && tile.sequence <= 4)
-                game_data.town.start = { (float(i % std::size_t(map.width())) * 5 + 3 + 0.5f) / 5,
-                                     (float(i / std::size_t(map.width())) * 5 + 3 + 0.5f) / 5 };
-        }
-    for (const auto& layer : map.walls())                      // 33: where town portals open (index 11)
-        for (std::size_t i = 0; i < layer.cells.size(); ++i)
-            if (const auto& tile = layer.cells[i]; (tile.wall_type == 10 || tile.wall_type == 11) && tile.style == 33 && game_data.town.portal_spot.first < 0)
-                game_data.town.portal_spot = { (float(i % std::size_t(map.width())) * 5 + 3 + 0.5f) / 5,
-                                           (float(i / std::size_t(map.width())) * 5 + 3 + 0.5f) / 5 };
     d2d::log::info("  World: {} {}x{}, {} of {} tilesets, {} tiles", ds1_path, map.width(), map.height(),
                    game_data.town.dt1s.size(), files.size(), game_data.town.tile_lookup.size());
 }
@@ -131,6 +113,7 @@ void place_act1(GameData& game_data, d2d::mpq::Stack& mpqs, const d2d::drlg::Out
     for (const auto& placement : layout)
         if (placement.level == 1) { game_data.town.world_x = placement.x; game_data.town.world_y = placement.y; }
     game_data.act1_layout = layout;
+    game_data.act2_layout = d2d::drlg::act2_layout(d2d::drlg::level_defs(act1.levels), d2d::drlg::act_seed(map_seed));
 }
 
 // Monster tables (MonStats, MonStats2, MonLvl), unique names and mods, and
@@ -220,6 +203,7 @@ void load_monsters(GameData& game_data, const d2d::mpq::Stack& mpqs) {
                   num(text("A2MinD" + x)), num(text("A2MaxD" + x)), num(text("A2TH" + x)),
                   num(text("aidel" + x)), num(text("aidist" + x)), {}, std::string(text("TreasureClass1" + x)) };
             for (int i = 0; i < 8; ++i) per_difficulty.aip[std::size_t(i)] = num(text("aip" + std::to_string(i + 1) + x));
+            per_difficulty.s1_min = num(text("S1MinD" + x)); per_difficulty.s1_max = num(text("S1MaxD" + x));
             static constexpr const char* kRes[6] = { "ResDm", "ResMa", "ResFi", "ResLi", "ResCo", "ResPo" };
             for (int i = 0; i < 6; ++i) per_difficulty.res[std::size_t(i)] = num(text(kRes[i] + x));
             per_difficulty.to_block = num(text("ToBlock" + x));
@@ -751,6 +735,8 @@ void load_tables(GameData& game_data, const d2d::mpq::Stack& mpqs) {
             types.get(row, "TreasureClass") == "1", std::atoi(std::string(types.get(row, "Rarity")).c_str()) };
         auto& item_type = game_data.rules.types[code];
         item_type.throwable = types.get(row, "Throwable") == "1";
+        const auto page = types.get(row, "StorePage");
+        item_type.store_page = page == "armo" ? 0 : page == "weap" ? 1 : page == "misc" ? 3 : -1;
         item_type.autostack = types.get(row, "AutoStack") == "1";
         item_type.max_sock = { std::atoi(std::string(types.get(row, "MaxSock1")).c_str()), std::atoi(std::string(types.get(row, "MaxSock25")).c_str()),
                                std::atoi(std::string(types.get(row, "MaxSock40")).c_str()) };
@@ -782,7 +768,7 @@ void load_tables(GameData& game_data, const d2d::mpq::Stack& mpqs) {
                 if (table->get(row, "spawnable") == "1" && std::atoi(std::string(table->get(row, "quest")).c_str()) == 0)
                     auto_bases.push_back({ std::string(table->get(row, "code")), std::string(table->get(row, "type")), std::string(table->get(row, "type2")),
                                            std::atoi(std::string(table->get(row, "level")).c_str()) });
-        for (const auto* table : { &armor, &weapons, &misc })
+        for (const auto* table : { &weapons, &armor, &misc })                  // Items table order (the vendors' lists, FUN_00536d50)
             for (std::size_t row = 0; row < table->size(); ++row) {
                 const std::string code(table->get(row, "code"));
                 auto number = [&](std::string column) { return std::atoi(std::string(table->get(row, column)).c_str()); };
@@ -802,19 +788,26 @@ void load_tables(GameData& game_data, const d2d::mpq::Stack& mpqs) {
                 auto& base = game_data.rules.item_base[code];
                 base.gem_sockets = number("gemsockets");
                 base.auto_prefix = table == &misc ? 0 : number("auto prefix");
+                base.nightmare_upgrade = std::string(table->get(row, "NightmareUpgrade"));
+                base.hell_upgrade = std::string(table->get(row, "HellUpgrade"));
                 base.magic_lvl = table == &misc ? 0 : number("magic lvl");
                 base.has_inv = table->get(row, "hasinv") == "1";
                 base.no_durability = table->get(row, "nodurability") == "1";
                 base.quest_diff = table->get(row, "questdiffcheck") == "1";
                 base.max_1h = table == &weapons ? number("maxdam") : 0;
                 base.max_2h = table == &weapons ? number("2handmaxdam") : 0;
+                base.spawnable = table->get(row, "spawnable") == "1";
+                base.version = number("version");
+                base.type2 = std::string(table->get(row, "type2"));
+                game_data.rules.item_order.push_back(code);
                 if (table != &misc && table->get(row, "spawnable") == "1" && number("quest") == 0)
                     game_data.rules.stand_bases[table == &weapons ? 1 : 0].push_back(code);
                 if (table->get(row, "spawnable") != "1") continue;
                 for (std::size_t vendor = 0; vendor < 17; ++vendor) {
                     const std::string vendor_name = kVendorCol[vendor];
                     d2d::rules::VendorItem vendor_item{ code, number(vendor_name + "Min"), number(vendor_name + "Max"), number(vendor_name + "MagicMin"), number(vendor_name + "MagicMax"),
-                                          number(vendor_name + "MagicLvl"), table->get(row, "PermStoreItem") == "1" };
+                                          number(vendor_name + "MagicLvl"), table->get(row, "PermStoreItem") == "1", number("level"), number("version"),
+                                          (number("bitfield1") & 1) != 0 };
                     if (vendor_item.max > 0 || vendor_item.magic_max > 0) game_data.rules.vendor_items[vendor].push_back(std::move(vendor_item));
                 }
             }
@@ -1092,10 +1085,21 @@ void load_tables(GameData& game_data, const d2d::mpq::Stack& mpqs) {
                     d2d::rules::Affix affix{ std::string(table.get(row, "Name")), num(table.get(row, "level")), num(table.get(row, "maxlevel")),
                                          num(table.get(row, "group")), num(table.get(row, "frequency")),
                                          table.get(row, "spawnable") == "1", table.get(row, "rare") == "1", {}, {}, {} };
+                    static constexpr std::array<std::string_view, 7> kClassCodes = { "ama", "sor", "nec", "pal", "bar", "dru", "ass" };
+                    if (const auto found_class = std::ranges::find(kClassCodes, table.get(row, "classspecific")); found_class != kClassCodes.end())
+                        affix.class_specific = int(found_class - kClassCodes.begin());
+                    // Type codes as game.exe compiles them (four characters, space
+                    // padded): MagicSuffix "of Nova Shield"'s "ring " is a ring,
+                    // MagicPrefix "Burning"'s "staff" a staf.
+                    auto type_code = [](std::string_view text) {
+                        text = text.substr(0, 4);
+                        while (!text.empty() && text.back() == ' ') text.remove_suffix(1);
+                        return std::string(text);
+                    };
                     for (int i = 1; i <= 7; ++i)
-                        if (const auto item_type = table.get(row, "itype" + std::to_string(i)); !item_type.empty()) affix.itypes.emplace_back(item_type);
+                        if (const auto item_type = type_code(table.get(row, "itype" + std::to_string(i))); !item_type.empty()) affix.itypes.emplace_back(item_type);
                     for (int i = 1; i <= 5; ++i)
-                        if (const auto excluded_type = table.get(row, "etype" + std::to_string(i)); !excluded_type.empty()) affix.etypes.emplace_back(excluded_type);
+                        if (const auto excluded_type = type_code(table.get(row, "etype" + std::to_string(i))); !excluded_type.empty()) affix.etypes.emplace_back(excluded_type);
                     for (int i = 1; i <= 3; ++i) {
                         const auto mod_prefix = "mod" + std::to_string(i);
                         if (const auto mod_code = table.get(row, mod_prefix + "code"); !mod_code.empty())
@@ -1149,6 +1153,7 @@ void load_tables(GameData& game_data, const d2d::mpq::Stack& mpqs) {
                         special.bonus_apart = num(table.get(row, "add func")) != 0;
                     }
                     special.ladder = table.get(row, "ladder") == "1";
+                    special.index = std::string(table.get(row, "index"));
                     special.nolimit = table.get(row, "nolimit") == "1";
                     if (const auto set_row = std::ranges::find(set_names, table.get(row, "set")); set_row != set_names.end() && code_col[0] == 'i')
                         special.set = int(set_row - set_names.begin());
@@ -1159,6 +1164,42 @@ void load_tables(GameData& game_data, const d2d::mpq::Stack& mpqs) {
         };
         game_data.rules.uniques = specials("UniqueItems", "code", 12);
         game_data.rules.sets = specials("SetItems", "item", 9);
+        // The Cube's recipes (FUN_00669130's columns, cube.md).
+        if (auto bytes = mpqs.try_read(R"(data\global\excel\cubemain.txt)")) {
+            const d2d::txt::Table cube(*bytes);
+            static constexpr std::array<std::string_view, 7> kClasses{ "ama", "sor", "nec", "pal", "bar", "dru", "ass" };
+            for (std::size_t row = 0; row < cube.size(); ++row) {
+                d2d::rules::CubeRecipe recipe;
+                recipe.description = std::string(cube.get(row, "description"));
+                recipe.enabled = num(cube.get(row, "enabled")) != 0;
+                recipe.ladder = num(cube.get(row, "ladder")) != 0;
+                recipe.min_diff = num(cube.get(row, "min diff"));
+                recipe.op = num(cube.get(row, "op"));
+                recipe.param = num(cube.get(row, "param"));
+                recipe.value = num(cube.get(row, "value"));
+                const auto cls = std::ranges::find(kClasses, cube.get(row, "class"));
+                recipe.cls = cls == kClasses.end() ? -1 : int(cls - kClasses.begin());
+                recipe.numinputs = num(cube.get(row, "numinputs"));
+                recipe.version = num(cube.get(row, "version"));
+                for (std::size_t input = 0; input < 7; ++input)
+                    recipe.inputs[input] = d2d::rules::compile_cube_input(game_data.rules, cube.get(row, "input " + std::to_string(input + 1)));
+                for (std::size_t output = 0; output < 3; ++output) {
+                    const std::string prefix = output == 0 ? "" : output == 1 ? "b " : "c ";
+                    auto& made = recipe.outputs[output];
+                    made = d2d::rules::compile_cube_output(game_data.rules, cube.get(row, output == 0 ? std::string("output") : "output " + std::string(1, char('a' + output))));
+                    if (const auto level = cube.get(row, prefix + "lvl"); !level.empty()) made.lvl = num(level);
+                    if (const auto level = cube.get(row, prefix + "plvl"); !level.empty()) made.plvl = num(level);
+                    if (const auto level = cube.get(row, prefix + "ilvl"); !level.empty()) made.ilvl = num(level);
+                    for (int mod = 1; mod <= 5; ++mod) {
+                        const std::string column = prefix + "mod " + std::to_string(mod);
+                        if (const auto code = cube.get(row, column); !code.empty())
+                            made.mods.push_back({ { std::string(code), std::string(cube.get(row, column + " param")), num(cube.get(row, column + " min")), num(cube.get(row, column + " max")) },
+                                                  num(cube.get(row, column + " chance")) });
+                    }
+                }
+                game_data.cube_recipes.push_back(std::move(recipe));
+            }
+        }
         if (const auto sets_table = txt("Sets"); sets_table.size() > 0) {
             for (std::size_t row = 0; row < sets_table.size(); ++row) {
                 auto mod = [&](const std::string& code, const std::string& param, const std::string& low, const std::string& high) {

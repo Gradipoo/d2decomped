@@ -49,7 +49,7 @@ int skill_tab_at(int mouse_x, int mouse_y) {
 void draw_skill_tree(std::vector<std::uint8_t>& framebuffer, const Scene& scene, int cls, int tab,
                      const std::array<std::uint8_t, 30>& levels, const d2d::d2s::Stats& stats, int pressed, int mouse_x, int mouse_y) {
     if (cls < 0 || cls > 6) return;
-    const auto& pal = scene.act1_pal.entries().empty() ? scene.pal : scene.act1_pal;
+    const auto& pal = scene.act_pal.entries().empty() ? scene.pal : scene.act_pal;
     auto dc6 = [&](const d2d::dc6::Sprite& spr, int frame, int x, int y, int shade = 256) {
         if (frame < 0 || spr.frames_per_direction() <= std::uint32_t(frame)) return;
         const auto& frame_ref = spr.frame(0, std::uint32_t(frame));

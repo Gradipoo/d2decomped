@@ -40,6 +40,8 @@ Scene::PlayerAnim load_npc_composite(const d2d::mpq::Stack& mpqs, const Npc& npc
 // Headers (and items) of every valid .d2s in `dir`, most recently played first. Bad files are
 // logged and skipped — saves are user-supplied.
 void load_saves(Scene& scene, const fs::path& dir);
+// The act's palette into Scene::act_pal / act_lit (0-based act).
+void load_act_palettes(Scene& scene, const d2d::mpq::Stack& mpqs, int act);
 
 // The MPQs and strings (open_game_data) and the menus' sprites, fonts and
 // palettes: enough for the title. nullopt: no game data.

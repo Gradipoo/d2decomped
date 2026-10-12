@@ -59,7 +59,7 @@ void draw_monster_bar(std::vector<std::uint8_t>& framebuffer, const Scene& scene
             const bool filled_here = x - left < filled;
             pixel[0] = filled_here ? 0x88 : 0x20; pixel[1] = filled_here ? 0x08 : 0x10; pixel[2] = filled_here ? 0x08 : 0x10;
         }
-    const auto& pal = scene.act1_pal.entries().empty() ? scene.pal : scene.act1_pal;
+    const auto& pal = scene.act_pal.entries().empty() ? scene.pal : scene.act_pal;
     // Its name's colour (FUN_00454ad0): gold for uniques, blue for champions.
     const int colour = d2d::rules::bar_name_colour(monster.boss, scene.monsters.types[std::size_t(monster.type)].id);
     const std::array<std::uint8_t, 3> tint = colour == d2d::rules::kNameGold ? std::array<std::uint8_t, 3>{ 199, 179, 119 }
@@ -109,10 +109,10 @@ void view_units(const Scene& scene, const View& view, float camera_x, float came
     }
     // Town portals: opening (OP, FrameCnt1 15 at FrameDelta 200/256 a tick:
     // 768 ms), then ON; named by where they lead (-2000 - which). Tristram
-    // Cain's (which 4, object 189: its token tP is TP's files, MPQ names
+    // Cain's (which 8, object 189: its token tP is TP's files, MPQ names
     // being case-blind) has no name: Selectable0..2 all 0.
     for (const auto& portal : view.portals) {
-        const Level* destination = portal.which < 4 ? scene.level(portal.destination) : nullptr;
+        const Level* destination = portal.which < 8 ? scene.level(portal.destination) : nullptr;
         const bool opening = now_ms - portal.born < kPortalOpenMs;
         out.push_back({ portal.x, portal.y, &scene.npc_anim(scene.town_portal, opening ? "OP" : "ON"), 0, destination ? &destination->name : nullptr,
                         opening ? portal.born : portal.born + kPortalOpenMs, -2000 - portal.which });
@@ -124,7 +124,7 @@ void view_units(const Scene& scene, const View& view, float camera_x, float came
     for (const auto& pet : view.pets) out.push_back({ pet.unit.x, pet.unit.y, &scene.npc_anim(pet.npc, pet.mode), pet.unit.dir, nullptr, pet.unit.mode_ms, -3 });
     // A joined game's other players, in what they wear (0x9d), walking,
     // standing or in a skill's mode.
-    const bool in_town = view.level && view.level->id == 1;
+    const bool in_town = view.level && d2d::rules::level_ids::is_town(view.level->id);
     for (std::size_t i = 0; i < view.others.size(); ++i) {                   // -4000 - i: a click asks them to trade
         const auto& other = view.others[i];
         if (!in_view(other.unit.x, other.unit.y)) continue;
@@ -159,7 +159,7 @@ void view_overlays(std::vector<std::uint8_t>& framebuffer, const Scene& scene, c
     // Nightmare / Hell (softcore) 0x13e7 "You have lost experience".
     // ponytail: FUN_00502680's anchor taken as the cel's bottom, centred.
     if (view.pmode == kModeDD) {
-        const auto& pal = scene.act1_pal.entries().empty() ? scene.pal : scene.act1_pal;
+        const auto& pal = scene.act_pal.entries().empty() ? scene.pal : scene.act_pal;
         int y = int(kScreenHeight) / 2 - 0x5e;
         for (const auto* spr : { &scene.you_died, &scene.you_died_inst }) {
             int width = 0;                                   // its frames side by side (FUN_00502680)
@@ -197,8 +197,8 @@ std::pair<int, std::uint32_t> view_seq(const Scene& scene, int cls, const View& 
 Lighting frame_light(const Scene& scene, const View& view, float cam_x, float cam_y, std::span<const View::Shot> effects , int ambient ,
                      std::span<const Unit> units , const Unit* player_look , std::uint32_t now) {
     Lighting lighting;
-    if (!view.level || scene.act1_lit[31].entries().empty()) return lighting;
-    lighting.pal = &scene.act1_lit;
+    if (!view.level || scene.act_lit[31].entries().empty()) return lighting;
+    lighting.pal = &scene.act_lit;
     // The grid covers the view's corners (half the width in cells over 80
     // plus half the height over 40, halved, in subtiles) and the widest light
     // (18) past them, not game.exe's 48 (bugs.md #11).
@@ -296,7 +296,7 @@ auto Town::publish() -> void {
         // button, or the open log picks it.
         // ponytail: a change in the View's log state stands in for each send
         // (FUN_00544190); none at the game's first View (the join sends none).
-        for (std::size_t quest = 1; quest < view.quest_log.size(); ++quest)
+        for (std::size_t quest = 1; !net_game && quest < view.quest_log.size(); ++quest)   // a joined game's come as 0x5d (net_quests)
             if (quest_log.sent_known && view.quest_log[quest] && view.quest_log[quest] != quest_log.sent[quest]) quest_log_notify(quest_log, int(quest));
         quest_log.sent = view.quest_log;
         quest_log.sent_known = true;
@@ -436,6 +436,7 @@ auto Town::send(const Command& command) -> void {
             return;                                         // gold from the host
         } else if (std::holds_alternative<cmd::CloseTrade>(command) && net_game->trade_npc) {
             net_game->send_items({ d2d::net::d2gs::c2s::npc_chat(false, 1, net_game->trade_npc) });
+            if (net_chat_npc == net_game->trade_npc) net_chat_npc = 0;
             net_game->trade_npc = 0;
             net_game->store_items.clear();
         } else if (std::holds_alternative<cmd::UseItem>(command) || std::holds_alternative<cmd::UseBelt>(command) || std::holds_alternative<cmd::ToCursor>(command)
@@ -463,7 +464,7 @@ auto Town::send(const Command& command) -> void {
                     if (const float apart = std::hypot(unit->second.x - subtile_x(corpse.x), unit->second.y - subtile_y(corpse.y)); apart < best) {
                         best = apart; net_operate_type = 0; net_operate = id; net_operate_ms = frame_now; net_operate_moves = false; net_operate_waypoint = -1;
                     }
-        } else if (interact && interact->npc <= -2000 && interact->npc > -2004) {
+        } else if (interact && interact->npc <= -2000 && interact->npc > -2008) {
             // A town portal: ours by the host's id for this end (0x82), else its
             // TownPortal (object 59) nearest d2d's (they open apart:
             // deviations.md); operated once the host has us there, as it
@@ -486,6 +487,13 @@ auto Town::send(const Command& command) -> void {
             net.send(cmd::Move{ other.unit.x, other.unit.y, true });
             net_operate_type = 0; net_operate = other.id; net_operate_ms = frame_now; net_operate_moves = false; net_operate_waypoint = -1;
             return;
+        } else if (const auto* heard = std::get_if<cmd::QuestMessage>(&command); heard && heard->npc >= 0 && std::size_t(heard->npc) < level->npcs.size()) {
+            // The host's quests hear it (0x31): its NPC's id, or for an object
+            // (the Moldy Tome) the host's object there.
+            const auto& npc = level->npcs[std::size_t(heard->npc)];
+            const NetGame::Unit* unit = npc.root == "objects" ? net_game->nearest(2, -1, subtile_x(npc.x), subtile_y(npc.y), 4.f) : net_npc(heard->npc);
+            if (unit) net_game->send_items({ d2d::net::d2gs::c2s::quest_message(unit->id, std::uint32_t(heard->string)) });
+            else net_game->log.note(std::format("no host unit for {}'s quest message {}", npc.name, heard->string));
         } else if (std::holds_alternative<cmd::Resurrect>(command)) {
             net_game->send_items({ d2d::net::d2gs::c2s::resurrect() });   // the host respawns us in town (0x15)
         } else if (const auto* travel = std::get_if<cmd::Waypoint>(&command); travel && travel->npc >= 0 && std::size_t(travel->npc) < level->npcs.size()) {
@@ -983,9 +991,24 @@ auto Town::update(std::vector<std::uint8_t>& framebuffer, const Mouse& frame_mou
                 if (!in_inv && !in_stash) continue;
                 const auto rect = grid_rect(*scene, in_inv ? lay : scene->stash_layout[character.expansion ? 1 : 0], item);
                 if (mouse.x >= rect[0] && mouse.x < rect[0] + rect[2] && mouse.y >= rect[1] && mouse.y < rect[1] + rect[3]) {
-                    cube_open = true; stash_open = char_open = false;
+                    if (net_game) send(cmd::UseItem{ item.id });  // the host opens it (0x20 -> 0x77 0x15)
+                    else { cube_open = true; stash_open = char_open = false; }
                 }
             }
+        // The Cube's Transmute (FUN_0048a190): held on a press over it, sent
+        // on letting go over it — the World's (cmd::Transmute), a joined
+        // game's host's (C->S 0x4f 0x18).
+        if (cube_open && mouse.press_this_frame && transmute_at(*scene, mouse.x, mouse.y)) {
+            transmute_down = true;
+            audio.play_sfx(*scene, d2d::rules::sound_ids::kCursorButtonClick, 1.f, 0);
+        }
+        if (transmute_down && !mouse.down) {
+            if (cube_open && transmute_at(*scene, mouse.x, mouse.y)) {
+                if (net_game) net_game->send_items({ d2d::net::d2gs::c2s::button(0x18) });
+                else send(cmd::Transmute{});
+            }
+            transmute_down = false;
+        }
         // An open NPC menu takes every click: an entry runs its action,
         // anything else closes it.
         bool menu_click = false;
@@ -1075,6 +1098,9 @@ auto Town::update(std::vector<std::uint8_t>& framebuffer, const Mouse& frame_mou
             speech = {};
             if (menu_after_speech >= 0 && std::size_t(menu_after_speech) < level->npcs.size()) open_menu(menu_after_speech);
             menu_after_speech = -1;
+        } else if (npc_menu.npc >= 0 && npc_menu.scroll_max > 0 && mouse.wheel != 0) {   // the hire list scrolls
+            npc_menu = open_hire_menu(*scene, npc_menu.npc, hire_offers, character.stats.get(d2d::d2s::kGold) + character.stats.get(d2d::d2s::kGoldBank),
+                                      npc_menu.scroll - mouse.wheel);
         } else if (npc_menu.npc >= 0 && mouse.press_this_frame) {
             menu_click = true;                            // the click is the menu's, not a walk
             const int line_index = npc_menu.line_at(mouse.x, mouse.y);
@@ -1101,8 +1127,8 @@ auto Town::update(std::vector<std::uint8_t>& framebuffer, const Mouse& frame_mou
                 npc_menu = open_respec_menu(*scene, who, screen_x, screen_y);
             } else if (action == NpcMenuState::kRespecOk) {
                 net.send(cmd::Respec{ who });
-            } else if (action == NpcMenuState::kGoEast) {
-                net.send(cmd::GoEast{ who });
+            } else if (action == NpcMenuState::kCaravan) {
+                net.send(cmd::Caravan{ who });
             } else if (action == NpcMenuState::kResurrectMerc) {
                 net.send(cmd::ResurrectMerc{ who });
             } else if (action == NpcMenuState::kImbue) {
@@ -1116,7 +1142,7 @@ auto Town::update(std::vector<std::uint8_t>& framebuffer, const Mouse& frame_mou
                 else { imbue_with = who; inv_open = true; char_open = stash_open = cube_open = quest_log.open = false; }
             } else if (action == NpcMenuState::kQuest) {
                 speech = start_speech(*scene, who, std::uint16_t(npc_menu_arg), frame_ms);
-                net.send(cmd::QuestMessage{ who, npc_menu_arg });
+                send(cmd::QuestMessage{ who, npc_menu_arg });
             } else if (action == NpcMenuState::kIntro || action == NpcMenuState::kGossip) {
                 const auto found = std::ranges::find_if(kNpcTalk, [&](const NpcTalk& entry) { return entry.hc_idx == npc.hc_idx; });
                 if (found != kNpcTalk.end() && !found->topics.empty()) {
@@ -1232,7 +1258,6 @@ auto Town::update(std::vector<std::uint8_t>& framebuffer, const Mouse& frame_mou
         if (mouse.press_this_frame) press_on_ui = over_ui;
         else if (!mouse.down) press_on_ui = false;
         if (have_world) walk(mouse, over_ui || press_on_ui, frame_ms, last_ms);
-        if (world.went_east) { world.went_east = false; save(); screen = Screen::CharSelect; return; }
         play_cues(cues, audio, view.player.x, view.player.y, rng, frame_ms);
         draw(framebuffer, mouse, frame_ms);
     }
@@ -1241,10 +1266,13 @@ auto Town::quest_bits() const -> const d2d::rules::QuestBits& {
         return character.header.quests[std::size_t(std::clamp(character.header.active_difficulty(), 0, 2))];
     }
 
-// ponytail: the player's act is Act 1's (0): d2d has no level past it.
+// The player's act (0-based): the act of the level the View has them on
+// (acts 1 and 2 so far; a joined game's too).
+auto Town::view_act() const -> int { return view.level && view.level->id >= d2d::rules::level_ids::kLutGholein ? 1 : 0; }
+
 auto Town::toggle_quest_log() -> void {
         if (quest_log.open) { quest_log.open = false; return; }
-        quest_log_open(quest_log, quest_bits(), quest_state(), 0);
+        quest_log_open(quest_log, quest_bits(), quest_state(), view_act());
         char_open = stash_open = cube_open = false;
     }
 
@@ -1286,7 +1314,7 @@ auto Town::input(const Mouse& mouse, bool over_ui) const -> std::vector<Command>
         if (mouse.press_this_frame) {
             if (live) out.push_back(cmd::UseSkill{ skillbar.left, world_x, world_y, view.monsters[std::size_t(hovered_monster_index)].id, true });
             else if (hovered_ground() >= 0) out.push_back(cmd::Pickup{ view.ground[std::size_t(hovered_ground())].id });
-            else if (hovered_npc >= 0 || (hovered_npc <= -2000 && hovered_npc > -2004) || (hovered_npc <= -3000 && hovered_npc > -3016)
+            else if (hovered_npc >= 0 || (hovered_npc <= -2000 && hovered_npc > -2008) || (hovered_npc <= -3000 && hovered_npc > -3016)
                      || (hovered_npc <= -4000 && hovered_npc > -4000 - int(view.others.size())))
                 out.push_back(cmd::Interact{ hovered_npc });
             else out.push_back(cmd::Move{ world_x, world_y, true });
@@ -1419,7 +1447,9 @@ auto Town::walk(const Mouse& mouse, bool over_ui, std::uint32_t frame_ms, std::u
                     // Talking: start the chat, then the trade (1) or gamble (2: unverified).
                     namespace c2s = d2d::net::d2gs::c2s;
                     net_game->trade_npc = std::uint32_t(net_trade_pending);
-                    net_game->send_items({ c2s::npc_chat(true, 1, net_game->trade_npc), c2s::npc_action(net_trade_gamble ? 2 : 1, net_game->trade_npc) });
+                    if (net_chat_npc != net_game->trade_npc) net_game->send_items({ c2s::npc_chat(true, 1, net_game->trade_npc) });   // the talk's open already
+                    net_chat_npc = net_game->trade_npc;
+                    net_game->send_items({ c2s::npc_action(net_trade_gamble ? 2 : 1, net_game->trade_npc) });
                     net_trade_pending = -1;
                     net_trade_asked = false;
                 }
@@ -1497,6 +1527,16 @@ auto Town::walk(const Mouse& mouse, bool over_ui, std::uint32_t frame_ms, std::u
             net.send(cmd::Chat{ talk });
             talking_sent = talk;
         }
+        // A joined game, as game.exe's client: 0x2f opens a talk, 0x30 shuts
+        // it (the host's quests' "talk closed", FUN_00543d50). Checked every
+        // frame, so a talk opened before the host's NPC is known opens once it is.
+        if (net_game) {
+            namespace c2s = d2d::net::d2gs::c2s;
+            const int talk = talking_sent;
+            const auto* host_npc = talk >= 0 && level && std::size_t(talk) < level->npcs.size() && level->npcs[std::size_t(talk)].root != "objects" ? net_npc(talk) : nullptr;
+            if (net_chat_npc && (!host_npc || host_npc->id != net_chat_npc)) { net_game->send_items({ c2s::npc_chat(false, 1, net_chat_npc) }); net_chat_npc = 0; }
+            if (host_npc && host_npc->id != net_chat_npc) { net_chat_npc = host_npc->id; net_game->send_items({ c2s::npc_chat(true, 1, net_chat_npc) }); }
+        }
         for (const auto& command : input(mouse, over_ui)) send(command);
         // Fixed ticks of kTickMs; after a stall, a few to catch up, then the
         // clock skips ahead (game.exe catches up one frame at most).
@@ -1517,6 +1557,7 @@ auto Town::walk(const Mouse& mouse, bool over_ui, std::uint32_t frame_ms, std::u
         // What the World said, handled once the View it came in is here
         // (the hire list's offers come with it).
         for (const auto& event : view.events) handle(event, frame_ms);
+        if (net_game) net_quests(frame_ms);
         if (frame_ms - world_ms >= kTickMs) world_ms = frame_ms - (frame_ms - world_ms) % kTickMs;
     }
 
@@ -1543,7 +1584,7 @@ auto Town::handle(const Event& event, std::uint32_t frame_ms) -> void {
         }
         if (const auto* object_speech = std::get_if<ev::Speech>(&event)) {   // FUN_004a1600 mode 2: the speech box, heard at once
             speech = start_speech(*scene, object_speech->npc, std::uint16_t(object_speech->string), frame_ms);
-            net.send(cmd::QuestMessage{ object_speech->npc, object_speech->string });
+            send(cmd::QuestMessage{ object_speech->npc, object_speech->string });
             menu_after_speech = -1;
             return;
         }
@@ -1555,22 +1596,69 @@ auto Town::handle(const Event& event, std::uint32_t frame_ms) -> void {
             return;
         }
         if (open_ui.kind == ev::OpenUI::waypoint) {
-            waypoint = { .open = true, .npc = open_ui.npc };
+            waypoint = { .open = true, .tab = view_act(), .npc = open_ui.npc };   // on the act's own tab
             inv_open = char_open = stash_open = cube_open = quest_log.open = false;
             return;
         }
-        // A quest message for the player plays at once (FUN_004a10e0 on
-        // the first kind-0 one; hearing it is what the server acts on), the
-        // menu after it.
-        npc_quest = open_ui.quest;
+        // A joined game's lines are the host's (0x27, net_quests): ones that
+        // came first, else none till they come.
+        auto lines = open_ui.quest;
+        if (net_game) {
+            const auto* host_npc = net_npc(open_ui.npc);
+            const bool early = host_npc && host_npc->id == net_early_quest.id && world_ms - net_early_ms < 3000;
+            lines = early ? net_early_quest.lines : std::vector<d2d::rules::QuestMsg>{};
+            net_early_quest = {};
+        }
+        open_menu(open_ui.npc);
+        take_npc_quest(open_ui.npc, std::move(lines), frame_ms);
+    }
+
+// A quest message for the player plays at once (FUN_004a10e0 on the first
+// kind-0 one; hearing it is what the server acts on), the menu after it.
+auto Town::take_npc_quest(int npc, std::vector<d2d::rules::QuestMsg> lines, std::uint32_t frame_ms) -> void {
+        npc_quest = std::move(lines);
         for (const auto& message : npc_quest)
             if (message.greet) {
-                speech = start_speech(*scene, open_ui.npc, std::uint16_t(message.string), frame_ms);
-                net.send(cmd::QuestMessage{ open_ui.npc, message.string });
-                menu_after_speech = open_ui.npc;
+                npc_menu = {};
+                speech = start_speech(*scene, npc, std::uint16_t(message.string), frame_ms);
+                send(cmd::QuestMessage{ npc, message.string });
+                menu_after_speech = npc;
                 return;
             }
-        open_menu(open_ui.npc);
+    }
+
+// A joined game's quest talk (the host runs the quests): each NPC's lines
+// as it sends them (0x27 mode 1) — the one we're talking to takes them
+// now, one that comes first waits for d2d's menu — and its "!" (0x8a):
+// npcalert once over that NPC (16 frames, ~1.8 s), as game.exe's client
+// puts the overlay on (FUN_004b3380 -> FUN_00470390, overlay 0x48).
+// ponytail: the balloon plays from wherever d2d's loop is, not frame 0;
+// 0x8a's palace guard check (class 0x14b, FUN_004b1620) isn't here.
+auto Town::net_quests(std::uint32_t frame_ms) -> void {
+        for (auto& host_quest : net_game->npc_quests) {
+            const auto* host_npc = npc_menu.npc >= 0 ? net_npc(npc_menu.npc) : nullptr;
+            if (host_npc && host_npc->id == host_quest.id) take_npc_quest(npc_menu.npc, std::move(host_quest.lines), frame_ms);
+            else { net_early_quest = std::move(host_quest); net_early_ms = world_ms; }
+        }
+        net_game->npc_quests.clear();
+        // The log as the host has it (0x52 / 0x5d / 0x29): the View's are d2d's own records'.
+        if (net_game->quest_log_known)
+            for (std::size_t quest = 0; quest < view.quest_log.size(); ++quest) {
+                view.quest_log[quest] = net_game->quest_log[quest];
+                view.game_quests[quest] = net_game->game_quests[quest];
+            }
+        view.den_left = net_game->den_left;
+        if (net_game->sky) { world.day.set(net_game->sky->phase, net_game->sky->time, net_game->sky->eclipse); net_game->sky.reset(); }
+        // The Cube: the host opens it (0x77 0x15); shut here, the host's shuts too (0x4f 0x17).
+        if (std::exchange(net_game->cube_opened, false)) { cube_open = net_cube_open = true; inv_open = true; stash_open = char_open = false; }
+        if (net_cube_open && !cube_open) { net_game->send_items({ d2d::net::d2gs::c2s::button(0x17) }); net_cube_open = false; }
+        for (const std::uint32_t id : net_game->npc_alerts) net_alert_ms[id] = world_ms;
+        net_game->npc_alerts.clear();
+        for (std::size_t i = 0; level && i < view.npc_states.size() && i < level->npcs.size(); ++i) {
+            const auto* host_npc = level->npcs[i].root != "objects" ? net_npc(int(i)) : nullptr;
+            const auto shown = host_npc ? net_alert_ms.find(host_npc->id) : net_alert_ms.end();
+            view.npc_states[i].alert = shown != net_alert_ms.end() && world_ms - shown->second < 16 * 111;
+        }
     }
 
 auto Town::den_ambient() const -> int {
@@ -1674,7 +1762,7 @@ auto Town::draw(std::vector<std::uint8_t>& framebuffer, const Mouse& mouse, std:
         std::erase_if(state_clock.seen, [&](const auto& entry) { return frame_ms - entry.second.last > 5000; });
         Unit player_look{};
         dress(*scene, player_look, -1, player_states(*scene, view), &state_clock);
-        const bool town = level->id == d2d::rules::level_ids::kRogueEncampment;             // TN/TW in town, NU/WL outside
+        const bool town = d2d::rules::level_ids::is_town(level->id);                       // TN/TW in town, NU/WL outside
         // A dead player has no DD composite: DT held on its last frame.
         const auto cls = std::max(character.character_class, 0);
         if (pmode == kModeDD) unit.mode_ms = frame_ms - (scene->composite(cls, kModeDT, view.gfx).length_ms() - 1);
@@ -1691,7 +1779,7 @@ auto Town::draw(std::vector<std::uint8_t>& framebuffer, const Mouse& mouse, std:
                       inv_open ? &character.items : nullptr,
                       char_open ? &character.stats : nullptr, &character.stats, &character.panel, mode_ms, &character.items,
                       &hovered_npc, stash_open || cube_open ? &character.items : nullptr, character.expansion, belt_open,
-                      cube_open, &npc_menu, &speech, &automap, &store, stat_pressed,
+                      cube_open ? (transmute_down ? 2 : 1) : 0, &npc_menu, &speech, &automap, &store, stat_pressed,
                       nullptr, nullptr, nullptr, extra, rate, light.pal ? &light : nullptr, level->rain ? &rain : nullptr,
                       !(pmode == kModeDD && !view.corpses.empty()),    // dead, the corpse lies there instead
                       &player_look, alt_held || (SDL_GetModState() & SDL_KMOD_ALT) != 0,   // D2's "Show Items" (Alt)
@@ -1785,7 +1873,7 @@ auto Town::add_chat(const std::string& text, int colour, std::size_t gold) -> vo
 auto Town::draw_chat(std::vector<std::uint8_t>& framebuffer, bool left_open, bool right_open) const -> void {
     if (chat_lines.empty() && !chat_typing) return;
     const auto& font = scene->font_chat.line_height() > 0 ? scene->font_chat : scene->font;
-    const auto& pal = scene->act1_pal.entries().empty() ? scene->pal : scene->act1_pal;
+    const auto& pal = scene->act_pal.entries().empty() ? scene->pal : scene->act_pal;
     const int x = left_open && !right_open ? int(kScreenWidth) / 2 + 15 : 15;
     int baseline = portraits_shown ? 0x5f : 20;   // ponytail: taken as below the portraits (UI flag 0x13 (?))
     static constexpr std::array<std::array<std::uint8_t, 3>, 10> kRgb{ { { 255, 255, 255 }, { 255, 77, 77 }, { 0, 255, 0 }, { 105, 105, 255 }, { 199, 179, 119 },
@@ -1891,7 +1979,7 @@ auto Town::draw_portraits(std::vector<std::uint8_t>& framebuffer, bool left_open
     if (!net_game || left_open) return;
     const auto self = net_game->units.find(std::uint64_t(net_game->self_id));
     if (self == net_game->units.end() || self->second.party == 0xffff) return;
-    const auto& pal = scene->act1_pal.entries().empty() ? scene->pal : scene->act1_pal;
+    const auto& pal = scene->act_pal.entries().empty() ? scene->pal : scene->act_pal;
     const auto& font = scene->font_tiny.line_height() > 0 ? scene->font_tiny : scene->font;
     int x = 15, name_y = 0x48;
     for (const auto& [unit_key, unit] : net_game->units) {

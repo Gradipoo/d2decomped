@@ -16,7 +16,7 @@ namespace d2d::client {
 void draw_hover_text(std::vector<std::uint8_t>& framebuffer, const Scene& scene, const std::vector<TextLine>& lines,
                      int left, int right, int top, int bottom) {
     if (lines.empty()) return;
-    const auto& pal = scene.act1_pal.entries().empty() ? scene.pal : scene.act1_pal;
+    const auto& pal = scene.act_pal.entries().empty() ? scene.pal : scene.act_pal;
     const int line_height = 16;                                   // font16 cell height
     int width = 0;
     for (const auto& line : lines) width = std::max(width, scene.font.measure(line.text));

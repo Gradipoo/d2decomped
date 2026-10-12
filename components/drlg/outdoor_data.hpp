@@ -80,7 +80,8 @@ template <class Read> void load_outdoor_assets(OutdoorAssets& assets, Read&& rea
     const auto prest = table("LvlPrest.txt");
     for (std::size_t row = 0; row < prest.size(); ++row) {
         const int def = to_int(prest.get(row, "Def"));
-        if (def < 1 || !prest.get(row, std::optional<std::size_t>{ 0 }).starts_with("Act 1 - ")) continue;   // act 1's presets (the town, 1, for its rooms next door)
+        const auto name = prest.get(row, std::optional<std::size_t>{ 0 });
+        if (def < 1 || !(name.starts_with("Act 1 - ") || name.starts_with("Act 2 - "))) continue;   // acts 1 and 2's presets
         Preset preset{ to_int(prest.get(row, "SizeX")), to_int(prest.get(row, "SizeY")), to_int(prest.get(row, "Files")),
                   to_int(prest.get(row, "Scan")), to_int(prest.get(row, "Pops")),
                   to_int(prest.get(row, "LevelId")), to_int(prest.get(row, "KillEdge")), std::uint32_t(std::stoul("0" + std::string(prest.get(row, "Dt1Mask")))), {} };
@@ -101,7 +102,7 @@ template <class Read> void load_outdoor_assets(OutdoorAssets& assets, Read&& rea
             sub_row.trials[std::size_t(type)] = to_int(sub.get(row, "Trials" + std::to_string(type)));
             sub_row.max[std::size_t(type)] = to_int(sub.get(row, "Max" + std::to_string(type)));
         }
-        if (sub_row.type >= 0 && sub_row.type <= 6) sub_row.map = ds1(sub.get(row, "File"));  // act 1's rows
+        if (sub_row.type >= 0 && sub_row.type <= 9) sub_row.map = ds1(sub.get(row, "File"));  // acts 1 and 2's rows
         assets.data.subs.push_back(sub_row);
     }
 }
@@ -193,7 +194,7 @@ inline OutdoorLevel outdoor_level(const d2d::txt::Table& levels, const std::vect
         return nullptr;
     };
     if (const auto* placement = placed(id)) level.rect = *placement;
-    if (const auto* town = placed(1)) level.town = *town;
+    if (const auto* town = placed(id >= level_ids::kLutGholein ? level_ids::kLutGholein : 1)) level.town = *town;
     const auto row = level_row(levels, id);
     if (!row) return level;
     level.sub_type = to_int(levels.get(*row, "SubType"), -1);
@@ -210,7 +211,7 @@ inline OutdoorLevel outdoor_level(const d2d::txt::Table& levels, const std::vect
         for (int i = 0; i < 8; ++i)
             if (vis[std::size_t(i)] == 0 && warp[std::size_t(i)] == -1) { vis[std::size_t(i)] = other; return; }
     };
-    for (const auto* chain : { &kAct1Outdoors, &kAct1Highlands })
+    for (const auto* chain : { &kAct1Outdoors, &kAct1Highlands, &kAct2Outdoors, &kAct2Canyon })
         for (const auto& record : *chain) {
             if (record.link < 0) continue;
             const int other = (*chain)[std::size_t(record.link)].level;

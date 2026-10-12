@@ -131,6 +131,33 @@ from the player and the NPC's `alert`). Not here (ponytails): the greeting
 sound, the think once +0x14 runs out mid-talk, game.exe's pathers for the
 walk.
 
+## Act 2's town AIs — Towner and Vendor
+
+Lut Gholein's named NPCs are AI Npc too; its townsfolk and guards
+(act2male 195, act2female 196, act2guard1 203) are MonAI 41 Towner, its
+market traders (act2vendor1 204, act2vendor2 205) MonAI 42 Vendor. The
+AI table (0x73ca18 + 16 × row, `{targetMode, init, think, -}`): 1 Idle
+FUN_005b0cd0, 32 Npc FUN_005e7130, 41 Towner FUN_005e7540, 42 Vendor
+FUN_005e9e00, 81 JarJar FUN_005e7590 (act2guard2).
+
+- **Towner** (FUN_005e7540): FUN_005e6800 (home), FUN_005e6ae0 (the
+  commands), FUN_005e7080 (the wander), else stand 12 — the Npc think
+  without the classes' steps and the visitor. A towner with no DS1 path
+  stands.
+- **Vendor** (FUN_005e9e00): one step of the unit seed; `low % 100 < 20`
+  → mode 8 (S1, FUN_005ddfc0(8, 0, 0)), else stand 30. No path, no walk.
+- JarJar (FUN_005e7590): a guard that follows its AI control's spot and
+  heeds the player (FUN_005e68f0); not ported.
+
+d2d: `Npc::town_ai` (MonStats AI), `rules::npc_think(..., towner)` and
+`rules::vendor_think`. A built level's NPCs (Lut Gholein) take their DS1
+path, the spot they were made on (the free one nearest their preset spot)
+and their unit seed after the init's draws (made(): the look, which for a
+townsfolk composite rolls its pieces, then the stat).
+Checked: `THINKS=30 diff_drlg.py 1-20 40 npcs` (npcs.py with level 40:
+act 2 made for it, the Jerhyn markers stubbed, each unit's MonAI think):
+20/20.
+
 ## The other wanderer — FUN_0054ef50
 
 Unrelated to the town: when a room's seed step (FUN_0054f060) has its low

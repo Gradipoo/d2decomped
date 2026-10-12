@@ -700,6 +700,77 @@ Loose ends noted 2026-09-27: `par34` in Bone Wall's calc2 is a typo in
 Blizzard's Skills.txt (game.exe reads it as `par3`, skills.md; closed
 2026-10-02); a Debug build loads ~2.5x slower than RelWithDebInfo.
 
+## Road to Act 2 (from 2026-10-10, branch `act2`)
+
+Goal: Warriv's caravan lands in Lut Gholein and Act 2 plays from there
+to Duriel and Jerhyn's way east (Meshif), each piece from game.exe and
+diffed where the emulator can. It follows Act 1's road; Act 1's
+leftovers (act1-gaps.md) and hosting a game wait.
+
+**Step 1 — the act's levels, checked with `diff_drlg.py`:**
+1. The layout (FUN_00677790) and the tomb rolls. *Done (2026-10-10):*
+   `act2_layout`, `roll_act2_tombs`, `lut_gholein_file`
+   (components/drlg/drlg.hpp, drlg.md "Act 2's layout"); `diff_drlg.py
+   1-2000 40 layout`: 2000/2000.
+2. Lut Gholein (DrlgType 2, LvlPrest 301, LutW / LutN by the Rocky
+   Waste's side) as a town: its DS1, tiles, warps, NPCs and their
+   MonAI, waypoint. *Built (2026-10-10):* level 40 builds on demand
+   like any level (`kBuiltLevels`), acts 1 and 2's presets load;
+   `diff_drlg.py 1-20 40` / `tiles` 20/20, `units` 10/10. Its start and
+   portal spots come from the rooms' spawn tiles (BuiltRoom::spawns).
+   Its NPCs stand where the DS1 puts them with game.exe's menus (0x726c48);
+   Drognan, Elzix, Fara and Lysander trade, Greiz hires Act 2's desert
+   mercenaries (`World::hire_lists`, one per act), Warriv's Go West lands
+   by him in the camp (FUN_0054b830(1, 5): spawn index 5, `Level::spawn_at`),
+   vendors restock on an act change. The NPCs walk their DS1 paths (Npc
+   AI), the townsfolk and guards wander (Towner), the traders idle
+   (Vendor; town-npcs.md "Act 2's town AIs"). Jerhyn and the palace
+   guard come from a2q4's two marker objects (quests-act2.md); the palace
+   door leads into Harem Level 1 (level 50: tiles 10/10, units 10/10).
+   The town's thinks match game.exe (`diff_drlg.py 1-20 40 npcs`, 20/20).
+   The hire lists are game.exe's (npc-menu.md "Hire": entries on the game
+   seed, ten offered, the offers off each entry's seed; checked by
+   tools/emu/hire.py). The vendors' stock is game.exe's fill (store.md;
+   tools/emu/store.py 10200 / 10200) with game.exe's magic affixes
+   (drops.md "Magic", 9994 / 9995). Lut Gholein's container drops are
+   game.exe's (a container rolls its level's act's chest class, FUN_00585b90;
+   `LEVELS=40 diff_drlg.py 1-5 0 game` 5/5). Left: JarJar's think (the
+   palace guard: kept to his post, 3 north once aside; town-npcs.md).
+3. The desert (LevelType 16: 41–46): the outdoor generator with act 2's
+   border and exit rules (drlg.md: exits in pairs from 0x6f112c, columns
+   2 / 3 of 0x6f0630), its LvlSub / presets. *Built (2026-10-10):*
+   drlg.md "Act 2's desert"; 10/10 tiles and units on every level; the
+   town walks out into the Rocky Waste.
+4. The mazes: Sewers (47–49), Harem 2 / Palace Cellar (51–54), the tombs
+   (55–61, 66–72, the boss tomb ×3 and staff tomb ×2 rooms), the Maggot
+   Lair (62–64), Ancient Tunnels (65), the Arcane Sanctuary (74); presets:
+   Harem 1 (50), Duriel's Lair (73). *Built (2026-10-10):* 47–73 match
+   game.exe (rooms, tiles, units with doors; drlg.md "Act 2's mazes") and
+   build in play. The Arcane Sanctuary (74) too (2026-10-11): 20/20, tiles
+   and units 10/10.
+5. The act 2 / act 4 MonPreset remaps and type-4 units (NPCs by name).
+
+**Step 2 — moving between acts:** *Done first (2026-10-10), ahead of the
+town:* Warriv's Go East lands in Lut Gholein (`World::arrive`, the save's
+act byte set), a save left in act 2 starts there, town portals and
+respawns go to the act's town (`GameData::town_of`), every town counts
+as town (`in_town`), the palette follows the act (`load_act_palettes`),
+the quest log opens on the act's tab; `tests/quests_d2d.py` rides the
+caravan; Warriv takes the player back west. Left: game.exe swaps the
+whole act (the old act's DRLG freed; d2d keeps act 1's levels built),
+waypoints across acts, Meshif east.
+
+**Step 3 — Act 2's content:** the town (Atma, Drognan, Elzix, Fara,
+Geglash, Greiz' hire list: act 2 mercs and their auras, Jerhyn, Lysander,
+Meshif, Warriv), the six quests (Radament, the Horadric Staff and Cube,
+Tainted Sun, Arcane Sanctuary, the Summoner, Seven Tombs), the desert's
+monsters and MonAI, Duriel.
+*Started (2026-10-11):* Act 2's opening (Jerhyn's greeting, the game's
+flag that moves him into the palace) and Radament's Lair (Atma, the kill,
+the Book of Skill, the log's Act 2 tab) are game.exe's records
+(quests-act2.md), checked live. Next: the Horadric Staff (record 9),
+then Tainted Sun, Arcane Sanctuary, the Summoner, the Seven Tombs (all five in by 2026-10-11, quests-act2.md). Next: Act 2's MonAI thinks.
+
 ## Earlier list (as of 2026-09-26; superseded by "Road to a whole Act 1")
 
 Done and proven: the Blood Moor and the Den of Evil (layout, room seeds,

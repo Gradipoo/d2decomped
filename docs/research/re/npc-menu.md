@@ -63,8 +63,29 @@ rand(5), at least 2; with d = level − row Level: life = HP + HP/Lvl·d
 100)/100 (≥ Gold), exp = (level + 1)·Exp/Lvl·level², defence = Def +
 Def/Lvl·d, damage = Dmg-Min/Max + (Dmg/Lvl·d >> 3).
 
-d2d: `rules::merc_offer` / `hire`; five offers per opening (the server's
-count isn't traced), one line each.
+**The list** (server, SUNITNPC.CPP `FUN_00576070`, 2026-10-10): the
+seller's first hireling.txt row for the difficulty and version
+(FUN_006564d0: Seller +0x14, Difficulty +0x10) gives its name range
+(NameFirst..NameLast, +0x114 / +0x116; FUN_00575ff0); one 16-byte entry
+per name `{u16 name, seed, hired (+8), offered (+0xc)}`, each seed a step
+of the sunitproxy seed (game +0x1d24 +8, FUN_00536b40: made at game start
+by FUN_00536070 from a game seed step); then ten picks of rand(names) on
+it, each moving on (wrapping) past a taken entry, offered = 1;
+back at the start the picking stops. FUN_00577010: once no entry is
+offered and unhired, the list is freed and rolled anew. An offer's stats
+come from its entry (FUN_005770e0 → FUN_00663750: the name's row's act;
+FUN_006637f0 on {entry seed, 666}): the row pick, then the level roll —
+no other draw; the name is the entry's. The window's list widget
+(FUN_004bf8f0, 490 × 280 at ((W − 490) / 2, H / 2 − 160), rows 0x23)
+shows eight rows and scrolls.
+
+d2d: `rules::hire_entries` / `for_hire` / `hire_names` / `merc_offer`
+(rules.hpp), `World::hire_list` / `hire_offers` (per act, on the proxy
+seed: `fight.spawning.proxy`), `open_hire_menu(..., scroll)` (the wheel).
+Checked: `tools/emu/hire.py` — 720 offers (seeds × acts 1–2 × difficulties
+× clvl 1 / 9 / 30 / 75) against `drlg-dump ... hire`, and 400 lists
+(entries_dump, 41 and 21 names) against `drlg-dump ... hirelist`: all
+identical, the game seed after too.
 
 ## Resurrect (FUN_004b1dd0, server FUN_00579c00)
 

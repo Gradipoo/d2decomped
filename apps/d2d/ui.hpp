@@ -151,10 +151,11 @@ void blit_button_chrome(std::vector<std::uint8_t>& framebuffer,
 struct NpcMenuState {
     int npc = -1;                            // Level::npcs index, -1 = closed
     // What choosing a line does.
-    enum Action { kClose, kTalk, kIntro, kGossip, kTrade, kGamble, kHire, kIdentify, kHireOffer, kQuest, kRespec, kRespecOk, kGoEast, kImbue, kResurrectMerc };
+    enum Action { kClose, kTalk, kIntro, kGossip, kTrade, kGamble, kHire, kIdentify, kHireOffer, kQuest, kRespec, kRespecOk, kCaravan, kImbue, kResurrectMerc };
     struct Line { std::string text; int height = 15, width = 0, x = 0; bool header = false; Action action = kClose; int arg = -1; };
     std::vector<Line> lines;
     int x = 0, y = 0, box_width = 0, box_height = 0;
+    int scroll = 0, scroll_max = 0;          // the hire list's first row shown, and its last first row (0: no scroll)
     // Index of the selectable line under (mx, my), or -1.
     [[nodiscard]] int line_at(int mouse_x, int mouse_y) const {
         if (npc < 0 || mouse_x < x || mouse_x >= x + box_width) return -1;

@@ -107,6 +107,10 @@ uv run python diff_drlg.py 1-20 2 drops         # then three items dropped at ea
   object seed and the room order: `uv run python diff_drlg.py 1-20 0 game`.
 - `units` brings game.exe's rooms up in $ORDER first (drlg.py `bring_up`):
   the units and warps come out the same in any order.
+- `layout` (drlg.py `layout_dump`): act 2's outdoor rectangles, Lut
+  Gholein's LvlPrest file and the two tombs, nothing built:
+  `uv run python diff_drlg.py 1-2000 40 layout`. Every dump builds a level
+  in its own act (`act_of`).
 
 ## Adding a new oracle
 

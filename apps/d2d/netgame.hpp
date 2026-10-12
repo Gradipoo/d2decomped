@@ -11,6 +11,7 @@
 #include <d2s_items.hpp>
 #include <join.hpp>
 #include <net_log.hpp>
+#include <quests.hpp>
 #include <tcp.hpp>
 
 #include <array>
@@ -160,7 +161,22 @@ struct NetGame {
     std::vector<Event> events;
     struct Overhead { int type = 0; std::uint32_t id = 0; std::string text; };   // 0x26 type 5: over a unit
     std::vector<Overhead> overheads;
-    std::vector<int> quest_news;               // quests whose log state the host sent (0x5d, no flags): the Quest Log button
+    std::vector<int> quest_news;               // quests (words) whose log state the host sent (0x5d, no flags): the Quest Log button
+    // The quest log as the host has it: each quest's log state by its word
+    // (0x52 whole, 0x5d one), the game's quest words (0x29), the Den's
+    // count (0x5d flags 0x20). `quest_log_known` once 0x52 came.
+    std::array<std::uint8_t, 41> quest_log{};
+    std::array<std::uint16_t, 48> game_quests{};
+    int den_left = 0;
+    bool quest_log_known = false;
+    // An NPC's quest lines as the host has them for us (0x27 mode 1), for
+    // the client to take: what its menu greets with and lists under Talk.
+    struct NpcQuest { std::uint32_t id = 0; std::vector<d2d::rules::QuestMsg> lines; };
+    std::vector<NpcQuest> npc_quests;
+    std::vector<std::uint32_t> npc_alerts;
+    struct Sky { int phase = 0, time = 0; bool eclipse = false; };
+    std::optional<Sky> sky;
+    bool cube_opened = false;                  // the host opened our Cube (0x77 0x15), for the client to take                    // the act's day the host set (0x53: the Tainted Sun's dark), for the client to take     // NPCs the host balloons for us (0x8a: the "!"), for the client to take
 
 private:
     bool socket_gone = false;

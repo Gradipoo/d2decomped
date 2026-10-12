@@ -82,8 +82,10 @@ struct NpcAct {
 // `current` its mode now, `visitor` the player it heeds. Draws only on its
 // unit seed (+0x20). The classes FUN_005e7130 singles out (Cain 5, Ormus,
 // Alkor, Jerhyn, Larzuk's 0x200) are none of Act 1.
+// `towner`: MonAI Towner (FUN_005e7540, Lut Gholein's townsfolk and
+// guards): the same home, commands and wander, no visitor, stand 12.
 inline NpcAct npc_think(NpcBrain& brain, Rng& seed, std::span<const NpcPoint> path, int x, int y, int class_id,
-                        std::uint32_t modes, int current, const NpcVisitor& visitor = {}) {
+                        std::uint32_t modes, int current, const NpcVisitor& visitor = {}, bool towner = false) {
     auto stand = [](int frames) { return NpcAct{ .frames = frames }; };
     auto walk = [](int to_x, int to_y, int fail) { return NpcAct{ .kind = NpcAct::Kind::walk, .x = to_x, .y = to_y, .fail = fail }; };
     // FUN_005e6800: the first think keeps the spot as home, stand 20.
@@ -93,7 +95,8 @@ inline NpcAct npc_think(NpcBrain& brain, Rng& seed, std::span<const NpcPoint> pa
         return stand(20);
     }
     // FUN_005e68f0, the visitor (town-npcs.md "The visitor").
-    if (!visitor.talking && brain.held <= 0) {
+    if (towner) {
+    } else if (!visitor.talking && brain.held <= 0) {
         if (visitor.present) {
             if (visitor.distance < 3 || visitor.distance > 23) {   // close: stop, greet every 60 thinks
                 auto act = stand(20);
@@ -149,8 +152,9 @@ inline NpcAct npc_think(NpcBrain& brain, Rng& seed, std::span<const NpcPoint> pa
     }
     // FUN_005e7080: 66 in 100 a random point of the path, its action
     // (table 0x741d74: 1 and 3 walk there and linger 12 thinks, 2 linger 20,
-    // 4 / 5 then S1 / S2 there); else (or already there) stand 8.
-    auto act = stand(8);
+    // 4 / 5 then S1 / S2 there); else (or already there) stand 8 (a
+    // towner 12).
+    auto act = stand(towner ? 12 : 8);
     if (!path.empty() && seed(100) < 66) {
         const auto& point = path[std::size_t(seed(int(path.size())))];
         if (point.action >= 1 && point.action <= 5 && point.x && point.y) {
@@ -169,6 +173,13 @@ inline NpcAct npc_think(NpcBrain& brain, Rng& seed, std::span<const NpcPoint> pa
     }
     act.face = face;
     return act;
+}
+
+// MonAI Vendor (42, FUN_005e9e00: Lut Gholein's market traders): one step
+// of the unit seed, under 20 in 100 S1 (FUN_005ddfc0 mode 8), else stand 30.
+inline NpcAct vendor_think(Rng& seed) {
+    if (seed.next() % 100 < 20) return NpcAct{ .kind = NpcAct::Kind::mode, .mode = 8 };
+    return NpcAct{ .frames = 30 };
 }
 
 }  // namespace d2d::rules

@@ -73,7 +73,7 @@ void render_ingame(std::vector<std::uint8_t>& framebuffer,
                    const std::vector<d2d::d2s::Item>* belt ,
                    int* hovered_npc ,
                    const std::vector<d2d::d2s::Item>* stash , bool stash_expansion ,
-                   bool belt_popup , bool cube_open ,
+                   bool belt_popup , int cube_open ,
                    const NpcMenuState* npc_menu , const Speech* speech ,
                    const Automap* automap , const Store* store ,
                    int stat_pressed ,
@@ -172,7 +172,7 @@ void render_ingame(std::vector<std::uint8_t>& framebuffer,
             const auto text = string_id(scene, unit.says);
             const int pixel_x = int(kScreenWidth) / 2 + int(std::lround(((unit.x - cam_x) - (unit.y - cam_y)) * (kIsoW / 2)));
             const int pixel_y = kViewY + int(std::lround(((unit.x - cam_x) + (unit.y - cam_y)) * (kIsoH / 2)));
-            const auto& pal = scene.act1_pal.entries().empty() ? scene.pal : scene.act1_pal;
+            const auto& pal = scene.act_pal.entries().empty() ? scene.pal : scene.act_pal;
             scene.font.draw_tinted(framebuffer, kScreenWidth, kScreenHeight, pal, pixel_x - scene.font.measure(text) / 2, pixel_y - 100, text, 255, 255, 255);
         }
         // Alt ("Show Items"): each ground item's name in a dark box over it,
@@ -181,7 +181,7 @@ void render_ingame(std::vector<std::uint8_t>& framebuffer,
         // ponytail: game.exe's label layout isn't traced (box padding, the
         // stacking order, the hovered label's own colour).
         if (show_items) {
-            const auto& pal = scene.act1_pal.entries().empty() ? scene.pal : scene.act1_pal;
+            const auto& pal = scene.act_pal.entries().empty() ? scene.pal : scene.act_pal;
             std::ranges::sort(items, {}, [](const auto& entry) { return -entry.second[3]; });   // nearest the bottom first
             std::vector<std::array<int, 4>> placed;
             const int line_height = scene.font.line_height();
@@ -213,7 +213,7 @@ void render_ingame(std::vector<std::uint8_t>& framebuffer,
             const auto& hovered_name = *hovered.first->name;
             const auto& box  = hovered.second;
             const auto& colour  = hovered.first->rgb;
-            const auto& pal = scene.act1_pal.entries().empty() ? scene.pal : scene.act1_pal;
+            const auto& pal = scene.act_pal.entries().empty() ? scene.pal : scene.act_pal;
             scene.font.draw_tinted(framebuffer, kScreenWidth, kScreenHeight, pal, (box[0] + box[2]) / 2 - scene.font.measure(hovered_name) / 2,
                                box[1] - scene.font.line_height() - 2, hovered_name, colour[0], colour[1], colour[2]);
         }
@@ -243,7 +243,7 @@ void render_ingame(std::vector<std::uint8_t>& framebuffer,
             const int expansion_index = stash_expansion ? 1 : 0;
             if (cube_open)
                 draw_storage(framebuffer, scene, *stash, scene.cube_panel, scene.cube_layout, d2d::d2s::item_panel::kCube, mouse_x, mouse_y,
-                             hover_wearer);
+                             hover_wearer, cube_open == 2);
             else
                 draw_storage(framebuffer, scene, *stash, scene.stash_panel[std::size_t(expansion_index)], scene.stash_layout[std::size_t(expansion_index)], d2d::d2s::item_panel::kStash,
                              mouse_x, mouse_y, hover_wearer);

@@ -239,6 +239,24 @@ inline auto npc_chat(bool start, std::uint32_t type, std::uint32_t id) -> Bytes 
     put_u8(out, start ? 0x2f : 0x30); put_u32(out, type); put_u32(out, id);
     return out;
 }
+// 0x31: quest message `message` heard from unit `id` (FUN_004786a0, the
+// message zero-extended to a u32; sent as a quest line starts and again if
+// one playing is cut, 0x4b4670 / 0x4b4812). The host (54ba90 ->
+// FUN_005443b0) looks the NPC up and hands every record of the player's
+// act its "message heard" (+0xcc); no open chat is needed.
+inline auto quest_message(std::uint32_t id, std::uint32_t message) -> Bytes {
+    Bytes out;
+    put_u8(out, 0x31); put_u32(out, id); put_u32(out, message);
+    return out;
+}
+// 0x4f: a button (FUN_00478600, 7 bytes: u16 which, u16, u16); 0x18 the
+// Cube's Transmute, 0x17 the Cube shut (the host's FUN_00568060 ->
+// FUN_00566ae0, only while it has the Cube open for us).
+inline auto button(std::uint16_t which, std::uint16_t first = 0, std::uint16_t second = 0) -> Bytes {
+    Bytes out;
+    put_u8(out, 0x4f); put_u16(out, which); put_u16(out, first); put_u16(out, second);
+    return out;
+}
 // 0x38: an NPC action with NPC `id`: 1 trade (a real client's, recorded
 // 2026-10-05 through d2proxy), 2 gamble (unverified).
 inline auto npc_action(std::uint32_t action, std::uint32_t id, std::uint32_t extra = 0) -> Bytes {

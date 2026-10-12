@@ -46,8 +46,8 @@ def dump(e, seed, lid, drops=False):
     e.call(0x536070, ecx=game)                               # sunitproxy (a game-seed step)
     e.call(0x545d80, ecx=game)                               # the quests (the Cairn Stones' preset asks for its record)
     e.call(0x541470, ecx=game)                               # the event list
-    act = e.call(0x6194a0, 0, seed, 0, game, 0, 0, lid, 0, 0)
-    e.w32(game + 0xbc, act)
+    act = e.call(0x6194a0, drlg.act_of(lid), seed, 0, game, 0, 0, lid, 0, 0)   # its act
+    e.w32(game + 0xbc + 4 * drlg.act_of(lid), act)
     lvl = drlg.find_level(e, e.r32(act + 0x48), lid)
     if not lvl: raise SystemExit(f"objgroups: level {lid} not built")
     x0, y0 = e.s32(lvl + 0x1c), e.s32(lvl + 0x20)
@@ -127,7 +127,21 @@ def step(e, at, n):
     e.w32(at, low); e.w32(at + 4, high)
 
 
+JERHYN_MARKERS = (0x5448b0, 0x5448e0)        # Lut Gholein's Jerhyn markers' InitFns (18 / 19)
+
+
 def game_dump(e, seed, levels, kind="shuffle"):
+    """game_dump_hooked with the quest hooks it needs put back after, so a
+    shared emulator (diff_drlg.py's other kinds) runs game.exe's own again."""
+    saved = {addr: bytes(e.mu.mem_read(addr, 5)) for addr in JERHYN_MARKERS}
+    try:
+        return game_dump_hooked(e, seed, levels, kind)
+    finally:
+        for addr, code in saved.items():
+            e.mu.mem_write(addr, code)
+
+
+def game_dump_hooked(e, seed, levels, kind="shuffle"):
     """One game: each level in turn made, its rooms brought up (FUN_0061b730) in drlg.walk_order, populated as
     FUN_0052d160 walks the act's room1 list (newest first: FUN_0052d0f0), then every container its rooms made
     opened in the order made (drops.py Objects, on the game's object seed). Per room: its room1 seed before
@@ -137,8 +151,10 @@ def game_dump(e, seed, levels, kind="shuffle"):
     (low:high) and the game seed's after each level."""
     o, objects, swap = openers(e)
     g = monsters.new_game(e, seed)
-    act = monsters.act_of(e, g, levels[0])
+    act = monsters.act_of(e, g, levels[0], drlg.act_of(levels[0]))
     dact = e.r32(act + 0x48)
+    # Lut Gholein's Jerhyn markers (InitFn 18 / 19) ask quests this bare game hasn't (npcs.py).
+    for addr in JERHYN_MARKERS: e.hook(addr, lambda _e: 0, 0)
     rgn = e.r32(g + 0x10f0)
     made, pre, out = [], [0, 0], []
     def on_make(mu, addr, size, _):                         # FUN_00555230(ECX type, EDX class; x, y, ...)

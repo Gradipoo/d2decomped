@@ -472,22 +472,38 @@ ids).
   `FUN_0065c4d0(…, 0x60, 0)`); otherwise the NPC is looked up and the
   quest log opens.
 - **0x29 game quest info** (97): 96 bytes at +1 → `DAT_007c0d47` (the
-  game's quest words).
+  game's quest words; the log's "done in this game" bits 13 / 15).
+  d2d: `NetGame::game_quests` → the View's `game_quests` in a joined game.
+- **0x53 the act's day** (10; `0x45e300` → `FUN_0061c240`): +1 u32 phase,
+  +5 u32 time, +9 u8 eclipse. The Tainted Sun sends `{5, 0, 1}` dark,
+  `{2, 0, 0}` sunrise. d2d: `NetGame::sky` → `Day::set`.
 - **0x52 player quest info** (42): the whole packet, id included, →
-  `DAT_007bf355` (a jump to `FUN_004a40d0`), so 41 bytes of data
-  (`FUN_00483350`, then the log refresh `FUN_004a3220`); what each byte
-  means **(?)** (quests.md's log states, one a quest, by the size).
+  `DAT_007bf355` (a jump to `FUN_004a40d0`), then the log refresh
+  `FUN_004a3220`. Byte k + 1 is the log state of row k of the log's table
+  (0x723f30, 41 rows of 16 bytes: +8 the quest record id, 37 none; +0xc
+  the row, which is the quest word). So 41 log states by quest word.
+  d2d: `NetGame::quest_log` → the View's `quest_log` in a joined game.
 
 ### NPCs, UI, waypoints, portals
 
 - **0x27 NPC info** (40; `0x45e0a0` → `FUN_004a1600`): +1 u8 mode (1 /
-  2), +2 u32 unit id, +6 u16 **(?)**, +8 u16 (checked against 3), +10
-  u16 **(?)**; the rest **(?)**. The server's `FUN_005456a0` (the
+  2), +2 u32 unit id. Mode 1 is the NPC's quest lines for this player
+  (the host's records' +0xa0 build them with `FUN_00543790` →
+  `FUN_006612f0(list, message, kind)`, kind 1 sent as 0): +6 u8 count
+  (< 8), then from +8 four bytes a line, u8 kind (0 greets as the menu
+  opens, 2 a topic under Talk) and u16 message at +10; the client keeps
+  the list (`FUN_00661510`, sorted by `FUN_006616e0`). A lone line of
+  kind 3 is a number over the NPC (`FUN_00661110`), not quest lines.
+  d2d: `NetGame::npc_quests` → `Town::net_quests` / `take_npc_quest`. The server's `FUN_005456a0` (the
   Moldy Tome's message 127) sends mode 2, the object's unit id, +8 byte
   0, +10 u16 the message; the client's mode 2 (+8 not 3) keeps the id
   (0x7bf206) and opens the speech box (`FUN_004a1320`, 0x145 wide at
   y 12; message 0x7f flags 0x7bf230). d2d: `ev::Speech`.
-- **0x8a NPC interaction** (6; `FUN_004b3380`): +1 type, +2 u32 id.
+- **0x8a NPC interaction** (6; `FUN_004b3380`): +1 type, +2 u32 id. The
+  host's NPC think sends it (`FUN_00544660`) when one of the act's quests
+  (+0xec) has something for the player: the client puts overlay 0x48
+  (`npcalert`, the "!") on the NPC once (`FUN_00470390`). d2d:
+  `NetGame::npc_alerts` → the balloon for 16 frames.
   Class 0x216 closes the UI (`FUN_004b9a00`); if it isn't the unit being
   talked to, the player resets (`FUN_00470390(3)`); class 0x14b runs
   quest checks.
@@ -623,7 +639,11 @@ The ids apps/d2proxy flagged in a real game.exe client's session (table
   another). Sent in pairs after item and stat changes. Which one the host
   sends when isn't traced.
 - **0x5d quest log news** (6; `0x45e540` → `FUN_004a2cb0`): quests.md's
-  Quest Log button.
+  Quest Log button. +1 is the quest **record** id (the host's
+  `FUN_00544190` sends by record), mapped to its row / word by
+  `FUN_004a1910` (Radament: record 8, word 9); no flags (or flags 0x20,
+  the Den's, with +4 s16 its count) writes +3, the log state, into
+  0x7bf355. d2d: `d2gs::s2c::quest_word_of_record`.
 - **0x5e quests open in this game** (38; `0x45e570`): 37 bytes copied to
   `0x7c0ea4` (flag `0x7c0ecc` = 1), read by `FUN_004b92e0(_, quest)` (the
   mini panel, the quest buttons). The host (`FUN_00546270`) fills them from
@@ -697,8 +717,8 @@ melee-range skill runs up first (`FUN_00548a50`).
 |---|---|---|---|---|
 | 13 interact | 9 | u32 type, u32 id | `54aa90` → `FUN_00548b00`: player (corpse / trade), NPC (walk up; ≤ 6 talk, `FUN_00573020`), object (range < 0x33, `FUN_00584540`; a walking player's 0x13 is dropped) | `cmd::Interact` (by `Level::npcs` index); a joined d2d sends it once the host has the player stopped within 4 subtiles |
 | 2f start NPC chat | 9 | u32 type, u32 NPC id | `54b930` → `FUN_00572e60` | `cmd::Chat{npc}` |
-| 30 end NPC chat | 9 | the same | `54b9f0` → `FUN_00572f20` | `cmd::Chat{-1}` / `CloseTrade` |
-| 31 quest message heard | 9 | u32 NPC id, u16 message (+5) | `54ba90` → `FUN_005443b0` | `cmd::QuestMessage` |
+| 30 end NPC chat | 9 | the same | `54b9f0` → `FUN_00572f20`, first `FUN_00543d50`: every quest's "talk closed" (+0xa8, event 2) | `cmd::Chat{-1}` / `CloseTrade`; a joined d2d opens (0x2f) and shuts (0x30) every NPC talk, as game.exe's client does |
+| 31 quest message heard | 9 | u32 NPC id, u32 message (+5; the client's `FUN_004786a0` zero-extends the u16) | `54ba90` → `FUN_005443b0`: the NPC by id (type 1), every record of the player's act gets +0xcc; no open chat needed | `cmd::QuestMessage`; a joined d2d sends it with the host's NPC (an object's for the Moldy Tome). The client sends it as a quest line starts (0x4b4812) and again when one playing is cut (0x4b4670 / 0x4b46d0) |
 | 3d operate object | 5 | u32 object id | `54bf10` → `FUN_005845d0` | in `Interact` |
 | 3f phrase | 3 | u16 phrase (0x19..0x20) | `54c070` | none |
 | 40 update quests | 1 | — | `54c0c0` → `FUN_00546040` | none |
@@ -712,7 +732,7 @@ melee-range skill runs up first (`FUN_00548a50`).
 
 | Id | Size | Layout | Server | d2d |
 |---|---|---|---|---|
-| 38 NPC action | 13 | u32 action (**1 trade**: a real client's, recorded through d2proxy 2026-10-05; gamble, Go East, imbue **(?)**), u32 NPC id, u32 extra | `54bca0` → `FUN_00579d60` | `OpenTrade`, `OpenHire`, `Respec`, `GoEast`, `Imbue` (a kind byte of d2d's own) |
+| 38 NPC action | 13 | u32 action (**1 trade**: a real client's, recorded through d2proxy 2026-10-05; gamble, Go East, imbue **(?)**), u32 NPC id, u32 extra | `54bca0` → `FUN_00579d60` | `OpenTrade`, `OpenHire`, `Respec`, `Caravan`, `Imbue` (a kind byte of d2d's own) |
 | 32 buy | 17 | u32 NPC id, u32 item id, u32 flags (0 for a potion on page 4: recorded; 0x80000000 fill), u32 cost | `54bac0` → `FUN_00577f30` | `cmd::Buy{stock}`: **stock index, not item id** |
 | 33 sell | 17 | u32 NPC id, u32 item id, u16 mode (+9), u32 cost (+0xd) | `54bb20` → `FUN_00579510` | `cmd::Sell` |
 | 35 repair | 17 | the same shape | `54bb60` → `FUN_00578050` | `cmd::Repair` (−1 = all **(?)**) |

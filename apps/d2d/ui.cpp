@@ -75,7 +75,7 @@ NpcMenuState open_npc_menu(const Scene& scene, const Level& level, int npc, int 
                                 : id == 0xd45 ? NpcMenuState::kHire
                                 : id == 0xfb4 ? NpcMenuState::kIdentify
                                 : id == 0x2ba0 ? NpcMenuState::kRespec
-                                : id == 0xd36 ? NpcMenuState::kGoEast
+                                : id == 0xd36 || id == 0xd37 ? NpcMenuState::kCaravan
                                 : id == 0xfb1 ? NpcMenuState::kImbue
                                 : id == 0x1507 ? NpcMenuState::kResurrectMerc : NpcMenuState::kClose });
     menu.lines.push_back({ string_id(scene, 0x102e), 15 });
@@ -177,7 +177,7 @@ Speech start_speech(const Scene& scene, int npc, std::uint16_t string, std::uint
 
 void draw_speech(std::vector<std::uint8_t>& framebuffer, const Scene& scene, const Speech& speech, std::uint32_t now_ms) {
     if (speech.npc < 0) return;
-    const auto& pal = scene.act1_pal.entries().empty() ? scene.pal : scene.act1_pal;
+    const auto& pal = scene.act_pal.entries().empty() ? scene.pal : scene.act_pal;
     const int box_x = (int(kScreenWidth) - 0x145) / 2, top = 12;
     for (int y = std::max(0, top - 5); y < top - 5 + 0x7a; ++y)
         for (int x = box_x; x < box_x + 0x145; ++x) {
@@ -198,7 +198,7 @@ void draw_speech(std::vector<std::uint8_t>& framebuffer, const Scene& scene, con
 void draw_npc_menu(std::vector<std::uint8_t>& framebuffer, const Scene& scene, const NpcMenuState& menu,
                    int mouse_x, int mouse_y, std::uint32_t now_ms) {
     if (menu.npc < 0) return;
-    const auto& pal = scene.act1_pal.entries().empty() ? scene.pal : scene.act1_pal;
+    const auto& pal = scene.act_pal.entries().empty() ? scene.pal : scene.act_pal;
     for (int y = std::max(0, menu.y); y < std::min(int(kScreenHeight), menu.y + menu.box_height); ++y)
         for (int x = std::max(0, menu.x); x < std::min(int(kScreenWidth), menu.x + menu.box_width); ++x) {
             auto* pixel = &framebuffer[(std::size_t(y) * kScreenWidth + std::size_t(x)) * 4];

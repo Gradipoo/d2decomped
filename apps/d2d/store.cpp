@@ -20,15 +20,20 @@
 
 namespace d2d::client {
 
+// The list widget (FUN_004bf8f0: 490 x 280, rows 0x23) shows eight offers
+// from `scroll`; the wheel moves it.
 NpcMenuState open_hire_menu(const Scene& scene, int npc, const std::vector<d2d::rules::MercOffer>& offers,
-                            std::int64_t gold) {
+                            std::int64_t gold, int scroll) {
+    constexpr int kRows = 0x118 / 0x23;
     NpcMenuState menu;
     menu.npc = npc;
+    menu.scroll_max = std::max(0, int(offers.size()) - kRows);
+    menu.scroll = std::clamp(scroll, 0, menu.scroll_max);
     std::string head = string_id(scene, 0xd24);
     if (const auto found = head.find("%d"); found != head.npos) head.replace(found, 2, std::to_string(gold));
     menu.lines.push_back({ head, 21, 0, 0, true });
     auto label = [&](std::uint16_t id) { return string_id(scene, id) + ": "; };
-    for (std::size_t i = 0; i < offers.size(); ++i) {
+    for (std::size_t i = std::size_t(menu.scroll); i < offers.size() && i < std::size_t(menu.scroll + kRows); ++i) {
         const auto& offer = offers[i];
         const auto merc = scene.mercs.find(offer.id);
         const auto name = merc != scene.mercs.end() ? merc_name(scene, merc->second, offer.name) : std::string("?");
@@ -63,7 +68,7 @@ std::array<int, 4> store_button_frames(const Store& store) {
 
 void draw_store(std::vector<std::uint8_t>& framebuffer, const Scene& scene, const Store& store, int mouse_x, int mouse_y, const d2d::rules::Wearer* wearer) {
     if (store.npc < 0) return;
-    const auto& pal = scene.act1_pal.entries().empty() ? scene.pal : scene.act1_pal;
+    const auto& pal = scene.act_pal.entries().empty() ? scene.pal : scene.act_pal;
     if (scene.store_panel.frames_per_direction() >= 4) {
         const auto& frame = scene.store_panel.frame(0, 0);
         blit_sprite(framebuffer, frame, pal, kCharPanelX, kCharPanelY);
@@ -118,7 +123,7 @@ void draw_store(std::vector<std::uint8_t>& framebuffer, const Scene& scene, cons
 }
 
 void draw_gold(std::vector<std::uint8_t>& framebuffer, const Scene& scene, const d2d::d2s::Stats& stats, bool store) {
-    const auto& pal = scene.act1_pal.entries().empty() ? scene.pal : scene.act1_pal;
+    const auto& pal = scene.act_pal.entries().empty() ? scene.pal : scene.act_pal;
     const int cell = scene.font.sheet().frames_per_direction() > 0 ? int(scene.font.sheet().frame(0, 0).height) : 16;
     auto text = [&](int x, int baseline, const std::string& label) { scene.font.draw(framebuffer, kScreenWidth, kScreenHeight, pal, x, baseline - cell + 1, label); };
     if (!store) {

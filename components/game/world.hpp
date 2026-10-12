@@ -21,6 +21,7 @@
 
 #include <d2s.hpp>
 #include <d2s_items.hpp>
+#include <level_ids.hpp>
 #include <light.hpp>
 #include <object_ids.hpp>
 #include <quests.hpp>
@@ -111,8 +112,8 @@ struct View {
     bool den_cleared = false;              // the Den of Evil cleared in this game (its quest state, S→C 0x02)
     int light_bonus = 0;                   // item_lightradius (stat 89) from what's worn: the player's light grows by it
     std::array<d2d::rules::AttackLine, 2> attack_lines{};   // the char panel's left / right skill blocks (FUN_004eda20)
-    std::array<std::uint8_t, 7> quest_log{};     // Act 1's log states as the server sends them, by quest (FUN_00544190)
-    std::array<std::uint16_t, 7> game_quests{};  // the game's quest flags (FUN_00544720): 13 done in this game, 15 closed at the first join
+    std::array<std::uint8_t, 15> quest_log{};     // Acts 1 and 2's log states as the server sends them, by quest (FUN_00544190)
+    std::array<std::uint16_t, 15> game_quests{};  // the game's quest flags (FUN_00544720): 13 done in this game, 15 closed at the first join
     int den_left = 0;                            // the Den's monsters left (the quest log)
     // The player's own character (what only its owner is told): header,
     // stats, items with their unit ids, the item in hand; the open store's
@@ -167,9 +168,12 @@ struct World {
     // The player's town portal: [0] where it was cast, [1] its twin in town
     // (FUN_0056d130 / FUN_0056cf40); a new one closes the old pair. [2]:
     // the Cairn Stones' portal to Tristram (object 60, FUN_005a9930), [3]
-    // its twin in Tristram back to them.
+    // its twin in Tristram back to them; [4] the Arcane Sanctuary's way to
+    // the Canyon of the Magi (object 60, FUN_0056d130), [5] its twin; [6]
+    // the true tomb's way down to Duriel (object 100, OperateFn 43: one
+    // way). A portal's other end is k ^ 1.
     struct Portal { const Level* level = nullptr; float x = 0, y = 0; std::uint32_t born = 0; };
-    std::array<Portal, 4> portal{};
+    std::array<Portal, 8> portal{};
     int take_portal = -1;                  // the portal (0..3) the player is walking to
     // The player's corpses (FUN_0057f700): where they fell, what they wore
     // and had in hand, 75% of the experience the death took; at most 16.
@@ -188,12 +192,19 @@ struct World {
     Store store;                           // the NPC window open (npc < 0: none): its stock
     // A vendor's stock lasts the game (the NPC's own inventory, server
     // side): bought items gone, sold ones there to buy back. By NPC index.
-    // ponytail: camp vendors only (every Act 1 vendor is); game.exe's
-    // refresh on an act change waits for Act 2.
+    // An act change refreshes them (World::arrive clears the lot), so NPC
+    // indices stay within one town.
     std::map<int, Store> stocks;
-    // Kashya's list (FUN_00576070): rolled when first asked for, a hired
-    // offer leaves it, and once none is left it's rolled anew (FUN_00577010).
-    std::vector<d2d::rules::MercOffer> hire_offers;
+    // The hire lists (FUN_00576070), one per act's hire NPC (Kashya, Greiz):
+    // rolled when first asked for, a hired offer leaves it, and once none is
+    // left it's rolled anew (FUN_00577010).
+    std::array<std::vector<d2d::rules::HireEntry>, 5> hire_lists;
+    // The act's list (rolled on the game seed when first asked for, and
+    // again once none is left for hire) and its offers, entry order.
+    std::vector<d2d::rules::HireEntry>& hire_list(int list_act);
+    [[nodiscard]] std::vector<d2d::rules::MercOffer> hire_offers(int list_act) const;
+    // The player's act (0-based): the act of the level they're on.
+    [[nodiscard]] int act() const { return level && level->id >= d2d::rules::level_ids::kLutGholein ? 1 : 0; }
     int next_item_id = 1;                  // the next item's unit id
     d2d::rules::DenQuest den;              // this game's Den of Evil
     d2d::rules::AndyQuest andy;            // and Sisters to the Slaughter
@@ -201,9 +212,21 @@ struct World {
     d2d::rules::TowerQuest tower;          // and the Forgotten Tower
     d2d::rules::ToolsQuest tools;          // and Tools of the Trade
     d2d::rules::CainQuest cain;            // and The Search for Cain
+    d2d::rules::RadamentQuest radament;    // and Radament's Lair
+    d2d::rules::TaintedSunQuest tainted;   // and the Tainted Sun
+    d2d::rules::HoradricStaffQuest staff;  // and the Horadric Staff
+    d2d::rules::ArcaneQuest arcane;        // and the Arcane Sanctuary
+    d2d::rules::SummonerQuest summoner;    // and the Summoner
+    d2d::rules::SevenTombsQuest tombs;     // and the Seven Tombs
+    int guard_line = 186;                  // the palace guard's line as last rolled (the talk's, for what's heard)
+    [[nodiscard]] d2d::rules::HoradricStaffQuest::Items staff_items() const { return { carries("tr1"), carries("msf"), carries("box"), carries("vip"), carries("hst") }; }
+    d2d::rules::QuestBits game_bits{};
+    // A joined game: the host runs the quests. d2d's records hear nothing,
+    // reward nothing and drop nothing; the client shows the host's.
+    bool hosted_quests = false;     // the game's own quest flags (game +0x10f4 +0xc), as Act 2's records set them
     int den_left = -1;                     // its monsters alive when last counted
     std::uint32_t den_log_at = 0;          // when the log moves to "Return to Akara", 0 none
-    std::array<bool, 7> closed_at_join{};  // Act 1 quests the first join closed (the game's flag 15, FUN_00546270)
+    std::array<bool, 15> closed_at_join{};  // Acts 1 and 2's quests the first join closed (the game's flag 15, FUN_00546270)
     // The quest flags of the difficulty played.
     d2d::rules::QuestBits& quests();
     // Every item of the character has a unit id (new ones get theirs).
@@ -253,9 +276,8 @@ struct World {
     // game changed (level, when last played, the gear's look), its stats and
     // items. "" when it's written, else why not.
     std::string save();
-    // Warriv took the player east this tick: the town saves and leaves.
-    // ponytail: no Act 2 (later acts); the game ends at the caravan.
-    bool went_east = false;
+    void set_act(int act);
+    void show_palace();
 
     // Operating a shrine (FUN_00583c70: its Shrines.txt effect) or a chest
     // (FUN_00585f60 / FUN_00585b90: it opens, its act's chest treasure class
@@ -268,7 +290,8 @@ struct World {
     // containers, stands, wells, bookshelves, shrines, traps and doors.
     static bool operable(int operate_fn) {
         using namespace d2d::rules::operate_fn;
-        return std::ranges::contains(std::array{ kCasket, kShrine, kUrn, kChest, kBarrel, kExplodingBarrel, kCorpse, kArmorStand, kWeaponRack, kWell, kBookshelf, kTrapObject }, operate_fn)
+        return std::ranges::contains(std::array{ kCasket, kShrine, kUrn, kChest, kBarrel, kExplodingBarrel, kCorpse, kArmorStand, kWeaponRack, kWell, kBookshelf, kTrapObject,
+                                                 kCubeChest, kScrollChest, kShaftChest, kTeleportPad }, operate_fn)
             || is_door(operate_fn);
     }
     static bool is_door(int operate_fn) {
@@ -360,9 +383,13 @@ struct World {
     // Into level `to` near (ax, ay): everything with the player (merc, pets)
     // comes along; the automap and monsters are the new level's.
     void arrive(const Level* destination, float arrive_x, float arrive_y, const char* how);
-    std::vector<d2d::rules::QuestMsg> quest_talk(int hc_idx);   // every quest's messages from that NPC
+    std::vector<d2d::rules::QuestMsg> quest_talk(int hc_idx, bool fresh = true);   // every quest's messages from that NPC (fresh: rolls the guard's line)
     void andariel_died(const Fight::Kill& kill, std::uint32_t now_ms);
     void blood_raven_died(std::uint32_t now_ms);
+    void radament_died(const Fight::Kill& kill, std::uint32_t now_ms);
+    void transmute(std::uint32_t now_ms);
+    void canyon_portal(std::uint32_t now_ms);
+    void durielportal_open(std::uint32_t now_ms);
     void kashya_merc();
     void countess_died(std::uint32_t now_ms);
     // The Countess's treasure (missile 332, towerchestspawner, one a chest

@@ -106,11 +106,13 @@ void register_game_verbs(d2d::devctl::Channel& channel, Window& win, Screen& scr
         else if (verb == "select" && verb_args.size() >= 4) town.send(cmd::SelectSkill{ int_arg(2, 0), int_arg(3, 0) != 0 });
         else if (verb == "belt" && verb_args.size() >= 3) town.send(cmd::UseBelt{ int_arg(2, 0), verb_args.size() >= 4 && verb_args[3] == "merc" });
         else if (verb == "waypoint" && verb_args.size() >= 4) town.send(cmd::Waypoint{ int_arg(2), int_arg(3, 0) });
-        else if (verb == "goeast" && verb_args.size() >= 3) town.send(cmd::GoEast{ int_arg(2) });
+        else if (verb == "caravan" && verb_args.size() >= 3) town.send(cmd::Caravan{ int_arg(2) });
         else if (verb == "imbue" && verb_args.size() >= 3) town.send(cmd::Imbue{ int_arg(2) });
         else if (verb == "hand" && verb_args.size() >= 3) town.send(cmd::ToCursor{ int_arg(2) });
         else if (verb == "use" && verb_args.size() >= 3) town.send(cmd::UseItem{ int_arg(2) });
-        else if (verb == "grid" && verb_args.size() >= 4) town.send(cmd::ToGrid{ d2d::d2s::item_panel::kInventory, int_arg(2), int_arg(3) });
+        else if (verb == "grid" && verb_args.size() >= 4)    // the held item into the inventory (or "cube") at col, row
+            town.send(cmd::ToGrid{ verb_args.size() >= 5 && verb_args[4] == "cube" ? d2d::d2s::item_panel::kCube : d2d::d2s::item_panel::kInventory, int_arg(2), int_arg(3) });
+        else if (verb == "transmute") town.send(cmd::Transmute{});
         else if (verb == "said" && verb_args.size() >= 4) town.send(cmd::QuestMessage{ int_arg(2), int_arg(3, 0) });
         else if (verb == "chat" && verb_args.size() >= 3) town.send(cmd::Chat{ int_arg(2) });
         else if (verb == "trade" && verb_args.size() >= 3) town.send(cmd::OpenTrade{ int_arg(2), int_arg(3, 0) != 0 });
@@ -119,7 +121,7 @@ void register_game_verbs(d2d::devctl::Channel& channel, Window& win, Screen& scr
         else if (verb == "close") town.send(cmd::CloseTrade{});
         else return std::string("err cmd move <x> <y> | skill <id> <x> <y> [unit] [left] | interact <npc> | pickup <unit> | resurrect"
                                 " | stat <stat> [n] | skillpt <index> | select <skill> <left> | belt <slot> | waypoint <npc> <level>"
-                                " | goeast <npc> | imbue <npc> | hand <item> | grid <col> <row> | use <item> | said <npc> <string> | chat <npc|-1>"
+                                " | caravan <npc> | imbue <npc> | hand <item> | grid <col> <row> | use <item> | said <npc> <string> | chat <npc|-1>"
                                 " | trade <npc> [gamble] | buy <stock> | sell <item> | close\n");
         return std::string("ok\n");
     });
@@ -350,6 +352,11 @@ void register_game_verbs(d2d::devctl::Channel& channel, Window& win, Screen& scr
             town.new_game();
             return std::string("ok\n");
         }
+        if (args.size() >= 3 && args[1] == "give") {       // an item <code> [quality] at the player's feet, the area level's
+            town.world.loot.put({ .code = args[2], .quality = args.size() >= 4 ? std::atoi(args[3].c_str()) : 2 }, town.world.player.x, town.world.player.y, 30,
+                                town.world.fight.spawning.game, town.world.now);
+            return std::format("ok #{}\n", town.world.loot.ground.back().id);
+        }
         if (args.size() >= 3 && args[1] == "quest") {      // mark Act quest <q> done (bit 0), active difficulty
             const int quest = std::atoi(args[2].c_str()), bit = quest * 16;
             if (quest < 0 || quest >= 48) return std::string("err quest 0..47\n");
@@ -361,9 +368,12 @@ void register_game_verbs(d2d::devctl::Channel& channel, Window& win, Screen& scr
                 town.world.den_left = -1;
             }
             if (args.size() >= 4)                          // show / reset: its 16 bits, the Den's state
-                return std::format("ok bits={:#06x} den={} skillpts={} states={},{},{},{},{},{}\n", quest_bits[std::size_t(bit >> 3)] | quest_bits[std::size_t(bit >> 3) + 1] << 8,
+                return std::format("ok bits={:#06x} den={} skillpts={} states={},{},{},{},{},{} radament={} log={} tainted={} log={} dark={} eclipse={} light={} arcane={} log={} summoner={} log={} portal={} tombs={} log={} true={} lair={}\n", quest_bits[std::size_t(bit >> 3)] | quest_bits[std::size_t(bit >> 3) + 1] << 8,
                                    town.world.den.state, town.world.character.stats.get(d2d::d2s::kSkillPts), town.world.den.state, town.world.burial.state,
-                                   town.world.tools.state, town.world.cain.state, town.world.tower.state, town.world.andy.state);
+                                   town.world.tools.state, town.world.cain.state, town.world.tower.state, town.world.andy.state, town.world.radament.state, town.world.radament.log,
+                                   town.world.tainted.state, town.world.tainted.log, town.world.tainted.dark, town.world.day.eclipse, town.world.day.intensity(),
+                                   town.world.arcane.state, town.world.arcane.log, town.world.summoner.state, town.world.summoner.log, town.world.arcane.portal_made,
+                                   town.world.tombs.state, town.world.tombs.log, town.world.tombs.true_tomb, town.world.tombs.lair_open);
             header.quests[std::size_t(header.active_difficulty())][std::size_t(bit >> 3)] |= std::uint8_t(1 << (bit & 7));
             switch (quest) {                                // as a new game would see it (FUN_00546270): its join, then the chain from quest 1
             case 1: town.world.den.join(quest_bits); break;

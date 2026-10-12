@@ -53,7 +53,11 @@ if(APPLE)
 elseif(WIN32)
     # windeployqt brings Qt for the launcher; d2d's DLLs (SDL3, OpenAL32,
     # FFmpeg, zlib, StormLib), which cover the tools', are the ones staged
-    # beside it (CI does that).
+    # beside it (CI does that). CMake 4.3+ warns per DLL until told to
+    # normalize slashes; the System32 regex matches either.
+    if(POLICY CMP0207)
+        cmake_policy(SET CMP0207 NEW)
+    endif()
     install(TARGETS ${beside_d2d} RUNTIME_DEPENDENCY_SET d2d_dlls RUNTIME DESTINATION .)
     install(RUNTIME_DEPENDENCY_SET d2d_dlls DESTINATION .
         PRE_EXCLUDE_REGEXES "^api-ms-" "^ext-ms-"
@@ -96,18 +100,26 @@ qt_deploy_runtime_dependencies(${deploy_args}
 install(SCRIPT "${deploy_script}")
 
 if(APPLE)
-    # macdeployqt copies every plugin Homebrew's qtbase has, even those whose
-    # Qt module isn't installed (pdf, svg, virtual keyboard); they'd fail to
-    # load, and the launcher uses none of them. The virtual keyboard alone
-    # brought QtQuick and the QtQml family (10 MB). Then re-sign ad hoc, as
+    # macdeployqt copies every plugin Homebrew has; the launcher needs only
+    # cocoa, the mac style and Apple's TLS / network info. Gone: other
+    # modules' (pdf, svg, virtual keyboard, which brought QtQuick and QtQml,
+    # 10 MB), image formats (its images are PNG, built into QtGui), glib
+    # network info, OpenSSL TLS, and the dylibs only those wanted. Then
+    # re-sign ad hoc, as
     # macdeployqt rewrote install names (as ../thirdeye): Gatekeeper then
     # offers "Open anyway" instead of "damaged".
     install(CODE "
         set(app \"\$ENV{DESTDIR}\${CMAKE_INSTALL_PREFIX}/D2D.app\")
-        file(REMOVE \"\${app}/Contents/PlugIns/imageformats/libqpdf.dylib\"
-            \"\${app}/Contents/PlugIns/imageformats/libqsvg.dylib\"
-            \"\${app}/Contents/PlugIns/iconengines/libqsvgicon.dylib\"
-            \"\${app}/Contents/PlugIns/platforminputcontexts/libqtvirtualkeyboardplugin.dylib\")
+        foreach(dir imageformats iconengines platforminputcontexts)
+            file(REMOVE_RECURSE \"\${app}/Contents/PlugIns/\${dir}\")
+        endforeach()
+        file(REMOVE \"\${app}/Contents/PlugIns/networkinformation/libqglib.dylib\"
+            \"\${app}/Contents/PlugIns/tls/libqopensslbackend.dylib\"
+            \"\${app}/Contents/PlugIns/tls/libqcertonlybackend.dylib\")
+        foreach(lib gio-2.0.0 gmodule-2.0.0 gobject-2.0.0 jasper.7 jpeg.8 lcms2.2
+                lzma.5 mng.2 sharpyuv.0 tiff.6 webp.7 webpdemux.2 webpmux.3)
+            file(REMOVE \"\${app}/Contents/Frameworks/lib\${lib}.dylib\")
+        endforeach()
         foreach(module Quick Qml QmlMeta QmlModels QmlWorkerScript OpenGL)
             file(REMOVE_RECURSE \"\${app}/Contents/Frameworks/Qt\${module}.framework\")
         endforeach()

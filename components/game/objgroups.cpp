@@ -402,6 +402,8 @@ struct ObjectRooms {
     // Its footprint: 0x100 in its shape, 0x1000 in the one a size down.
     // A monster's own seed takes its look (FUN_00573cb0, rules::monster_look)
     // and one stat roll as it's made. Recorded in the level's spawns (NPCs aside).
+    std::optional<d2d::rules::Rng> last_made;            // the unit seed made() left last (after its look and stat draws)
+    std::pair<int, int> last_spot;                       // and where it stood
     d2d::rules::Rng made(int type, int at_x, int at_y) {
         const auto& types = game_data.monsters.types;
         stamp_shape(at_x, at_y, size_of(type), 0x100);
@@ -431,6 +433,8 @@ struct ObjectRooms {
         if (type_at(type) && types[std::size_t(type)].id == "bloodraven") { own(1); game.next(); game.next(); }
         const bool npc = type_at(type) && std::size_t(type) < game_data.mon_is_npc.size() && game_data.mon_is_npc[std::size_t(type)];
         if (spawns && !npc) spawns->push_back({ type, at_x, at_y, leader, -1, d2d::rules::Boss::none, {}, 0, value });
+        last_made = own;
+        last_spot = { at_x, at_y };
         return own;
     }
     void tag(std::size_t spawn_index, d2d::rules::Boss kind, std::vector<int> mods = {}, int name_seed = 0) {
@@ -651,11 +655,19 @@ struct ObjectRooms {
             if (unit.id < nmon) {
                 const auto row = game_data.mon_bin[std::size_t(unit.id)];
                 const bool stay = unit.id == 0xe5 || (unit.id >= 0x11c && unit.id <= 0x120) || unit.id == 0x188 || unit.id == 0x189;   // FUN_0054e3a0
+                last_made.reset();
                 monster(int(row), unit.x, unit.y, stay ? 0 : 4);
-                if (game_data.mon_is_npc[row] && !game_data.mon_npc[row].code.empty()) {                // an NPC (Flavie) stands at its spot
+                if (game_data.mon_is_npc[row] && !game_data.mon_npc[row].code.empty()) {                // an NPC (Flavie, Lut Gholein's) stands at its spot
                     auto npc = game_data.mon_npc[row];
-                    npc.x = (float(unit.x) + 0.5f) / 5;
-                    npc.y = (float(unit.y) + 0.5f) / 5;
+                    const auto [spot_x, spot_y] = last_made ? last_spot : std::pair{ unit.x, unit.y };     // where it was made: its spot, or the free one nearest
+                    npc.x = (float(spot_x) + 0.5f) / 5;
+                    npc.y = (float(spot_y) + 0.5f) / 5;
+                    for (std::size_t k = 0; k < unit.path.size(); ++k) {                                   // its DS1 path (the town AIs walk it)
+                        npc.path.emplace_back((float(unit.x + unit.path[k].first) + 0.5f) / 5, (float(unit.y + unit.path[k].second) + 0.5f) / 5);
+                        npc.actions.push_back(k < unit.actions.size() ? unit.actions[k] : 0);
+                    }
+                    // Its unit seed after its init's draws (the look, the life: made()'s), what its think rolls on (town-npcs.md).
+                    if (last_made) npc.seed = *last_made;
                     level.npcs.push_back(std::move(npc));
                 }
             } else if (const int code = unit.id - nmon - nsu; code == 0x11 || code == 0x12 || code == 0x05) {
@@ -839,13 +851,25 @@ void place_objects(const GameData& game_data, GameData::LevelBuilder& builder, L
     level.room_flags.resize(level.rooms.size());
     level.unit_rooms.resize(level.units.size(), -1);
     // 0x30000: a room with a waypoint (objects.txt SubClass 0x40, FUN_00667e30);
-    // 0x800000: the Blood Moor's rooms next to the camp (FUN_0066bd92).
     for (std::size_t i = 0; i < level.units.size(); ++i)
         if (level.units[i].type == d2d::rules::unit_type::kObject && level.unit_rooms[i] >= 0 && (pop.obj(level.units[i].id, "SubClass") & d2d::rules::object_ids::kSubclassWaypoint))
             level.room_flags[std::size_t(level.unit_rooms[i])] |= 0x30000;
-    if (level.id == d2d::rules::level_ids::kBloodMoor && game_data.town.ds1.width() > 0) {
-        const auto& town = game_data.town;
-        const int town_x = town.world_x, town_y = town.world_y, town_w = town.ds1.width(), town_h = town.ds1.height();
+    // 0x800000 also: a room with a town room among its near rooms
+    // (FUN_0066bd50 on the near list, +0x2c; FUN_006426a0: levels 1, 40, 75,
+    // 103, 109) — the Blood Moor's by the camp, the Sewers' by Lut Gholein.
+    // The near rooms: within 6 act tiles on both axes.
+    std::array<int, 4> town{};                                    // its act's town: x, y, width, height (act tiles)
+    bool has_town = false;
+    if (level.id < d2d::rules::level_ids::kLutGholein) {
+        if (level.id != d2d::rules::level_ids::kRogueEncampment && game_data.town.ds1.width() > 0) {
+            town = { game_data.town.world_x, game_data.town.world_y, game_data.town.ds1.width(), game_data.town.ds1.height() };
+            has_town = true;
+        }
+    } else if (level.id != d2d::rules::level_ids::kLutGholein)
+        for (const auto& placed : game_data.layout_of(level.id))
+            if (placed.level == d2d::rules::level_ids::kLutGholein) { town = { placed.x, placed.y, placed.width, placed.height }; has_town = true; }
+    if (has_town) {
+        const auto [town_x, town_y, town_w, town_h] = town;
         for (std::size_t i = 0; i < level.rooms.size(); ++i) {
             const auto& made = level.rooms[i];
             const int x = level.world_x + made.x, y = level.world_y + made.y;

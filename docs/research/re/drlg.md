@@ -93,6 +93,51 @@ outdoor generator reads these (phase B).
 d2d: `components/drlg` `place_chain` / `act1_layout` / `town_file`,
 `tests/test_drlg.cpp`.
 
+## Act 2's layout (FUN_00677790)
+
+FUN_00678ad0 picks the act's layout: act 1 FUN_00677750, act 2
+FUN_00677790, act 3 FUN_006789b0, act 4 FUN_00678a20, act 5 FUN_00678a70.
+
+**The tombs first** (FUN_00642da0, act 2 only, before the layout): two
+rolls of `rand(7)` on the act seed, again in pairs until they differ;
+the first + 66 is the boss tomb (act +0x94), the second + 66 the staff
+tomb (+0x484). The maze grower makes the boss tomb ×3 rooms and the
+staff tomb ×2 (FUN_00671210). Act 3 rolls one `& 1` there instead
+(+0x474). So act 2's chains start two (or more) steps later than act 1's.
+
+Two chains, no outdoor flags (the third argument is 0), each check
+FUN_00676f50 / FUN_00676fc0: clear of every earlier record but its link
+(FUN_0066b860 → FUN_0066b800, gap 0) — act 1's check without the town
+and Burial Grounds rules. Then FUN_00677680 links neighbours for levels
+40..46.
+
+| table | records |
+|---|---|
+| 0x6f0930 | 40 Lut Gholein (anchor), 41 Rocky Waste ← 0 (FUN_006769a0), 42 Dry Hills ← 1, 43 Far Oasis ← 2, 44 Lost City ← 3 (FUN_00676280), 45 Valley of Snakes ← 4 (FUN_00676ae0) |
+| 0x6f0a20 | 46 Canyon of the Magi (anchor) |
+
+**Placement** (L the link's rect, W/H the new level's size):
+
+- Rocky Waste (FUN_006769a0): first `(seed & 1) + 1`, the retry the
+  other; 1: (L.x − W, L.y) left, top-aligned; 2: (L.x, L.y − H) above,
+  left-aligned.
+- shifted (FUN_00676280): first `seed & 7`, retries (d + 1) & 7; with
+  a = W/2 + 8, b = H/2 + 8: 0 (L.x − a, L.y2), 1 (L.x + a, L.y2), 2
+  (L.x − W, L.y − b), 3 (L.x − W, L.y + b), 4 (L.x − a, L.y − H), 5
+  (L.x + a, L.y − H), 6 (L.x2, L.y − b), 7 (L.x2, L.y + b).
+- flush (FUN_00676ae0): as shifted for the rolls; d / 2 picks 0 (L.x,
+  L.y2), 1 (L.x − W, L.y), 2 (L.x, L.y − H), 3 (L.x2, L.y).
+
+**Lut Gholein's file** (FUN_006772c0, for a DrlgType-2 level 40): the
+next record's dir, the Rocky Waste's — LvlPrest 301 File2 LutW (1, the
+Rocky Waste to the west) or File3 LutN (2, north). Level 1 takes its own
+dir the same way (act 1's town file).
+
+d2d: `components/drlg` `act2_layout` / `roll_act2_tombs` /
+`lut_gholein_file`, `tests/test_drlg.cpp`; `diff_drlg.py 1-2000 40
+layout` (drlg.layout_dump; drlg.act_of picks a level's act for every
+dump): 2000/2000 seeds, rectangles, file and tombs.
+
 ## Outdoor levels (DrlgType 3) — FUN_00675360
 
 The level's outdoor record (0x268 bytes, FUN_00675320) holds four cell
@@ -313,6 +358,50 @@ FUN_00667970 first rolls its DS1's units to stay (FUN_00667620) on the
 level seed, then the rooms are allocated), other preset cells nothing, 0x100 cells
 nothing, the rest plain 8×8 rooms (FUN_0067d540 with +0x18, +0x2c,
 +0x40 and a LevelType word: 2 → 0x44103).
+
+### Act 2's desert (FUN_0067f980, LevelType 16, levels 41–46)
+
+FUN_00675360 picks the act's body (act 1 FUN_006807f0, 2 FUN_0067f980, 3
+FUN_0067f450, 4 FUN_0067e890, 5 FUN_0067e600; level 134 runs act 2's).
+The desert has no cliffs and no roads; contacts and borders as act 1 but:
+
+- **Border column 2** (0x6f0630 / 0x6f0620): edges 364 + kind, corners 363
+  + row (364..375); FUN_006743c0's border flag covers 4..15 and
+  0x16c..0x177.
+- **Exits**: no 0x400 cell; a pair of presets from 0x6f112c[dx + 2 + 2dy]
+  (up 373 / 372, left 372 / 375, right 373 / 374, down 374 / 375) at the
+  edge's middle and one step on.
+- **Border substitution** FUN_006752a0(type, base) with the border base
+  0x16c (act 1: 4): types 2, 1, 3 (FUN_0067f630).
+- **Per level** (`x` in EDX, then `y, def, file, border` for
+  FUN_006743c0):
+  - 41 Rocky Waste: by Lut Gholein (its neighbour node's side 3: 0x16b at
+    (0, h − 1), else 0x16a at (w − 1, 0)); subs; FUN_0067f670 (one
+    anywhere: 41 / 42 0x184, 43 0x186, 44 0x19c, 45 0x185); 5 shrines;
+    FUN_0067f470 {0x18b, 0x19b, 0x191, 0x192, 0x18f, 0x18e, 0x193}.
+  - 42 / 43 / 44: FUN_0067f5c0 (one of eight rows of five `{def, file, x,
+    y}` at 0x6f2390, `rand & 7`), subs, the one, (43: {0x18c, 0x18d}; 44:
+    {0x19d, 0x198, 0x199, 0x19a}), the waypoint (FUN_00674b70), 5 shrines,
+    then 42 {0x18b, 0x19b, 0x190, 0x18e} and every file of {0x194..0x197};
+    43 {0x19b, 0x18f, 0x18e, 0x193}, every file of 0x18b twice; 44 {0x18b,
+    0x190, 0x18e, 0x194, 0x195}, every file of 0x19b twice.
+  - 45 Valley of Snakes: the one.
+  - 46 Canyon of the Magi: nine `{def, file, x, y}` at 0x6f2610, 0x18a at
+    (4, 4), subs, 5 shrines, {0x191, 0x192, 0x196, 0x197, 0x193}, every
+    file of {0x188, 0x189}.
+  - FUN_0067f470(list, n, every_file): `rand(n)` on the level seed starts
+    it; each def in turn goes anywhere (FUN_00674730, file −1), or once
+    per file.
+- **Plain rooms**: DT1 mask 1 (FUN_006750f0 by LevelType: 2 → 0x44103;
+  16, 22, 27, 28 → 1; 21 → 4; 30, 31 → 0x11); the stamps as act 1; then
+  every floor cell without bits 0x3f0ff80 gets 0x100 (FUN_0067d2d0 by
+  LevelType: 16 0x100, 21 0x120000, 22 0x100000, 27 0xa00000, 28
+  0x1600000). LvlSub rows 7–9 are act 2's (waypoint, shrines, dunes /
+  rocks / bones / palms).
+
+d2d: `Gen::lay_desert`, `is_desert`, `border_base`, `kDesertExits`,
+`kDesertRows`, `kCanyonRows` (outdoor.hpp). `diff_drlg.py 1-10 <41..46>
+tiles units`: 10/10 each; act 1's outdoors unchanged.
 
 ### Plain rooms (OutRoom.cpp, FUN_0067d2d0)
 
@@ -576,6 +665,65 @@ the level seed, as outdoors).
    one when the preset is under 13×13, else one per 8×8 block (rows, then
    columns), each allocated in turn.
 
+**Act 2's mazes** (FUN_00673b30 by LevelType; 2026-10-10):
+
+| type | before the grow | grows | specials | themes / rotation |
+|---|---|---|---|---|
+| 13 sewers | ring (FUN_00670f60(2)) | yes | FUN_00672810 | both, base 0x12d |
+| 14 harem, 15 cellars | ring | no | none | neither |
+| 17 tombs | three arms off the first room (FUN_006718c0) | yes (×3 the boss tomb, ×2 the staff tomb) | FUN_00672be0 | both, base 0x19d |
+| 18 lair | ring | yes | FUN_00672dc0 | rotation only, base 0x1e1 |
+| 19 Arcane Sanctuary | FUN_006719f0 | — | FUN_00672e50 | neither |
+
+- **The Arcane Sanctuary** (74, FUN_006719f0, 2026-10-11): a roll `& 3`
+  (the rotation), then four arms off the first room (12×12 rooms), arm a
+  by side u = a: two rooms on u, one on u + 3, four on u, one on u + 1
+  (A), a dead end on u from A, one on u + 1 from A (B), two on u + 2 (C),
+  a dead end on u + 3 from C, two more on u + 2; each the usual step
+  (FUN_0066b3e0 / FUN_00670880 / FUN_0066b5e0 / FUN_00670c70 /
+  FUN_0066b970, defs 0x1fd + mask). The 13 kept rooms of each arm take
+  file (a + rotation) & 3, the first room 4; the two dead ends keep none, so the preset step rolls rand(1) = 0 (their defs have Files 1). No
+  grow. The special (FUN_00672e50): a roll `& 3`, one row of 0x6f00f8
+  (`{517, 528, −1, 3}`, `{511, 526, −1, 0}`, `{513, 527, −1, 1}`,
+  `{510, 525, −1, 2}`). d2d: `generate_maze` type 19;
+  `diff_drlg.py 1-20 74`: 20/20, tiles / units 10/10.
+- **Defs by link mask** (FUN_006709b0): base + mask for 13 / 17 / 18 / 19;
+  14 and 15 read 0x6ef758 / 0x6ef75c (12-byte rows by mask, 0 = no
+  change: only masks 5, 6, 9, 10 have rooms). The cellars set a file: level
+  52 def 0x169 → 2, level 54 def 0x169 / 0x167 → 3.
+- **Tombs**: a roll `& 3` is the first arm's side, each arm the next
+  side; the first room becomes the entrance facing the side left
+  (0x6ef888[side]: 447 / 444 / 446 / 445), special. Claw Viper Temple 2
+  (61) is that one room, def 0x1e0, no grow, no specials. FUN_00672be0
+  starts its turn from the entrance def (0x1bc → 3, 0x1bd → 1, 0x1be → 0,
+  0x1bf → 2; no roll) and runs the tables (16-byte `{from, to, file,
+  side}` × 4 by turn): 55–58 0x6efe28, 57 0x6efe68, 59 / 61 0x6efea8,
+  66–72 but the boss tomb 0x6efea8, 59 0x6efee8, 60 0x6eff28, 59 / 61
+  0x6eff68, the boss tomb 0x6effa8, the staff tomb 0x6effe8.
+- **Sewers** (FUN_00672810): two rolls, the first's `& 1` picking level
+  47's last side (1 above / 3 below), the second's `& 3` the turn. 48:
+  0x6efce8, 0x6efd68, 0x6efd28; 49: 0x6efce8, 0x6efda8; 65 (Ancient
+  Tunnels): 0x6efce8, 0x6efde8. Level 47 builds its own: from the topmost
+  room a room fits above (FUN_006723e0, FUN_00672340's probe only for a
+  candidate that beats the best) two rooms up, then special 0x14d file 0
+  to the left (FUN_00670de0: no merge); from the rightmost a room fits
+  beside on the right (FUN_00672460) two rooms right, special 0x150 file 0
+  on the rolled side, one plain room past it (no merge); then 0x6efd28.
+- **Lair** (FUN_00672dc0): a roll `& 3`; level 64 takes 0x6f00e8 (one
+  record), turn 3, 0x6f00d8, else 0x6f0068[turn]; then 0x6f0028[turn].
+- **Doors** (FUN_0066d9e0, table rows 13–22): 51 (291 / 290), 52–54,
+  the tombs 55–61 / 66–72 (objects 92 / 91), the lair 62–64. Objects 0x5b /
+  0x5c are made unless rand(3) on the room's seed (the tiles' seed, +0x14)
+  is 0; the tile's flagged either way, so a door shared with a neighbour is
+  made by whichever room comes up first — game.exe's tomb doors depend on
+  the order the player brings rooms up (d2d: list order).
+
+d2d: `generate_maze` (maze.hpp: `kAct2Specials`, `kTombEntrance`,
+`kHaremDefs`, `maze_themes` / `maze_rotates`), `MazeDef::boss_tomb` /
+`staff_tomb`; `kDoorLevels` / `kDoorRows` (room_tiles.hpp).
+`ORDER=list diff_drlg.py 1-5 <level> tiles units`, levels 47–73: all 5/5;
+the grids 1-10 too.
+
 A **preset level** (DrlgType 2, FUN_00668100) is one preset: the first
 LvlPrest row with that LevelId (FUN_0061f0e0), its file rolled on the
 level seed (FUN_00666ed0) unless the level's record (+0x14 [1]) already
@@ -792,11 +940,16 @@ Conditions those results hold under, so they aren't overstated:
 |---|---|
 | The rest of act 1's layout: other levels' rectangles, chain 2 (Moo Moo Farm, Monastery, Tamoe Highland, Black Marsh, Dark Wood), chain 2's overlap check shifted by 200 (FUN_00676eb0) | ported partly (chain 2 simplified); only the Blood Moor's rectangle and flags are diffed |
 | The town's own layout beyond its DS1 choice | not diffed |
-| Act 2+ maze types; the Barracks' cross-level link to 27 (FUN_0066b790) | not ported |
+| Act 2's layout (rectangles, Lut Gholein's file, the tombs) | diffed, 2000/2000 seeds |
+| Lut Gholein (level 40): rooms, tiles, units | diffed: 20/20 seeds, units 10/10 (`diff_drlg.py 1-20 40 tiles`) |
+| Act 2's mazes and presets (47–73): rooms, tiles, units, doors | diffed (list order), 5/5 each |
+| Act 2's desert (41–46): grids, tiles, units | diffed, 10/10 each |
+| Act 3+ outdoors and mazes; the Barracks' cross-level link to 27 (FUN_0066b790) | not ported |
 | Preset units that roll to stay (FUN_00667620) | ported outdoors (`stays`, units.hpp); diffed on Cold Plains' Cottages 2, whose row has Pops: presets with Scan or Pops roll at generation on the level seed (FUN_00667970), the rest on the seed of the room that copies them (room +0x14, the whole {low, high} — a maze room's was stepped once, so its high word isn't 666; diffed on the Jail and Catacombs). In the preset record's order, one step each — monsters 0xcc, 0xcd, 0x173, 0x174 kept when `low % 3 == 0`; MonPlace 0x21 when `low & 3`, 0x22 when odd, 0x23 when `!(low & 3)`, 0x24 always; objects 0xc4 / 0x105 when even, 0x245 when `low & 3`. It runs after the room's DT1 list and before its tiles (FUN_0061b730), whose seed FUN_0066ee40 resets, so tiles don't shift. Act 1: the Crypt, Jail, Catacombs, Fence Fill 1, Cottages 2 |
 | Units in other acts: the act 2 / act 4 MonPreset remaps, type-4 units (NPCs by name) | not ported |
 | LvlSub CheckAll stamps | not ported (no act 1 wilderness row uses them) |
-| Doors outside act 1 (FUN_0066d9e0's type 1 and objects 0x5b / 0x5c), tile word bit 4 on non-plain paths beyond what these levels hit | not ported |
+| Act 2's doors (FUN_0066d9e0, the tombs' and lair's objects 0x5b / 0x5c with their rand(3)) | generated, diffed with the mazes' units |
+| Doors in acts 3–5, tile word bit 4 on non-plain paths beyond what these levels hit | not ported |
 | Logical areas (FUN_0066ccb0 / FUN_0066d110; room_tiles.hpp `logic_areas`) | diffed bit-exact on every Logicals room of act 1, seeds 1-3 (ids are ours, only id != 0 is used) |
 | Room collision, automap | not diffed |
 | Monster population on these rooms (components/rules/monsters.hpp) | uses the proven room seeds; its own rolls not diffed |

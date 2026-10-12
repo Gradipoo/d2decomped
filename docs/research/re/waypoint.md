@@ -64,4 +64,9 @@ waygatebackground, waygatetabs or expwaygatetabs, waygateicons into
   the destination waypoint's tile + 3 subtiles (≈ +0.6 cells), nearest free
   spot, and lights that waypoint if it's dark (docs/research/re/act1-end.md §3).
 - The bits save with the character (d2s 0x283 + difficulty·24).
-- Not yet: travel to another act (the Act 2+ levels aren't built).
+- Another act's row (Lut Gholein from Act 1's waypoints and back) arrives
+  like any other; the arrival sets the save's act (`World::arrive`). The
+  panel opens on the player's act's tab. Act 2's levels all build in play
+  (the desert 41–46, the mazes 47–73, the Arcane Sanctuary 74); its other
+  waypoints work as Act 1's, but none past Lut Gholein has been checked
+  live yet.

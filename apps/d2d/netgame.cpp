@@ -6,6 +6,7 @@
 #include <d2gs/c2s.hpp>
 #include <d2gs/c2s_names.hpp>
 #include <d2gs/exe_tables.hpp>
+#include <d2gs/s2c.hpp>
 #include <d2gs/s2c_names.hpp>
 #include <d2gs/wire.hpp>
 #include <log.hpp>
@@ -353,9 +354,24 @@ auto NetGame::handle(const d2d::net::Bytes& packet) -> void {
     case 0x0e:   // object state: +1 type (2), +2 id, +8 u32 the new mode
         if (size >= 12 && packet[1] == 2) object_modes.push_back({ read_u32(packet, 2), int(read_u32(packet, 8)) });
         break;
-    case 0x5d:   // quest log news: +1 quest, +2 flags (2: a sound), +3 log state, +4 s16 (quests.md)
-        if (size >= 3 && packet[2] == 0) quest_news.push_back(packet[1]);
+    case 0x5d: {   // quest log news: +1 quest record, +2 flags (2: a sound), +3 log state, +4 s16 (quests.md)
+        // No flags: the record's log state (its row is its word) and the Quest
+        // Log button; flags 0x20 (the Den's): the state and the count.
+        const int row = size >= 4 ? d2d::net::d2gs::s2c::quest_word_of_record(packet[1]) : -1;
+        if (row >= 0 && (packet[2] == 0 || (packet[2] & 0x20) != 0)) quest_log[std::size_t(row)] = packet[3];
+        if (row >= 0 && packet[2] == 0) quest_news.push_back(row);
+        if (size >= 6 && (packet[2] & 0x20) != 0) den_left = std::int16_t(read_u16(packet, 4));
         send({ d2d::net::d2gs::c2s::update_quests() });   // the words behind it (0x28)
+        break;
+    }
+    case 0x53:   // the act's day (FUN_0061c240): +1 u32 phase, +5 u32 time, +9 u8 eclipse
+        if (size >= 10) sky = Sky{ int(read_u32(packet, 1)), int(read_u32(packet, 5)), packet[9] != 0 };
+        break;
+    case 0x52:   // player quest info: 41 log states by quest word (FUN_004a40d0 -> 0x7bf355)
+        if (size >= 42) { std::copy_n(packet.begin() + 1, 41, quest_log.begin()); quest_log_known = true; }
+        break;
+    case 0x29:   // game quest info: the game's 48 quest words (FUN_0065c4d0 -> 0x7c0d47)
+        if (size >= 97) for (std::size_t word = 0; word < 48; ++word) game_quests[word] = read_u16(packet, 1 + 2 * word);
         break;
     case 0x28:   // quest info: +1 6 (the player's own), +7 its 96 quest words (FUN_004b6dd0 -> FUN_0065c4d0)
         if (size >= 103 && packet[1] == 6) {
@@ -365,6 +381,14 @@ auto NetGame::handle(const d2d::net::Bytes& packet) -> void {
         break;
     case 0x27:   // NPC info: +1 mode, +2 unit id (the answer to an 0x13 on an NPC)
         if (size >= 6) npc_info = read_u32(packet, 2);
+        if (const auto lines = d2d::net::d2gs::s2c::npc_lines(packet)) {   // mode 1: its quest lines (built by the host's records, FUN_00543790)
+            NpcQuest npc_quest{ .id = lines->id };
+            for (const auto& line : lines->lines) npc_quest.lines.push_back({ int(line.message), line.greet });
+            npc_quests.push_back(std::move(npc_quest));
+        }
+        break;
+    case 0x8a:   // NPC interaction: +1 type, +2 id (the host's NPC think, FUN_00544660: one of its quests has something for us)
+        if (size >= 6 && packet[1] == 1) npc_alerts.push_back(read_u32(packet, 2));
         break;
     case 0x81:   // assign merc: +2 u16 class, +4 u32 owner, +8 u32 merc id
         if (size >= 12 && read_u32(packet, 4) == self_id) merc_id = read_u32(packet, 8);
@@ -399,6 +423,7 @@ auto NetGame::handle(const d2d::net::Bytes& packet) -> void {
         break;
     case 0x77:   // trade button action (FUN_004b8cf0): +1 what
         if (size < 2) break;
+        if (packet[1] == 0x15) { cube_opened = true; break; }   // the Cube's open on the host (FUN_0048a460)
         log.note("trade: action " + std::to_string(packet[1]) + " in state " + std::to_string(trade.state));
         switch (packet[1]) {
         case 0: if (trade.state == 0) trade.state = 1; break;                      // our request is out

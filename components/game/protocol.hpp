@@ -34,6 +34,8 @@ struct Interact { int npc = -1; };
 struct Pickup { int item = -1; };
 // 0x41: back in town after dying (let through only when dead).
 struct Resurrect {};
+// 0x4f button 0x18: the Cube's Transmute (FUN_00566ae0 -> FUN_005665f0).
+struct Transmute {};
 // 0x3a: spend `count` stat points on a stat (0 str, 1 energy, 2 dex, 3 vit).
 struct StatPoint { int stat = 0, count = 1; };
 // 0x3b: spend a skill point on the class's skill `skill` (its index 0..29,
@@ -74,8 +76,9 @@ struct CloseTrade {};
 // Akara's Reset Stat/Skill Points, confirmed ("ok" sends game.exe's 0x38
 // to her; d2d tells it apart with kind 3).
 struct Respec { int npc = -1; };
-// 0x38 (game.exe's kind 0, arg the level): Warriv's "Go East" to Lut Gholein.
-struct GoEast { int npc = -1; };
+// 0x38 (game.exe's kind 0, arg the level): Warriv's caravan, "Go East" to
+// Lut Gholein (warriv1) or "Go West" back to the camp (warriv2).
+struct Caravan { int npc = -1; };
 // 0x38 (game.exe's kind 0 at Charsi): imbue the item in hand.
 struct Imbue { int npc = -1; };
 // 0x53 / 0x54: run or walk.
@@ -94,7 +97,7 @@ using Command = std::variant<cmd::Move, cmd::UseSkill, cmd::Interact, cmd::Picku
                              cmd::StatPoint, cmd::SkillPoint, cmd::SelectSkill, cmd::UseBelt, cmd::UseItem,
                              cmd::ToCursor, cmd::Drop, cmd::ToGrid, cmd::ToBody, cmd::ToBelt,
                              cmd::OpenTrade, cmd::OpenHire, cmd::Buy, cmd::Sell, cmd::Repair, cmd::Identify, cmd::IdentifyWith, cmd::Hire, cmd::ResurrectMerc, cmd::CloseTrade, cmd::Respec,
-                             cmd::Run, cmd::Chat, cmd::QuestMessage, cmd::Waypoint, cmd::GoEast, cmd::Imbue>;
+                             cmd::Run, cmd::Chat, cmd::QuestMessage, cmd::Waypoint, cmd::Caravan, cmd::Imbue, cmd::Transmute>;
 
 // The wire form of a command (what a transport carries): its id byte —
 // game.exe's packet id where there's one to match — then its fields,
@@ -172,15 +175,16 @@ inline constexpr std::uint8_t kStatPoint = 0x3a;
 inline constexpr std::uint8_t kSkillPoint = 0x3b;
 inline constexpr std::uint8_t kSelectSkill = 0x3c;
 inline constexpr std::uint8_t kResurrect = 0x41;
+inline constexpr std::uint8_t kButton = 0x4f;      // game.exe's "click button": +1 u16 0x18 Transmute
 inline constexpr std::uint8_t kWaypoint = 0x49;
 inline constexpr std::uint8_t kRunOn = 0x53;
 inline constexpr std::uint8_t kRunOff = 0x54;
 }  // namespace opcode
 
 // 0x38's first byte: which deal (d2d's numbering; game.exe tells Respec,
-// GoEast and Imbue apart by the NPC and an argument, see the cmd structs).
+// Caravan and Imbue apart by the NPC and an argument, see the cmd structs).
 namespace npc_deal {
-inline constexpr int kTrade = 0, kGamble = 1, kHire = 2, kRespec = 3, kGoEast = 4, kImbue = 5, kResurrectMerc = 6;
+inline constexpr int kTrade = 0, kGamble = 1, kHire = 2, kRespec = 3, kCaravan = 4, kImbue = 5, kResurrectMerc = 6;
 }  // namespace npc_deal
 
 inline std::vector<std::uint8_t> encode(const Command& command) {
@@ -192,6 +196,7 @@ inline std::vector<std::uint8_t> encode(const Command& command) {
         else if constexpr (std::is_same_v<T, cmd::Interact>) out.u8(opcode::kInteract).i32(message.npc);
         else if constexpr (std::is_same_v<T, cmd::Pickup>) out.u8(opcode::kPickup).i32(message.item);
         else if constexpr (std::is_same_v<T, cmd::Resurrect>) out.u8(opcode::kResurrect);
+        else if constexpr (std::is_same_v<T, cmd::Transmute>) out.u8(opcode::kButton).u16(0x18);
         else if constexpr (std::is_same_v<T, cmd::StatPoint>) out.u8(opcode::kStatPoint).i32(message.stat).i32(message.count);
         else if constexpr (std::is_same_v<T, cmd::SkillPoint>) out.u8(opcode::kSkillPoint).i32(message.skill);
         else if constexpr (std::is_same_v<T, cmd::SelectSkill>) out.u8(opcode::kSelectSkill).i32(message.skill).u8(message.left);
@@ -216,7 +221,7 @@ inline std::vector<std::uint8_t> encode(const Command& command) {
         else if constexpr (std::is_same_v<T, cmd::Run>) out.u8(message.running ? opcode::kRunOn : opcode::kRunOff);
         else if constexpr (std::is_same_v<T, cmd::Chat>) out.u8(opcode::kChat).i32(message.npc);
         else if constexpr (std::is_same_v<T, cmd::QuestMessage>) out.u8(opcode::kQuestMessage).i32(message.npc).i32(message.string);
-        else if constexpr (std::is_same_v<T, cmd::GoEast>) out.u8(opcode::kNpcDeal).u8(npc_deal::kGoEast).i32(message.npc);
+        else if constexpr (std::is_same_v<T, cmd::Caravan>) out.u8(opcode::kNpcDeal).u8(npc_deal::kCaravan).i32(message.npc);
         else if constexpr (std::is_same_v<T, cmd::Imbue>) out.u8(opcode::kNpcDeal).u8(npc_deal::kImbue).i32(message.npc);
         else if constexpr (std::is_same_v<T, cmd::Waypoint>) out.u8(opcode::kWaypoint).i32(message.npc).i32(message.level);
         else static_assert(!sizeof(T), "a command without a wire form");
@@ -239,6 +244,7 @@ inline std::optional<Command> decode(std::span<const std::uint8_t> bytes) {
         case opcode::kInteract: command = cmd::Interact{ i32() }; break;
         case opcode::kPickup: command = cmd::Pickup{ i32() }; break;
         case opcode::kResurrect: command = cmd::Resurrect{}; break;
+        case opcode::kButton: if (input.get<std::uint16_t>() != 0x18) return std::nullopt; command = cmd::Transmute{}; break;
         case opcode::kStatPoint: { const int stat = i32(); command = cmd::StatPoint{ stat, i32() }; break; }
         case opcode::kSkillPoint: command = cmd::SkillPoint{ i32() }; break;
         case opcode::kSelectSkill: { const int skill = i32(); command = cmd::SelectSkill{ skill, byte() != 0 }; break; }
@@ -251,7 +257,7 @@ inline std::optional<Command> decode(std::span<const std::uint8_t> bytes) {
         case opcode::kToBelt: command = cmd::ToBelt{ i32() }; break;
         case opcode::kNpcDeal: {
             const int kind = byte(), npc = i32();
-            command = kind == npc_deal::kImbue ? Command{ cmd::Imbue{ npc } } : kind == npc_deal::kGoEast ? Command{ cmd::GoEast{ npc } } : kind == npc_deal::kRespec ? Command{ cmd::Respec{ npc } } : kind == npc_deal::kResurrectMerc ? Command{ cmd::ResurrectMerc{ npc } }
+            command = kind == npc_deal::kImbue ? Command{ cmd::Imbue{ npc } } : kind == npc_deal::kCaravan ? Command{ cmd::Caravan{ npc } } : kind == npc_deal::kRespec ? Command{ cmd::Respec{ npc } } : kind == npc_deal::kResurrectMerc ? Command{ cmd::ResurrectMerc{ npc } }
                     : kind == npc_deal::kHire ? Command{ cmd::OpenHire{ npc } } : Command{ cmd::OpenTrade{ npc, kind == npc_deal::kGamble } };
             break;
         }

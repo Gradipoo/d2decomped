@@ -6,6 +6,7 @@
 #include <d2gs/exe_tables.hpp>
 #include <d2gs/frame.hpp>
 #include <d2gs/huffman.hpp>
+#include <d2gs/s2c.hpp>
 #include <d2gs/s2c_names.hpp>
 #include <d2gs/split.hpp>
 #include <allow.hpp>
@@ -141,6 +142,19 @@ int main() {
         assert(d2gs::c2s::ping(1234).size() == 13);
         // Chat to all: type 1, language 0, the message, no target (54a5d0 wants size > length + 4).
         assert((d2gs::c2s::chat("hi") == d2d::net::Bytes{ 0x15, 0x01, 0x00, 'h', 'i', 0x00, 0x00 }));
+        // 0x31: 9 bytes, the host's size check (54ba90); Atma's 304 heard.
+        assert((d2gs::c2s::quest_message(0x12345678, 304) == d2d::net::Bytes{ 0x31, 0x78, 0x56, 0x34, 0x12, 0x30, 0x01, 0x00, 0x00 }));
+        // 0x27 mode 1: Atma's greeting (kind 0) and a topic (kind 2); a lone
+        // kind 3 is a number, not lines. 0x5d's record 8 (Radament) is word 9.
+        d2d::net::Bytes info(40, 0);
+        info[0] = 0x27; info[1] = 1; info[2] = 0x44; info[6] = 2;
+        info[8] = 0; info[10] = 0x30; info[11] = 0x01;
+        info[12] = 2; info[14] = 0x36; info[15] = 0x01;
+        const auto lines = d2gs::s2c::npc_lines(info);
+        assert(lines && lines->id == 0x44 && lines->lines.size() == 2 && lines->lines[0].message == 304 && lines->lines[0].greet && !lines->lines[1].greet);
+        info[6] = 1; info[8] = 3;
+        assert(!d2gs::s2c::npc_lines(info));
+        assert(d2gs::s2c::quest_word_of_record(8) == 9 && d2gs::s2c::quest_word_of_record(1) == 1 && d2gs::s2c::quest_word_of_record(30) == 34 && d2gs::s2c::quest_word_of_record(7) == -1);
     }
     assert(d2gs::s2c_name(0x59) == "assign player" && d2gs::s2c_name(0xb5).empty());
 

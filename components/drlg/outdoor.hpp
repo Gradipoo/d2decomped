@@ -104,6 +104,22 @@ namespace outdoor_detail {
 inline constexpr std::array<std::array<int, 2>, 13> kBorder = { {
     { 0, 0 }, { 0, 4 }, { 16, 5 }, { 17, 6 }, { 0, 7 }, { 18, 8 }, { 19, 9 }, { 22, 10 }, { 0, 11 },
     { 0, 12 }, { 23, 13 }, { 0, 14 }, { 0, 15 } } };
+// Act 2's exit pairs by side (0x6f112c, dx + 2 + 2 dy: up, left, -, right, down).
+inline constexpr std::array<std::pair<int, int>, 5> kDesertExits = { { { 373, 372 }, { 372, 375 }, { 0, 0 }, { 373, 374 }, { 374, 375 } } };
+// The desert's preset rows: FUN_0067f5c0's eight (0x6f2390, {def, file, x, y} x 5)
+// and the canyon's nine (0x6f2610).
+struct DesertPreset { int def, file, x, y; };
+inline constexpr std::array<std::array<DesertPreset, 5>, 8> kDesertRows = { {
+    { { { 376, 1, 0, 4 }, { 378, -1, 2, 4 }, { 377, -1, 4, 4 }, { 377, -1, 6, 4 }, { 376, 2, 8, 4 } } },
+    { { { 376, 1, 0, 4 }, { 377, -1, 2, 4 }, { 378, -1, 4, 4 }, { 377, -1, 6, 4 }, { 376, 2, 8, 4 } } },
+    { { { 376, 1, 0, 4 }, { 377, -1, 2, 4 }, { 377, -1, 4, 4 }, { 378, -1, 6, 4 }, { 376, 2, 8, 4 } } },
+    { { { 376, 2, 8, 4 }, { 377, -1, 6, 4 }, { 382, -1, 4, 4 }, { 381, -1, 4, 6 }, { 379, 2, 4, 8 } } },
+    { { { 376, 2, 8, 4 }, { 378, -1, 6, 4 }, { 382, -1, 4, 4 }, { 380, -1, 4, 6 }, { 379, 2, 4, 8 } } },
+    { { { 379, 1, 4, 0 }, { 381, -1, 4, 2 }, { 380, -1, 4, 4 }, { 380, -1, 4, 6 }, { 379, 2, 4, 8 } } },
+    { { { 379, 1, 4, 0 }, { 380, -1, 4, 2 }, { 381, -1, 4, 4 }, { 380, -1, 4, 6 }, { 379, 2, 4, 8 } } },
+    { { { 379, 1, 4, 0 }, { 380, -1, 4, 2 }, { 380, -1, 4, 4 }, { 381, -1, 4, 6 }, { 379, 2, 4, 8 } } } } };
+inline constexpr std::array<DesertPreset, 9> kCanyonRows = { { { 384, 0, 8, 0 }, { 383, 2, 6, 0 }, { 383, 1, 4, 0 }, { 383, 0, 2, 0 }, { 387, 0, 0, 0 },
+                                                             { 385, 0, 0, 2 }, { 385, 1, 0, 4 }, { 385, 2, 0, 6 }, { 386, 0, 0, 8 } } };
 // Corner row by index e (-40..40), 0x6f1088; 0 = none.
 inline int corner_row(int edge) {
     static const std::unordered_map<int, int> rows = {
@@ -212,7 +228,7 @@ struct Gen {
             for (int cell_x = x; cell_x < x + cells_x; ++cell_x) {
                 g2c.op(cell_x, cell_y, 0xf0000, 5);
                 g2c.op(cell_x, cell_y, std::uint32_t(file) << 16 | 0x200, 0);
-                if (border && def > 3 && def < 16) g2c.op(cell_x, cell_y, 1, 0);
+                if (border && ((def > 3 && def < 16) || unsigned(def - 0x16c) < 12)) g2c.op(cell_x, cell_y, 1, 0);
                 g04.op(cell_x, cell_y, 0, 3);
             }
         g04.op(x, y, std::uint32_t(def), 3);
@@ -416,7 +432,7 @@ struct Gen {
             std::uint32_t bits = first.style ? 3 : 1;
             // Edge: kind left 0, up 1, right 2, down 3 (0x6f0fd0).
             const int kind = dx1 == -1 ? 0 : dy1 == -1 ? 1 : dx1 == 1 ? 2 : 3;
-            const int edge = kBorder[std::size_t(kind + 1)][first.style == 0 ? 1 : 0];
+            const int edge = is_desert() ? 0x16c + kind : kBorder[std::size_t(kind + 1)][first.style == 0 ? 1 : 0];   // the desert's column 2 (364..375)
             if (!(first.flags & 2)) {
                 int x = first.x, y = first.y;
                 while (x != second.x || y != second.y) {
@@ -426,11 +442,17 @@ struct Gen {
                     g2c.op(x, y, bits, 0);
                 }
             }
-            if ((first.flags & 1) && !(first.flags & 2)) {                             // act 1: the opening
+            if ((first.flags & 1) && !(first.flags & 2)) {                             // the opening
                 const int edge_x = std::min(first.x, second.x) + len * std::abs(dx1) / 2;
                 const int edge_y = std::min(first.y, second.y) + len * std::abs(dy1) / 2;
-                g2c.op(edge_x, edge_y, 0xf0000, 5);
-                g2c.op(edge_x, edge_y, level.rect.level == level_ids::kBurialGrounds ? 0x40400 : 0x30400, 0);
+                if (is_desert()) {                                                      // act 2: a pair of presets (0x6f112c by dx + 2 + 2 dy)
+                    const auto& pair = kDesertExits[std::size_t(dx1 + 2 + dy1 * 2)];
+                    place(edge_x, edge_y, pair.first, -1, false);
+                    place(edge_x + std::abs(dx1), edge_y + std::abs(dy1), pair.second, -1, false);
+                } else {
+                    g2c.op(edge_x, edge_y, 0xf0000, 5);
+                    g2c.op(edge_x, edge_y, level.rect.level == level_ids::kBurialGrounds ? 0x40400 : 0x30400, 0);
+                }
             }
             const int style = first.style ? first.style : second.style;
             if (style) bits |= 2;
@@ -440,7 +462,7 @@ struct Gen {
             else edge_index = !(second.flags & 2) ? sx2(dx1) + 9 * (sx2(2 * dx2) + 2 * dy2) + dy1
                                     : sx2(dx1) + 9 * (sx2(dx2) + dy2) + dy1;
             if (const int row = corner_row(edge_index)) {
-                int def = kBorder[std::size_t(row)][style == 0 ? 1 : 0];
+                int def = is_desert() ? 0x16b + row : kBorder[std::size_t(row)][style == 0 ? 1 : 0];
                 if (def == 19) def = first.style == 1 ? 19 + (second.style != 1) : 21;
                 if (def) {
                     place(second.x, second.y, def, -1, false);
@@ -465,7 +487,7 @@ struct Gen {
                 const int cell_x = x + group_x, cell_y = y + group_y;
                 if (wall_word & 1) {
                     const int style = int((wall_word >> 8) & 0xff) - 1;
-                    if (style != 62 && std::uint32_t(4 + style) != g04.get(cell_x, cell_y)) return false;
+                    if (style != 62 && std::uint32_t(border_base() + style) != g04.get(cell_x, cell_y)) return false;
                     if (g2c.get(cell_x, cell_y) & 0x400) return false;
                 } else if (floor_word & 2) {
                     if (!g2c.in(cell_x, cell_y) || !free_cell(cell_x, cell_y)) return false;
@@ -481,7 +503,7 @@ struct Gen {
                 const int cell_x = x + group_x, cell_y = y + group_y;
                 if (wall_word & 1) {
                     const int style = int((wall_word >> 8) & 0xff) - 1;
-                    if (4 + style != -5 && style != 62) place(cell_x, cell_y, 4 + style, 0, true);
+                    if (border_base() + style != -5 && style != 62) place(cell_x, cell_y, border_base() + style, 0, true);
                 } else if (floor_word & 2) {
                     g04.op(cell_x, cell_y, 0, 3);
                     g2c.op(cell_x, cell_y, 0, 3);
@@ -507,7 +529,7 @@ struct Gen {
         }
         return false;
     }
-    void border_subs(int type) {
+    void border_subs(int type) {                                               // FUN_006752a0(type, the border base)
         for (const auto& sub : data.subs) {
             if (sub.type != type || !sub.map) continue;
             const auto& groups = sub.map->groups();
@@ -854,6 +876,70 @@ struct Gen {
         by_road(def, -1);
         if (extra && (seed.next() & 1)) by_road(49, -1);
     }
+    // ---- act 2's desert (FUN_0067f980): LevelType 16, levels 41-46.
+    [[nodiscard]] bool is_desert() const { return level.rect.level >= level_ids::kRockyWaste && level.rect.level <= level_ids::kCanyonOfTheMagi; }
+    [[nodiscard]] int border_base() const { return is_desert() ? 0x16c : 4; }   // the border defs FUN_006752a0 is handed
+    // FUN_0067f470: from a rolled start, each def in turn anywhere; with
+    // `every_file` each of its files.
+    void desert_list(std::initializer_list<int> defs, bool every_file) {
+        const std::vector<int> list(defs);
+        const int count = int(list.size());
+        int slot = seed(count);
+        for (int k = 0; k < count; ++k, slot = (slot + 1) % count) {
+            const int def = list[std::size_t(slot)];
+            if (!every_file) { anywhere(def, -1, 0, 0xf); continue; }
+            const auto* found = preset(def);
+            for (int file = 0; found && file < found->files; ++file) anywhere(def, file, 0, 0xf);
+        }
+    }
+    void lay_desert() {
+        const int id = level.rect.level;
+        auto subs = [&] { border_subs(2); border_subs(1); border_subs(3); };            // FUN_0067f630
+        auto one = [&] {                                                                  // FUN_0067f670
+            anywhere(id == 43 ? 0x186 : id == 44 ? 0x19c : id == 45 ? 0x185 : 0x184, -1, 0, 0xf);
+        };
+        auto five = [&] {                                                                 // FUN_0067f5c0: a row of 0x6f2390
+            const auto& row = kDesertRows[std::size_t(seed.next() & 7)];
+            for (const auto& [def, file, x, y] : row) place(x, y, def, file, false);
+        };
+        switch (id) {
+        case 41: {                                                                        // FUN_0067f560: by Lut Gholein
+            for (const auto& node : nodes)
+                if (node.rect.level == level_ids::kLutGholein) {
+                    if (node.side == 3) place(0, cells_high - 1, 0x16b, -1, false);
+                    else place(cells_wide - 1, 0, 0x16a, -1, false);
+                    break;
+                }
+            subs(); one(); shrines(5);
+            desert_list({ 0x18b, 0x19b, 0x191, 0x192, 399, 0x18e, 0x193 }, false);
+            break;
+        }
+        case 42:
+            five(); subs(); one(); waypoint(); shrines(5);
+            desert_list({ 0x18b, 0x19b, 400, 0x18e }, false);
+            desert_list({ 0x194, 0x195, 0x196, 0x197 }, true);
+            break;
+        case 43:
+            five(); subs(); one(); desert_list({ 0x18c, 0x18d }, false); waypoint(); shrines(5);
+            desert_list({ 0x19b, 399, 0x18e, 0x193 }, false);
+            desert_list({ 0x18b }, true); desert_list({ 0x18b }, true);
+            break;
+        case 44:
+            five(); subs(); one(); desert_list({ 0x19d, 0x198, 0x199, 0x19a }, false); waypoint(); shrines(5);
+            desert_list({ 0x18b, 400, 0x18e, 0x194, 0x195 }, false);
+            desert_list({ 0x19b }, true); desert_list({ 0x19b }, true);
+            break;
+        case 45: one(); break;
+        case 46:                                                                          // FUN_0067f8d0: the canyon's rows (0x6f2610), the tombs' gate
+            for (const auto& [def, file, x, y] : kCanyonRows) place(x, y, def, file, false);
+            place(4, 4, 0x18a, -1, false);
+            subs(); shrines(5);
+            desert_list({ 0x191, 0x192, 0x196, 0x197, 0x193 }, false);
+            desert_list({ 0x188, 0x189 }, true);
+            break;
+        default: break;
+        }
+    }
     void fills() {
         auto any = [&](int def) { anywhere(def, -1, 0, 0xf); };
         switch (level.rect.level) {
@@ -964,14 +1050,15 @@ inline void room_tiles(Room& room, const OutdoorData& data, const OutdoorLevel& 
     d2d::rules::Rng rng{ room.seed_low };                    // FUN_0066ee40
     for (int y = 0; y < 8; ++y)
         for (int x = 0; x < 8; ++x) room.floor[std::size_t(y * 9 + x)] = 0x40002;
-    // Roads (FUN_00680c80): a mask over the room grown by one.
+    // Roads (FUN_00680c80, act 1 only): a mask over the room grown by one.
+    const bool desert = level.rect.level >= level_ids::kRockyWaste && level.rect.level <= level_ids::kCanyonOfTheMagi;
     std::array<std::uint8_t, 121> mask{};
     const int origin_x = level.rect.x + room.x - 1, origin_y = level.rect.y + room.y - 1;
     auto dot = [&](int x, int y) {
         x -= origin_x; y -= origin_y;
         if (x >= 0 && y >= 0 && x < 11 && y < 11) mask[std::size_t(y * 11 + x)] = 1;
     };
-    for (const auto& line : roads)
+    for (const auto& line : desert ? std::vector<std::vector<std::pair<int, int>>>{} : roads)
         for (std::size_t i = 0; i + 1 < line.size(); ++i) {                     // FUN_0067c8e0
             int x = line[i].first, y = line[i].second;
             const int dx = std::abs(line[i + 1].first - x), dy = std::abs(line[i + 1].second - y);
@@ -1007,6 +1094,11 @@ inline void room_tiles(Room& room, const OutdoorData& data, const OutdoorLevel& 
     stamp_room(room, data, level, rng, level.sub_waypoint, 0, (room.flags >> 16) & 3, notes);
     stamp_room(room, data, level, rng, level.sub_shrine, 0, (room.flags >> 12) & 0xf, notes);
     stamp_room(room, data, level, rng, level.sub_type, level.sub_theme, room.theme_mask, notes);
+    // The LevelType's ground (FUN_0067d2d0): the desert ORs 0x100 into every
+    // floor cell nothing has claimed (no bits of 0x3f0ff80).
+    if (desert)
+        for (auto& floor_word : room.floor)
+            if ((floor_word & 0x3f0ff80) == 0) floor_word |= 0x100;
     room.seed = rng;
     // FUN_0067c600 on the wall and floor grids: every edge cell | 4 (its tile
     // may be shared with the room next to it, FUN_0066e940).
@@ -1026,9 +1118,15 @@ inline Outdoor generate_outdoor(const OutdoorData& data, const OutdoorLevel& lev
     Gen gen(data, level, seed, out.notes);
     const int id = level.rect.level;                    // FUN_006807f0
     const bool wild = id >= level_ids::kBloodMoor && id <= level_ids::kTamoeHighland;
-    if (!wild && id != level_ids::kBurialGrounds && id != level_ids::kMooMooFarm) gen.note("drlg: outdoor level " + std::to_string(id) + " is act 1 only for now");
+    const bool desert = gen.is_desert();
+    if (!wild && !desert && id != level_ids::kBurialGrounds && id != level_ids::kMooMooFarm) gen.note("drlg: outdoor level " + std::to_string(id) + " not implemented");
     gen.neighbours();
     gen.outline();
+    if (desert) {                                                                         // FUN_0067f980
+        gen.contacts();
+        gen.borders();
+        gen.lay_desert();
+    } else {
     if (id != level_ids::kBloodMoor && id != level_ids::kColdPlains && id != level_ids::kBurialGrounds) gen.cliffs();
     gen.contacts();
     gen.borders();
@@ -1046,6 +1144,7 @@ inline Outdoor generate_outdoor(const OutdoorData& data, const OutdoorLevel& lev
     if (id >= level_ids::kColdPlains && id <= level_ids::kBlackMarsh) gen.waypoint();
     if (wild) gen.shrines(5);
     gen.fills();
+    }
 
     // The finish (FUN_006750f0): rooms in cell order, each allocation
     // stepping the level seed.
@@ -1104,7 +1203,8 @@ inline Outdoor generate_outdoor(const OutdoorData& data, const OutdoorLevel& lev
             } else if (!(flags & 0x100)) {                    // FUN_0067d540
                 auto room_rng = alloc();
                 out.rooms.push_back({ cell_x * 8, cell_y * 8, room_rng.low });
-                Room room{ cell_x * 8, cell_y * 8, gen.g18.get(cell_x, cell_y), room_rng.low, 0, 0x44103, {}, {}, {}, {}, {}, {} };
+                // Its DT1 mask by LevelType (FUN_006750f0): 2 the wilderness 0x44103, 16 the desert 1.
+                Room room{ cell_x * 8, cell_y * 8, gen.g18.get(cell_x, cell_y), room_rng.low, 0, desert ? 1u : 0x44103u, {}, {}, {}, {}, {}, {} };
                 if (level.sub_type != -1 && level.sub_theme != -1) {                     // FUN_006706a0
                     std::uint32_t bit = 0;
                     for (const auto& sub : data.subs) {

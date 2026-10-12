@@ -149,7 +149,7 @@ void render_world(std::vector<std::uint8_t>& framebuffer,
                   std::vector<std::pair<const Unit*, std::array<int, 4>>>* items) {   // each ground item drawn, its box
     const auto& map = level.ds1;
     if (map.width() == 0 || map.height() == 0) return;
-    const auto& pal = scene.act1_pal.entries().empty() ? scene.pal : scene.act1_pal;
+    const auto& pal = scene.act_pal.entries().empty() ? scene.pal : scene.act_pal;
     const int cx0 = int(kScreenWidth) / 2;
     const int map_width  = map.width();
     const int base_x = int(std::floor(cam_x)), base_y = int(std::floor(cam_y));
@@ -237,7 +237,7 @@ void render_world(std::vector<std::uint8_t>& framebuffer,
         return { nullptr, 0 };
     };
 
-    const auto& upal_splash = scene.act1_pal.entries().empty() ? scene.pal : scene.act1_pal;
+    const auto& upal_splash = scene.act_pal.entries().empty() ? scene.pal : scene.act_pal;
     // Row-major sweep so back rows render first. dy increases downward
     // in screen space, so we iterate low→high dy for back-to-front.
     for (int dy = -kReach; dy <= kReach; ++dy) {
@@ -327,7 +327,7 @@ void render_world(std::vector<std::uint8_t>& framebuffer,
     };
     std::ranges::sort(order, {}, [](const Unit* unit) { return unit->x + unit->y; });
     std::size_t next_unit = 0;
-    const auto& upal0 = scene.act1_pal.entries().empty() ? scene.pal : scene.act1_pal;
+    const auto& upal0 = scene.act_pal.entries().empty() ? scene.pal : scene.act_pal;
     auto draw_units_through = [&](int diag) {
         for (; next_unit < order.size() && diag_of(order[next_unit]) <= diag; ++next_unit) {
             const Unit& unit = *order[next_unit];

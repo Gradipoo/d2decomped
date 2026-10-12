@@ -834,7 +834,7 @@ auto Fight::spot(const d2d::rules::Skill& skill, std::uint32_t now_ms, const Cas
                     const float dx = player.x - target.unit.x, dy = player.y - target.unit.y, distance = std::max(std::hypot(dx, dy), 0.01f);
                     target_x = target.unit.x + dx / distance * 0.8f; target_y = target.unit.y + dy / distance * 0.8f;
                 }
-                if (level == &game_data->town || level->unit_blocked(target_x, target_y)) break;
+                if (in_town(level) || level->unit_blocked(target_x, target_y)) break;
                 player.x = target_x; player.y = target_y;
                 player.path.clear(); player.walking = false;
                 player.goal_x = target_x; player.goal_y = target_y;
@@ -3650,7 +3650,7 @@ auto Fight::shadow_cast(Pet& pet, std::uint32_t now_ms, const Crowd& crowd) -> v
         if (skill->srvdofunc == ServerDoFunction::kPsychicHammer || skill->srvdofunc == ServerDoFunction::kMindBlast) { spot(*skill, now_ms, caster); return; }
         std::erase_if(pet.charges, [&](const Charge& charge) { return now_ms >= charge.until; });
         if (skill->srvdofunc == ServerDoFunction::kDragonFlight && target >= 0) {   // do 52: beside the target, then the kick (as the owner's)
-            if (level == &game_data->town) return;
+            if (in_town(level)) return;
             auto& unit = pet.monster.unit;
             std::tie(unit.x, unit.y) = free_spot(*level, crowd, unit, foe.x, foe.y);
             unit.path.clear(); unit.walking = false;
@@ -4021,7 +4021,7 @@ auto Fight::shrine_missiles(int code, float x, float y, int clvl, std::uint32_t 
     }
 
 auto Fight::enter(const Level* destination) -> void {
-        if (destination == &game_data->town || destination == mon_level) return;
+        if (in_town(destination) || destination == mon_level) return;
         if (mon_level) kept[mon_level] = std::move(monsters);
         monsters.clear();
         if (const auto found = kept.find(destination); found != kept.end()) {

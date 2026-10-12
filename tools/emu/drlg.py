@@ -172,7 +172,7 @@ def bring_up(e, lvl, seed, kind):
 def collision_dump(e, seed, lid, kind="shuffle"):
     """Bring the level's rooms up (FUN_0061b730: tiles, then room1 and its grid, FUN_0064c900) in walk_order,
     then each room's collision (room +0x30 -> room1 +0x20: {x, y, w, h, ...} subtiles, u16 cells at +0x24), (y, x) order."""
-    act = alloc_act(e, 0, seed, lid)
+    act = alloc_act(e, act_of(lid), seed, lid)
     lvl = find_level(e, act, lid)
     if not lvl: raise SystemExit(f"drlg: level {lid} not built")
     x0, y0 = e.s32(lvl + 0x1c), e.s32(lvl + 0x20)
@@ -186,8 +186,28 @@ def collision_dump(e, seed, lid, kind="shuffle"):
     return "\n".join(out)
 
 
+def act_of(lid):
+    """A level's act (Levels.txt Act): the first ids of acts 2..5 are 40, 75, 103, 109."""
+    return sum(lid >= first for first in (40, 75, 103, 109))
+
+
+def layout_dump(e, seed, lid):
+    """The act's outdoor rectangles (act 2: levels 40..46) and Lut Gholein's
+    LvlPrest file, as drlg-dump ... layout prints them; nothing is built."""
+    act = alloc_act(e, 1, seed, 0)            # act 2, whatever the level asked: the only layout compared
+    out = []
+    for l in sorted(levels(e, act), key=lambda l: e.r32(l + 0x1d0)):
+        if 40 <= e.r32(l + 0x1d0) <= 46:
+            x, y, w, h = (e.s32(l + 0x1c + 4 * i) for i in range(4))
+            out.append(f"level {e.r32(l + 0x1d0)} at {x},{y} size {w}x{h}")
+    town = find_level(e, act, 40)
+    out.append(f"town file {e.s32(e.r32(town + 0x14) + 4)}")
+    out.append(f"tombs {e.r32(act + 0x94)} {e.r32(act + 0x484)}")
+    return "\n".join(out)
+
+
 def level_dump(e, seed, lid):
-    act = alloc_act(e, 0, seed, lid)
+    act = alloc_act(e, act_of(lid), seed, lid)
     lvl = find_level(e, act, lid)
     if not lvl: raise SystemExit(f"drlg: level {lid} not built")
     global _last_level

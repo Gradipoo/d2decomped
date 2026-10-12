@@ -140,7 +140,7 @@ struct SkillBar {
     // The buttons, the open picker (hotkey labels on its icons) and the
     // hovered skill's name.
     void draw(std::vector<std::uint8_t>& framebuffer, int mouse_x, int mouse_y) const {
-        const auto& pal = scene->act1_pal.entries().empty() ? scene->pal : scene->act1_pal;
+        const auto& pal = scene->act_pal.entries().empty() ? scene->pal : scene->act_pal;
         auto icon = [&](int id, int x, int y) {
             const auto* skill = scene->skills.get(id);
             if (!skill) return;

@@ -326,7 +326,7 @@ void andariel_missile(const GameData& game_data, const Monster& monster, const s
     const float speed = missile_speed(missile_info, lvl), distance = std::max(std::hypot(dx, dy), 0.01f);
     missiles.push_back({ &missile_info, monster.unit.x, monster.unit.y, dx / distance * speed, dy / distance * speed, direction32(dx, dy), now_ms,
                          now_ms + std::uint32_t(std::max(missile_info.range, 1)) * 40, stats });
-    missiles.back().level = lvl; missiles.back().to = { monster.unit.x + dx, monster.unit.y + dy };
+    missiles.back().level = lvl; missiles.back().to = { monster.unit.x + dx, monster.unit.y + dy }; missiles.back().owner = monster.id;
 }
 
 // A Skills.txt row by name, -1 none.
@@ -991,7 +991,7 @@ bool monster_update(const GameData& game_data, const Level& level, Monster& mons
                 const float speed = missile_speed(missile_info, lvl), distance = std::max(dist, 0.01f);
                 Missile x{ &missile_info, unit.x, unit.y, dx / distance * speed, dy / distance * speed, direction32(dx, dy), now_ms,
                            now_ms + std::uint32_t(missile_info.range) * 40, monster.stats };
-                x.level = lvl; x.to = { unit.x + dx, unit.y + dy };
+                x.level = lvl; x.to = { unit.x + dx, unit.y + dy }; x.owner = monster.id;
                 const bool first = monster.mode == "A1";                       // an A1 shot carries A1's damage
                 x.src.a2_min = (first ? monster.stats.a1_min : monster.stats.a2_min) * missile_info.src_damage / 128 + missile_info.min;
                 x.src.a2_max = (first ? monster.stats.a1_max : monster.stats.a2_max) * missile_info.src_damage / 128 + missile_info.max;
@@ -1160,7 +1160,8 @@ bool monster_update(const GameData& game_data, const Level& level, Monster& mons
                 // FUN_005a4f50 builds the hit by the mode: A2's damage, to-hit
                 // and elements for an A2 swing and Smite (do 150, FUN_005ce9f0:
                 // mode 5, a normal hit roll, calc2 frames of stun).
-                // ponytail: Smite's ResultFlags / HitFlags and hit class 0x65 unread.
+                // On a hit Smite ORs in its ResultFlags (Skills.txt 8: knockback)
+                // and HitFlags (none), hit class 0x65 (FUN_005ce9f0).
                 // Jab's (do 7, FUN_005db2d0) is mode 8's, S1's; Charge's the mode it swings in.
                 const bool smite = struck_with && struck_with->srvdofunc == d2d::rules::ServerDoFunction::kSmite;
                 const bool jab = struck_with && struck_with->srvdofunc == d2d::rules::ServerDoFunction::kJab;
@@ -1189,6 +1190,7 @@ bool monster_update(const GameData& game_data, const Level& level, Monster& mons
                 stats.to_hit += stats.to_hit * monster.aura_th / 100;
                 const auto taken = d2d::rules::monster_blow(foe.fighter, foe.level, foe.motion(), stats, false, rng);
                 foe.take(taken);
+                if (taken.hit && smite && (struck_with->result_flags & 8)) foe.knocked_from = std::pair{ unit.x, unit.y };
                 if (taken.hit && smite) foe.stun_ticks = std::max(foe.stun_ticks, d2d::rules::eval_calc(game_data.skills, struck_with->calc[1], {}, monster.skill, skill_level(game_data, monster, monster.skill)));
                 if (taken.hit && monster.mana_hi > 0) foe.mana_burn += rng.range(monster.mana_lo, monster.mana_hi);   // Mana Burn
                 // Cursed (FUN_005a2530, the hit hook): 3 in 4 on its own seed
@@ -1207,6 +1209,7 @@ bool monster_update(const GameData& game_data, const Level& level, Monster& mons
                             near_foe.cursed = { 66, curse_level };
                 }
                 foe.melee_by.push_back(&monster);
+                if (taken.damage > 0) foe.damaged_by.push_back(&monster);
                 const auto& res = type_info.diff[std::size_t(monster.difficulty)].res;
                 const int thorns = foe.fighter.thorns + d2d::rules::resisted(foe.fighter.thorns_light, res[3]) + taken.damage * foe.fighter.thorns_pct / 100
                                  + taken.damage * monster.reflect_pct / 100;  // Iron Maiden
@@ -1231,18 +1234,16 @@ bool monster_update(const GameData& game_data, const Level& level, Monster& mons
     const float chill = now_ms < monster.chill_until ? float(100 + type_info.diff[std::size_t(monster.difficulty)].cold_effect) / 100.f : 1.f;
     const int pace = monster.move_pct - (now_ms < monster.laid_until ? 100 : 0);
     const float walk = cells_per_sec(float(type_info.velocity)) * elapsed * chill * float(std::max(100 + monster.speed_pct + monster.boss_speed + pace, 10)) / 100;
-    if (now_ms < monster.flee_until) {
-        if (monster.mode != "WL") set_mode(game_data, monster, "WL", now_ms);
-        if (!monster_step(level, monster, unit.x - dx, unit.y - dy, cells_per_sec(float(type_info.run)) * elapsed * chill, crowd)) monster.flee_until = 0;
-        return false;
-    }
     const float run = cells_per_sec(float(type_info.run)) * elapsed * chill * float(std::max(100 + monster.speed_pct + monster.boss_speed + pace, 10)) / 100;
     if (think(game_data, level, monster, foes, rng, now_ms, walk, run, crowd, pack, seen, open_door)) return false;
-    // AI Idle (the Blood Moor farm's cow): it stands; the chase below would
-    // walk it after the player into an attack mode it has no graphics for.
-    // unverified (source: the AI's name): game.exe's Idle think isn't traced.
+    // AI Idle (MonAI row 1: the cow, chickens, rats, birds, the doors and
+    // barricades; search type 0, no target looked for): FUN_005b0cd0 stands
+    // 200 frames when it's in a room (FUN_00620bb0), and that's all.
     if (type_info.ai_name == "Idle") {
-        if (monster.mode != "NU") set_mode(game_data, monster, "NU", now_ms);
+        if (now_ms >= monster.next_act) {
+            if (monster.mode != "NU") set_mode(game_data, monster, "NU", now_ms);
+            monster.next_act = now_ms + 200 * 40;
+        }
         return false;
     }
     // An AI not traced finds its foe as the traced ones do (search_target),

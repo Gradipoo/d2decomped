@@ -168,7 +168,6 @@ struct Monster {
     std::string_view last_mode = "NU";        // as of the last sound check
     std::uint32_t mode_until = 0;             // ms: an attack / get-hit / death ends
     std::uint32_t next_act = 0;               // ms: may attack again (aidel)
-    std::uint32_t flee_until = 0;             // ms: running from the player (Grim Ward's totem; Terror / Howl are special AI 11)
     bool struck = false;                      // this attack's hit is resolved
     bool aware = false;                       // has noticed the player
     // AI control flag 8: it has found a target once, and needs no line of
@@ -283,12 +282,15 @@ struct Foe {
     bool alive = true, moving = false;        // moving: walking or running (evade, not dodge)
     d2d::rules::Fighter fighter;                    // defense, block, reductions, resistances, thorns
     int damage = 0;                           // life lost this frame, whole points
+    int physical = 0, elemental = 0;          // of it, physical and fire / lightning / cold (the absorbs')
     int poison = 0, poison_ticks = 0;         // poison taken this frame: life per tick (256ths), for ticks
     int chill_ticks = 0;                      // chilled this frame, ticks
     int stun_ticks = 0;                       // stunned this frame (a monster's Smite), ticks
+    std::optional<std::pair<float, float>> knocked_from;   // knocked back this frame by a unit there (result flag 8: Smite)
     bool blocked = false;                     // blocked a hit this frame
-    std::vector<const Monster*> melee_by;     // who struck at it in melee this frame (Frozen / Shiver Armor)
-    int missile_hits = 0;                     // missiles that reached it this frame (Chilling Armor)
+    std::vector<const Monster*> melee_by;     // who struck at it in melee this frame (Shiver Armor)
+    std::vector<const Monster*> damaged_by;   // of those, whose blow did damage (Frozen Armor: the event's +8 over 0)
+    std::vector<int> fired_by;                // the owners of the ReturnFire missiles that reached it this frame (Chilling Armor)
     int hits = 0;                             // hits that landed this frame (each wears its armour)
     bool running = false;                     // the player in RN: always hit by a swing, block a third
     [[nodiscard]] d2d::rules::Motion motion() const { return running ? d2d::rules::Motion::running : moving ? d2d::rules::Motion::walking : d2d::rules::Motion::standing; }
@@ -303,7 +305,7 @@ struct Foe {
     void take(const d2d::rules::Taken& taken) {
         blocked = blocked || taken.blocked;
         hits += taken.hit ? 1 : 0;
-        damage += taken.damage;
+        damage += taken.damage; physical += taken.physical; elemental += taken.elemental;
         if (taken.poison > 0 && taken.poison >= poison) { poison = taken.poison; poison_ticks = taken.poison_ticks; }   // the stronger (FUN_0057ac50)
         chill_ticks = std::max(chill_ticks, taken.chill_ticks);
     }
@@ -319,6 +321,7 @@ struct Missile {
     int dir = 0;                              // 0..31, DCC order
     std::uint32_t born = 0, dies = 0;
     d2d::rules::MonStats src;                 // a monster's: its stats, A2 damage = the missile's
+    int owner = -1;                           // a monster's: its Monster::id (unit +0x98, FUN_00552fd0)
     int min = 0, max = 0, attack_rating = 0, level = 1;  // the merc's: damage, attack rating, level; a skill's level
     bool friendly = false;                    // the merc's, the player's: hits monsters, not the player
     bool by_merc = false;                     // a merc's skill: its weapon damage, attack rating and level, no synergies
@@ -477,7 +480,7 @@ void missiles_update(const Level& level, std::vector<Missile>& ms_, std::span<Fo
                 missile.struck->push_back(key);
                 const auto& row = *missile.row;
                 const int burn = std::max(d2d::rules::resisted(rng.range(row.elo, row.ehi), foe.fighter.res[std::size_t(std::clamp(row.etype, 0, 2))]) - foe.fighter.mdr * 256, 0);
-                foe.damage += burn >> 8;
+                foe.damage += burn >> 8; foe.elemental += burn >> 8;
                 if (int(rng(256)) < (burn & 255)) ++foe.damage;
             }
             return false;
@@ -488,7 +491,7 @@ void missiles_update(const Level& level, std::vector<Missile>& ms_, std::span<Fo
             if (std::ranges::contains(*missile.struck, key)) continue;
             missile.struck->push_back(key);
             foe.take(d2d::rules::monster_blow(foe.fighter, foe.level, foe.motion(), missile.src, true, rng, true));
-            ++foe.missile_hits;
+            if (missile.info->return_fire && missile.owner >= 0) foe.fired_by.push_back(missile.owner);
             return true;
         }
         return false;

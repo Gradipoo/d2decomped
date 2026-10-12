@@ -175,6 +175,7 @@ int main() {
     auto taken = monster_blow(defender, 1, Motion::standing, mon, false, rng);
     for (int i = 0; i < 20 && !taken.hit; ++i) taken = monster_blow(defender, 1, Motion::standing, mon, false, rng);
     assert(taken.hit && taken.damage == 75 + 8);                               // 100 x 80% - 5, 40 x 25% - 2
+    assert(taken.physical == 75 && taken.elemental == 8);                      // Bone Armor's part, Cyclone Armor's
     {                                                                  // cold chills, poison runs per tick (FUN_0057b7d0, FUN_0057c1e0)
         MonStats cold_mon = mon;
         cold_mon.elements[0] = { 2, 100, 10, 10, 40, "A1" };

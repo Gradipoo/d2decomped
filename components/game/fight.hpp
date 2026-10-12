@@ -529,16 +529,14 @@ struct Fight {
     // The player's buffs as the fight goes (their aura events, +0x84):
     // Frozen Armor freezes a melee attacker for calc1 frames (func 2),
     // Shiver Armor hits one with its cold (3), Chilling Armor answers a
-    // missile with its bolt at the nearest monster (1); Bone / Cyclone
-    // Armor absorb (22 / 25) and Energy Shield takes calc1 % of the damage
+    // ReturnFire missile with its bolt at the shooter (1); Bone / Cyclone
+    // Armor absorb physical / elemental (22 / 25) and Energy Shield takes calc1 % of the damage
     // from mana at calc2 / 16 mana a point (24). Blaze leaves its fire
     // where the player walks; Thunder Storm strikes a monster within 5 cells
     // every 1.6 s.
-    // ponytail: the event functions aren't traced (the published effects);
-    // Bone Armor takes any damage, Cyclone Armor too (not only elements);
-    // Chilling Armor's bolt goes at the nearest monster, not the shooter;
-    // Thunder Storm's pace and reach are the published ones.
-    int absorb(int damage);
+    // Traced in skills.md "Aura event functions".
+    // ponytail: Thunder Storm's pace and reach are the published ones.
+    int absorb(const Foe& foe);
     void buff_events(Foe& foe, std::uint32_t now_ms);
     void buff_tick(std::uint32_t now_ms);
     // The skill states on the monsters (their curse and cry slots): what

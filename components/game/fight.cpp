@@ -668,9 +668,15 @@ auto Fight::land(std::size_t monster_index, const d2d::rules::Blow& blow, bool b
             character.stats.values[kLife] = std::min(character.stats.values[kMaxLife], character.stats.values[kLife]
                                          + ((std::int64_t(blow.damage) * calc(*curse, curse->calc[0], target.curse.level) / 100) << 8));
         if (hurt(*game_data, target, blow.damage, now_ms)) { killed(monster_index, now_ms); return; }
-        if (blow.knockback) {                                   // a step straight back, if there's room
+        // Knockback (result flag 8): a monster with GH and KB modes
+        // (MonStats2, FUN_0046c140 bits 3 / 13; else it's a GH) goes into
+        // KB (FUN_005a77d0): path type 8, 5 subtiles on from the attacker,
+        // a Sand Leaper (class 0x4e) 10.
+        // ponytail: there at once, not over the KB mode.
+        if (const bool has_kb = game_data->npc_timing(target.npc, "KB").directions > 0 && game_data->npc_timing(target.npc, "GH").directions > 0; blow.knockback && has_kb) {
+            const float reach = game_data->monsters.types[std::size_t(target.type)].base == 0x4e ? 2.f : 1.f;
             const float dx = target.unit.x - player.x, dy = target.unit.y - player.y, distance = std::max(std::hypot(dx, dy), 0.01f);
-            const float next_x = target.unit.x + dx / distance * 0.6f, next_y = target.unit.y + dy / distance * 0.6f;
+            const float next_x = target.unit.x + dx / distance * reach, next_y = target.unit.y + dy / distance * reach;
             if (!level->unit_blocked(next_x, next_y, target.unit.shape)) { target.unit.x = next_x; target.unit.y = next_y; }
         }
     }
@@ -949,7 +955,7 @@ auto Fight::spot(const d2d::rules::Skill& skill, std::uint32_t now_ms, const Cas
                         within(lure.unit.x, lure.unit.y, calc(skill, skill.aurarange, lvl), [&](std::size_t index) { if (!monsters[index].align) set(monsters[index], 2, lure.id); });
                     }
                 } else {
-                    within(skill.srvdofunc == ServerDoFunction::kStateAroundCaster ? caster.x : cast_x, skill.srvdofunc == ServerDoFunction::kStateAroundCaster ? caster.y : cast_y, calc(skill, skill.aurarange, lvl), put);
+                    within(skill.srvdofunc == ServerDoFunction::kStateAroundCaster ? caster.x : caster.to_x, skill.srvdofunc == ServerDoFunction::kStateAroundCaster ? caster.y : caster.to_y, calc(skill, skill.aurarange, lvl), put);
                 }
                 break;
             }
@@ -1047,11 +1053,17 @@ auto Fight::state_of(std::string_view name) const -> const SelfState* {
         return nullptr;
     }
 
-auto Fight::absorb(int damage) -> int {
+auto Fight::absorb(const Foe& foe) -> int {
         using namespace d2d::d2s;
+        int damage = foe.damage;
         if (damage <= 0) return 0;
+        // Bone Armor (event 22, FUN_005c6370) takes from the physical part
+        // (the hit's +8), Cyclone Armor (25, FUN_005c87a0) from fire,
+        // lightning and cold (+0x10, +0x1c, +0x24).
         if (absorb_pool > 0 && std::ranges::contains(self_states, absorb_skill, &SelfState::skill)) {
-            const int absorbed = std::min(absorb_pool, damage);
+            const auto* pool_skill = game_data->skills.get(absorb_skill);
+            const int part = pool_skill && pool_skill->aurastate == "cyclonearmor" ? foe.elemental : foe.physical;
+            const int absorbed = std::min({ absorb_pool, part, damage });
             absorb_pool -= absorbed; damage -= absorbed;
             if (absorb_pool <= 0) std::erase_if(self_states, [&](const SelfState& state) { return state.skill == absorb_skill; });
         }
@@ -1067,10 +1079,13 @@ auto Fight::absorb(int damage) -> int {
     }
 
 auto Fight::buff_events(Foe& foe, std::uint32_t now_ms) -> void {
+        // Frozen Armor (event 2, FUN_005cac50, damagedinmelee): calc1 frames'
+        // freeze on a striker whose blow did damage; Shiver Armor (3,
+        // FUN_005cad40, attackedinmelee): its element (FUN_0056e0c0) on any.
         for (const auto* monster : foe.melee_by) {
             const auto monster_index = std::size_t(monster - monsters.data());
             if (monster_index >= monsters.size() || !monsters[monster_index].alive()) continue;
-            if (const auto* frozen_armor = state_of("frozenarmor")) {
+            if (const auto* frozen_armor = state_of("frozenarmor"); frozen_armor && std::ranges::contains(foe.damaged_by, monster)) {
                 const auto* skill = game_data->skills.get(frozen_armor->skill);
                 const int frames = std::max(calc(*skill, skill->calc[0], frozen_armor->level), 1);
                 monsters[monster_index].stun_until = std::max(monsters[monster_index].stun_until, now_ms + std::uint32_t(frames) * 40);
@@ -1082,24 +1097,25 @@ auto Fight::buff_events(Foe& foe, std::uint32_t now_ms) -> void {
                      true, now_ms);
             }
         }
-        if (const auto* chilling_armor = state_of("chillingarmor"); chilling_armor && foe.missile_hits > 0) {
-            const auto* skill = game_data->skills.get(chilling_armor->skill);
-            const auto found = game_data->missiles.find(skill->srvmissilea);
-            int best = -1; float best_distance = 12.f;
-            for (std::size_t j = 0; j < monsters.size(); ++j)
-                if (const float distance = std::hypot(monsters[j].unit.x - player.x, monsters[j].unit.y - player.y); monsters[j].targetable() && distance < best_distance) { best_distance = distance; best = int(j); }
-            if (best >= 0 && found != game_data->missiles.end()) {
-                const auto& nearest = monsters[std::size_t(best)];
-                launch(found->second, *skill, chilling_armor->level, player.x, player.y, nearest.unit.x - player.x, nearest.unit.y - player.y, found->second.range, now_ms);
+        // Chilling Armor (event 1, FUN_005cab40): a ReturnFire missile's
+        // owner, alive and hostile, gets the skill's srvmissilea (+0x48)
+        // back from the wearer at where it stands.
+        if (const auto* chilling_armor = state_of("chillingarmor"))
+            for (const int owner : foe.fired_by) {
+                const auto* skill = game_data->skills.get(chilling_armor->skill);
+                const auto found = game_data->missiles.find(skill->srvmissilea);
+                const int shooter = monster_index(owner);
+                if (shooter < 0 || !monsters[std::size_t(shooter)].alive() || found == game_data->missiles.end()) continue;
+                const auto& shooter_unit = monsters[std::size_t(shooter)].unit;
+                launch(found->second, *skill, chilling_armor->level, player.x, player.y, shooter_unit.x - player.x, shooter_unit.y - player.y, found->second.range, now_ms);
             }
-        }
     }
 
 auto Fight::merc_buff_events(Foe& foe, std::uint32_t now_ms) -> void {
         const auto* skill = merc_buff.skill >= 0 && now_ms < merc_buff.until ? game_data->skills.get(merc_buff.skill) : nullptr;
         if (!skill || skill->aurastate != "frozenarmor") return;
         const int frames = std::max(d2d::rules::eval_calc(game_data->skills, skill->calc[0], merc_calc_env(), skill->id, merc_buff.level), 1);
-        for (const auto* monster : foe.melee_by) {                    // as the player's (buff_events): its strikers freeze
+        for (const auto* monster : foe.damaged_by) {                  // as the player's (buff_events): its strikers freeze
             const auto monster_index = std::size_t(monster - monsters.data());
             if (monster_index >= monsters.size() || !monsters[monster_index].alive()) continue;
             monsters[monster_index].stun_until = std::max(monsters[monster_index].stun_until, now_ms + std::uint32_t(frames) * 40);
@@ -1361,7 +1377,7 @@ auto Fight::boss_missile(const Monster& monster, const char* name, float dx, flo
         if (damage.etype >= 0) stats.elements[0] = { damage.etype, 100, damage.elo >> 8, std::max(damage.ehi >> 8, 1), damage.elen, "A2" };
         const float speed = missile_speed(missile_info, lvl), distance = std::max(std::hypot(dx, dy), 0.01f);
         Missile x{ &missile_info, monster.unit.x, monster.unit.y, dx / distance * speed, dy / distance * speed, direction32(dx, dy), now_ms, now_ms + std::uint32_t(std::max(missile_info.range, 1)) * 40, stats };
-        x.struck = ring; x.level = lvl;
+        x.struck = ring; x.level = lvl; x.owner = monster.id;
         pending.push_back(std::move(x));
     }
 
@@ -2307,12 +2323,16 @@ auto Fight::missile_tick(std::uint32_t now_ms) -> void {
             }
             // 14 (Grim Ward's totem): every Param1 frames the monsters within
             // aurarange of it run for auralen frames.
-            // ponytail: missile do 14 isn't traced; Param1 / aurarange read so
-            // (Grim Ward, level 24: past Act 1).
-            if (missile_info.srv_do == 14 && age % std::max(missile_info.param1, 1) == 0)
-                for (auto& monster : monsters)
-                    if (monster.targetable() && std::hypot(monster.unit.x - missile.x, monster.unit.y - missile.y) * 5 <= float(std::max(calc(*skill, skill->aurarange, missile.level), 1)))
-                        monster.flee_until = std::max(monster.flee_until, now_ms + std::uint32_t(std::max(calc(*skill, skill->auralen, missile.level), 1)) * 40);
+            // 14 (FUN_005aef70, Grim Ward's totem): every Param1 frames skill
+            // srvdofunc Param2 (FUN_0056d810: 30, the curse) at the missile's
+            // skill and level, the missile its caster and its spot the point
+            // (FUN_0056d2c0, no target unit): Terror round it, aurarangecalc
+            // wide, auralencalc / AiCurseDivisor long, the AI swap with it.
+            if (missile_info.srv_do == 14 && age % std::max(missile_info.param1, 1) == 0 && missile_info.param2 == int(ServerDoFunction::kCurse)) {
+                auto curse = *skill;
+                curse.srvdofunc = ServerDoFunction::kCurse;
+                spot(curse, now_ms, Caster{ .x = missile.x, .y = missile.y, .level = missile.level, .to_x = missile.x, .to_y = missile.y });
+            }
             // 20 (Blade Sentinel): back and forth between the caster's spot and
             // where it was sent.
             if (missile_info.srv_do == 20 && std::hypot(missile.target_x - missile.x, missile.target_y - missile.y) < 0.3f) {
@@ -3980,6 +4000,16 @@ auto Fight::world(bool in_moor, std::uint32_t now_ms, float elapsed, const Crowd
             }
             if (foe.chill_ticks > 0) chilled = std::max(chilled, now_ms + std::uint32_t(foe.chill_ticks) * 40);   // only ever lengthened (FUN_0057af80)
             if (foe.stun_ticks > 0) stunned = now_ms + std::uint32_t(std::min(foe.stun_ticks, 250)) * 40;          // state 21, a new one's length (FUN_0057aae0)
+            // Knockback (result flag 8: FUN_0057cee0's player branch, mode 0x13,
+            // FUN_0057f090): path type 8, 5 subtiles on from the attacker;
+            // with no room it stays (FUN_0057f020, NU).
+            // ponytail: there at once, not over the KB mode; the KB mode isn't
+            // played (GH's rules stand).
+            if (foe.knocked_from) {
+                const auto [from_x, from_y] = *foe.knocked_from;
+                const float dx = player.x - from_x, dy = player.y - from_y, distance = std::max(std::hypot(dx, dy), 0.01f);
+                if (const float next_x = player.x + dx / distance, next_y = player.y + dy / distance; !level->unit_blocked(next_x, next_y, player.shape)) { player.x = next_x; player.y = next_y; }
+            }
             for (std::size_t k = 0; k < 2; ++k)                  // a monster's curse: its auralen (dimvision / terror's over AiCurseDivisor)
                 if (const auto* skill = game_data->skills.get(foes[k].cursed.skill)) {
                     int length = calc(*skill, skill->auralen, foes[k].cursed.level);
@@ -3994,7 +4024,7 @@ auto Fight::world(bool in_moor, std::uint32_t now_ms, float elapsed, const Crowd
             }
             if (foe.blocked && pmode < 0) set_pmode(kModeBL, now_ms);   // a block plays out (FBR)
             for (int landed = 0; landed < foe.hits; ++landed) wear_armor();
-            foe.damage = absorb(foe.damage);
+            foe.damage = absorb(foe);
             foe.damage += int(self_hurt >> 8);
             self_hurt &= 255;
             using namespace d2d::d2s;
@@ -4059,7 +4089,10 @@ auto Fight::monster_auras(std::vector<Foe>& foes, std::uint32_t now_ms) -> void 
             const int low = d2d::rules::elem_damage(game_data->skills, *skill, env, aura_monster.aura_lvl, false) >> 8;
             const int high = std::max(d2d::rules::elem_damage(game_data->skills, *skill, env, aura_monster.aura_lvl, true) >> 8, low);
             for (auto& foe : foes)
-                if (foe.alive && in_range(foe.x, foe.y)) foe.damage += d2d::rules::resisted(rng.range(low, high), foe.fighter.res[std::size_t(skill->etype)]);
+                if (foe.alive && in_range(foe.x, foe.y)) {
+                    const int dealt = d2d::rules::resisted(rng.range(low, high), foe.fighter.res[std::size_t(skill->etype)]);
+                    foe.damage += dealt; foe.elemental += dealt;
+                }
         }
     }
 

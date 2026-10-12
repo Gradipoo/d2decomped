@@ -379,7 +379,9 @@ inline int chill_length(const Fighter& defender, int len) {
     if (defender.cannot_freeze) return 0;
     return resisted(defender.half_freeze ? len / 2 : len, defender.res[2]);
 }
-struct Taken { bool hit = false, blocked = false, dodged = false; int damage = 0, poison = 0, poison_ticks = 0, chill_ticks = 0; };
+// `physical` / `elemental` (fire, lightning, cold): the parts of `damage`
+// Bone Armor (22) and Cyclone Armor (25) absorb.
+struct Taken { bool hit = false, blocked = false, dodged = false; int damage = 0, poison = 0, poison_ticks = 0, chill_ticks = 0, physical = 0, elemental = 0; };
 enum class Motion : std::uint8_t { standing, walking, running };
 inline Taken monster_blow(const Fighter& defender, int dlvl, Motion motion, const MonStats& attacker, bool second_attack, Rng& rng,
                           bool missile = false) {
@@ -394,15 +396,19 @@ inline Taken monster_blow(const Fighter& defender, int dlvl, Motion motion, cons
     taken.hit = true;
     int phys = second_attack ? rng.range(attacker.a2_min, attacker.a2_max) : rng.range(attacker.a1_min, attacker.a1_max);
     phys = std::max(phys * (100 - defender.dr_pct) / 100 - defender.dr_flat, 0);
-    taken.damage = phys;
+    taken.damage = taken.physical = phys;
     for (const auto& element : attacker.elements) {
         if (element.type < 0 || element.mode != (second_attack ? "A2" : "A1") || rng(100) >= element.pct) continue;
         const int roll = rng.range(element.min, element.max);
         switch (element.type) {
-            case 2: taken.damage += std::max(resisted(roll, defender.res[2]) - defender.mdr, 0); if (roll > 0) taken.chill_ticks = std::max(taken.chill_ticks, chill_length(defender, element.dur)); break;
+            case 2: taken.elemental += std::max(resisted(roll, defender.res[2]) - defender.mdr, 0); taken.damage += std::max(resisted(roll, defender.res[2]) - defender.mdr, 0); if (roll > 0) taken.chill_ticks = std::max(taken.chill_ticks, chill_length(defender, element.dur)); break;
             case 3: if (const int per = resisted(roll * 10, defender.res[3]); per >= taken.poison) { taken.poison = per; taken.poison_ticks = resisted(element.dur * 2, defender.plr); } break;
             case 4: taken.damage += std::max(roll - defender.mdr, 0); break;
-            default: taken.damage += std::max(resisted(roll, defender.res[std::size_t(element.type)]) - defender.mdr, 0); break;
+            default: {
+                const int dealt = std::max(resisted(roll, defender.res[std::size_t(element.type)]) - defender.mdr, 0);
+                taken.damage += dealt; taken.elemental += dealt;
+                break;
+            }
         }
     }
     if (attacker.poison_max > 0)

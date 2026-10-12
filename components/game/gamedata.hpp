@@ -814,6 +814,9 @@ struct Spawning {
     std::vector<d2d::rules::Region> regions;               // by Levels.txt Id
     std::unordered_map<const Level*, LevelState> levels;
     std::bitset<128> superuniques;                         // spawned this game (game +0x1d30)
+    // The game's quest words (World::game_bits, a d2d::rules::QuestBits), as
+    // the town markers' inits read them (FUN_00544760).
+    std::array<std::uint8_t, 96> game_quests{};
     const Level* room_level = nullptr;                     // the player's room
     int room = -1;
 };

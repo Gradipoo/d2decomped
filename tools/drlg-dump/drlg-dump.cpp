@@ -516,7 +516,7 @@ int main(int argc, char** argv) {
         const auto first = std::uint32_t(std::stoul(range.substr(0, dash), nullptr, 0));
         const auto last = dash == std::string::npos ? first : std::uint32_t(std::stoul(range.substr(dash + 1), nullptr, 0));
         for (auto seed = first;; ++seed) {
-            const auto text = dump_npcs(*game, seed, thinks ? std::atoi(thinks) : 40, id == 40 ? 40 : 1);
+            const auto text = dump_npcs(*game, seed, thinks ? std::atoi(thinks) : 40, id == 40 || id == 75 ? id : 1);
             if (argc > 5) std::ofstream(fs::path(argv[4]) / (std::to_string(seed) + ".txt")) << text;
             else std::fputs(text.c_str(), stdout);
             if (seed == last) break;

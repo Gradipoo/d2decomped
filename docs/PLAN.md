@@ -791,7 +791,11 @@ the quests, the thinks.
 1. The layout (FUN_006789b0): the docks, the jungle's three pieces and
    their cells, Kurast stacked above. *Done (2026-10-12):* `act3_layout`
    (drlg.md "Act 3's layout"); `diff_drlg.py 1-2000 75 layout`: 2000/2000.
-2. The Kurast Docks (75, LvlPrest 529) as a town.
+2. The Kurast Docks (75, LvlPrest 529) as a town. *Rooms, tiles and
+   units already matched (20/20, units 10/10).* Its NPCs think as
+   game.exe's (`diff_drlg.py 1-20 75 npcs` 20/20); Hratli's and
+   Natalya's markers make them as the game's quest words stand
+   (town-npcs.md "The Kurast Docks"); the act palette follows any act.
 3. The jungle (76–78) built from its cells.
 4. Kurast (79–83).
 5. The dungeons, sewers, temples and the Durance (84–102).

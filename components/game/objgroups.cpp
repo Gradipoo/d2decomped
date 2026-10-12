@@ -9,6 +9,7 @@
 // objgroups; levels in turn in one game: drlg-dump ... game.
 #include "gamedata.hpp"
 #include <level_ids.hpp>
+#include <quests.hpp>
 #include <monsters.hpp>
 #include <montypes.hpp>
 #include <object_ids.hpp>
@@ -58,6 +59,7 @@ struct ObjectRooms {
     Rect room{};
     d2d::rules::Rng seed;                               // the room's (room1 +0x6c)
     d2d::rules::Rng game;                               // the game seed (game +0xd0): a step per unit made
+    std::array<std::uint8_t, 96> game_quests{};         // Spawning's
     std::bitset<128> superuniques;                      // made (game +0x1d30)
     d2d::rules::Region region;                          // the level's monster region: their looks
     Level::GroupRoom* out = nullptr;
@@ -630,6 +632,26 @@ struct ObjectRooms {
         else pick = std::array{ 5, 6, 0x8b, 0x8c, 0x8d, 0x90, 0xb0, 0xb1, 0xc6, 0xf0, 0xf1, 0xf2, 0xf3 }[low % 13];
         return id == 580 && level.id == d2d::rules::level_ids::kTowerCellarLevel5 ? 0x173 : pick;
     }
+    // MonStats `hc_idx` made at the unit's spot (else within `retry`); an
+    // NPC (Flavie, the towns') stands where it was made and walks the unit's
+    // DS1 path (`walks`: a marker's unit (FUN_005b2f20) takes none).
+    void monster_or_npc(int hc_idx, const d2d::drlg::Unit& unit, int retry, bool walks = true) {
+        const auto row = game_data.mon_bin[std::size_t(hc_idx)];
+        last_made.reset();
+        monster(int(row), unit.x, unit.y, retry);
+        if (!game_data.mon_is_npc[row] || game_data.mon_npc[row].code.empty()) return;
+        auto npc = game_data.mon_npc[row];
+        const auto [spot_x, spot_y] = last_made ? last_spot : std::pair{ unit.x, unit.y };     // where it was made: its spot, or the free one nearest
+        npc.x = (float(spot_x) + 0.5f) / 5;
+        npc.y = (float(spot_y) + 0.5f) / 5;
+        for (std::size_t k = 0; walks && k < unit.path.size(); ++k) {                          // its DS1 path (the town AIs walk it)
+            npc.path.emplace_back((float(unit.x + unit.path[k].first) + 0.5f) / 5, (float(unit.y + unit.path[k].second) + 0.5f) / 5);
+            npc.actions.push_back(k < unit.actions.size() ? unit.actions[k] : 0);
+        }
+        // Its unit seed after its init's draws (the look, the life: made()'s), what its think rolls on (town-npcs.md).
+        if (last_made) npc.seed = *last_made;
+        level.npcs.push_back(std::move(npc));
+    }
     // FUN_005559a0: the room's preset units, the monsters last (`monsters`: normal's, here).
     void presets(std::size_t room_at, bool monsters) {
         const int nmon = int(game_data.mon_bin.size()), nsu = int(game_data.superuniques.size());
@@ -642,6 +664,16 @@ struct ObjectRooms {
                 // FUN_0054f370: FUN_005540a0(unit, 1); in the Maggot Lair (62-64) only 51 in 100, an object-seed draw after it's made.
                 const bool lair = level.id >= d2d::rules::level_ids::kMaggotLairLevel3 - 2 && level.id <= d2d::rules::level_ids::kMaggotLairLevel3;
                 if (unit.id == 580 && level.npcs.size() > before && (!lair || rgn.next() % 100 <= 50)) level.npcs.back().sparkle = true;
+                // The docks' markers, each making its NPC there as the game's quest
+                // words stand: InitFn 49 (FUN_005b70b0) Hratli (0xfd) by the dock
+                // till word 0x10 has bit 13, InitFn 50 (FUN_005b7160) at his shop
+                // after; InitFn 52 (FUN_005bce80, object 0x17e: the DS1's Natalya,
+                // units.hpp) Natalya (0x129), else within 3, till word 0x16 has bit 13.
+                // ponytail: their quest records' "made" bits aren't kept: a room comes up once.
+                const int init = obj(unit.id, "InitFn");
+                const bool hratli_moved = d2d::rules::qbit(game_quests, 0x10, 13);
+                if ((init == 49 && !hratli_moved) || (init == 50 && hratli_moved)) monster_or_npc(0xfd, unit, 0, false);
+                if (init == 52 && !d2d::rules::qbit(game_quests, 0x16, 13)) monster_or_npc(0x129, unit, 3, false);
             }
             else if (unit.type == d2d::rules::unit_type::kWarp) game.next();                                                          // a warp tile: a unit made
         }
@@ -669,23 +701,8 @@ struct ObjectRooms {
             if (level.unit_rooms[i] != int(room_at) || unit.type != d2d::rules::unit_type::kMonster || (unit.flags & 1) || unit.id < 0) continue;
             leader = int(spawns->size());                                                              // FUN_00555910: a placement of its own
             if (unit.id < nmon) {
-                const auto row = game_data.mon_bin[std::size_t(unit.id)];
                 const bool stay = unit.id == 0xe5 || (unit.id >= 0x11c && unit.id <= 0x120) || unit.id == 0x188 || unit.id == 0x189;   // FUN_0054e3a0
-                last_made.reset();
-                monster(int(row), unit.x, unit.y, stay ? 0 : 4);
-                if (game_data.mon_is_npc[row] && !game_data.mon_npc[row].code.empty()) {                // an NPC (Flavie, Lut Gholein's) stands at its spot
-                    auto npc = game_data.mon_npc[row];
-                    const auto [spot_x, spot_y] = last_made ? last_spot : std::pair{ unit.x, unit.y };     // where it was made: its spot, or the free one nearest
-                    npc.x = (float(spot_x) + 0.5f) / 5;
-                    npc.y = (float(spot_y) + 0.5f) / 5;
-                    for (std::size_t k = 0; k < unit.path.size(); ++k) {                                   // its DS1 path (the town AIs walk it)
-                        npc.path.emplace_back((float(unit.x + unit.path[k].first) + 0.5f) / 5, (float(unit.y + unit.path[k].second) + 0.5f) / 5);
-                        npc.actions.push_back(k < unit.actions.size() ? unit.actions[k] : 0);
-                    }
-                    // Its unit seed after its init's draws (the look, the life: made()'s), what its think rolls on (town-npcs.md).
-                    if (last_made) npc.seed = *last_made;
-                    level.npcs.push_back(std::move(npc));
-                }
+                monster_or_npc(unit.id, unit, stay ? 0 : 4);
             } else if (const int code = unit.id - nmon - nsu; code == 0x11 || code == 0x12 || code == 0x05) {
                 monster(code == 0x05 ? int(game_data.mon_bin[0x10b]) : own(code == 0x11 ? 0x13 : 0x3a), unit.x, unit.y, code == 0x05 ? 0 : 4);   // Fallen, shamans, Blood Raven
             }
@@ -824,6 +841,7 @@ void ObjectRooms::load(Spawning& spawning, std::size_t room_index) {
     rgn = spawning.objects;
     game = spawning.game;
     superuniques = spawning.superuniques;
+    game_quests = spawning.game_quests;
     region = std::size_t(level.id) < spawning.regions.size() ? spawning.regions[std::size_t(level.id)] : d2d::rules::Region{};
     auto& state = spawning.levels[&level];
     rooms_up(spawning);

@@ -217,7 +217,7 @@ Act 2's MonAIs (MonStats AI on levels 40..74, MonAI table 0x73ca18 + ai × 16: `
 | Scarab | 20 | FUN_005f2540 | its leader (FUN_0058f0d0) sends the group charging (FUN_0058f730); charging: Skill1 (Jab) in melee |
 | Vulture | 23 | FUN_005f3170 | aloft (state: thinks left) it flies (S1, FUN_005de440) to a point rand(2r) about the target pushed clamp(2r, 12, 36) off itself (state2 / 3, re-placed on a free spot, FUN_0064e7b0); dives at a weak one (FUN_005f30f0: within 11, at most aip3 % life); lands (FUN_005f2fc0, S2) and fights; takes off (FUN_005f2eb0) for rand(8) + 24 thinks |
 | Mummy | 21 | FUN_005f2850 | hit: walks in; within aip1 swings or walks in; else wanders 3 |
-| GreaterMummy | 22 | FUN_005f2b10 | Skill2 (Bestow) on a hurt one, Skill1's sequence (FUN_005de000, Resurrect2) on a corpse, Skill3 (UnHolyBolt) at the second target (FUN_005f2a00 searches aip5, squared) |
+| GreaterMummy | 22 | FUN_005f2b10 | Skill2 (Bestow) on a hurt one, Skill1's sequence (FUN_005de000, Resurrect2) on a corpse, Skill3 (UnHolyBolt) at the second target (FUN_005f2a00 searches aip5, squared: a monster's lUndead, MonStats +0xd & 8, not a unique, FUN_005a0180 EDX 8; Radament, class 0xe5, aip5 + 10, uniques too, and on Normal any undead, FUN_0063e990; then FUN_00599420, his quest's) |
 | BatDemon | 29 | FUN_005f5040 | states 0..4: rises (S3), drops (S4), lands (S2), flees; regen as the Baboon's |
 | PinHead | 39 | FUN_005f6340 | Skill1 (Smite) / Skill2 after its first swing |
 | MaggotLarva | 38 | FUN_005f6220 | out of melee aip3 % walks in (flags 1), else stands aip4; in melee, rested (state 0), aip1 % A1 (state 1), else stands aip2 |

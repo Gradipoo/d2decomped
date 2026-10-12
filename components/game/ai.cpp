@@ -621,10 +621,11 @@ bool think(const GameData& game_data, const Level& level, Monster& monster, std:
     // any other living one (FUN_005f06b0, the Sand Raider's), by squared
     // distance (FUN_005b0bd0); the Greater Mummy's (FUN_005f2a00) within
     // aip5: the count, a corpse (DD, not raised) and a hurt one, the last
-    // found.
+    // found; an lUndead (MonStats +0xd & 8) not a unique (FUN_005a0180, 8).
+    // Radament's (FUN_005f2b10, class 0xe5): within aip5 + 10, uniques
+    // too, on Normal any undead (FUN_0063e990).
     // ponytail: regen (stat 0x4a) is 0, d2d's monsters having none; a
-    // skill is always usable (FUN_005fd470); the near rooms as 80 subtiles;
-    // Radament's wider reach (aip5 + 10) left out.
+    // skill is always usable (FUN_005fd470); the near rooms as 80 subtiles.
     input.skill45 = { !type_info.skill[3].empty(), !type_info.skill[4].empty() };
     input.target_fire_res = target->fighter.res[0]; input.target_cold_res = target->fighter.res[2];
     input.second = true; input.second_dist = best;
@@ -641,7 +642,12 @@ bool think(const GameData& game_data, const Level& level, Monster& monster, std:
             const int off_x = subtile(other.unit.x) - x, off_y = subtile(other.unit.y) - y, squared = off_x * off_x + off_y * off_y;
             if (&other == &monster || d2d::rules::ai_distance(off_x, off_y) >= 80) continue;
             if (mummy) {
-                if (squared > input.aip[4] * input.aip[4]) continue;
+                const bool radament = monster.type == d2d::rules::monster_ids::kRadament;
+                const auto& other_type = game_data.monsters.types[std::size_t(other.type)];
+                if (!(radament && monster.difficulty == 0 ? other_type.undead : other_type.low_undead)) continue;
+                if (!radament && (other.boss == d2d::rules::Boss::unique || other.boss == d2d::rules::Boss::superunique)) continue;
+                const int reach = input.aip[4] + (radament ? 10 : 0);
+                if (squared > reach * reach) continue;
                 ++input.in_reach;
                 if (!other.alive() && other.mode == "DD" && !other.corpse_used) corpse = int(i);
                 else if (other.alive() && other.hit_points < other.stats.hit_points) aid = int(i);

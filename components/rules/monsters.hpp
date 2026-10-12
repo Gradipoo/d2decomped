@@ -1878,8 +1878,8 @@ Think mon_think(std::string_view ai_name, const ThinkIn& input, Rng& rng, Away&&
     // (Skill1's sequence) if it can; aip4 % Skill3 at its second target;
     // with none in reach it closes in (pace 50, 3); else 50 % circles 3,
     // else stands 6.
-    // ponytail: Radament's wider reach (aip5 + 10, any corpse) is the
-    // search's (ai.cpp), as is the corpse / hurt pick.
+    // Radament's wider reach (aip5 + 10) and the corpse / hurt pick are
+    // the search's (ai.cpp).
     if (ai_name == "GreaterMummy") {
         if (input.in_melee && roll() < aip[0]) return { MonAct::a1 };
         if (input.dist < 5 && roll() < aip[0]) return { MonAct::a2 };

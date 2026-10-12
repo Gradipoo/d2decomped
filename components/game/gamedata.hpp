@@ -169,6 +169,7 @@ struct Level {
     int night_ambience = 0, day_event = 0, night_event = 0, event_delay = 0;   // its Night Ambience, Day / Night Event, Event Delay (sound ticks)
     int light = -1;                                    // Levels.txt Intensity when it has its own light (caves: 0), -1 the day's
     bool rain = false;                                 // Levels.txt Rain: the weather reaches it
+    int teleport = 1;                                  // Levels.txt Teleport: 0 no, 1 yes, 2 only in a clear line (FUN_0061db70 +4)
     d2d::ds1::Map ds1;
     std::vector<d2d::dt1::Archive> dt1s;
     // Keyed by (style, seq, type) — one map covers floors, walls, trees,

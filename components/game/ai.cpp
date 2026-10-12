@@ -407,7 +407,7 @@ int area_at(const Level& level, float x, float y) {
     return -1;
 }
 struct Search { Foe* target = nullptr; int best = 0, nearest = 0x7fffffff; };
-Search search_target(const GameData& game_data, const Level& level, Monster& monster, std::span<Foe> foes, std::uint32_t now_ms, AreaSeen* seen) {
+Search search_target(const GameData& game_data, const Level& level, Monster& monster, std::span<Foe> foes, AreaSeen* seen) {
     auto& unit = monster.unit;
     const auto& type_info = game_data.monsters.types[std::size_t(monster.type)];
     const int aidist = type_info.diff[std::size_t(monster.difficulty)].aidist;
@@ -449,10 +449,14 @@ Search search_target(const GameData& game_data, const Level& level, Monster& mon
         std::vector<d2d::rules::SearchFoe> picks;
         std::vector<Foe*> pick_foes;
         for (auto& foe : foes) {
-            if (foe.of && !(foe.of->align == 1 && foe.alive)) continue;   // list 9: neutral monsters
+            // List 9: neutral monsters; a converted one is in its caster's list,
+            // with the player's pets (FUN_005b1900).
+            const bool converted = foe.of && foe.of->align == 2 && foe.alive;
+            if (foe.of && !(foe.of->align == 1 && foe.alive) && !converted) continue;
             const int foe_x = subtile(foe.x), foe_y = subtile(foe.y);
-            auto& pick = picks.emplace_back(d2d::rules::SearchFoe{ d2d::rules::ai_distance(foe_x - x, foe_y - y), foe.pet, town && !foe.of, !foe.alive && !foe.of, false, foe.of ? 9 : 0 });
-            if (now_ms < monster.blind_until && std::hypot(foe.x - unit.x, foe.y - unit.y) >= 1.5f) pick.dead = true;   // blind: arm's length
+            picks.emplace_back(d2d::rules::SearchFoe{ d2d::rules::ai_distance(foe_x - x, foe_y - y), foe.pet || converted, town && !foe.of, !foe.alive && !foe.of, false,
+                                                      foe.of && !converted ? 9 : 0 });
+            auto& pick = picks.back();
             if (pick.pet && pick.dead) pick.distance = 0x7fffffff;
             pick.blocked = need_sight && (pick.list || pick.distance < best) && d2d::rules::sight_blocked(x, y, type_info.size, foe_x, foe_y, foe.size, wall);
             pick_foes.push_back(&foe);
@@ -554,7 +558,7 @@ bool think(const GameData& game_data, const Level& level, Monster& monster, std:
     // ponytail: the word read now, not a moving path's cached +0x54.
     if (type_info.open_doors && on_door(level, unit) && open_door && *open_door && (*open_door)(monster, now_ms)) { idle(5); return true; }
     const int x = subtile(unit.x), y = subtile(unit.y);
-    const auto [target, best, nearest] = search_target(game_data, level, monster, foes, now_ms, seen);
+    const auto [target, best, nearest] = search_target(game_data, level, monster, foes, seen);
     monster.aware = target != nullptr;
     auto walk_to = [&](int off_x, int off_y, bool running) {       // to a spot, subtiles off
         unit.goal_x = (float(x + off_x) + 0.5f) / 5; unit.goal_y = (float(y + off_y) + 0.5f) / 5;
@@ -927,6 +931,17 @@ bool monster_update(const GameData& game_data, const Level& level, Monster& mons
         if (monster.mode == "DT" && now_ms >= monster.mode_until) set_mode(game_data, monster, "DD", now_ms);
         return false;
     }
+    if (monster.mode == "KB") {                                     // knocked back: along to leap_to over the mode (Fight::land)
+        const float done = std::clamp(float(now_ms - monster.unit.mode_ms) / float(std::max<std::uint32_t>(monster.mode_until - monster.unit.mode_ms, 1)), 0.f, 1.f);
+        monster.unit.x = monster.leap_from_x + (monster.leap_to_x - monster.leap_from_x) * done;
+        monster.unit.y = monster.leap_from_y + (monster.leap_to_y - monster.leap_from_y) * done;
+        if (now_ms < monster.mode_until) return false;
+        if (type_info.base == 0x4e) {                                  // FUN_005a8520: a Sand Leaper thinks on, else GH
+            set_mode(game_data, monster, "NU", now_ms);
+            monster.next_act = now_ms + (now_ms < monster.stun_until ? 45 : 15) * 40;
+        } else set_mode(game_data, monster, "GH", now_ms);
+        return false;
+    }
     if (now_ms < monster.stun_until && monster.mode != "GH" && monster.mode != "BL") {   // stunned: stands (a get-hit plays out first)
         if (monster.mode != "NU") set_mode(game_data, monster, "NU", now_ms);
         return false;
@@ -1259,7 +1274,7 @@ bool monster_update(const GameData& game_data, const Level& level, Monster& mons
             monster.next_act = now_ms + 5 * 40;
             return false;
         }
-        const Foe* found = search_target(game_data, level, monster, foes, now_ms, seen).target;
+        const Foe* found = search_target(game_data, level, monster, foes, seen).target;
         monster.aware = foe.alive && found;
         if (found) monster.chase = int(found - foes.data());
         if (!monster.aware) monster.next_act = now_ms + std::uint32_t(type_info.diff[std::size_t(monster.difficulty)].aidel) * 40;

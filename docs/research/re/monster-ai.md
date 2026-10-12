@@ -113,7 +113,7 @@ Every missile made here (Andariel's, the Shaman's, a MissA shot, the player's sk
 
 ## Confuse and Attract
 
-- Confuse (FUN_005c3f20, each unit FUN_005c3de0): a monster that's evil, an enemy of the caster, alive and passes FUN_0056e2f0 gets the curse state, alignment 1, list 9, kind 3 (FUN_00573090) and event 10 at the end. Its remove callback (FUN_005c3db0) puts alignment 0 back (not on +0xc4 & 0x80000000), drops the state and takes it off the list.
+- Confuse (FUN_005c3f20, each unit FUN_005c3de0; the test FUN_005c3d50): a monster that's evil (FUN_006259b0 0), an enemy of the caster (FUN_00554200), alive and passes FUN_0056e2f0 (not a boss, unique or superunique; swaps_ai) gets the curse state, alignment 1, list 9, kind 3 (FUN_00573090) and event 10 at the end. Its remove callback (FUN_005c3db0) puts alignment 0 back (not on +0xc4 & 0x80000000), drops the state and takes it off the list.
 - Attract (FUN_005c3b90): the caster's target, evil, alive, not in town and hostile, gets +0xc4 | 0x40, alignment 1, list 9 and the state. FUN_0056e780 then runs callback 0x5c3b30 over the area round it (FUN_0056d2c0): each hostile unit gets kind 2 (kind 1 if the target's a player) with the target's id, and event 10.
 - So the cursed monster hunts whoever is near (Confuse: anyone in mode 5, evil or good by the draw), and Attract's crowd hunts the lured one until it dies or the curse ends.
 
@@ -268,7 +268,7 @@ Approximated (`ponytail:` in ai.cpp, fight.cpp, monsters.hpp):
 - FUN_005dd510's path test always finds a path, so a list 9 monster is taken only when nothing else was.
 - Mode 5's candidates are every foe in foes order, not the near rooms' units room by room; its area is the room_areas rect at the unit. List 8 is empty (no good monsters) and kind 1 (a player by id) and 4 aren't set.
 - A monster's missiles, poison and Mana Burn reach only the player's side; monsters block as the player does.
-- Confuse's and Attract's duration is auralen's, not FUN_005c37a0's; FUN_0056e2f0's test is unread.
+- Conversion (do 79, FUN_005d0350; its end FUN_005d01a0): an evil monster no one owns that passes FUN_0056e2f0 turns at calc1 % (FUN_005d02b0) for auralen frames: alignment 2 (FUN_005543b0 DL 2) in its caster's list (FUN_005b1900 with the caster's +0xd0), so evil monsters take it as one of the player's pets and it hunts them (mode 5 as a good unit); its target and flag-8 states dropped; one above the caster's level comes down to it with its life in proportion (state 0x6d keeps its own in stats 0xb0 / 0xb1, put back at the end). d2d: `Monster::align` 2, `own_level` / `own_max_life`; the player's side's blows pass over it (FUN_00554200). The level scaling reads FUN_00483360's dropped operands as life × clvl / mlvl.
 - Movement is floats in cells, blocked as `monster_step` has it, and the target's +0x68 offset is taken as 0.
 - A dead pet is skipped (game.exe takes it off the list), and a dead monster leaves list 9.
 - An untraced AI (none in Acts 1 and 2) goes at what it found from the next frame on.

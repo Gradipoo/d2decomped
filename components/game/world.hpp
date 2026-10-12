@@ -252,12 +252,19 @@ struct World {
         // Its monsters open its doors (monster_door).
         fight.open_door = [this](const Monster& monster, std::uint32_t now_ms) { return monster_door(monster, now_ms); };
         // The character's skill levels for the fight, the skill shrine's
-        // +all skills (item_allskills) while its boost lasts.
+        // +all skills (item_allskills) while its boost lasts, and a self
+        // state's (Battle Command's aurastat1: its stats on the player,
+        // FUN_00644180 adding item_allskills to every skill).
         fight.skill_base = [this](int id) { return skill_base_level(*game_data, character, id); };
         fight.skill_level = [this](int id) {
             std::vector<d2d::d2s::ItemProp> extra;
             if (now < fight.boost.until)
                 for (const auto& [stat, value] : fight.boost.stats) if (stat == d2d::d2s::kAllSkills) extra.push_back({ .stat = d2d::d2s::kAllSkills, .value = value });
+            for (const auto& state : fight.self_states)
+                if (const auto* skill = game_data->skills.get(state.skill); skill && now < state.until)
+                    for (std::size_t k = 0; k < skill->aurastat.size(); ++k)
+                        if (skill->aurastat[k] == d2d::d2s::kAllSkills)
+                            extra.push_back({ .stat = d2d::d2s::kAllSkills, .value = d2d::rules::eval_calc(game_data->skills, skill->aura_calc[k], {}, skill->id, state.level) });
             return skill_level(*game_data, character, id, extra);
         };
     }

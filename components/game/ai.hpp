@@ -204,13 +204,14 @@ struct Monster {
     SkillState curse, cry;
     // What they do to it, as of this frame (Fight::monster_states): its
     // damage % and speed %, the share of its melee damage it takes back
-    // (Iron Maiden), until when it can't see (Conversion), Terror's state
-    // (0x38) on it.
+    // (Iron Maiden), Terror's state (0x38) on it.
     int dmg_pct = 0, speed_pct = 0, reflect_pct = 0;
-    std::uint32_t blind_until = 0;
     bool afraid = false;
+    // Converted from a higher level (state 0x6d): its own level and life
+    // (stats 0xb0 / 0xb1), put back as Conversion ends (FUN_005d01a0).
+    int own_level = 0, own_max_life = 0;
     // Its alignment (stat 0xac: 0 evil, 1 neutral while Confuse or Attract
-    // is on it) and its skill-set target (monster data +0x38 kind, +0x34
+    // is on it, 2 good while Conversion is: in its caster's list, FUN_005b1900) and its skill-set target (monster data +0x38 kind, +0x34
     // value, FUN_00573090: 2 a monster by id, Attract's; 3 Confuse's
     // search), cleared when due (event 10 -> FUN_00573120).
     int align = 0, set_kind = 0, set_id = 0;

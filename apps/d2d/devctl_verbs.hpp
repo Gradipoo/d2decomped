@@ -477,8 +477,8 @@ void register_game_verbs(d2d::devctl::Channel& channel, Window& win, Screen& scr
             out += "\n";
             for (const auto& monster : town.fight.monsters)
                 if (monster.curse.skill >= 0 || monster.cry.skill >= 0 || monster.stun_until > 0)
-                    out += std::format("{} hp={} curse={} cry={} dmg%={} speed%={} reflect%={} blind={} stun={} ai={}{} afraid={}\n", monster.npc.name, monster.hit_points,
-                                       monster.curse.skill, monster.cry.skill, monster.dmg_pct, monster.speed_pct, monster.reflect_pct, monster.blind_until,
+                    out += std::format("{} hp={} curse={} cry={} dmg%={} speed%={} reflect%={} align={} stun={} ai={}{} afraid={}\n", monster.npc.name, monster.hit_points,
+                                       monster.curse.skill, monster.cry.skill, monster.dmg_pct, monster.speed_pct, monster.reflect_pct, monster.align,
                                        monster.stun_until, monster.special, monster.other ? "/other" : "", int(monster.afraid));
             return out + "ok\n";
         }

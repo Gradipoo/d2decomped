@@ -361,8 +361,12 @@ lines (missile names aren't passed in). What it does:
   (FUN_0057f020). On a monster with no KB mode (MonStats2 bit 13) it's
   turned into a get-hit (flag 4); else mode 13 (FUN_005a7e60 /
   FUN_005a7c20; start FUN_005a77d0: GH and KB modes, alive): path type 8,
-  5 subtiles, 10 for class 0x4e (sandleaper1). d2d: `Fight::land` (a
-  monster), `Foe::knocked_from` (the player), each there at once.
+  5 subtiles, 10 for class 0x4e (sandleaper1); each frame along the path
+  (FUN_005a8630 -> FUN_00554ca0) till the mode ends, then FUN_005a8520:
+  GH (mode 3), a Sand Leaper instead thinking 15 frames on (45 stunned).
+  The player's KB is drawn as GH (PlrMode.txt). d2d: `Fight::land` and
+  `monster_update`'s KB (a monster), `Fight::knock` (the player), an even
+  slide over the mode (path type 8 adds no pace, 0x6eb648[8] = 0).
 - Record flags seen: 1 = the physical is built (FUN_0057b7d0 doesn't roll
   the weapon), 2 = don't run FUN_0057b7d0 at all, 0x1000 = self damage;
   FUN_0057b7d0 marks 0x20.
@@ -946,10 +950,35 @@ lines (missile names aren't passed in). What it does:
   in `land`, Battle Orders' maxima in `update_fighters`, Redemption in
   `aura_pulse`, Conversion (st 32 / do 79), Leap / Dragon Flight /
   Telekinesis as spot skills, Grim Ward's totem, `Loot::put`; devctl
-  `debug states`. Not traced: Thunder Storm's pace and reach, Confuse / Attract / Conversion
-  (the monster only stops seeing the player's side), Battle Command's
-  +1 skills, the war cries on the merc and pets, Leap's and Dragon
-  Flight's movement (they arrive at once).
+  `debug states`.
+- **Thunder Storm** (do 29, FUN_005ca4d0): the cast puts the state on with
+  the skill and level in stats 0x15e / 0x15f, a periodic skill run every
+  perdelay frames while it lasts; each run strikes (srvmissilea, hit at once,
+  FUN_005adf10) the monster within Param7 subtiles (FUN_005c8bc0, record
+  +0x160; 17) whose unit id is next after the last struck (FUN_006444a0 /
+  FUN_00644560), round to the lowest (FUN_0056bd10 with callback 0x56bcd0).
+- **Battle Command**'s aurastat1 item_allskills (1) adds to every skill
+  while its state is on (World's `skill_level`).
+- **War cries on allies** (hit 18, FUN_005ab0b0): the nova's missile
+  reaching a unit FUN_00554de0 calls an ally gives it the state too
+  (FUN_005d8290: the caster's auralen and level, aurastats FUN_005c6cc0).
+  d2d: `merc_cry` (Shout's armor %, Battle Orders' life % on the merc),
+  a pet's buffs (`Pet::bo_life`, its armor %), those within the missile's
+  reach as it's cast.
+- **Leap** (start 40, FUN_005d9d50; do 77, FUN_005da370): the point pulled
+  back to aurarangecalc subtiles (FUN_005d9a10, FUN_006417f0), a free spot
+  (mask 0x1c09, three tries) reached in a line (FUN_00645910, 0x804) within
+  reach, state 0x12; at its first event it flies there (FUN_005d9f70: path
+  type 9 at the class's run velocity, CharStats +0x41 << 8; a monster's
+  MonStats Run), at the next it lands (FUN_005da120) and knocks back each
+  monster within calc1 subtiles (result 9, FUN_0056bad0). d2d:
+  `Fight::leap`.
+- **Dragon Flight** (start 12, FUN_005c9030: the target within
+  aurarangecalc, neither in town; do 52, FUN_005d7850): the flight is at
+  once, to the free spot nearest the target (FUN_00554ea0), unless the
+  level's Teleport (Levels.txt, FUN_0061db70 +4) is 0, or 2 without a clear
+  line (FUN_006229f0, 0x804); then the kick. `Level::teleport` holds the
+  column (Acts 1–2: 1, Duriel's Lair 2); Teleport obeys it too.
 
 ### The rest (phase 6, part 5)
 - Royal Strike's releases: **40** (FUN_005d5010: the count's missile

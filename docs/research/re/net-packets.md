@@ -353,6 +353,11 @@ delta (7), 0xa2 u16 delta (8). Stat 12 fires the level-up event too.
 - **0xaa add unit's states** (var; `0x45efa0`): +1 type, +2 u32 id, +6
   u8 length; bits from +7: 8 bits state (0xff ends), 1 bit has stats,
   then a stat list as in 0xa8. Sent with a unit as it comes into view.
+  A capture: `aa 00 61 00 00 00 0c 69 59 f9 ff 1f` = player 0x61, state
+  105 (alignment) with stat 172 (alignment) 2, then 0xff. d2d keeps every
+  unit's states from 0xa8 / 0xa9 / 0xaa (`NetGame::Unit::states`, stat
+  lists stepped over by ItemStatCost Send Bits / Send Param Bits) and draws
+  them on the host's monsters and players.
 - **0x57 monster enchants** (14; `0x45e400`, type 1 only): +1 u32 id, +5
   u8 type, +6 u16, +8 u16, +0xa u8, +0xc u16 **(?)** field names.
 

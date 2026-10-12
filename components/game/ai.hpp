@@ -193,6 +193,7 @@ struct Monster {
     // Aura Enchanted (uniques.hpp boss_aura): its aura, level, next pulse;
     // and the damage / to-hit % it gets from bosses' auras this frame.
     int aura = 0, aura_lvl = 0;
+    std::vector<std::string_view> host_states;   // a joined game's: the States.txt names the host has on it (0xa8 / 0xaa)
     std::uint32_t aura_next = 0;
     int aura_dmg = 0, aura_th = 0;
     // Skills' states on it (their auratargetstate): one curse at a time

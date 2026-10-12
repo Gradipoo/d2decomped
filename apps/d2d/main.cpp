@@ -672,6 +672,7 @@ int run_windowed(std::vector<std::uint8_t>& framebuffer,
                             town.world.characters = nullptr;
                             town.world.fight.remote_monsters = true;
                             for (const auto& type_info : scene->monsters.types) net.monster_velocity.push_back(type_info.velocity);
+                            for (const auto& desc : scene->stat_desc) net.stat_send_bits.emplace_back(desc.send_bits, desc.send_param);
                             town.net_game = std::move(*joined);
                             town.net_chat_npc = 0;
                             town.world.hosted_quests = true;

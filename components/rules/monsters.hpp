@@ -370,6 +370,9 @@ struct MonStats {
     int to_hit2 = 0, to_hit_s1 = 0;            // A2TH's, S1TH's: the hit's mode's (FUN_005a4f50 flags 0x10 / 0x20)
     struct El { int type = -1, pct = 0, min = 0, max = 0, dur = 0; std::string_view mode; };
     std::array<El, 3> elements{};
+    // Its own poison stats 57 / 58 / 59 (MonUMod poison hit, FUN_005a1e00),
+    // on every hit it lands (FUN_0057b7d0): per tick in 256ths, ticks.
+    int poison_min = 0, poison_max = 0, poison_len = 0;
 };
 inline MonStats monster_stats(const Monsters& monsters, int type, int difficulty, Rng& rng, int level_add = 0) {
     MonStats stats;
@@ -1746,7 +1749,8 @@ Think mon_think(std::string_view ai_name, const ThinkIn& input, Rng& rng, Away&&
     // A2; hit aip2 % backs off 12 (state 2); aip3 %: aip4 % A2, else A1;
     // else stands 10; other states within 15 walk in (state 3), else state 4
     // and stand 15.
-    // ponytail: its other think (FUN_005f4fd0, after a reset of its AI) isn't ported.
+    // ponytail: its other think (FUN_005f4fd0) runs only as a curse ends
+    // after its think left the curse's AI (monster-ai.md "Other thinks"); not ported.
     if (ai_name == "BatDemon") {
         const int life = input.life_pct;
         auto mode = [&](MonAct act, int wait) { Think out{ act }; out.unit = ThinkUnit::none; out.wait = wait; return out; };
@@ -1877,8 +1881,8 @@ Think mon_think(std::string_view ai_name, const ThinkIn& input, Rng& rng, Away&&
     // (Skill1's sequence) if it can; aip4 % Skill3 at its second target;
     // with none in reach it closes in (pace 50, 3); else 50 % circles 3,
     // else stands 6.
-    // ponytail: Radament's wider reach (aip5 + 10, any corpse) is the
-    // search's (ai.cpp), as is the corpse / hurt pick.
+    // Radament's wider reach (aip5 + 10) and the corpse / hurt pick are
+    // the search's (ai.cpp).
     if (ai_name == "GreaterMummy") {
         if (input.in_melee && roll() < aip[0]) return { MonAct::a1 };
         if (input.dist < 5 && roll() < aip[0]) return { MonAct::a2 };
@@ -1897,8 +1901,9 @@ Think mon_think(std::string_view ai_name, const ThinkIn& input, Rng& rng, Away&&
     // circles 6; under aip3 eggs laid (state3) aip1 %: not circled (state
     // 2) it circles 6 (state 2), else Skill3 (an egg, event 20; state 1);
     // else waits 12.
-    // ponytail: its other think (FUN_005f1750: Skill1 at its group's
-    // command) isn't ported.
+    // ponytail: its other think (FUN_005f1750) runs only as a curse ends
+    // after its think left the curse's AI (monster-ai.md "Other thinks");
+    // d2d's curses don't swap thinks, so it isn't ported.
     if (ai_name == "SandMaggot") {
         const bool ready = *input.state2 < input.frame;
         const int second_dist = input.second ? input.second_dist : 0x7fffffff;

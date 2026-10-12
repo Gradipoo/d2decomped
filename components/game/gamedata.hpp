@@ -462,6 +462,7 @@ struct GameData {
     struct StatDesc {
         int prio = 0, func = 0, val = 0, operation = 0, op_param = 0, dgrp = 0, dgrp_func = 0, dgrp_val = 0;
         std::string pos, neg, str2, dgrp_pos, dgrp_neg, dgrp_str2;
+        int send_bits = 0, send_param = 0;      // Send Bits / Send Param Bits (+8 / +9): a stat list's widths on the wire (0xa8, 0xaa)
     };
     std::vector<StatDesc> stat_desc;
     std::vector<std::string> skill_name;         // string key

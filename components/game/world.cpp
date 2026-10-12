@@ -1665,7 +1665,6 @@ auto World::deal(const Command& command) -> bool {
             // FUN_00544160 takes "msf " / "vip " off the player), then quest
             // 15's bits 0 and 13; the town's waypoint. hcIdx 0x108 back to
             // Lut Gholein (FUN_0054b830(0x28, 0)).
-            // ponytail: FUN_00544160's item removal (the staff's parts) isn't done.
             if (hc_idx == d2d::rules::monster_ids::kMeshifAct3) {
                 if (const Level* lut = game_data->level(d2d::rules::level_ids::kLutGholein); lut && lut->start.first >= 0) arrive(lut, lut->start.first, lut->start.second, "Meshif's boat");
                 return true;
@@ -1675,7 +1674,12 @@ auto World::deal(const Command& command) -> bool {
                 const Level* docks = game_data->level(d2d::rules::level_ids::kKurastDocks);
                 if (!docks || docks->start.first < 0) { d2d::log::warn("Kurast Docks didn't build; the boat stays"); return true; }
                 if (!qbit(quests(), 15, 0)) {
-                    if (!qbit(quests(), 10, 0)) { d2d::rules::qset(quests(), 10, 0); d2d::rules::qset(quests(), 10, 13); }
+                    if (!qbit(quests(), 10, 0)) {
+                        d2d::rules::qset(quests(), 10, 0); d2d::rules::qset(quests(), 10, 13);
+                        for (const char* code : { "msf", "vip" })                    // FUN_00544160 each
+                            if (held && held->code == code) held.reset();   // FUN_00558110: the cursor item first
+                            else if (const auto part = std::ranges::find(character.items, std::string(code), &d2d::d2s::Item::code); part != character.items.end()) character.items.erase(part);
+                    }
                     d2d::rules::qset(quests(), 15, 0); d2d::rules::qset(quests(), 15, 13);
                 }
                 set_waypoint(waypoint_index(*game_data, d2d::rules::level_ids::kKurastDocks));
@@ -1818,7 +1822,8 @@ auto World::deal(const Command& command) -> bool {
                 d2d::log::info("The Seven Tombs: Tyrael's portal");
             } else if (heard.take_staff) {
                 for (const char* code : { "hst", "vip", "msf" })              // FUN_00544160 each
-                    if (const auto part = std::ranges::find(character.items, std::string(code), &d2d::d2s::Item::code); part != character.items.end()) character.items.erase(part);
+                    if (held && held->code == code) held.reset();   // FUN_00558110: the cursor item first
+                    else if (const auto part = std::ranges::find(character.items, std::string(code), &d2d::d2s::Item::code); part != character.items.end()) character.items.erase(part);
             }
             if (hc_idx == d2d::rules::ArcaneQuest::kDrognan || hc_idx == d2d::rules::ArcaneQuest::kJerhyn) show_palace();   // the guard steps aside
             if (staff.said(quests(), hc_idx, message->string)) {     // the scroll read: it goes

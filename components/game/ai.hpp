@@ -193,6 +193,7 @@ struct Monster {
     // Aura Enchanted (uniques.hpp boss_aura): its aura, level, next pulse;
     // and the damage / to-hit % it gets from bosses' auras this frame.
     int aura = 0, aura_lvl = 0;
+    std::vector<std::string_view> host_states;   // a joined game's: the States.txt names the host has on it (0xa8 / 0xaa)
     std::uint32_t aura_next = 0;
     int aura_dmg = 0, aura_th = 0;
     // Skills' states on it (their auratargetstate): one curse at a time
@@ -229,6 +230,10 @@ struct Monster {
     // (unit flag 0x40: no more of its events 1 / 2, FUN_005a8670).
     int seq_done = 0;
     bool seq_once = false;
+    // The row it's on, as drawn: its own mode and frame (FUN_00663410), so
+    // a jab's A1 rows then its A2 ones; -1 while no sequence plays.
+    std::string_view seq_mode;
+    int seq_frame = -1;
     int charging = -1;                        // Charge (srvstfunc 31) under way: its skill, swung at its end
     // Leap (srvstfunc 40) under way: where it rose and where it lands (cells).
     bool leaping = false;
@@ -492,6 +497,8 @@ std::string unique_name(const GameData& game_data, int name_seed);
 // resistances, speed, an element; its name. At full life.
 void make_boss(const GameData& game_data, Monster& monster, d2d::rules::Boss kind, const std::vector<int>& mods, int super, int name_seed,
                int difficulty, d2d::rules::Rng& rng);
+// MonUMod poison hit's init (FUN_005a1e00): its own poison stats.
+void poison_hit(const GameData& game_data, Monster& monster, int difficulty, bool unique);
 
 // A plain monster of MonStats row `type` at (x, y) cells: its components
 // and stats rolled (a boss's by make_boss instead: `stats` false).

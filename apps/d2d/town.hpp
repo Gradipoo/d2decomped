@@ -93,6 +93,7 @@ inline std::vector<std::string_view> monster_states(const Scene& scene, const Mo
         if (const auto* skill = scene.skills.get(monster.aura)) out.push_back(skill->aurastate);
     if (monster.in_aura && player_aura > 0)
         if (const auto* skill = scene.skills.get(player_aura)) out.push_back(skill->auratarget);
+    out.insert(out.end(), monster.host_states.begin(), monster.host_states.end());
     return out;
 }
 inline std::vector<std::string_view> player_states(const Scene& scene, const View& view) {

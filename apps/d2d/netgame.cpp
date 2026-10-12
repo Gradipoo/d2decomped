@@ -72,7 +72,8 @@ NetGame::NetGame(d2d::net::JoinSession joined, d2d::net::TcpConnection socket, c
     : session(std::move(joined)), connection(std::move(socket)), log(log_path, used_ids()) {}
 
 auto NetGame::join(const std::string& host, const std::filesystem::path& game_exe, std::vector<std::uint8_t> save,
-                   const std::filesystem::path& log_path, int timeout_ms, const d2d::d2s::ItemTables* item_tables, bool auto_party)
+                   const std::filesystem::path& log_path, int timeout_ms, const d2d::d2s::ItemTables* item_tables, bool auto_party,
+                   std::vector<std::pair<int, int>> send_bits)
     -> std::expected<std::unique_ptr<NetGame>, JoinError> {
     const auto tables = d2d::net::d2gs::load_exe_tables(game_exe);
     if (!tables) return std::unexpected(JoinError{ tables.error() });
@@ -83,6 +84,7 @@ auto NetGame::join(const std::string& host, const std::filesystem::path& game_ex
     std::unique_ptr<NetGame> game(new NetGame(std::move(*session), std::move(*connection), log_path));
     game->item_tables = item_tables;
     game->auto_party = auto_party;
+    game->stat_send_bits = std::move(send_bits);   // before the first 0xaa: join pumps the world in
     game->log.note("joining " + host + " as " + game->session.name());
     const auto deadline = steady_ms() + std::uint32_t(timeout_ms);
     while (game->session.state() != d2d::net::JoinState::InGame) {
@@ -409,10 +411,41 @@ auto NetGame::handle(const d2d::net::Bytes& packet) -> void {
         }
         break;
     case 0xa8:   // set state: +1 type, +2 id, +6 length, +7 the state (its stat list after, unread)
-        if (size >= 8 && packet[1] == 0 && read_u32(packet, 2) == self_id && !std::ranges::contains(self_states, int(packet[7]))) self_states.push_back(packet[7]);
+        if (size >= 8) {
+            if (packet[1] == 0 && read_u32(packet, 2) == self_id && !std::ranges::contains(self_states, int(packet[7]))) self_states.push_back(packet[7]);
+            if (auto& states = unit_at(packet[1], read_u32(packet, 2)).states; !std::ranges::contains(states, int(packet[7]))) states.push_back(packet[7]);
+        }
         break;
     case 0xa9:   // end state: +1 type, +2 id, +6 the state
-        if (size >= 7 && packet[1] == 0 && read_u32(packet, 2) == self_id) std::erase(self_states, int(packet[6]));
+        if (size >= 7) {
+            if (packet[1] == 0 && read_u32(packet, 2) == self_id) std::erase(self_states, int(packet[6]));
+            std::erase(unit_at(packet[1], read_u32(packet, 2)).states, int(packet[6]));
+        }
+        break;
+    case 0xaa:   // a unit's states as it comes into view: +1 type, +2 id, +6 length; bits from +7 (FUN_0045efa0)
+        if (size >= 8) {
+            auto& states = unit_at(packet[1], read_u32(packet, 2)).states;
+            states.clear();
+            std::size_t bit_at = 7 * 8;
+            const std::size_t end = std::min<std::size_t>(size, packet[6]) * 8;
+            auto bits = [&](int count) {
+                std::uint32_t value = 0;
+                for (int bit = 0; bit < count && bit_at < end; ++bit, ++bit_at) value |= std::uint32_t(packet[bit_at / 8] >> (bit_at % 8) & 1) << bit;
+                return value;
+            };
+            // 8 bits a state (0xff ends), 1 bit it has stats, then a stat list
+            // as 0xa8's: 9 bits a stat id till 0x1ff, its param and value in
+            // ItemStatCost's send bits.
+            for (std::uint32_t state = 0; bit_at + 8 <= end && (state = bits(8)) != 0xff;) {
+                if (!std::ranges::contains(states, int(state))) states.push_back(int(state));
+                if (!bits(1)) continue;
+                for (std::uint32_t stat = 0; bit_at + 9 <= end && (stat = bits(9)) != 0x1ff;) {
+                    if (stat >= stat_send_bits.size() || stat_send_bits[stat].first <= 0) { bit_at = end; break; }   // widths unknown: the rest can't be read
+                    bits(stat_send_bits[stat].second);
+                    bits(stat_send_bits[stat].first);
+                }
+            }
+        }
         break;
     case 0x0d:   // a unit stops at x, y: +6 its unit command (0x13 hit, 8 dying, 9 dead)
         if (size >= 11) place(unit_at(packet[1], read_u32(packet, 2)), read_u16(packet, 7), read_u16(packet, 9));

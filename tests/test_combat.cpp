@@ -181,6 +181,11 @@ int main() {
         cold_mon.elements[1] = { 3, 100, 8, 8, 50, "A1" };
         Fighter chilly;
         chilly.res[2] = 50; chilly.res[3] = 25; chilly.plr = 20;
+        MonStats poisoner = mon;                         // poison hit's own stats: every hit, length as set
+        poisoner.poison_min = poisoner.poison_max = 40; poisoner.poison_len = 300;
+        auto poison_taken = monster_blow(defender, 1, false, poisoner, false, rng);
+        for (int i = 0; i < 20 && !poison_taken.hit; ++i) poison_taken = monster_blow(defender, 1, false, poisoner, false, rng);
+        assert(poison_taken.hit && poison_taken.poison == 40 && poison_taken.poison_ticks == 300);
         auto cold_hit = monster_blow(chilly, 1, false, cold_mon, false, rng);
         for (int i = 0; i < 20 && !cold_hit.hit; ++i) cold_hit = monster_blow(chilly, 1, false, cold_mon, false, rng);
         assert(cold_hit.hit && cold_hit.damage == 100 + 5 && cold_hit.chill_ticks == 20);   // 40 less 50 % cold

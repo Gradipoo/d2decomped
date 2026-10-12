@@ -305,6 +305,19 @@ int main() {
     log_state.game[5] = 1 << 13;                                                       // the Countess dead in this game, not by us
     text = quest_text(text_bits, 5, log_state);
     assert(text.string == 3729 && text.speech == 0 && text.shown == 3);
+    {   // The Seven Tombs' own case (record 0x723a64): quest 14's bit 3 / 4, the Summoner's done at log state 1.
+        QuestBits tomb_bits{};
+        QuestState tomb_state{};
+        qset(tomb_bits, 14, 3);
+        text = quest_text(tomb_bits, 14, tomb_state);
+        assert(text.string == 965 && text.speech == 302 && text.shown == 3 && text.state == 5 && !text.marks);
+        qset(tomb_bits, 14, 3, false); qset(tomb_bits, 14, 4);
+        assert(quest_text(tomb_bits, 14, tomb_state).string == 966 && quest_text(tomb_bits, 14, tomb_state).state == 6);
+        tomb_state.log[14] = 1; qset(tomb_bits, 12, 0);
+        assert(quest_text(tomb_bits, 14, tomb_state).string == 961 && quest_text(tomb_bits, 14, tomb_state).speech == 396);
+        qset(tomb_bits, 14, 13);                                                       // in this game: the general path
+        assert(quest_text(tomb_bits, 14, tomb_state).state != 7);
+    }
     qset(text_bits, 5, 1); qset(text_bits, 5, 15);                                     // closed with the reward due: state 10, none
     assert(quest_text(text_bits, 5, log_state).shown == 2);
     qset(text_bits, 2, 1); qset(text_bits, 2, 15);

@@ -139,6 +139,12 @@ std::vector<Monster> spawn_monsters(const GameData& game_data, std::span<const d
             monster.boss = d2d::rules::Boss::unique;
             monster.mods = std::move(act_boss->mods);
             monster.half_freeze = act_boss->half_freeze;
+            if (std::ranges::contains(monster.mods, d2d::rules::umod::poisonhit)) {   // its init, FUN_005a1e00(1): then FUN_005a1370's +75
+                poison_hit(game_data, monster, difficulty, true);
+                int immune = 0;
+                for (std::size_t i = 0; i < 6; ++i) immune += type_info.diff[std::size_t(std::clamp(difficulty, 0, 2))].res[i] + monster.boss_res[i] > 99;
+                if (immune < 2) monster.boss_res[5] += 75;
+            }
         }
         monster.leader = spawn.leader;
         monster.seed = unit_seed;
@@ -151,6 +157,7 @@ std::vector<Monster> spawn_monsters(const GameData& game_data, std::span<const d
 void set_mode(const GameData& game_data, Monster& monster, std::string_view mode, std::uint32_t now_ms) {
     if (monster.mode != "NU") monster.left_mode = monster.mode;
     monster.mode = mode;
+    monster.seq_frame = -1;                                   // a sequence's row: drawn again as it plays
     monster.unit.mode_ms = now_ms;
     monster.unit.walking = mode == "WL" || mode == "RN";
     monster.mode_until = mode == "NU" || mode == "WL" || mode == "DD" ? 0 : now_ms + game_data.npc_timing(monster.npc, mode).length_ms();
@@ -216,7 +223,7 @@ void npc_patrol(const GameData& game_data, const Level& level, std::vector<UnitS
         // ponytail: act.greet (unit sound 0x12, the client's greeting through
         // FUN_004e0590) plays nothing yet.
         // The palace guard (JarJar): aside as record 0xb's data+0x40 is 2 (rules::ArcaneQuest::guard_state).
-        const auto act = npc.town_ai == TownAi::jarjar ? d2d::rules::jarjar_think(state.brain, npc.seed, x, y, int(now_ms / kFrameMs), guard_aside, guard_aside, visitor)
+        const auto act = npc.town_ai == TownAi::jarjar ? d2d::rules::jarjar_think(state.brain, x, y, int(now_ms / kFrameMs), guard_aside, guard_aside, visitor)
                        : npc.town_ai == TownAi::vendor ? d2d::rules::vendor_think(npc.seed)
                                                        : d2d::rules::npc_think(state.brain, npc.seed, points, x, y, npc.hc_idx, npc.modes, 1, visitor, npc.town_ai == TownAi::towner);
         if (act.face >= 0) state.dir = facing16(act.face);
@@ -620,10 +627,11 @@ bool think(const GameData& game_data, const Level& level, Monster& monster, std:
     // any other living one (FUN_005f06b0, the Sand Raider's), by squared
     // distance (FUN_005b0bd0); the Greater Mummy's (FUN_005f2a00) within
     // aip5: the count, a corpse (DD, not raised) and a hurt one, the last
-    // found.
+    // found; an lUndead (MonStats +0xd & 8) not a unique (FUN_005a0180, 8).
+    // Radament's (FUN_005f2b10, class 0xe5): within aip5 + 10, uniques
+    // too, on Normal any undead (FUN_0063e990).
     // ponytail: regen (stat 0x4a) is 0, d2d's monsters having none; a
-    // skill is always usable (FUN_005fd470); the near rooms as 80 subtiles;
-    // Radament's wider reach (aip5 + 10) left out.
+    // skill is always usable (FUN_005fd470); the near rooms as 80 subtiles.
     input.skill45 = { !type_info.skill[3].empty(), !type_info.skill[4].empty() };
     input.target_fire_res = target->fighter.res[0]; input.target_cold_res = target->fighter.res[2];
     input.second = true; input.second_dist = best;
@@ -640,7 +648,12 @@ bool think(const GameData& game_data, const Level& level, Monster& monster, std:
             const int off_x = subtile(other.unit.x) - x, off_y = subtile(other.unit.y) - y, squared = off_x * off_x + off_y * off_y;
             if (&other == &monster || d2d::rules::ai_distance(off_x, off_y) >= 80) continue;
             if (mummy) {
-                if (squared > input.aip[4] * input.aip[4]) continue;
+                const bool radament = monster.type == d2d::rules::monster_ids::kRadament;
+                const auto& other_type = game_data.monsters.types[std::size_t(other.type)];
+                if (!(radament && monster.difficulty == 0 ? other_type.undead : other_type.low_undead)) continue;
+                if (!radament && (other.boss == d2d::rules::Boss::unique || other.boss == d2d::rules::Boss::superunique)) continue;
+                const int reach = input.aip[4] + (radament ? 10 : 0);
+                if (squared > reach * reach) continue;
                 ++input.in_reach;
                 if (!other.alive() && other.mode == "DD" && !other.corpse_used) corpse = int(i);
                 else if (other.alive() && other.hit_points < other.stats.hit_points) aid = int(i);
@@ -816,8 +829,8 @@ bool think(const GameData& game_data, const Level& level, Monster& monster, std:
             } else if (start && start->srvstfunc == d2d::rules::ServerStartFunction::kMaggotDown) {
                 monster.buried = true;
             }
-            // ponytail: the sequence plays its first row's mode throughout
-            // (Duriel's and the vipers' charges walk, then swing).
+            // Its rows' own modes are drawn row by row (Monster::seq_mode);
+            // the first row's mode stands for it in the logic.
             const std::string_view played = seq ? std::string_view(seq->front().mode) : std::string_view(type_info.sk_mode[std::size_t(act.n)]);
             use(played, id);
             if (seq) monster.mode_until = now_ms + std::uint32_t(seq->size()) * game_data.npc_timing(monster.npc, played).ms_per_frame();
@@ -941,6 +954,8 @@ bool monster_update(const GameData& game_data, const Level& level, Monster& mons
         int due = 0;
         if (seq) {
             const int reached = std::min(int((now_ms - unit.mode_ms) / std::max<std::uint32_t>(timing.ms_per_frame(), 1)), int(seq->size()) - 1);
+            monster.seq_mode = (*seq)[std::size_t(reached)].mode;
+            monster.seq_frame = (*seq)[std::size_t(reached)].frame;
             for (; monster.seq_done <= reached; ++monster.seq_done) {
                 const int event = (*seq)[std::size_t(monster.seq_done)].event;
                 if (event == 4 || ((event == 1 || event == 2) && !monster.seq_once)) ++due;
@@ -1363,6 +1378,20 @@ Monster make_monster(const GameData& game_data, int type, float x, float y, d2d:
     return monster;
 }
 
+// Poison hit (FUN_005a1e00): poisonmindam / maxdam (stats 57 / 58) =
+// MonLvl damage x MonUMod constants rows 0x10 / 0x13 + difficulty, or
+// 0x1c / 0x1f with the hook's unique flag; poisonlength (59) = (mlvl x 5 +
+// 150) x 2.
+void poison_hit(const GameData& game_data, Monster& monster, int difficulty, bool unique) {
+    if (game_data.monsters.lvl.empty()) return;
+    const auto level = std::clamp<std::size_t>(std::size_t(std::max(monster.stats.level, 1)), 1, game_data.monsters.lvl.size() - 1);
+    const int difficulty_index = std::clamp(difficulty, 0, 2), damage_pct = game_data.monsters.lvl[level].damage[std::size_t(difficulty_index)];
+    const int base = unique ? 28 : 16;
+    monster.stats.poison_min = damage_pct * game_data.umods.constants[std::size_t(base + difficulty_index)] / 100;
+    monster.stats.poison_max = damage_pct * game_data.umods.constants[std::size_t(base + 3 + difficulty_index)] / 100;
+    monster.stats.poison_len = (int(level) * 5 + 150) * 2;
+}
+
 void make_boss(const GameData& game_data, Monster& monster, d2d::rules::Boss kind, const std::vector<int>& mods, int super, int name_seed,
                int difficulty, d2d::rules::Rng& rng) {
     const auto& type_info = game_data.monsters.types[std::size_t(monster.type)];
@@ -1400,6 +1429,7 @@ void make_boss(const GameData& game_data, Monster& monster, d2d::rules::Boss kin
         monster.mana_lo = damage_pct * game_data.umods.constants[std::size_t(base + difficulty_index)] / 100;
         monster.mana_hi = std::max(damage_pct * game_data.umods.constants[std::size_t(base + 3 + difficulty_index)] / 100, monster.mana_lo);
     }
+    if (std::ranges::contains(mods, d2d::rules::umod::poisonhit)) poison_hit(game_data, monster, difficulty, kind != d2d::rules::Boss::minion);
     if (std::ranges::contains(mods, d2d::rules::umod::aura)) {
         const auto aura = d2d::rules::boss_aura(monster.stats.level, name_seed, super);
         monster.aura = aura.skill; monster.aura_lvl = aura.level;

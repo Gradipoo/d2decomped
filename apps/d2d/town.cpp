@@ -131,6 +131,7 @@ void view_units(const Scene& scene, const View& view, float camera_x, float came
         if (!in_view(other.unit.x, other.unit.y)) continue;
         const int mode = other.mode >= 0 ? other.mode : other.running ? kModeRN : other.unit.walking ? (in_town ? kModeTW : kModeWL) : (in_town ? kModeTN : kModeNU);
         out.push_back({ other.unit.x, other.unit.y, &scene.composite(other.cls, mode, other.gfx), other.unit.dir, &other.name, other.unit.mode_ms, -4000 - int(i) });
+        dress(scene, out.back(), -2 - int(other.id & 0xffffff), other.states, clk);
     }
     auto shot = [&](const View::Shot& shot_state) {
         Unit unit{ shot_state.x, shot_state.y, nullptr, shot_state.dir, nullptr, shot_state.born, -1 };
@@ -144,9 +145,11 @@ void view_units(const Scene& scene, const View& view, float camera_x, float came
         if (monster.corpse_used || !in_view(monster.unit.x, monster.unit.y)) continue;
         // A buried maggot: S1 backwards (seq_maggotdown's rows), then held on its first frame; not hovered.
         // unverified (source: MonSeq seq_maggotdown): how game.exe's client draws one under the sand.
-        const bool down = monster.buried;
-        out.push_back({ monster.unit.x, monster.unit.y, &scene.npc_anim(monster.npc, down ? std::string_view("S1") : std::string_view(monster.mode)), monster.unit.dir,
-                        monster.targetable() ? &monster.npc.name : nullptr, down && monster.mode != "S1" ? 0u : monster.unit.mode_ms, -10 - int(i) });
+        const bool down = monster.buried, row = !down && monster.seq_frame >= 0;   // a sequence: its row's mode and frame
+        const auto& anim = scene.npc_anim(monster.npc, down ? std::string_view("S1") : row ? monster.seq_mode : std::string_view(monster.mode));
+        const auto mpf = anim.ms_per_frame();
+        out.push_back({ monster.unit.x, monster.unit.y, &anim, monster.unit.dir, monster.targetable() ? &monster.npc.name : nullptr,
+                        row ? now_ms - mpf * std::uint32_t(monster.seq_frame) - mpf / 2 : down && monster.mode != "S1" ? 0u : monster.unit.mode_ms, -10 - int(i) });
         out.back().reverse = down;
         out.back().overlay_class = monster.npc.overlay_class;
         out.back().cmap = scene.monster_map(monster.npc);
@@ -613,6 +616,11 @@ auto Town::net_overlay() -> void {
         auto cell_y = [&](float subtile_y) { return (subtile_y + 0.5f) / 5.f - float(level->world_y); };
         view.monsters.clear();
         view.others.clear();
+        auto host_states = [&](const std::vector<int>& rows) {
+            std::vector<std::string_view> names;
+            for (const int row : rows) if (std::size_t(row) < scene->state_names.size()) names.emplace_back(scene->state_names[std::size_t(row)]);
+            return names;
+        };
         for (const auto& [unit_key, unit] : net_game->units) {
             if (unit.type == 0) {
                 if (unit.id == net_game->self_id) continue;
@@ -639,6 +647,7 @@ auto Town::net_overlay() -> void {
                 shown.mode = other.mode;
                 shown.skill_ms = unit.skill_ms;
                 other.unit.mode_ms = shown.since;
+                other.states = host_states(unit.states);
                 view.others.push_back(std::move(other));
                 continue;
             }
@@ -670,6 +679,7 @@ auto Town::net_overlay() -> void {
             if (monster.mode != monster.last_mode) monster.unit.mode_ms = world_ms;   // the animation starts over
             monster.last_mode = monster.mode;
             monster.hit_points = unit.life == 0 ? 0 : std::max(1, monster.stats.hit_points * unit.life / 128);
+            monster.host_states = host_states(unit.states);
             view.monsters.push_back(monster);
         }
         // The host's ground items, named as d2d names its own (labels kept by id).

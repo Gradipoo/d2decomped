@@ -155,11 +155,17 @@ FUN_005e9e00, 81 JarJar FUN_005e7590 (act2guard2).
   data+0x30 / +0x34 (4 up for +0x19) and drops the heeding while +0x18 /
   +0x19 are set (what sets them isn't traced). Aside: to 3 north of home
   when over 7 off (over 2 once data+0x40 is 2, FUN_0059aec0); else the
-  visitor; else a heeded player within 12: rand(1000) < 100 a spot 2
-  about it (FUN_005df530), stand 200; else rand(1000) < 50 a wander 3
-  (FUN_005de200); stand 120. d2d: `rules::jarjar_think` (test_monsters),
-  aside from `ArcaneQuest::guard_state`; not run against game.exe (npcs.py
-  leaves him out: object 122's InitFn makes him).
+  visitor, then stand 120 in any case: that stand sets NU at once
+  (FUN_005de080 → FUN_005a7c20), so a heed's walk is cut and only its
+  greet and facing stay. The code after a heed that didn't act (a heeded
+  player within 12: rand(1000) < 100 a spot 2 about it, FUN_005df530,
+  stand 200; else rand(1000) < 50 a wander 3, FUN_005de200) never runs:
+  the guard's interact holder makes FUN_005e68f0 act on any player by, and
+  with no player FUN_005ddf20 hands back the guard himself, which skips
+  it. d2d: `rules::jarjar_think`, aside from `ArcaneQuest::guard_state`.
+  Checked: `tools/emu/jarjar.py` runs FUN_005e7590 natively on 3000
+  random scenes (helpers hooked; npcs.py can't, object 122's InitFn makes
+  him) and `--dump tests/jarjar_cases.inc` is replayed by test_monsters.
 
 d2d: `Npc::town_ai` (MonStats AI), `rules::npc_think(..., towner)` and
 `rules::vendor_think`. A built level's NPCs (Lut Gholein) take their DS1

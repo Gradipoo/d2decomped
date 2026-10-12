@@ -181,7 +181,7 @@ void load_monsters(GameData& game_data, const d2d::mpq::Stack& mpqs) {
                                                    type_info.sk_lvl[skill] = num(text("Sk" + std::to_string(skill + 1) + "lvl")); }
         type_info.trans_lvl = num(text("TransLvl"));
         type_info.spawn = text("spawn"); type_info.spawn_mode = text("spawnmode"); type_info.spawn_x = num(text("spawnx")); type_info.spawn_y = num(text("spawny"));
-        type_info.undead = text("hUndead") == "1" || text("lUndead") == "1"; type_info.demon = text("demon") == "1";
+        type_info.undead = text("hUndead") == "1" || text("lUndead") == "1"; type_info.low_undead = text("lUndead") == "1"; type_info.demon = text("demon") == "1";
         for (int element = 0; element < 3; ++element) {
             static constexpr std::array<std::string_view, 5> kEl = { "fire", "ltng", "cold", "pois", "mag" };
             const std::string element_prefix = "El" + std::to_string(element + 1);
@@ -884,7 +884,8 @@ void load_tables(GameData& game_data, const d2d::mpq::Stack& mpqs) {
                                     num(row, "dgrpval"),
                                     std::string(table.get(row, "descstrpos")), std::string(table.get(row, "descstrneg")),
                                     std::string(table.get(row, "descstr2")), std::string(table.get(row, "dgrpstrpos")),
-                                    std::string(table.get(row, "dgrpstrneg")), std::string(table.get(row, "dgrpstr2")) };
+                                    std::string(table.get(row, "dgrpstrneg")), std::string(table.get(row, "dgrpstr2")),
+                                    num(row, "Send Bits"), num(row, "Send Param Bits") };
         }
     }
     {

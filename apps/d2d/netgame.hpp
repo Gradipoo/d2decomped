@@ -46,6 +46,7 @@ struct NetGame {
         std::uint32_t skill_ms = 0;   // when (steady ms)
         float skill_x = 0, skill_y = 0;   // where it went
         int velocity_pct = 100;       // a monster's stat 0x43 velocitypercent, from its moves (0x67 / 0x68)
+        std::vector<int> states;      // the States.txt rows the host has on it (0xa8 / 0xaa set, 0xa9 end)
     };
 
     // An item on the ground (0x9c actions 0 / 2 / 3): act subtiles.
@@ -66,7 +67,8 @@ struct NetGame {
     // Connects, uploads the save and waits (up to timeout_ms) until the host
     // has put the player in the world (0x04). The log goes to `log_path`.
     static auto join(const std::string& host, const std::filesystem::path& game_exe, std::vector<std::uint8_t> save,
-                     const std::filesystem::path& log_path, int timeout_ms, const d2d::d2s::ItemTables* item_tables, bool auto_party = true)
+                     const std::filesystem::path& log_path, int timeout_ms, const d2d::d2s::ItemTables* item_tables, bool auto_party = true,
+                     std::vector<std::pair<int, int>> send_bits = {})
         -> std::expected<std::unique_ptr<NetGame>, JoinError>;
 
     // What arrived, the ping when due, units walked on by `elapsed_ms`.
@@ -116,8 +118,11 @@ struct NetGame {
     std::unordered_map<std::uint32_t, GroundItem> ground;   // by the host's item id
     // The States.txt rows the host has on our player (0xa8 set, 0xa9 end):
     // a monster's curse, an aura, a shrine's; their overlays are drawn.
-    // ponytail: 0xaa (a unit's states as it comes into view) and the other units' states aren't read.
+    // Every other unit's are its Unit::states (0xaa too, as it comes into view).
     std::vector<int> self_states;
+    // ItemStatCost Send Bits / Send Param Bits by stat id: 0xaa's stat lists
+    // are stepped over by them (their values unread).
+    std::vector<std::pair<int, int>> stat_send_bits;
     std::unordered_map<std::uint32_t, d2d::d2s::Item> own_items;   // ours as the host has them (grids, body, belt, cursor), by its ids
     std::unordered_map<std::uint32_t, d2d::d2s::Item> store_items;   // the open store's stock (0x9c 0xb), by its ids
     std::uint32_t trade_npc = 0;               // the NPC we trade with (its unit id), 0 none

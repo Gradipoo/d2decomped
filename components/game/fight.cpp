@@ -588,6 +588,7 @@ auto Fight::skill_swing(const d2d::rules::Skill& skill_row, int lvl, const d2d::
 auto Fight::land(std::size_t monster_index, const d2d::rules::Blow& blow, bool by_player, std::uint32_t now_ms) -> void {
         using namespace d2d::d2s;
         auto& target = monsters[monster_index];
+        if (target.buried) return;                              // under the sand: nothing reaches it
         if (blow.blocked) { block_anim(*game_data, target, now_ms); return; }
         if (!blow.hit) return;
         if (by_player) {
@@ -684,7 +685,7 @@ auto Fight::strike(std::uint32_t now_ms) -> void {
 auto Fight::hit(std::uint32_t now_ms, float reach ) -> void {
         if (attack_mon < 0) return;
         auto& target_monster = monsters[std::size_t(attack_mon)];
-        if (!target_monster.alive() || std::hypot(target_monster.unit.x - player.x, target_monster.unit.y - player.y) > reach) return;
+        if (!target_monster.targetable() || std::hypot(target_monster.unit.x - player.x, target_monster.unit.y - player.y) > reach) return;
         auto current_swing = swing();
         auto fighter = current_swing.kick ? pf_kick : player_combat;
         const auto* skill = game_data->skills.get(swing_skill);
@@ -747,7 +748,7 @@ auto Fight::strike_bolts(const d2d::rules::Skill& skill, std::size_t monster_ind
         const int reach = calc(skill, skill.calc[0], lvl);
         int best = -1; float best_distance = 1e9f;
         for (std::size_t j = 0; j < monsters.size(); ++j)
-            if (const float distance = std::hypot(monsters[j].unit.x - x, monsters[j].unit.y - y); j != monster_index && monsters[j].alive() && distance * 5 <= float(reach) && distance < best_distance) {
+            if (const float distance = std::hypot(monsters[j].unit.x - x, monsters[j].unit.y - y); j != monster_index && monsters[j].targetable() && distance * 5 <= float(reach) && distance < best_distance) {
                 best_distance = distance; best = int(j);
             }
         if (best < 0) return;
@@ -762,7 +763,7 @@ auto Fight::corpse_blast(const d2d::rules::Skill& skill, int lvl, std::size_t co
         const int dmg = int(std::int64_t(corpse.stats.hit_points) * rng.range(low, high) / 100);
         const int radius = std::max(calc(skill, skill.aurarange, lvl) / 2, 1);
         for (std::size_t j = 0; j < monsters.size(); ++j)
-            if (monsters[j].alive() && std::hypot(monsters[j].unit.x - corpse.unit.x, monsters[j].unit.y - corpse.unit.y) * 5 <= float(radius)) {
+            if (monsters[j].targetable() && std::hypot(monsters[j].unit.x - corpse.unit.x, monsters[j].unit.y - corpse.unit.y) * 5 <= float(radius)) {
                 const auto target = target_of(j);
                 d2d::rules::Blow blow{ .hit = true };
                 blow.damage = d2d::rules::resisted(dmg / 2, target.res[0]) + d2d::rules::resisted(dmg - dmg / 2, target.res[2]);
@@ -788,7 +789,7 @@ auto Fight::spot(const d2d::rules::Skill& skill, std::uint32_t now_ms, const Cas
         const auto damage = d2d::rules::missile_damage(game_data->skills, skill, env, lvl);
         auto within = [&](float x, float y, int radius, auto&& each) {
             for (std::size_t j = 0; j < monsters.size(); ++j)
-                if (monsters[j].alive() && std::hypot(monsters[j].unit.x - x, monsters[j].unit.y - y) * 5 <= float(radius)) each(j);
+                if (monsters[j].targetable() && std::hypot(monsters[j].unit.x - x, monsters[j].unit.y - y) * 5 <= float(radius)) each(j);
         };
         switch (skill.srvdofunc) {
             case ServerDoFunction::kPsychicHammer:
@@ -995,7 +996,7 @@ auto Fight::start_state(const d2d::rules::Skill& skill, int lvl, std::uint32_t n
             if (skill.aurastat[k] == d2d::d2s::kBoneArmor) absorb_pool = calc(skill, skill.aura_calc[k], lvl) >> 8, absorb_skill = skill.id;
         if (skill.srvdofunc == ServerDoFunction::kCloakOfShadows)
             for (auto& monster : monsters)
-                if (monster.alive() && std::hypot(monster.unit.x - player.x, monster.unit.y - player.y) * 5 <= float(calc(skill, skill.aurarange, lvl)))
+                if (monster.targetable() && std::hypot(monster.unit.x - player.x, monster.unit.y - player.y) * 5 <= float(calc(skill, skill.aurarange, lvl)))
                     monster.cry = { skill.id, lvl, until };
     }
 
@@ -1045,7 +1046,7 @@ auto Fight::buff_events(Foe& foe, std::uint32_t now_ms) -> void {
             const auto found = game_data->missiles.find(skill->srvmissilea);
             int best = -1; float best_distance = 12.f;
             for (std::size_t j = 0; j < monsters.size(); ++j)
-                if (const float distance = std::hypot(monsters[j].unit.x - player.x, monsters[j].unit.y - player.y); monsters[j].alive() && distance < best_distance) { best_distance = distance; best = int(j); }
+                if (const float distance = std::hypot(monsters[j].unit.x - player.x, monsters[j].unit.y - player.y); monsters[j].targetable() && distance < best_distance) { best_distance = distance; best = int(j); }
             if (best >= 0 && found != game_data->missiles.end()) {
                 const auto& nearest = monsters[std::size_t(best)];
                 launch(found->second, *skill, chilling_armor->level, player.x, player.y, nearest.unit.x - player.x, nearest.unit.y - player.y, found->second.range, now_ms);
@@ -1092,7 +1093,7 @@ auto Fight::buff_tick(std::uint32_t now_ms) -> void {
             const auto damage = d2d::rules::missile_damage(game_data->skills, *skill, calc_env(), state->level);
             const int radius = std::max(calc(*skill, skill->aurarange, state->level), 1);
             for (std::size_t j = 0; j < monsters.size(); ++j)
-                if (monsters[j].alive() && std::hypot(monsters[j].unit.x - player.x, monsters[j].unit.y - player.y) * 5 <= float(radius))
+                if (monsters[j].targetable() && std::hypot(monsters[j].unit.x - player.x, monsters[j].unit.y - player.y) * 5 <= float(radius))
                     land(j, d2d::rules::missile_blow(damage, target_of(j), pierce(), rng), true, now_ms);
         }
         if (const auto* state = state_of("bladeshield"); state && now_ms >= blade_next) {
@@ -1106,7 +1107,7 @@ auto Fight::buff_tick(std::uint32_t now_ms) -> void {
             const auto* skill = game_data->skills.get(thunderstorm->skill);
             int best = -1; float best_distance = 5.f;
             for (std::size_t j = 0; j < monsters.size(); ++j)
-                if (const float distance = std::hypot(monsters[j].unit.x - player.x, monsters[j].unit.y - player.y); monsters[j].alive() && distance < best_distance) { best_distance = distance; best = int(j); }
+                if (const float distance = std::hypot(monsters[j].unit.x - player.x, monsters[j].unit.y - player.y); monsters[j].targetable() && distance < best_distance) { best_distance = distance; best = int(j); }
             if (best >= 0)
                 land(std::size_t(best), d2d::rules::missile_blow(d2d::rules::missile_damage(game_data->skills, *skill, calc_env(), thunderstorm->level),
                                                                  target_of(std::size_t(best)), pierce(), rng), true, now_ms);
@@ -1198,7 +1199,7 @@ auto Fight::prg(const d2d::rules::Skill& skill, ServerDoFunction func, int count
             damage.srcdam = 0;
             const std::array<int, 4> pierce{ int(psum[d2d::d2s::kPassiveFirePierce]), int(psum[d2d::d2s::kPassiveLightningPierce]), int(psum[d2d::d2s::kPassiveColdPierce]), int(psum[d2d::d2s::kPassivePoisonPierce]) };
             for (std::size_t i = 0; i < monsters.size(); ++i)
-                if (monsters[i].alive() && std::hypot(monsters[i].unit.x - target_x, monsters[i].unit.y - target_y) * 5 <= float(std::max(radius, 1)))
+                if (monsters[i].targetable() && std::hypot(monsters[i].unit.x - target_x, monsters[i].unit.y - target_y) * 5 <= float(std::max(radius, 1)))
                     land(i, d2d::rules::missile_blow(damage, target_of(i), pierce, rng), true, now_ms);
             return;
         }
@@ -1250,7 +1251,7 @@ auto Fight::prg(const d2d::rules::Skill& skill, ServerDoFunction func, int count
         if (func == ServerDoFunction::kReleaseMissileAtUnits || func == ServerDoFunction::kReleaseMissileAtUnitsSecondScan) {
             const int reach = radius > 0 ? radius : d2d::rules::eval_calc(game_data->skills, skill.aurarange, env, skill.id, lvl);
             for (std::size_t i = 0; i < monsters.size(); ++i)
-                if (monsters[i].alive() && std::hypot(monsters[i].unit.x - target_x, monsters[i].unit.y - target_y) * 5 <= float(std::max(reach, 1)))
+                if (monsters[i].targetable() && std::hypot(monsters[i].unit.x - target_x, monsters[i].unit.y - target_y) * 5 <= float(std::max(reach, 1)))
                     launch(*missile_info, skill, lvl, target_x, target_y, monsters[i].unit.x - target_x + 0.01f, monsters[i].unit.y - target_y, missile_info->range + missile_info->lev_range * lvl, now_ms).hops = lvl + 1;
             return;
         }
@@ -1267,7 +1268,7 @@ auto Fight::dragon_tail(const d2d::rules::Skill& skill, std::size_t target, int 
         const float center_x = monsters[target].unit.x, center_y = monsters[target].unit.y;
         for (std::size_t i = 0; i < monsters.size() && fire > 0; ++i) {
             auto& monster = monsters[i];
-            if (!monster.alive() || std::hypot(monster.unit.x - center_x, monster.unit.y - center_y) > radius) continue;
+            if (!monster.targetable() || std::hypot(monster.unit.x - center_x, monster.unit.y - center_y) > radius) continue;
             if (hurt(*game_data, monster, d2d::rules::resisted(fire, target_of(i).res[2]), now_ms)) killed(i, now_ms);
         }
     }
@@ -1630,7 +1631,7 @@ auto Fight::merc_turn(std::uint32_t now_ms, float elapsed, const Crowd& crowd, b
                 const auto& foe_type = game_data->monsters.types[std::size_t(monster.type)];
                 const int foe_x = sub(monster.unit.x), foe_y = sub(monster.unit.y);
                 auto& entry = sight_foes.emplace_back(d2d::rules::SightFoe{ d2d::rules::near_distance(foe_x - merc_x, foe_y - merc_y, foe_type.size), foe_type.threat,
-                                                                            monster.alive() && !town && !d2d::rules::friends(2, monster.align) });
+                                                                            monster.targetable() && !town && !d2d::rules::friends(2, monster.align) });
                 entry.blocked = entry.enemy && entry.distance < 0x31 && d2d::rules::sight_blocked(foe_x, foe_y, foe_type.size, merc_x, merc_y, size, wall);
                 sight_index.push_back(int(i));
             }
@@ -1833,7 +1834,7 @@ auto Fight::move_event(const d2d::rules::Skill& skill, std::uint32_t now_ms) -> 
             for (int hand = 0; hand < (hands >= 2 ? 2 : 1); ++hand) {
                 std::vector<int> nearby;
                 for (std::size_t i = 0; i < monsters.size(); ++i)
-                    if (monsters[i].alive() && std::hypot(monsters[i].unit.x - player.x, monsters[i].unit.y - player.y) <= 5.f) nearby.push_back(int(i));
+                    if (monsters[i].targetable() && std::hypot(monsters[i].unit.x - player.x, monsters[i].unit.y - player.y) <= 5.f) nearby.push_back(int(i));
                 if (nearby.empty()) return;
                 const auto next = std::ranges::upper_bound(nearby, attack_mon);
                 attack_mon = next != nearby.end() ? *next : nearby.front();
@@ -2119,7 +2120,7 @@ auto Fight::fire(const d2d::rules::Skill& skill, std::uint32_t now_ms, const Cas
             std::vector<int> nearby;
             if (target >= 0) nearby.push_back(target);
             for (std::size_t i = 0; i < monsters.size(); ++i)
-                if (int(i) != target && monsters[i].alive()
+                if (int(i) != target && monsters[i].targetable()
                     && std::hypot(monsters[i].unit.x - caster.x, monsters[i].unit.y - caster.y) * 5 <= float(radius)) nearby.push_back(int(i));
             const int high = calc1, low = std::min(calc(skill, skill.calc[2], lvl), high);
             const int count = std::clamp(int(nearby.size()), low, high);
@@ -2221,7 +2222,7 @@ auto Fight::missile_tick(std::uint32_t now_ms) -> void {
                 if (missile.target < 0 && skill->srvstfunc == ServerStartFunction::kNone) {
                     float best = 1e9f;
                     for (std::size_t i = 0; i < monsters.size(); ++i)
-                        if (const float distance = std::hypot(monsters[i].unit.x - cast_x, monsters[i].unit.y - cast_y); monsters[i].alive() && distance < best) {
+                        if (const float distance = std::hypot(monsters[i].unit.x - cast_x, monsters[i].unit.y - cast_y); monsters[i].targetable() && distance < best) {
                             best = distance; missile.target = int(i);
                         }
                 }
@@ -2245,7 +2246,7 @@ auto Fight::missile_tick(std::uint32_t now_ms) -> void {
                 const auto damage = missile.fixed >= 0 ? d2d::rules::MissileDamage{ .etype = 0, .elo = missile.fixed, .ehi = missile.fixed }
                                              : d2d::rules::missile_damage(game_data->skills, *skill, calc_env(), missile.level);
                 for (std::size_t i = 0; i < monsters.size(); ++i)
-                    if (monsters[i].alive() && std::hypot(monsters[i].unit.x - missile.x, monsters[i].unit.y - missile.y) <= 0.5f
+                    if (monsters[i].targetable() && std::hypot(monsters[i].unit.x - missile.x, monsters[i].unit.y - missile.y) <= 0.5f
                         && !std::ranges::contains(burned, std::pair{ int(i), missile.skill })) {
                         burned.emplace_back(int(i), missile.skill);
                         burn(i, damage, now_ms);
@@ -2268,7 +2269,7 @@ auto Fight::missile_tick(std::uint32_t now_ms) -> void {
             // (Grim Ward, level 24: past Act 1).
             if (missile_info.srv_do == 14 && age % std::max(missile_info.param1, 1) == 0)
                 for (auto& monster : monsters)
-                    if (monster.alive() && std::hypot(monster.unit.x - missile.x, monster.unit.y - missile.y) * 5 <= float(std::max(calc(*skill, skill->aurarange, missile.level), 1)))
+                    if (monster.targetable() && std::hypot(monster.unit.x - missile.x, monster.unit.y - missile.y) * 5 <= float(std::max(calc(*skill, skill->aurarange, missile.level), 1)))
                         monster.flee_until = std::max(monster.flee_until, now_ms + std::uint32_t(std::max(calc(*skill, skill->auralen, missile.level), 1)) * 40);
             // 20 (Blade Sentinel): back and forth between the caster's spot and
             // where it was sent.
@@ -2385,7 +2386,7 @@ auto Fight::skill_missile_hits(Missile& missile, std::size_t monster_index, std:
             int best = -1; float best_distance = 1e9f;
             for (std::size_t j = 0; j < monsters.size(); ++j)
                 if (const float distance = std::hypot(monsters[j].unit.x - missile.x, monsters[j].unit.y - missile.y);
-                    j != monster_index && monsters[j].alive() && distance * 5 <= float(radius) && distance < best_distance) { best_distance = distance; best = int(j); }
+                    j != monster_index && monsters[j].targetable() && distance * 5 <= float(radius) && distance < best_distance) { best_distance = distance; best = int(j); }
             if (best >= 0) {
                 const auto& next_target = monsters[std::size_t(best)];
                 launch(missile_info, *skill, missile.level, missile.x, missile.y, next_target.unit.x - missile.x, next_target.unit.y - missile.y, missile_info.range, now_ms).hops = missile.hops - 1;
@@ -2431,7 +2432,7 @@ auto Fight::strike(const Missile& missile, std::size_t monster_index, std::uint3
 
 auto Fight::area(const Missile& missile, float x, float y, int radius, std::uint32_t now_ms, int freeze ) -> void {
         for (std::size_t j = 0; j < monsters.size(); ++j)
-            if (monsters[j].alive() && std::hypot(monsters[j].unit.x - x, monsters[j].unit.y - y) * 5 <= float(std::max(radius, 1))) strike(missile, j, now_ms, freeze);
+            if (monsters[j].targetable() && std::hypot(monsters[j].unit.x - x, monsters[j].unit.y - y) * 5 <= float(std::max(radius, 1))) strike(missile, j, now_ms, freeze);
     }
 
 auto Fight::burst(Missile& missile, std::uint32_t now_ms) -> void {
@@ -2475,7 +2476,7 @@ auto Fight::burst(Missile& missile, std::uint32_t now_ms) -> void {
                 const int burst_radius = radius(missile_info.hit_par1, skill->aurarange);
                 int count = radius(missile_info.hit_par2, skill->calc[0]);
                 for (std::size_t j = 0; j < monsters.size() && count > 0; ++j)
-                    if (int(j) != missile.target && monsters[j].alive() && std::hypot(monsters[j].unit.x - missile.x, monsters[j].unit.y - missile.y) * 5 <= float(burst_radius)) {
+                    if (int(j) != missile.target && monsters[j].targetable() && std::hypot(monsters[j].unit.x - missile.x, monsters[j].unit.y - missile.y) * 5 <= float(burst_radius)) {
                         sub_at(missile.x, missile.y, monsters[j].unit.x - missile.x, monsters[j].unit.y - missile.y);
                         --count;
                     }
@@ -2488,7 +2489,7 @@ auto Fight::burst(Missile& missile, std::uint32_t now_ms) -> void {
                 area(missile, x, y, burst_radius, now_ms);
                 if (sub)
                     for (std::size_t j = 0; j < monsters.size(); ++j)
-                        if (monsters[j].alive() && game_data->monsters.types[std::size_t(monsters[j].type)].undead
+                        if (monsters[j].targetable() && game_data->monsters.types[std::size_t(monsters[j].type)].undead
                             && std::hypot(monsters[j].unit.x - x, monsters[j].unit.y - y) * 5 <= float(burst_radius))
                             sub_at(x, y, monsters[j].unit.x - x, monsters[j].unit.y - y);
                 break;
@@ -2820,7 +2821,7 @@ auto Fight::trap_turn(Pet& pet, std::uint32_t now_ms) -> void {
         const float range = float(per_difficulty.aip[3] > 0 ? per_difficulty.aip[3] : 25) / 5;
         int best = -1; float best_distance = range;
         for (std::size_t i = 0; i < monsters.size(); ++i)
-            if (const float distance = std::hypot(monsters[i].unit.x - monster.unit.x, monsters[i].unit.y - monster.unit.y); monsters[i].alive() && distance <= best_distance) { best_distance = distance; best = int(i); }
+            if (const float distance = std::hypot(monsters[i].unit.x - monster.unit.x, monsters[i].unit.y - monster.unit.y); monsters[i].targetable() && distance <= best_distance) { best_distance = distance; best = int(i); }
         // Death Sentry's other skill, 'mon death sentry' (do 55): a corpse in
         // its reach goes up.
         if (const auto* pet_skill = game_data->skills.get(pet.skill))
@@ -2896,7 +2897,7 @@ auto Fight::pet_aura(Pet& pet, std::uint32_t now_ms) -> void {
                                                    .elo = d2d::rules::elem_damage(game_data->skills, *skill, calc_env(), pet.aura_level, false),
                                                    .ehi = d2d::rules::elem_damage(game_data->skills, *skill, calc_env(), pet.aura_level, true) };
         for (std::size_t i = 0; i < monsters.size(); ++i)
-            if (monsters[i].alive() && std::hypot(monsters[i].unit.x - pet.monster.unit.x, monsters[i].unit.y - pet.monster.unit.y) * 5 <= float(radius))
+            if (monsters[i].targetable() && std::hypot(monsters[i].unit.x - pet.monster.unit.x, monsters[i].unit.y - pet.monster.unit.y) * 5 <= float(radius))
                 land(i, d2d::rules::missile_blow(damage, target_of(i), {}, rng), false, now_ms);
     }
 
@@ -2934,7 +2935,7 @@ auto Fight::pets_turn(std::uint32_t now_ms, float elapsed, const Crowd& crowd) -
                 if (skill->etype == 3) {
                     const auto damage = d2d::rules::missile_damage(game_data->skills, *skill, calc_env(), pet.monster.stats.level);
                     for (std::size_t j = 0; j < monsters.size(); ++j)
-                        if (monsters[j].alive() && std::hypot(monsters[j].unit.x - unit.x, monsters[j].unit.y - unit.y) < 1.5f)
+                        if (monsters[j].targetable() && std::hypot(monsters[j].unit.x - unit.x, monsters[j].unit.y - unit.y) < 1.5f)
                             land(j, d2d::rules::missile_blow(damage, target_of(j), pierce(), rng), false, now_ms);
                 } else if (pet.hits > 0 || [&] {
                                const int corpse = corpse_near(unit.x, unit.y);
@@ -2963,7 +2964,7 @@ auto Fight::pets_turn(std::uint32_t now_ms, float elapsed, const Crowd& crowd) -
                         x.friendly = true; x.level = pet.ranged_level; x.skill = pet.ranged;
                         if (const auto* missile_skill_row = skill_named(missile_info->skill)) x.skill = missile_skill_row->id;   // 'hydra' carries the Hydra skill's damage
                         pending.push_back(x);
-                    } else if (monsters[monster_index].alive() && std::hypot(monsters[monster_index].unit.x - unit.x, monsters[monster_index].unit.y - unit.y) <= kMeleeReach + 0.3f) {
+                    } else if (monsters[monster_index].targetable() && std::hypot(monsters[monster_index].unit.x - unit.x, monsters[monster_index].unit.y - unit.y) <= kMeleeReach + 0.3f) {
                         auto target = target_of(monster_index);
                         // A Shadow swings the owner's blow (its copied gear); its skills are shadow_cast's.
                         auto blow = d2d::rules::player_blow(pet.mirror ? player_combat : d2d::rules::simple_fighter(monster.stats.a1_min, monster.stats.a1_max, monster.stats.to_hit),
@@ -2995,7 +2996,7 @@ auto Fight::pets_turn(std::uint32_t now_ms, float elapsed, const Crowd& crowd) -
             if (speed <= 0) {                                // a Hydra: it stands and shoots what comes in range
                 if (pet.target >= 0 && std::hypot(monsters[std::size_t(pet.target)].unit.x - unit.x, monsters[std::size_t(pet.target)].unit.y - unit.y) > 6.f) pet.target = -1;
                 for (std::size_t i = 0; pet.target < 0 && i < monsters.size(); ++i)
-                    if (monsters[i].alive() && std::hypot(monsters[i].unit.x - unit.x, monsters[i].unit.y - unit.y) <= 6.f) pet.target = int(i);
+                    if (monsters[i].targetable() && std::hypot(monsters[i].unit.x - unit.x, monsters[i].unit.y - unit.y) <= 6.f) pet.target = int(i);
                 if (pet.target >= 0 && now_ms >= monster.next_act) {
                     const auto& target = monsters[std::size_t(pet.target)];
                     unit.dir = direction16(target.unit.x - unit.x, target.unit.y - unit.y);
@@ -3587,7 +3588,7 @@ auto Fight::blade_shield(const d2d::rules::Skill& skill, int lvl, float x, float
         swing.skill_hi = d2d::rules::skill_phys(game_data->skills, skill, env, lvl, true);
         const int radius = std::max(calc(skill, skill.aurarange, lvl), 1);
         for (std::size_t j = 0; j < monsters.size(); ++j)
-            if (monsters[j].alive() && std::hypot(monsters[j].unit.x - x, monsters[j].unit.y - y) * 5 <= float(radius))
+            if (monsters[j].targetable() && std::hypot(monsters[j].unit.x - x, monsters[j].unit.y - y) * 5 <= float(radius))
                 land(j, d2d::rules::player_blow(fighter, target_of(j), int(character.stats.get(d2d::d2s::kLevel)), rng, swing), by_player, now_ms);
     }
 
@@ -3779,7 +3780,7 @@ auto Fight::next_target() -> bool {
 auto Fight::in_reach() const -> std::vector<int> {
         std::vector<int> out;
         for (std::size_t i = 0; i < monsters.size(); ++i)
-            if (monsters[i].alive() && std::hypot(monsters[i].unit.x - player.x, monsters[i].unit.y - player.y) <= kMeleeReach + 0.5f)
+            if (monsters[i].targetable() && std::hypot(monsters[i].unit.x - player.x, monsters[i].unit.y - player.y) <= kMeleeReach + 0.5f)
                 out.push_back(int(i));
         return out;
     }
@@ -3809,7 +3810,7 @@ auto Fight::engage(std::uint32_t now_ms) -> std::optional<std::pair<float, float
 
 auto Fight::crowd(Crowd& crowd_out) -> void {
         for (auto& monster : monsters)
-            if (monster.alive() && std::abs(monster.unit.x - player.x) < 12 && std::abs(monster.unit.y - player.y) < 12) crowd_out.units.push_back(&monster.unit);
+            if (monster.alive() && !monster.buried && std::abs(monster.unit.x - player.x) < 12 && std::abs(monster.unit.y - player.y) < 12) crowd_out.units.push_back(&monster.unit);
         for (auto& pet : pets)                                 // pets stand in the way too (Bone Wall)
             if (pet.monster.alive() && pet.where == level) crowd_out.units.push_back(&pet.monster.unit);
     }
@@ -3849,7 +3850,7 @@ auto Fight::world(bool in_moor, std::uint32_t now_ms, float elapsed, const Crowd
                     fighter.block = target.block;
                     for (std::size_t k = 0; k < 4; ++k) fighter.res[k] = std::min(target.res[2 + k], 95);
                     const auto& type_info = game_data->monsters.types[std::size_t(monster.type)];
-                    Foe& foe = foes.emplace_back(Foe{ monster.unit.x, monster.unit.y, monster.stats.level, monster.alive() && monster.mode != "DT", monster.unit.walking, fighter });
+                    Foe& foe = foes.emplace_back(Foe{ monster.unit.x, monster.unit.y, monster.stats.level, monster.targetable() && monster.mode != "DT", monster.unit.walking, fighter });
                     foe.size = type_info.size; foe.threat = type_info.threat; foe.of = &monster;
                 }
             std::vector<Monster> born;
@@ -3887,7 +3888,7 @@ auto Fight::world(bool in_moor, std::uint32_t now_ms, float elapsed, const Crowd
                                : std::hypot(monster.unit.x - missile.x, monster.unit.y - missile.y) > 0.5f) continue;
                     if (missile.row) {                             // a shrine's potion: everyone in its burst
                         for (std::size_t j = 0; j < monsters.size(); ++j)
-                            if (monsters[j].alive() && std::hypot(monsters[j].unit.x - missile.x, monsters[j].unit.y - missile.y) * 5 <= float(std::max(missile.burst, 1)))
+                            if (monsters[j].targetable() && std::hypot(monsters[j].unit.x - missile.x, monsters[j].unit.y - missile.y) * 5 <= float(std::max(missile.burst, 1)))
                                 land(j, d2d::rules::missile_blow(*missile.row, target_of(j), {}, rng), true, now_ms);
                         return true;
                     }

@@ -141,7 +141,12 @@ void view_units(const Scene& scene, const View& view, float camera_x, float came
     for (std::size_t i = 0; i < view.monsters.size(); ++i) {
         const auto& monster = view.monsters[i];
         if (monster.corpse_used || !in_view(monster.unit.x, monster.unit.y)) continue;
-        out.push_back({ monster.unit.x, monster.unit.y, &scene.npc_anim(monster.npc, monster.mode), monster.unit.dir, monster.alive() ? &monster.npc.name : nullptr, monster.unit.mode_ms, -10 - int(i) });
+        // A buried maggot: S1 backwards (seq_maggotdown's rows), then held on its first frame; not hovered.
+        // unverified (source: MonSeq seq_maggotdown): how game.exe's client draws one under the sand.
+        const bool down = monster.buried;
+        out.push_back({ monster.unit.x, monster.unit.y, &scene.npc_anim(monster.npc, down ? std::string_view("S1") : std::string_view(monster.mode)), monster.unit.dir,
+                        monster.alive() && !down ? &monster.npc.name : nullptr, down && monster.mode != "S1" ? 0u : monster.unit.mode_ms, -10 - int(i) });
+        out.back().reverse = down;
         out.back().overlay_class = monster.npc.overlay_class;
         out.back().cmap = scene.monster_map(monster.npc);
         out.back().ghostly = monster.alive() && std::ranges::find(monster.mods, d2d::rules::umod::ghostly) != monster.mods.end();

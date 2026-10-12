@@ -232,6 +232,10 @@ struct Monster {
     int charging = -1;                        // Charge (srvstfunc 31) under way: its skill, swung at its end
     // Leap (srvstfunc 40) under way: where it rose and where it lands (cells).
     bool leaping = false;
+    // A sand maggot down (MagottDown's start, FUN_005cb270: unit flags 0xe
+    // off, its 0x1000 lifted): no one targets, hits or walks into it till
+    // MagottUp (FUN_005cb170) brings it up at the nearest free spot.
+    bool buried = false;
     float leap_from_x = 0, leap_from_y = 0, leap_to_x = 0, leap_to_y = 0;
     int move_pct = 0;
     std::uint32_t laid_until = 0;
@@ -243,6 +247,7 @@ struct Monster {
     std::vector<std::pair<int, int>> path;
     bool half_freeze = false;
     [[nodiscard]] bool alive() const { return hit_points > 0; }
+    [[nodiscard]] bool targetable() const { return alive() && !buried; }   // unit flags 0xe: not a buried maggot
     // As a target for the player's (or the merc's) hits.
     [[nodiscard]] d2d::rules::Target target(const GameData& game_data) const {
         const auto& type_info = game_data.monsters.types[std::size_t(type)];

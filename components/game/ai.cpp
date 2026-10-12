@@ -795,6 +795,16 @@ bool think(const GameData& game_data, const Level& level, Monster& monster, std:
                 return true;
             }
             if ((!seq && !plain) || ((name == "Resurrect" || name == "Resurrect2") && corpse < 0)) { idle(0); return true; }
+            // MagottUp (srvstfunc 44, FUN_005cb170): it comes up at the free
+            // spot nearest (FUN_00554ea0 -> FUN_0064e7b0, mask 0x1c09), its
+            // flags 0xe back; MagottDown (45, FUN_005cb270) buries it.
+            // ponytail: the nearest free spot by the level's grid, not FUN_0064e7b0's search; up never fails.
+            if (const auto* start = game_data.skills.get(id); start && start->srvstfunc == d2d::rules::ServerStartFunction::kMaggotUp && monster.buried) {
+                std::tie(unit.x, unit.y) = level.nearest_free(unit.x, unit.y);
+                monster.buried = false;
+            } else if (start && start->srvstfunc == d2d::rules::ServerStartFunction::kMaggotDown) {
+                monster.buried = true;
+            }
             // ponytail: the sequence plays its first row's mode throughout
             // (Duriel's and the vipers' charges walk, then swing).
             const std::string_view played = seq ? std::string_view(seq->front().mode) : std::string_view(type_info.sk_mode[std::size_t(act.n)]);
@@ -1025,7 +1035,6 @@ bool monster_update(const GameData& game_data, const Level& level, Monster& mons
                 monster.hit_points = 0;                                        // no loot, no experience
             } else if (done && done->srvdofunc == d2d::rules::ServerDoFunction::kMaggotDown) {
                 // MagottDown (srvdofunc 86, FUN_005cb300): calc1 % of its life back, once (flag 0x40).
-                // ponytail: burrowed it stays hittable (no underground state).
                 const int lvl = skill_level(game_data, monster, monster.skill);
                 const int back = d2d::rules::eval_calc(game_data.skills, done->calc[0], {}, monster.skill, lvl);
                 if (back > 0) monster.hit_points = std::min(monster.hit_points + monster.stats.hit_points * back / 100, monster.stats.hit_points);
@@ -1399,7 +1408,7 @@ void make_boss(const GameData& game_data, Monster& monster, d2d::rules::Boss kin
 }
 
 bool hurt(const GameData& game_data, Monster& monster, int damage, std::uint32_t now_ms) {
-    if (!monster.alive() || damage <= 0) return false;
+    if (!monster.alive() || monster.buried || damage <= 0) return false;
     monster.hit_points -= damage;
     monster.aware = true;
     if (!monster.alive()) set_mode(game_data, monster, "DT", now_ms);

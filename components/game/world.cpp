@@ -1929,7 +1929,7 @@ auto World::apply(const Command& command, std::uint32_t now_ms) -> void {
         const auto& use_skill = std::get<cmd::UseSkill>(command);
         const auto* skill = game_data->skills.get(use_skill.skill);
         const int monster_index = fight.monster_index(use_skill.unit);
-        const bool live = monster_index >= 0 && fight.monsters[std::size_t(monster_index)].alive();
+        const bool live = monster_index >= 0 && fight.monsters[std::size_t(monster_index)].targetable();
         if (skill && self_cast(*skill)) {                                            // Holy Shield: where the player stands
             if (fight.cast(use_skill.skill, now_ms)) player.walking = false;
         } else if (skill && skill->srvdofunc == ServerDoFunction::kWhirlwind && monster_index < 0) {                      // Whirlwind to that point (FUN_005d8f50)

@@ -758,10 +758,11 @@ struct GameData::LevelBuilder {
 // The Blood Moor from the map seed (components/drlg): act 1's layout
 // places it against the town, the generator fills it, its tiles come from
 // the Act 1 wilderness DT1s (LvlTypes).
-// The levels d2d builds so far: Act 1's (the town is GameData::town) and
-// Act 2's but the Arcane Sanctuary (74).
+// The levels d2d builds so far: Act 1's (the town is GameData::town),
+// Act 2's and Kurast Docks (75: Meshif's boat lands there; the rest of
+// Act 3 isn't built).
 constexpr std::array kBuiltLevels{ 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55,
-                                    56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74 };
+                                    56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75 };
 
 // A composite's COF and timing (the World's part of a composite).
 struct CofAnim { d2d::cof::Cof cof; GameData::AnimTiming timing; std::string path; bool ok = false; };

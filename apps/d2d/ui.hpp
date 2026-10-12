@@ -180,7 +180,7 @@ void layout_npc_menu(const Scene& scene, NpcMenuState& menu, int screen_x, int s
 // by resurrect_line) while the merc is dead, ahead of "hire" or else last
 // (FUN_004b6440).
 NpcMenuState open_npc_menu(const Scene& scene, const Level& level, int npc, int screen_x, int screen_y, int clvl = 1, int unidentified = 0,
-                           bool respec = false, bool east = false,   // east: Warriv's Go East (quest 6 done, table 0x7253e0)
+                           bool respec = false, bool east = false,   // east: Warriv's Go East (quest 6 done), Meshif's Sail East (quest 14), table 0x7253e0
                            bool imbue = false,                       // imbue: Charsi's Imbue (quest 3 bit 1, 0x4b3700)
                            const std::string& resurrect = {});
 

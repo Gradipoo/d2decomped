@@ -369,3 +369,17 @@ d2d: `rules::SevenTombsQuest`, the orifice in `World::operate`,
 5, 13). Gaps: the orifice's panel (using it with the staff places it);
 Tyrael's prison (data+0x2c) isn't opened; the log override (data+0x10 /
 +0x14) isn't traced; Meshif's Sail East (Act 3) isn't there; one player.
+
+## Meshif's boat to Act 3
+
+Client: table 0x7253e0's row {0xd2, quest 14, bit 0, set, FUN_004b6620}
+gives Meshif (210) 3 entries, [1] 0xd38 "sail east" (handler 0x4b51a0,
+C->S 0x38 kind 0). Server FUN_00579d60, hcIdx 0xd2: quest 14 bit 0 ->
+FUN_0054b830(0x4b, 0) (Kurast Docks, tile 0), FUN_005467e0: unless quest
+15 bit 0, quest 10's bits 0 / 13 when unset (and FUN_00544160 takes "msf "
+and "vip " off the player), then quest 15's bits 0 / 13; the town's
+waypoint. hcIdx 0x108 (Kurast's Meshif) sails back to 0x28.
+d2d: `World` cmd::Caravan; Kurast Docks (DockTown3.ds1, LvlPrest 529)
+builds, `diff_drlg.py 1-5 75 tiles units seeds` 5/5 (FUN_00665950's act 3
+monster-to-object remaps: 0x129 -> 0x17e, 0x16e -> 0x194; act 5's too).
+Checked headless both ways. Gap: FUN_00544160's item removal.

@@ -1657,6 +1657,29 @@ auto World::deal(const Command& command) -> bool {
             using d2d::rules::qbit;
             if (std::size_t(caravan->npc) >= level->npcs.size()) return true;
             const int hc_idx = level->npcs[std::size_t(caravan->npc)].hc_idx;
+            // Meshif (FUN_00579d60 hcIdx 0xd2): once quest 14 is done, to Kurast
+            // Docks (FUN_0054b830(0x4b, 0)); FUN_005467e0: unless Act 3 is open
+            // (quest 15 bit 0), quest 10's bits 0 and 13 if not yet (and
+            // FUN_00544160 takes "msf " / "vip " off the player), then quest
+            // 15's bits 0 and 13; the town's waypoint. hcIdx 0x108 back to
+            // Lut Gholein (FUN_0054b830(0x28, 0)).
+            // ponytail: FUN_00544160's item removal (the staff's parts) isn't done.
+            if (hc_idx == d2d::rules::monster_ids::kMeshifAct3) {
+                if (const Level* lut = game_data->level(d2d::rules::level_ids::kLutGholein); lut && lut->start.first >= 0) arrive(lut, lut->start.first, lut->start.second, "Meshif's boat");
+                return true;
+            }
+            if (hc_idx == d2d::rules::monster_ids::kMeshif) {
+                if (!qbit(quests(), d2d::rules::SevenTombsQuest::kQuest, 0)) return true;
+                const Level* docks = game_data->level(d2d::rules::level_ids::kKurastDocks);
+                if (!docks || docks->start.first < 0) { d2d::log::warn("Kurast Docks didn't build; the boat stays"); return true; }
+                if (!qbit(quests(), 15, 0)) {
+                    if (!qbit(quests(), 10, 0)) { d2d::rules::qset(quests(), 10, 0); d2d::rules::qset(quests(), 10, 13); }
+                    d2d::rules::qset(quests(), 15, 0); d2d::rules::qset(quests(), 15, 13);
+                }
+                set_waypoint(waypoint_index(*game_data, d2d::rules::level_ids::kKurastDocks));
+                arrive(docks, docks->start.first, docks->start.second, "Meshif's boat");
+                return true;
+            }
             if (hc_idx == d2d::rules::monster_ids::kWarrivAct2) {
                 const auto& camp = game_data->town;
                 const auto spot = camp.spawn_at[5].first >= 0 ? camp.spawn_at[5] : camp.start;

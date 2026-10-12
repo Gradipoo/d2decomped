@@ -792,9 +792,8 @@ blocking:
   d2d's curses don't swap thinks, so they aren't ported.
 - Act bosses of Acts 3–5 (FUN_005b1cf0 by BaseId: Mephisto, Diablo, Izual,
   Baal, the Council's quest hooks): not in `rules::act_boss` yet.
-- Not seen on screen yet: the two-mode jab sequences (Duriel's, the
-  scarabs'). Waiting on a live host: the joined game's checklist (quests,
-  travel, other units' states).
+- Waiting on a live host: the joined game's checklist (quests, travel,
+  other units' states).
 
 Next: Act 3, the same road as Act 2's (levels on demand and diffed, the
 town, the quests, the thinks).

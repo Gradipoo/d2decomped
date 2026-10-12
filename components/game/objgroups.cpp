@@ -899,9 +899,9 @@ void place_objects(const GameData& game_data, GameData::LevelBuilder& builder, L
             town = { game_data.town.world_x, game_data.town.world_y, game_data.town.ds1.width(), game_data.town.ds1.height() };
             has_town = true;
         }
-    } else if (level.id != d2d::rules::level_ids::kLutGholein)
+    } else if (const int town_id = level.id < d2d::rules::level_ids::kKurastDocks ? d2d::rules::level_ids::kLutGholein : d2d::rules::level_ids::kKurastDocks; level.id != town_id)
         for (const auto& placed : game_data.layout_of(level.id))
-            if (placed.level == d2d::rules::level_ids::kLutGholein) { town = { placed.x, placed.y, placed.width, placed.height }; has_town = true; }
+            if (placed.level == town_id) { town = { placed.x, placed.y, placed.width, placed.height }; has_town = true; }
     if (has_town) {
         const auto [town_x, town_y, town_w, town_h] = town;
         for (std::size_t i = 0; i < level.rooms.size(); ++i) {

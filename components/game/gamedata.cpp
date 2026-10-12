@@ -1194,6 +1194,7 @@ std::unique_ptr<Level> build_level(const GameData& game_data, GameData::LevelBui
         level->layer = num(text("Layer"));
         level->light = level_light(text("Intensity"), text("Red"), text("Green"), text("Blue"));
         level->rain = text("Rain") == "1";
+        level->teleport = d2d::drlg::to_int(text("Teleport"), 1);
         for (std::size_t env_row = 0; env_row < builder.sound_env.size(); ++env_row)
             if (builder.sound_env.get(env_row, "Index") == text("SoundEnv")) {
                 level->song = num(builder.sound_env.get(env_row, "Song"));
@@ -1267,14 +1268,6 @@ std::vector<int> walk_links(const GameData& game_data, int id) {
 // levels it walks into.
 void install_level(const GameData& game_data, int id, std::unique_ptr<Level> level) {
     auto in_act = [&](int level_id) { return std::ranges::contains(game_data.layout_of(id), level_id, &d2d::drlg::Placed::level); };
-    if (game_data.stale.erase(id)) {                     // a rebuild after an act change: into the old one's place
-        if (auto& kept = game_data.levels[id]; kept && level) {
-            auto nearby = std::move(kept->nearby);           // its links stand: its neighbours are the same objects
-            *kept = std::move(*level);
-            kept->nearby = std::move(nearby);
-        }
-        return;
-    }
     if (level) {
         const auto walks = walk_links(game_data, id);
         auto linked = [&](int level_id) { return (in_act(id) && in_act(level_id)) || std::ranges::contains(walks, level_id); };
@@ -1287,18 +1280,6 @@ void install_level(const GameData& game_data, int id, std::unique_ptr<Level> lev
         }
     }
     game_data.levels[id] = std::move(level);
-}
-
-std::vector<const Level*> GameData::refresh_act(int act) const {
-    std::vector<const Level*> marked;
-    if (!builder) return marked;
-    for (const auto& [id, built] : levels) {
-        if (!built || d2d::rules::level_ids::act_of(id) != act || builder->jobs.contains(id)) continue;
-        stale.insert(id);
-        marked.push_back(built.get());
-        builder->jobs.emplace(id, std::async(std::launch::async, [this, id] { return build_level(*this, *builder, id); }));
-    }
-    return marked;
 }
 
 std::unique_ptr<Level> finish_job(std::future<std::unique_ptr<Level>>& job, int id) {
@@ -1323,15 +1304,7 @@ void GameData::poll_levels() const {
 
 const Level* GameData::level(int id) const {
     if (id == town.id) return &town;
-    if (const auto found = levels.find(id); found != levels.end()) {
-        if (stale.contains(id) && builder)
-            if (const auto job = builder->jobs.find(id); job != builder->jobs.end()) {   // its rebuild: waited for
-                install_level(*this, id, finish_job(job->second, id));
-                builder->jobs.erase(job);
-            }
-        stale.erase(id);
-        return found->second.get();
-    }
+    if (const auto found = levels.find(id); found != levels.end()) return found->second.get();
     want_level(id);
     const auto job = builder ? builder->jobs.find(id) : decltype(builder->jobs.end()){};
     if (!builder || job == builder->jobs.end()) return nullptr;

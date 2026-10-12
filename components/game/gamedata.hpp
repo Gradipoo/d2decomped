@@ -31,7 +31,6 @@
 #include <algorithm>
 #include <array>
 #include <bitset>
-#include <set>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -170,6 +169,7 @@ struct Level {
     int night_ambience = 0, day_event = 0, night_event = 0, event_delay = 0;   // its Night Ambience, Day / Night Event, Event Delay (sound ticks)
     int light = -1;                                    // Levels.txt Intensity when it has its own light (caves: 0), -1 the day's
     bool rain = false;                                 // Levels.txt Rain: the weather reaches it
+    int teleport = 1;                                  // Levels.txt Teleport: 0 no, 1 yes, 2 only in a clear line (FUN_0061db70 +4)
     d2d::ds1::Map ds1;
     std::vector<d2d::dt1::Archive> dt1s;
     // Keyed by (style, seq, type) — one map covers floors, walls, trees,
@@ -537,14 +537,6 @@ struct GameData {
     }
     void want_level(int id) const;
     void poll_levels() const;
-    // An act left (game.exe frees its levels, FUN_0053ac70 makes them anew
-    // on the way back): each built level of `act` is rebuilt from the map
-    // seed in place (its address kept), unpopulated, its build started now
-    // and waited for when next wanted. The camp's `town` isn't (its NPCs
-    // keep their spots). Returns the levels so marked.
-    // ponytail: the camp isn't rebuilt; it has no monsters or objects to reset.
-    std::vector<const Level*> refresh_act(int act) const;
-    mutable std::set<int> stale;                       // built levels whose rebuild hasn't landed yet
     // SuperUniques.txt (without its Expansion row): name, MonStats row of
     // its Class, minions.
     struct SuperUnique { std::string name; int type = -1, min_grp = 0, max_grp = 0; std::vector<int> mods; std::array<std::string, 3> treasure_classes;
@@ -616,6 +608,7 @@ struct GameData {
                          int vel_lev = 0, max_vel = 0, accel = 0, activate = 0;   // its flight (rules::MissileFlight)
                          std::string skill; int lev_range = 0, hit_func = 0, hit_par1 = 0;
                          bool to_hit = false, collide_kill = true, pierce = false;
+                         bool return_fire = false;   // ReturnFire (record flag bit 9, +5 & 2): Chilling Armor answers it (FUN_005cab40)
                          // Its own element (a row with no Skill: FUN_0064b100 / 0064b1d0 /
                          // 0064b2a0 by level): Skill::etype order, frze as cold.
                          int etype = -1, emin = 0, emax = 0, hitshift = 8, elen = 0;

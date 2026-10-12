@@ -1412,38 +1412,6 @@ auto World::arrive(const Level* destination, float arrive_x, float arrive_y, con
         interact_npc = pick_item = take_warp = take_portal = -1;
         if (level->id == d2d::rules::DenQuest::kDen) den.enter_den(quests());
         d2d::log::info("level: {} at ({:.1f}, {:.1f}), through {} from {}", level_name(*level), free_x, free_y, how, level_name(*from));
-        if (act() != from_act) leave_act(from_act);
-    }
-
-// game.exe frees an act its last player leaves and makes it anew on the way
-// back (FUN_0053ac70): the same maps from the map seed, its rooms
-// unpopulated, so its monsters, chests, shrines, doors and floors start
-// over. The game's own state stays: quests, the superuniques spawned
-// (game +0x1d30), the seeds, the waypoints, the hire lists. d2d rebuilds the
-// act's levels in place (GameData::refresh_act) and lets go of what it
-// kept of them; the player's town portal goes with them.
-// ponytail: corpses left in the old act stay where they fell, and quest
-// portals (Tristram, the Sanctuary, the tomb) stand as they were.
-// unverified (source: none): what game.exe does with a corpse in an act it frees.
-auto World::leave_act(int act) -> void {
-        if (fight.remote_monsters) return;                 // a joined game: the host keeps its acts
-        auto old = game_data->refresh_act(act);
-        if (act == 0) old.push_back(&game_data->town);
-        const auto gone = [&](const Level* which) { return std::ranges::contains(old, which); };
-        for (const Level* which : old) {
-            fight.kept.erase(which);
-            if (which != &game_data->town) fight.spawning.levels.erase(which);   // the camp isn't remade: its NPCs keep their seeds
-            loot.kept.erase(which);
-        }
-        std::erase_if(operated, [&](const auto& entry) { return gone(entry.first.first) && entry.first.first != &game_data->town; });
-        std::erase_if(doors, [&](const auto& entry) { return gone(entry.first.first) && entry.first.first != &game_data->town; });
-        for (const Level* which : old) if (which != &game_data->town) other_npcs.erase(which);
-        std::erase_if(fires, [&](const Fire& fire) { return gone(fire.level); });
-        std::erase_if(traps, [&](const Trap& trap) { return gone(trap.level); });
-        std::erase_if(treasure, [&](const Treasure& chest) { return gone(chest.level); });
-        if (gone(portal[0].level) && gone(portal[1].level)) portal[0] = portal[1] = {};
-        if (fight.spawning.room_level && gone(fight.spawning.room_level)) { fight.spawning.room_level = nullptr; fight.spawning.room = -1; }
-        d2d::log::info("act {} left: {} levels to be made anew", act + 1, old.size() - (act == 0 ? 1 : 0));
     }
 
 // The save's act (its difficulty byte: 0x80 and the act in the low bits):
@@ -1731,7 +1699,7 @@ auto World::deal(const Command& command) -> bool {
             set_waypoint(waypoint_index(*game_data, d2d::rules::level_ids::kLutGholein));
             // The arrival's level change runs the quests' enter hooks: Andariel's
             // (the Rogues get Cain if he's still caged, FUN_00596de0 / FUN_00597310).
-            // Act 1 left: World::leave_act lets go of it, as game.exe frees the act.
+            // ponytail: game.exe swaps the whole act (the old act's DRLG freed); Act 1's levels stay built.
             arrive(lut_gholein, lut_gholein->start.first, lut_gholein->start.second, "Warriv's caravan");
             return true;
         }

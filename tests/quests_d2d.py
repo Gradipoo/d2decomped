@@ -327,13 +327,13 @@ try:
     menu_pick("go west")
     until("the caravan lands in the camp", lambda: level() == 1, 30)
     print("OK: Warriv's caravan goes back west")
-    # Act 1 was left: game.exe makes it anew on the way back (FUN_0053ac70),
-    # so the Blood Moor cleared before the caravan has its monsters again.
+    # Act 1 was left and stays as it was: game.exe's server keeps its acts
+    # until the game ends (FUN_0052c7f0), so the Blood Moor is still clear.
     cmd("debug goto 2")
     until("back in the Blood Moor", lambda: level() == 2)
-    until("the Blood Moor's monsters come back", lambda: alive(), 30)
-    assert "act 1 left" in log_text(), "the act change wasn't logged"
-    print(f"OK: an act left is made anew ({len(alive())} monsters in the Blood Moor again)")
+    time.sleep(2)
+    assert not alive(), f"the Blood Moor came back after the trip east: {len(alive())} alive"
+    print("OK: an act left stays as it was (the Blood Moor still clear)")
     cmd("quit")
 finally:
     if proc.poll() is None:

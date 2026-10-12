@@ -252,12 +252,19 @@ struct World {
         // Its monsters open its doors (monster_door).
         fight.open_door = [this](const Monster& monster, std::uint32_t now_ms) { return monster_door(monster, now_ms); };
         // The character's skill levels for the fight, the skill shrine's
-        // +all skills (item_allskills) while its boost lasts.
+        // +all skills (item_allskills) while its boost lasts, and a self
+        // state's (Battle Command's aurastat1: its stats on the player,
+        // FUN_00644180 adding item_allskills to every skill).
         fight.skill_base = [this](int id) { return skill_base_level(*game_data, character, id); };
         fight.skill_level = [this](int id) {
             std::vector<d2d::d2s::ItemProp> extra;
             if (now < fight.boost.until)
                 for (const auto& [stat, value] : fight.boost.stats) if (stat == d2d::d2s::kAllSkills) extra.push_back({ .stat = d2d::d2s::kAllSkills, .value = value });
+            for (const auto& state : fight.self_states)
+                if (const auto* skill = game_data->skills.get(state.skill); skill && now < state.until)
+                    for (std::size_t k = 0; k < skill->aurastat.size(); ++k)
+                        if (skill->aurastat[k] == d2d::d2s::kAllSkills)
+                            extra.push_back({ .stat = d2d::d2s::kAllSkills, .value = d2d::rules::eval_calc(game_data->skills, skill->aura_calc[k], {}, skill->id, state.level) });
             return skill_level(*game_data, character, id, extra);
         };
     }
@@ -386,8 +393,6 @@ struct World {
     // Into level `to` near (ax, ay): everything with the player (merc, pets)
     // comes along; the automap and monsters are the new level's.
     void arrive(const Level* destination, float arrive_x, float arrive_y, const char* how);
-    // The act just left: its levels rebuilt and what was kept of them let go.
-    void leave_act(int act);
     std::vector<d2d::rules::QuestMsg> quest_talk(int hc_idx, bool fresh = true);   // every quest's messages from that NPC (fresh: rolls the guard's line)
     void andariel_died(const Fight::Kill& kill, std::uint32_t now_ms);
     void blood_raven_died(std::uint32_t now_ms);

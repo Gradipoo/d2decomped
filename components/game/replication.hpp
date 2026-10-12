@@ -127,7 +127,7 @@ inline void monster_state(Out& out, const Monster& monster) {
     out.i32(monster.hit_points).u8(monster.corpse_used).str(monster.mode);
     unit(out, monster.unit);
     // What its states draw from (town.hpp monster_states): the timers change only as a state starts.
-    out.u32(monster.poison_until).u32(monster.chill_until).u32(monster.stun_until).i32(monster.curse.skill).u32(monster.curse.until).i32(monster.cry.skill).u32(monster.cry.until).i32(monster.aura).u8(monster.in_aura);
+    out.u32(monster.poison_until).u32(monster.chill_until).u32(monster.stun_until).i32(monster.curse.skill).u32(monster.curse.until).i32(monster.cry.skill).u32(monster.cry.until).i32(monster.aura).u8(monster.in_aura).u8(monster.buried).u8(monster.aloft);
 }
 inline void monster_state(In& input, Monster& monster) {
     monster.hit_points = input.get<std::int32_t>(); monster.corpse_used = input.get<std::uint8_t>(); monster.mode = intern(input.str());
@@ -136,6 +136,8 @@ inline void monster_state(In& input, Monster& monster) {
     monster.curse.skill = input.get<std::int32_t>(); monster.curse.until = input.get<std::uint32_t>();
     monster.cry.skill = input.get<std::int32_t>(); monster.cry.until = input.get<std::uint32_t>(); monster.aura = input.get<std::int32_t>();
     monster.in_aura = input.get<std::uint8_t>() != 0;
+    monster.buried = input.get<std::uint8_t>() != 0;
+    monster.aloft = input.get<std::uint8_t>() != 0;
 }
 }  // namespace wire
 
@@ -152,7 +154,7 @@ inline std::vector<std::uint8_t> encode_view(const GameData& game_data, const Vi
     {
         wire::Out chunk;
         wire::unit(chunk, view.player);
-        chunk.u8(view.running).u8(view.dead).u8(view.poisoned).u8(view.chilled).i32(view.pmode).f32(view.prate).u32(view.seq_frame_ms).u8(view.seq_loop);
+        chunk.u8(view.running).u8(view.dead).u8(view.poisoned).u8(view.chilled).i32(view.curse).u8(view.stunned).i32(view.pmode).f32(view.prate).u32(view.seq_frame_ms).u8(view.seq_loop);
         chunk.u16(int(view.seq.size()));
         for (const auto& frame : view.seq) chunk.u8(frame.mode).u8(frame.frame).u8(frame.event);
         for (const auto look_byte : view.gfx) chunk.u8(look_byte);
@@ -328,7 +330,7 @@ inline bool apply_view(const GameData& game_data, std::span<const std::uint8_t> 
     };
     body([&] {
         view.player = wire::unit(input);
-        view.running = byte(); view.dead = byte(); view.poisoned = byte(); view.chilled = byte(); view.pmode = i32(); view.prate = f32(); view.seq_frame_ms = u32(); view.seq_loop = byte();
+        view.running = byte(); view.dead = byte(); view.poisoned = byte(); view.chilled = byte(); view.curse = i32(); view.stunned = byte(); view.pmode = i32(); view.prate = f32(); view.seq_frame_ms = u32(); view.seq_loop = byte();
         view.seq.clear();
         for (int count = u16(); count > 0 && input.ok; --count) {
             const auto mode = std::uint8_t(byte()), frame = std::uint8_t(byte()), event = std::uint8_t(byte());

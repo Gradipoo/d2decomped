@@ -157,7 +157,7 @@ Npc monster_npc(const GameData& game_data, const d2d::txt::Table& monstats, cons
                  std::atoi(std::string(ms2.get(row2, "Utrans(H)")).c_str()) };
     if (const auto velocity = monstats.get(row, "Velocity"); !velocity.empty()) npc.velocity = float(std::atoi(std::string(velocity).c_str()));
     const auto ai_name = monstats.get(row, "AI");
-    npc.town_ai = ai_name == "Npc" ? TownAi::npc : ai_name == "Towner" ? TownAi::towner : ai_name == "Vendor" ? TownAi::vendor : TownAi::none;
+    npc.town_ai = ai_name == "Npc" ? TownAi::npc : ai_name == "Towner" ? TownAi::towner : ai_name == "Vendor" ? TownAi::vendor : ai_name == "JarJar" ? TownAi::jarjar : TownAi::none;
     npc.modes = (ms2.get(row2, "mS1") == "1" ? 1u << 8 : 0u) | (ms2.get(row2, "mS2") == "1" ? 1u << 9 : 0u);
     // Hover name: MonStats' string key, only for units MonStats2 marks
     // selectable (isSel) — not the chicken or the camp's guard rogues,
@@ -713,6 +713,7 @@ void add_object(const GameData& game_data, const d2d::txt::Table& objects, const
         const auto& area_levels = game_data.area_level;
         npc.trap = d2d::rules::roll_trap(std::size_t(into.id) < area_levels.size() ? area_levels[std::size_t(into.id)][3] : 1, rgn);
     }
+    if (objects.get(row, "InitFn") == "27") npc.trap = rgn.next() % 1000 <= 0x14c ? 3 : 0;   // a goo pile (FUN_0054fc50): trap 3, 333 in 1000
     // The gold placeholder (InitFn 28, FUN_0054f8c0): ON, then 1..9 piles
     // at rand(4), rand(4) subtiles off it, where free in its room.
     // ponytail: only its seed steps; the piles (FUN_00559300) aren't dropped and it stays NU (a dummy: nothing draws it).

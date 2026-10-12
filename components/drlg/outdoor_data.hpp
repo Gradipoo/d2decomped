@@ -81,7 +81,7 @@ template <class Read> void load_outdoor_assets(OutdoorAssets& assets, Read&& rea
     for (std::size_t row = 0; row < prest.size(); ++row) {
         const int def = to_int(prest.get(row, "Def"));
         const auto name = prest.get(row, std::optional<std::size_t>{ 0 });
-        if (def < 1 || !(name.starts_with("Act 1 - ") || name.starts_with("Act 2 - "))) continue;   // acts 1 and 2's presets
+        if (def < 1 || !(name.starts_with("Act 1 - ") || name.starts_with("Act 2 - ") || name == "Act 3 - Town")) continue;   // acts 1 and 2's presets, Kurast Docks
         Preset preset{ to_int(prest.get(row, "SizeX")), to_int(prest.get(row, "SizeY")), to_int(prest.get(row, "Files")),
                   to_int(prest.get(row, "Scan")), to_int(prest.get(row, "Pops")),
                   to_int(prest.get(row, "LevelId")), to_int(prest.get(row, "KillEdge")), std::uint32_t(std::stoul("0" + std::string(prest.get(row, "Dt1Mask")))), {} };

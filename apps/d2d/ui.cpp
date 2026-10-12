@@ -59,7 +59,8 @@ NpcMenuState open_npc_menu(const Scene& scene, const Level& level, int npc, int 
     namespace monster_ids = d2d::rules::monster_ids;
     if (npc_info.hc_idx == monster_ids::kKashya && clvl > 7) entries = { 0xd35, 0xd45 };
     if (npc_info.hc_idx == monster_ids::kAkara && respec) entries[2] = 0x2ba0;
-    if (npc_info.hc_idx == monster_ids::kWarriv && east) entries = { 0xd35, 0xd36 };
+    if (npc_info.hc_idx == monster_ids::kWarriv && east) entries = { 0xd35, 0xd36 };   // FUN_004b65f0: go east
+    if (npc_info.hc_idx == monster_ids::kMeshif && east) entries = { 0xd35, 0xd38 };   // FUN_004b6620: sail east
     if (npc_info.hc_idx == monster_ids::kCharsi && imbue) entries = { 0xd35, 0xd06, 0xfb1 };
     if (!resurrect.empty() && std::ranges::find(d2d::rules::kMercNpcs, npc_info.hc_idx) != d2d::rules::kMercNpcs.end()) {
         auto slot = std::ranges::find(entries, 0xd45);
@@ -75,7 +76,7 @@ NpcMenuState open_npc_menu(const Scene& scene, const Level& level, int npc, int 
                                 : id == 0xd45 ? NpcMenuState::kHire
                                 : id == 0xfb4 ? NpcMenuState::kIdentify
                                 : id == 0x2ba0 ? NpcMenuState::kRespec
-                                : id == 0xd36 || id == 0xd37 ? NpcMenuState::kCaravan
+                                : id >= 0xd36 && id <= 0xd39 ? NpcMenuState::kCaravan
                                 : id == 0xfb1 ? NpcMenuState::kImbue
                                 : id == 0x1507 ? NpcMenuState::kResurrectMerc : NpcMenuState::kClose });
     menu.lines.push_back({ string_id(scene, 0x102e), 15 });

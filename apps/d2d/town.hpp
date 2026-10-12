@@ -99,6 +99,8 @@ inline std::vector<std::string_view> player_states(const Scene& scene, const Vie
     std::vector<std::string_view> out;
     if (view.poisoned) out.push_back("poison");
     if (view.chilled) out.push_back("cold");
+    if (view.stunned) out.push_back("stunned");
+    if (const auto* skill = scene.skills.get(view.curse)) out.push_back(skill->auratarget);   // a monster's curse: its auratargetstate
     for (const int buff : view.buffs) if (const auto* skill = scene.skills.get(buff)) out.push_back(skill->aurastate);
     if (view.aura > 0) if (const auto* skill = scene.skills.get(view.aura)) out.push_back(skill->aurastate);
     if (const auto state = d2d::rules::shrine_state(view.boost_code); !state.empty()) out.push_back(state);   // its overlays
@@ -158,7 +160,9 @@ struct Town {
     std::size_t net_store_shown = 0;                         // the host stock count the store last showed
     std::uint32_t net_follow_ms = 0;                         // when the host was last told where our walk is
     int net_trade_pending = -1;                              // the host NPC being walked to for a trade
-    bool net_trade_gamble = false;
+    // Its C->S 0x38: kind 1 trade, 2 gamble, 0 travel (the extra: the handler's
+    // level, 0x28 Warriv's east and Meshif's west, 0x4b Meshif's east, 1 Warriv's west).
+    int net_trade_kind = 1, net_trade_extra = 0;
     bool net_trade_asked = false;                            // its 0x59 + 0x13 went out, NPC info awaited
     int net_operate_type = 2;                                // the host unit being walked to (0x13 once there): 2 object, 0 our corpse
     std::uint32_t net_operate = 0, net_operate_ms = 0;       // ... its id, when

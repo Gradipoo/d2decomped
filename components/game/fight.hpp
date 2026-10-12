@@ -159,8 +159,15 @@ struct Fight {
     const Level* mon_level = nullptr;                // whose monsters `monsters` are
     AreaSeen area_seen;                              // their spawn areas' "seen" flags (ai.cpp search_target)
     OpenDoor open_door;                              // a monster's door at a think (the world's doors)
-    std::array<std::uint32_t, 2> amplified{};        // the player's / merc's Amplify Damage (a Cursed boss) runs out
+    // The player's / merc's curse from a monster (do 30, FUN_005c37c0: one
+    // at a time, the newest): a Cursed boss's Amplify Damage, the
+    // Summoner's Weaken. The player's aurastats join its self states'.
+    struct Curse { int skill = -1, level = 0; std::uint32_t until = 0; };
+    std::array<Curse, 2> curses{};
     std::uint32_t chilled = 0;                       // the player's chill (state 11, a monster's cold) runs out
+    // The player's stun (state 21, FUN_0057aae0: a monster's Smite) runs out.
+    // ponytail: unverified what it stops a player doing; only its state (the overlay) is kept.
+    std::uint32_t stunned = 0;
     // Chill's -50 attackrate / velocitypercent (FUN_0057af80 -> FUN_00623f50).
     [[nodiscard]] int chill_rate(std::uint32_t now_ms) const { return now_ms < chilled ? -50 : 0; }
     // A healer's and a well's cure (FUN_00578d30 / FUN_00585720): poison

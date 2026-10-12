@@ -21,6 +21,7 @@
 #include <level_ids.hpp>
 #include <light.hpp>
 #include <log.hpp>
+#include <monster_ids.hpp>
 #include <quests.hpp>
 #include <rules.hpp>
 #include <sound_ids.hpp>
@@ -141,7 +142,12 @@ void view_units(const Scene& scene, const View& view, float camera_x, float came
     for (std::size_t i = 0; i < view.monsters.size(); ++i) {
         const auto& monster = view.monsters[i];
         if (monster.corpse_used || !in_view(monster.unit.x, monster.unit.y)) continue;
-        out.push_back({ monster.unit.x, monster.unit.y, &scene.npc_anim(monster.npc, monster.mode), monster.unit.dir, monster.alive() ? &monster.npc.name : nullptr, monster.unit.mode_ms, -10 - int(i) });
+        // A buried maggot: S1 backwards (seq_maggotdown's rows), then held on its first frame; not hovered.
+        // unverified (source: MonSeq seq_maggotdown): how game.exe's client draws one under the sand.
+        const bool down = monster.buried;
+        out.push_back({ monster.unit.x, monster.unit.y, &scene.npc_anim(monster.npc, down ? std::string_view("S1") : std::string_view(monster.mode)), monster.unit.dir,
+                        monster.targetable() ? &monster.npc.name : nullptr, down && monster.mode != "S1" ? 0u : monster.unit.mode_ms, -10 - int(i) });
+        out.back().reverse = down;
         out.back().overlay_class = monster.npc.overlay_class;
         out.back().cmap = scene.monster_map(monster.npc);
         out.back().ghostly = monster.alive() && std::ranges::find(monster.mods, d2d::rules::umod::ghostly) != monster.mods.end();
@@ -405,11 +411,28 @@ auto Town::send(const Command& command) -> void {
                 net_game->store_items.clear();
                 net_store_shown = 0;
                 net_trade_pending = int(vendor->id);
-                net_trade_gamble = trade->gamble;
+                net_trade_kind = trade->gamble ? 2 : 1; net_trade_extra = 0;
                 net_trade_ms = frame_now;
             } else {
                 net_game->log.note("no host NPC near " + npc.name + " to trade with");
             }
+        } else if (const auto* caravan = std::get_if<cmd::Caravan>(&command); caravan && caravan->npc >= 0 && std::size_t(caravan->npc) < level->npcs.size()) {
+            // Travel (Warriv, Meshif): the host's NPC as a trade's, then 0x38
+            // kind 0 with the handler's level (0x4b5140 / 0x4b51a0 / 0x4b5260 /
+            // 0x4b52c0); the host moves us (FUN_00579d60).
+            namespace monster_ids = d2d::rules::monster_ids;
+            const int hc_idx = level->npcs[std::size_t(caravan->npc)].hc_idx;
+            if (const auto* host_npc = net_npc(caravan->npc)) {
+                const float from_x = net_game->host_x - host_npc->x, from_y = net_game->host_y - host_npc->y, apart = std::max(std::hypot(from_x, from_y), 1.f);
+                net_game->move_to(host_npc->x + from_x / apart * 3.f, host_npc->y + from_y / apart * 3.f, view.running);
+                net_trade_pending = int(host_npc->id);
+                net_trade_kind = 0;
+                net_trade_extra = hc_idx == monster_ids::kMeshif ? 0x4b : hc_idx == monster_ids::kWarrivAct2 ? 1 : 0x28;
+                net_trade_ms = frame_now;
+            } else {
+                net_game->log.note("no host NPC near " + level->npcs[std::size_t(caravan->npc)].name + " to travel with");
+            }
+            return;                                         // the host moves us, not the local World
         } else if ((std::holds_alternative<cmd::Buy>(command) || std::holds_alternative<cmd::Sell>(command) || std::holds_alternative<cmd::Repair>(command))
                    && !net_game->trade_npc) {
             net_game->log.note("a trade with no host NPC: not made (d2d's own store would make it here only)");
@@ -1128,7 +1151,7 @@ auto Town::update(std::vector<std::uint8_t>& framebuffer, const Mouse& frame_mou
             } else if (action == NpcMenuState::kRespecOk) {
                 net.send(cmd::Respec{ who });
             } else if (action == NpcMenuState::kCaravan) {
-                net.send(cmd::Caravan{ who });
+                send(cmd::Caravan{ who });                      // a joined game: the host's NPC (Town::send)
             } else if (action == NpcMenuState::kResurrectMerc) {
                 net.send(cmd::ResurrectMerc{ who });
             } else if (action == NpcMenuState::kImbue) {
@@ -1444,12 +1467,13 @@ auto Town::walk(const Mouse& mouse, bool over_ui, std::uint32_t frame_ms, std::u
                                            c2s::interact(1, std::uint32_t(net_trade_pending)) });
                     net_trade_asked = true;
                 } else if (net_trade_asked && net_game->npc_info == std::uint32_t(net_trade_pending)) {
-                    // Talking: start the chat, then the trade (1) or gamble (2: unverified).
+                    // Talking: start the chat, then the trade (1), gamble (2: unverified) or travel (0).
                     namespace c2s = d2d::net::d2gs::c2s;
-                    net_game->trade_npc = std::uint32_t(net_trade_pending);
-                    if (net_chat_npc != net_game->trade_npc) net_game->send_items({ c2s::npc_chat(true, 1, net_game->trade_npc) });   // the talk's open already
-                    net_chat_npc = net_game->trade_npc;
-                    net_game->send_items({ c2s::npc_action(net_trade_gamble ? 2 : 1, net_game->trade_npc) });
+                    const auto host_npc = std::uint32_t(net_trade_pending);
+                    if (net_trade_kind != 0) net_game->trade_npc = host_npc;
+                    if (net_chat_npc != host_npc) net_game->send_items({ c2s::npc_chat(true, 1, host_npc) });   // the talk's open already
+                    net_chat_npc = host_npc;
+                    net_game->send_items({ c2s::npc_action(std::uint32_t(net_trade_kind), host_npc, std::uint32_t(net_trade_extra)) });
                     net_trade_pending = -1;
                     net_trade_asked = false;
                 }
@@ -1697,7 +1721,8 @@ auto Town::open_menu(int npc) -> void {
                 const int difficulty = character.header.active_difficulty();
                 const auto& quest_bits = character.header.quests[std::size_t(std::clamp(difficulty, 0, 2))];
                 return !d2d::rules::qbit(quest_bits, d2d::rules::kRespecQuest, 0) && (d2d::rules::qbit(quest_bits, d2d::rules::kRespecQuest, 1) || difficulty == 2);
-            }(), character.header.quest_flag(character.header.active_difficulty(), d2d::rules::AndyQuest::kQuest, 0),
+            }(), character.header.quest_flag(character.header.active_difficulty(),   // table 0x7253e0: Warriv by quest 6, Meshif by quest 14 (bit 0)
+                                             npc_info.hc_idx == d2d::rules::monster_ids::kMeshif ? d2d::rules::SevenTombsQuest::kQuest : d2d::rules::AndyQuest::kQuest, 0),
             character.header.quest_flag(character.header.active_difficulty(), d2d::rules::ToolsQuest::kQuest, 1),
             character.header.merc_seed != 0 && character.header.merc_dead
                 ? resurrect_line(*scene, character.header.merc_type, character.header.merc_name,
@@ -1761,7 +1786,10 @@ auto Town::draw(std::vector<std::uint8_t>& framebuffer, const Mouse& mouse, std:
         }
         std::erase_if(state_clock.seen, [&](const auto& entry) { return frame_ms - entry.second.last > 5000; });
         Unit player_look{};
-        dress(*scene, player_look, -1, player_states(*scene, view), &state_clock);
+        auto look_states = player_states(*scene, view);
+        if (net_game)
+            for (const int row : net_game->self_states) if (std::size_t(row) < scene->state_names.size()) look_states.emplace_back(scene->state_names[std::size_t(row)]);
+        dress(*scene, player_look, -1, look_states, &state_clock);
         const bool town = d2d::rules::level_ids::is_town(level->id);                       // TN/TW in town, NU/WL outside
         // A dead player has no DD composite: DT held on its last frame.
         const auto cls = std::max(character.character_class, 0);

@@ -408,6 +408,12 @@ auto NetGame::handle(const d2d::net::Bytes& packet) -> void {
             if (unit.mode == 8 || unit.mode == 9) { unit.life = 0; unit.moving = false; }   // dying / dead: no hit says so
         }
         break;
+    case 0xa8:   // set state: +1 type, +2 id, +6 length, +7 the state (its stat list after, unread)
+        if (size >= 8 && packet[1] == 0 && read_u32(packet, 2) == self_id && !std::ranges::contains(self_states, int(packet[7]))) self_states.push_back(packet[7]);
+        break;
+    case 0xa9:   // end state: +1 type, +2 id, +6 the state
+        if (size >= 7 && packet[1] == 0 && read_u32(packet, 2) == self_id) std::erase(self_states, int(packet[6]));
+        break;
     case 0x0d:   // a unit stops at x, y: +6 its unit command (0x13 hit, 8 dying, 9 dead)
         if (size >= 11) place(unit_at(packet[1], read_u32(packet, 2)), read_u16(packet, 7), read_u16(packet, 9));
         if (size >= 11 && packet[1] == 0 && read_u32(packet, 2) == self_id && packet[6] == 8) died = true;

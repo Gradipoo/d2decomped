@@ -1278,6 +1278,23 @@ int main() {
         assert(countess_think(think_in, {}, path, roll).act == MonAct::home);
         assert(d2d::rules::monster_skill_level(10, 2) == 17);
     }
+    {   // The palace guard (MonAI JarJar, FUN_005e7590): home, back to it, aside 3 north.
+        using d2d::rules::NpcAct;
+        d2d::rules::NpcBrain brain;
+        Rng seed{ 9 };
+        auto act = d2d::rules::jarjar_think(brain, seed, 50, 50, 1, false, false, {});
+        assert(act.kind == NpcAct::Kind::stand && act.frames == 20 && brain.home_x == 50);
+        act = d2d::rules::jarjar_think(brain, seed, 53, 50, 2, false, false, {});              // the first 200 frames: stand
+        assert(act.kind == NpcAct::Kind::stand && act.frames == 20);
+        act = d2d::rules::jarjar_think(brain, seed, 53, 50, 250, false, false, {});            // 3 off: home, the frame kept
+        assert(act.kind == NpcAct::Kind::walk && act.x == 50 && act.y == 50 && brain.guard_frame == 250);
+        act = d2d::rules::jarjar_think(brain, seed, 50, 50, 300, false, false, {});            // within 200 frames: stand
+        assert(act.kind == NpcAct::Kind::stand && act.frames == 20 && seed.low == 9);
+        act = d2d::rules::jarjar_think(brain, seed, 50, 50, 400, true, true, {});              // aside: 3 north of home
+        assert(act.kind == NpcAct::Kind::walk && act.x == 50 && act.y == 47);
+        act = d2d::rules::jarjar_think(brain, seed, 50, 47, 401, true, true, {});              // there: a wander or stand 120
+        assert(act.frames == 120);
+    }
     {   // A town NPC's think (MonAI Npc, FUN_005e7130; tools/emu npcs.py).
         using d2d::rules::NpcAct;
         assert(d2d::rules::npc_distance(0, 0, 4, 1) == 4 && d2d::rules::npc_distance(0, 0, 1, 4) == 4);

@@ -244,6 +244,8 @@ enum class ServerStartFunction : int {
     kLeap = 40,                    // FUN_005d9d50: a monster hits its target, then leaps past it (twice its spot less its own)
     kLeapAttack = 41,              // FUN_005da540
     kFireHit = 42,                 // FUN_005cae40: a monster's hit with its S1 damage (FUN_005a4f50 mode 8)
+    kMaggotUp = 44,                // FUN_005cb170: up at the nearest free spot (FUN_00554ea0), flags 0xe back
+    kMaggotDown = 45,              // FUN_005cb270: flags 0xe off, its 0x1000 lifted
     kStackingStrike = 56,          // Feral Rage, Maul
     kRabies = 57,
     kFireClaws = 58,               // FUN_005c7e00

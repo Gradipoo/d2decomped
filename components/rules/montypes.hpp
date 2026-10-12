@@ -60,11 +60,12 @@ struct MonType {
         int to_block = 0, drain = 100, cold_effect = 0;   // ToBlock, Drain (leech %), coldeffect (speed % while chilled)
         struct El { int pct = 0, min = 0, max = 0, dur = 0; };
         std::array<El, 3> elements{};                  // El1..3 Pct / MinD / MaxD (MonLvl %) / Dur (ticks)
-        int s1_min = 0, s1_max = 0;  // S1MinD / S1MaxD: a skill's hit (FUN_005a4f50 mode 7 / 8)
+        int s1_min = 0, s1_max = 0, s1_th = 0;  // S1MinD / S1MaxD / S1TH: a skill's hit (FUN_005a4f50 mode 7 / 8)
     };
     std::array<Diff, 3> diff{};
     // MonStats2.
-    int size = 2, melee_rng = 0;                // SizeX, MeleeRng (in melee: unit_distance within it + 1)
+    int size = 2, melee_rng = 0;                // SizeX (at least 1), MeleeRng (in melee: unit_distance within it + 1)
+    bool footprint = true;                      // SizeX above 0: it stamps the collision grid (FUN_0064ea90)
     std::string base_w;                         // BaseW
     std::array<std::vector<std::string>, 16> parts;   // HDv..S8v components, per layer present
     std::array<std::uint8_t, 16> choices{};     // HDv..S8v list lengths, every layer (MonStats2 +0x15)

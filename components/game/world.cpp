@@ -111,6 +111,8 @@ auto World::view() const -> View {
         view.dead = fight.dead();
         view.poisoned = std::ranges::any_of(fight.regen, [](const Fight::Regen& regen_entry) { return regen_entry.poison; });
         view.chilled = fight.chill_rate(now) != 0;
+        view.curse = now < fight.curses[0].until ? fight.curses[0].skill : -1;
+        view.stunned = now < fight.stunned;
         view.pmode = fight.pmode;
         view.prate = fight.prate;
         view.seq.assign(fight.seq.begin(), fight.seq.end()); view.seq_frame_ms = fight.seq_frame_ms; view.seq_loop = fight.seq_loop;
@@ -731,8 +733,10 @@ auto World::enter(const Character& entering) -> void {
         // A game starts in the town of the save's act (its difficulty byte:
         // 0x80 and the act in the low bits); the camp when that isn't built.
         const auto act_byte = character.header.difficulty[std::size_t(std::clamp(character.header.active_difficulty(), 0, 2))];
-        const Level* act2_town = (act_byte & 0x80) && (act_byte & 7) == 1 ? game_data->level(d2d::rules::level_ids::kLutGholein) : nullptr;
-        level = act2_town && act2_town->start.first >= 0 ? act2_town : &game_data->town;   // set_map_seed may have rebuilt the camp
+        const int save_act = act_byte & 0x80 ? act_byte & 7 : 0;
+        const Level* act_town = save_act == 1 ? game_data->level(d2d::rules::level_ids::kLutGholein)
+                              : save_act == 2 ? game_data->level(d2d::rules::level_ids::kKurastDocks) : nullptr;
+        level = act_town && act_town->start.first >= 0 ? act_town : &game_data->town;   // set_map_seed may have rebuilt the camp
         // A corpse in the save (its corpse list, FUN_00533850) lies by the
         // town's start.
         // ponytail: where game.exe puts it isn't traced; the save's x / y
@@ -1655,6 +1659,29 @@ auto World::deal(const Command& command) -> bool {
             using d2d::rules::qbit;
             if (std::size_t(caravan->npc) >= level->npcs.size()) return true;
             const int hc_idx = level->npcs[std::size_t(caravan->npc)].hc_idx;
+            // Meshif (FUN_00579d60 hcIdx 0xd2): once quest 14 is done, to Kurast
+            // Docks (FUN_0054b830(0x4b, 0)); FUN_005467e0: unless Act 3 is open
+            // (quest 15 bit 0), quest 10's bits 0 and 13 if not yet (and
+            // FUN_00544160 takes "msf " / "vip " off the player), then quest
+            // 15's bits 0 and 13; the town's waypoint. hcIdx 0x108 back to
+            // Lut Gholein (FUN_0054b830(0x28, 0)).
+            // ponytail: FUN_00544160's item removal (the staff's parts) isn't done.
+            if (hc_idx == d2d::rules::monster_ids::kMeshifAct3) {
+                if (const Level* lut = game_data->level(d2d::rules::level_ids::kLutGholein); lut && lut->start.first >= 0) arrive(lut, lut->start.first, lut->start.second, "Meshif's boat");
+                return true;
+            }
+            if (hc_idx == d2d::rules::monster_ids::kMeshif) {
+                if (!qbit(quests(), d2d::rules::SevenTombsQuest::kQuest, 0)) return true;
+                const Level* docks = game_data->level(d2d::rules::level_ids::kKurastDocks);
+                if (!docks || docks->start.first < 0) { d2d::log::warn("Kurast Docks didn't build; the boat stays"); return true; }
+                if (!qbit(quests(), 15, 0)) {
+                    if (!qbit(quests(), 10, 0)) { d2d::rules::qset(quests(), 10, 0); d2d::rules::qset(quests(), 10, 13); }
+                    d2d::rules::qset(quests(), 15, 0); d2d::rules::qset(quests(), 15, 13);
+                }
+                set_waypoint(waypoint_index(*game_data, d2d::rules::level_ids::kKurastDocks));
+                arrive(docks, docks->start.first, docks->start.second, "Meshif's boat");
+                return true;
+            }
             if (hc_idx == d2d::rules::monster_ids::kWarrivAct2) {
                 const auto& camp = game_data->town;
                 const auto spot = camp.spawn_at[5].first >= 0 ? camp.spawn_at[5] : camp.start;
@@ -1927,7 +1954,7 @@ auto World::apply(const Command& command, std::uint32_t now_ms) -> void {
         const auto& use_skill = std::get<cmd::UseSkill>(command);
         const auto* skill = game_data->skills.get(use_skill.skill);
         const int monster_index = fight.monster_index(use_skill.unit);
-        const bool live = monster_index >= 0 && fight.monsters[std::size_t(monster_index)].alive();
+        const bool live = monster_index >= 0 && fight.monsters[std::size_t(monster_index)].targetable();
         if (skill && self_cast(*skill)) {                                            // Holy Shield: where the player stands
             if (fight.cast(use_skill.skill, now_ms)) player.walking = false;
         } else if (skill && skill->srvdofunc == ServerDoFunction::kWhirlwind && monster_index < 0) {                      // Whirlwind to that point (FUN_005d8f50)
@@ -2172,7 +2199,7 @@ auto World::tick(const std::vector<Command>& cmds, std::uint32_t now_ms, std::ui
                                  && (player.x != before_x || player.y != before_y);
             }
         }
-        npc_patrol(*game_data, *level, npc_states, talking, now_ms, elapsed, crowd, &player);
+        npc_patrol(*game_data, *level, npc_states, talking, now_ms, elapsed, crowd, &player, arcane.guard_state == 2);
         cain_step(now_ms, elapsed);
         for (const auto& neighbour : level->nearby) {           // over the edge, still in play
             auto& states = other_npcs[neighbour.level];

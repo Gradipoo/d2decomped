@@ -98,7 +98,7 @@ struct Crowd {
 // Velocity.
 // ponytail: an NPC's first think comes at once.
 void npc_patrol(const GameData& game_data, const Level& level, std::vector<UnitState>& npcs, std::array<int, 3> busy,
-                std::uint32_t now_ms, float elapsed, const Crowd& crowd = {}, const UnitState* player = nullptr);
+                std::uint32_t now_ms, float elapsed, const Crowd& crowd = {}, const UnitState* player = nullptr, bool guard_aside = false);
 
 // A player's walk from (x, y) to (gx, gy), in cells: game.exe's path type 7
 // (rules::player_path: the toward pather, the search when close) over
@@ -232,6 +232,14 @@ struct Monster {
     int charging = -1;                        // Charge (srvstfunc 31) under way: its skill, swung at its end
     // Leap (srvstfunc 40) under way: where it rose and where it lands (cells).
     bool leaping = false;
+    // A sand maggot down (MagottDown's start, FUN_005cb270: unit flags 0xe
+    // off, its 0x1000 lifted): no one targets, hits or walks into it till
+    // MagottUp (FUN_005cb170) brings it up at the nearest free spot.
+    bool buried = false;
+    // A vulture aloft (FUN_005f2eb0's take-off: flags 0xe off, its stamps
+    // lifted, pattern 5, path mask 0): untargetable, it flies over
+    // anything till it lands (FUN_005f2fc0).
+    bool aloft = false;
     float leap_from_x = 0, leap_from_y = 0, leap_to_x = 0, leap_to_y = 0;
     int move_pct = 0;
     std::uint32_t laid_until = 0;
@@ -243,6 +251,7 @@ struct Monster {
     std::vector<std::pair<int, int>> path;
     bool half_freeze = false;
     [[nodiscard]] bool alive() const { return hit_points > 0; }
+    [[nodiscard]] bool targetable() const { return alive() && !buried && !aloft; }   // unit flags 0xe: not a buried maggot, a vulture aloft
     // As a target for the player's (or the merc's) hits.
     [[nodiscard]] d2d::rules::Target target(const GameData& game_data) const {
         const auto& type_info = game_data.monsters.types[std::size_t(type)];
@@ -264,12 +273,14 @@ struct Foe {
     int damage = 0;                           // life lost this frame, whole points
     int poison = 0, poison_ticks = 0;         // poison taken this frame: life per tick (256ths), for ticks
     int chill_ticks = 0;                      // chilled this frame, ticks
+    int stun_ticks = 0;                       // stunned this frame (a monster's Smite), ticks
     bool blocked = false;                     // blocked a hit this frame
     std::vector<const Monster*> melee_by;     // who struck at it in melee this frame (Frozen / Shiver Armor)
     int missile_hits = 0;                     // missiles that reached it this frame (Chilling Armor)
     int hits = 0;                             // hits that landed this frame (each wears its armour)
     int mana_burn = 0;                        // mana it lost to Mana Burn this frame
-    int amplify = 0;                          // Amplify Damage cast on it this frame (a Cursed boss): its level
+    struct Cast { int skill = -1, level = 0; };
+    Cast cursed;                              // a curse cast on it this frame (a Cursed boss's Amplify Damage, the Summoner's Weaken)
     bool pet = false;                         // the merc, a summon: in the player's list
     int size = 2;                             // FUN_00620510: a player's 2, a monster's MonStats2 SizeX
     int threat = 14;                          // FUN_005dc920: a player's 14, a monster's MonStats threat

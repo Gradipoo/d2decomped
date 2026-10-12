@@ -836,7 +836,7 @@ works it out locally; d2d's View gets it from its own World today.
 | `portals` | 0x51 (TownPortal objects), 0x60, 0x82 | d2d's View has the player's only; objects have unit ids there |
 | `corpses` | 0x8e, a player unit in a dead mode | |
 | `npc_states` | 0xac (NPCs are monsters) and their moves; objects 0x51 / 0x0e | **by `Level::npcs` index in d2d, by unit id in game.exe**; a host's NPCs have ids d2d must map to (class, position) |
-| `boost`, `aura`, `buffs` | 0xa8 / 0xaa / 0xa9 (states with stat lists) | the View lists skills, game.exe states: map States.txt ↔ skills |
+| `boost`, `aura`, `buffs`, `curse` | 0xa8 / 0xaa / 0xa9 (states with stat lists) | the View lists skills, game.exe states: map States.txt ↔ skills; a joined d2d keeps the states the host sets on its own player (0xa8 / 0xa9, `NetGame::self_states`) and draws them |
 | `gold_lost` | stat 175 (0x1d..0x1f) **(?)** | |
 | `day` | not sent **(?)** | game time on the client |
 | `den_cleared`, `quest_log`, `game_quests`, `den_left` | 0x28 / 0x29 / 0x52 | d2d keeps Act 1's 7; game.exe sends all 41 quests' 16-bit words (96 bytes) |

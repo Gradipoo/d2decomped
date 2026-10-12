@@ -203,7 +203,7 @@ void load_monsters(GameData& game_data, const d2d::mpq::Stack& mpqs) {
                   num(text("A2MinD" + x)), num(text("A2MaxD" + x)), num(text("A2TH" + x)),
                   num(text("aidel" + x)), num(text("aidist" + x)), {}, std::string(text("TreasureClass1" + x)) };
             for (int i = 0; i < 8; ++i) per_difficulty.aip[std::size_t(i)] = num(text("aip" + std::to_string(i + 1) + x));
-            per_difficulty.s1_min = num(text("S1MinD" + x)); per_difficulty.s1_max = num(text("S1MaxD" + x));
+            per_difficulty.s1_min = num(text("S1MinD" + x)); per_difficulty.s1_max = num(text("S1MaxD" + x)); per_difficulty.s1_th = num(text("S1TH" + x));
             static constexpr const char* kRes[6] = { "ResDm", "ResMa", "ResFi", "ResLi", "ResCo", "ResPo" };
             for (int i = 0; i < 6; ++i) per_difficulty.res[std::size_t(i)] = num(text(kRes[i] + x));
             per_difficulty.to_block = num(text("ToBlock" + x));
@@ -220,7 +220,7 @@ void load_monsters(GameData& game_data, const d2d::mpq::Stack& mpqs) {
         const auto found = ms2_rows.find(std::string(text("MonStatsEx")));
         if (found != ms2_rows.end()) {
             const auto monstats2_row = found->second;
-            type_info.size = std::max(num(ms2.get(monstats2_row, "SizeX")), 1); type_info.melee_rng = num(ms2.get(monstats2_row, "MeleeRng"));
+            type_info.size = std::max(num(ms2.get(monstats2_row, "SizeX")), 1); type_info.footprint = num(ms2.get(monstats2_row, "SizeX")) > 0; type_info.melee_rng = num(ms2.get(monstats2_row, "MeleeRng"));
             type_info.base_w = ms2.get(monstats2_row, "BaseW");
             type_info.can_block = ms2.get(monstats2_row, "mBL") == "1";
             type_info.pieces = num(ms2.get(monstats2_row, "TotalPieces"));
@@ -684,6 +684,7 @@ void load_tables(GameData& game_data, const d2d::mpq::Stack& mpqs) {
             state.item_type = std::string(states_table.get(row, "itemtype"));
             const std::string trans(states_table.get(row, "itemtrans"));
             for (std::size_t colour = 0; colour < game_data.item_colours.codes.size(); ++colour) if (!trans.empty() && game_data.item_colours.codes[colour] == trans) state.item_colour = int(colour);
+            game_data.state_names.emplace_back(states_table.get(row, "state"));
             game_data.states.emplace(std::string(states_table.get(row, "state")), std::move(state));
         }
     if (auto bytes = mpqs.try_read(R"(data\global\palette\ACT1\Pal.pl2)"); bytes && bytes->size() >= 0x53500 + 111 * 256) {

@@ -146,8 +146,20 @@ FUN_005e9e00, 81 JarJar FUN_005e7590 (act2guard2).
   stands.
 - **Vendor** (FUN_005e9e00): one step of the unit seed; `low % 100 < 20`
   → mode 8 (S1, FUN_005ddfc0(8, 0, 0)), else stand 30. No path, no walk.
-- JarJar (FUN_005e7590): a guard that follows its AI control's spot and
-  heeds the player (FUN_005e68f0); not ported.
+- JarJar (FUN_005e7590, the palace guard): its home is AI control
+  command 10 (FUN_0058eef0(unit, 10): +0xc, +0x10; +0x18 the frame it last
+  moved or heeded). Till he stands aside (FUN_0059b8b0: record 0xb with
+  data+0x18 / +0x19 clear and data+0x40 2; no record counts as aside): no
+  more than once 200 frames, home from over 1 off (FUN_005ded90), else the
+  Npc's visitor (FUN_005e68f0); stand 20. FUN_0059b8f0 swaps the spot for
+  data+0x30 / +0x34 (4 up for +0x19) and drops the heeding while +0x18 /
+  +0x19 are set (what sets them isn't traced). Aside: to 3 north of home
+  when over 7 off (over 2 once data+0x40 is 2, FUN_0059aec0); else the
+  visitor; else a heeded player within 12: rand(1000) < 100 a spot 2
+  about it (FUN_005df530), stand 200; else rand(1000) < 50 a wander 3
+  (FUN_005de200); stand 120. d2d: `rules::jarjar_think` (test_monsters),
+  aside from `ArcaneQuest::guard_state`; not run against game.exe (npcs.py
+  leaves him out: object 122's InitFn makes him).
 
 d2d: `Npc::town_ai` (MonStats AI), `rules::npc_think(..., towner)` and
 `rules::vendor_think`. A built level's NPCs (Lut Gholein) take their DS1

@@ -175,11 +175,11 @@ int facing16(int dir64) {
 }  // namespace
 
 void npc_patrol(const GameData& game_data, const Level& level, std::vector<UnitState>& npcs, std::array<int, 3> busy,
-                std::uint32_t now_ms, float elapsed, const Crowd& crowd, const UnitState* player) {
+                std::uint32_t now_ms, float elapsed, const Crowd& crowd, const UnitState* player, bool guard_aside) {
     constexpr std::uint32_t kFrameMs = 40;
     for (std::size_t i = 0; i < npcs.size() && i < level.npcs.size(); ++i) {
         const auto& npc = level.npcs[i];
-        if (npc.town_ai == TownAi::none || (npc.town_ai != TownAi::vendor && npc.path.empty())) continue;
+        if (npc.town_ai == TownAi::none || ((npc.town_ai == TownAi::npc || npc.town_ai == TownAi::towner) && npc.path.empty())) continue;
         auto& state = npcs[i];
         // A talk starting (FUN_00548b00): its path stopped, AI control +0x14
         // = 40, the think next frame.
@@ -215,7 +215,9 @@ void npc_patrol(const GameData& game_data, const Level& level, std::vector<UnitS
         }
         // ponytail: act.greet (unit sound 0x12, the client's greeting through
         // FUN_004e0590) plays nothing yet.
-        const auto act = npc.town_ai == TownAi::vendor ? d2d::rules::vendor_think(npc.seed)
+        // The palace guard (JarJar): aside as record 0xb's data+0x40 is 2 (rules::ArcaneQuest::guard_state).
+        const auto act = npc.town_ai == TownAi::jarjar ? d2d::rules::jarjar_think(state.brain, npc.seed, x, y, int(now_ms / kFrameMs), guard_aside, guard_aside, visitor)
+                       : npc.town_ai == TownAi::vendor ? d2d::rules::vendor_think(npc.seed)
                                                        : d2d::rules::npc_think(state.brain, npc.seed, points, x, y, npc.hc_idx, npc.modes, 1, visitor, npc.town_ai == TownAi::towner);
         if (act.face >= 0) state.dir = facing16(act.face);
         switch (act.kind) {
@@ -329,11 +331,13 @@ int skill_id(const GameData& game_data, const std::string& name) {
 // GameData::mon_seqs): the rows played, a frame each; null for a plain mode.
 using SeqRows = std::vector<GameData::MonSeqFrame>;
 // A plain-mode skill d2d casts for a monster (no sequence; the Summoner's
-// SC skills): a srvmissile at the target, a nova (22), a fire wall (24).
-// ponytail: other do-funcs (Weaken's curse on the player, 30) stand.
+// SC skills): a srvmissile at the target, a nova (22), a fire wall (24),
+// a curse (30: Weaken).
+// ponytail: other do-funcs stand.
 bool castable(const d2d::rules::Skill& skill) {
     using d2d::rules::ServerDoFunction;
-    return !skill.srvmissile.empty() || skill.srvdofunc == ServerDoFunction::kNova || skill.srvdofunc == ServerDoFunction::kMissileWall;
+    return !skill.srvmissile.empty() || skill.srvdofunc == ServerDoFunction::kNova || skill.srvdofunc == ServerDoFunction::kMissileWall
+        || skill.srvdofunc == ServerDoFunction::kCurse;
 }
 // Its skill `id`'s level (Sk*lvl + the difficulty's bonus), 1 when not its own.
 int skill_level(const GameData& game_data, const Monster& monster, int id) {
@@ -648,14 +652,16 @@ bool think(const GameData& game_data, const Level& level, Monster& monster, std:
     // The Vulture's: the spots, the rooms, a weak foe within 11 (squared
     // 0x79) at most aip3 % life (FUN_005f30f0), its group, the free spot
     // nearest its circling point.
-    // ponytail: it can always land (FUN_005f2fc0's flying collision isn't
-    // kept); a weak one is a foe (players and monsters both, in game.exe);
+    // ponytail: a weak one is a foe (players and monsters both, in game.exe);
     // one free-spot search (the level's nearest), not one per room.
     if (type_info.ai_name == "Vulture") {
         input.self_x = x; input.self_y = y; input.target_x = target_x; input.target_y = target_y;
         input.same_room = room_at(level, unit.x, unit.y) == room_at(level, target->x, target->y);
-        input.can_land = true;
-        input.grouped = monster.leader >= 0;
+        input.can_land = monster.aloft;                            // FUN_005f2fc0 fails on a landed one (pattern 1)
+        // In a group: an owner (FUN_0058f0d0: AI control +0x28 / +0x2c, set by
+        // FUN_0058f030 for a boss's minions, FUN_005a0c00), not a plain pack's.
+        // ponytail: a flagged MonStats party's (FUN_005b2830, +0xc & DAT_006ce278) and a boss's own aren't counted; no vulture has one.
+        input.grouped = monster.boss == d2d::rules::Boss::minion;
         for (const auto& foe : foes) {
             const int off_x = subtile(foe.x) - x, off_y = subtile(foe.y) - y;
             if (foe.alive && off_x * off_x + off_y * off_y <= 0x79 && foe.life_pct <= input.aip[2]) input.victim = true;
@@ -708,6 +714,13 @@ bool think(const GameData& game_data, const Level& level, Monster& monster, std:
     // (regen) left out; the Summoner's quest reads his first think (ai_state).
     for (const auto& effect : effects) {
         if (effect.kind == d2d::rules::ThinkEffect::command_done) monster.ai_command = 0;
+        // The Vulture's take-off (FUN_005f2eb0) and landing (FUN_005f2fc0:
+        // at the free spot nearest, FUN_00554ea0; pattern 1, mask 0x3c01).
+        if (effect.kind == d2d::rules::ThinkEffect::take_off) { monster.aloft = true; unit.shape.pattern = 5; unit.shape.mask = 0; }
+        if (effect.kind == d2d::rules::ThinkEffect::land) {
+            std::tie(unit.x, unit.y) = level.nearest_free(unit.x, unit.y);
+            monster.aloft = false; unit.shape.pattern = 1; unit.shape.mask = 0x3c01;
+        }
         if (effect.kind == d2d::rules::ThinkEffect::aura) { monster.aura = skill_id(game_data, type_info.skill[std::size_t(effect.id)]); monster.aura_lvl = std::max(input.aip[0], 1); }
     }
     // The unit it's at: its kin (a walk to it), the hurt one or corpse it
@@ -793,6 +806,16 @@ bool think(const GameData& game_data, const Level& level, Monster& monster, std:
                 return true;
             }
             if ((!seq && !plain) || ((name == "Resurrect" || name == "Resurrect2") && corpse < 0)) { idle(0); return true; }
+            // MagottUp (srvstfunc 44, FUN_005cb170): it comes up at the free
+            // spot nearest (FUN_00554ea0 -> FUN_0064e7b0, mask 0x1c09), its
+            // flags 0xe back; MagottDown (45, FUN_005cb270) buries it.
+            // ponytail: the nearest free spot by the level's grid, not FUN_0064e7b0's search; up never fails.
+            if (const auto* start = game_data.skills.get(id); start && start->srvstfunc == d2d::rules::ServerStartFunction::kMaggotUp && monster.buried) {
+                std::tie(unit.x, unit.y) = level.nearest_free(unit.x, unit.y);
+                monster.buried = false;
+            } else if (start && start->srvstfunc == d2d::rules::ServerStartFunction::kMaggotDown) {
+                monster.buried = true;
+            }
             // ponytail: the sequence plays its first row's mode throughout
             // (Duriel's and the vipers' charges walk, then swing).
             const std::string_view played = seq ? std::string_view(seq->front().mode) : std::string_view(type_info.sk_mode[std::size_t(act.n)]);
@@ -1023,7 +1046,6 @@ bool monster_update(const GameData& game_data, const Level& level, Monster& mons
                 monster.hit_points = 0;                                        // no loot, no experience
             } else if (done && done->srvdofunc == d2d::rules::ServerDoFunction::kMaggotDown) {
                 // MagottDown (srvdofunc 86, FUN_005cb300): calc1 % of its life back, once (flag 0x40).
-                // ponytail: burrowed it stays hittable (no underground state).
                 const int lvl = skill_level(game_data, monster, monster.skill);
                 const int back = d2d::rules::eval_calc(game_data.skills, done->calc[0], {}, monster.skill, lvl);
                 if (back > 0) monster.hit_points = std::min(monster.hit_points + monster.stats.hit_points * back / 100, monster.stats.hit_points);
@@ -1066,7 +1088,17 @@ bool monster_update(const GameData& game_data, const Level& level, Monster& mons
                 // else its srvmissile at the target.
                 using d2d::rules::ServerDoFunction;
                 const int lvl = skill_level(game_data, monster, monster.skill);
-                if (cast->srvdofunc == ServerDoFunction::kNova) {
+                if (cast->srvdofunc == ServerDoFunction::kCurse) {
+                    // do 30 (FUN_005c37c0) from a monster: its curse on each of
+                    // the player's side within aurarangecalc subtiles of the
+                    // target's spot (FUN_0056e780, enemies only), the newest in
+                    // place of the last (Fight::curses).
+                    // ponytail: a pet's curse isn't kept (only the player's and the merc's).
+                    const int radius = d2d::rules::eval_calc(game_data.skills, cast->aurarange, {}, monster.skill, lvl);
+                    for (auto& near_foe : foes)
+                        if (near_foe.alive && !near_foe.of && !foe.of && std::hypot(near_foe.x - foe.x, near_foe.y - foe.y) * 5 <= float(radius))
+                            near_foe.cursed = { monster.skill, lvl };
+                } else if (cast->srvdofunc == ServerDoFunction::kNova) {
                     const auto ring = game_data.missiles.find(cast->srvmissilea);
                     const int reach = ring == game_data.missiles.end() ? 0
                         : ring->second.range + ring->second.lev_range * lvl + d2d::rules::eval_calc(game_data.skills, cast->calc[0], {}, monster.skill, lvl);
@@ -1095,14 +1127,23 @@ bool monster_update(const GameData& game_data, const Level& level, Monster& mons
                 // ponytail: the skill's ResultFlags / HitFlags / HitClass unread.
                 const auto* struck_with = monster.skill >= 0 ? game_data.skills.get(monster.skill) : nullptr;
                 if (monster.leaping) monster.seq_once = true;               // Leap's hit at its start (FUN_005d9c80), its later rows only fly (do 77)
-                if (seq && struck_with && struck_with->srvstfunc == d2d::rules::ServerStartFunction::kFireHit) {
-                    stats.a1_min = stats.s1_min; stats.a1_max = stats.s1_max;
+                // FUN_005a4f50 builds the hit by the mode: A2's damage, to-hit
+                // and elements for an A2 swing and Smite (do 150, FUN_005ce9f0:
+                // mode 5, a normal hit roll, calc2 frames of stun).
+                // ponytail: Smite's ResultFlags / HitFlags and hit class 0x65 unread.
+                // Jab's (do 7, FUN_005db2d0) is mode 8's, S1's; Charge's the mode it swings in.
+                const bool smite = struck_with && struck_with->srvdofunc == d2d::rules::ServerDoFunction::kSmite;
+                const bool jab = struck_with && struck_with->srvdofunc == d2d::rules::ServerDoFunction::kJab;
+                if (jab || (seq && struck_with && struck_with->srvstfunc == d2d::rules::ServerStartFunction::kFireHit)) {
+                    stats.a1_min = stats.s1_min; stats.a1_max = stats.s1_max; stats.to_hit = stats.to_hit_s1;
                     for (auto& element : stats.elements) element.mode = element.mode == "S1" ? "A1" : "";
+                } else if (smite || monster.mode == "A2") {
+                    stats.a1_min = stats.a2_min; stats.a1_max = stats.a2_max; stats.to_hit = stats.to_hit2;
+                    for (auto& element : stats.elements) element.mode = element.mode == "A2" ? "A1" : "";
                 }
                 // Charge's hit (FUN_005cf900): sure to hit (flags 9), calc1 % more
                 // damage, the skill's element at its level (FUN_0056e0c0). Jab's
                 // (do 7, FUN_005db2d0): the same on a hit it rolls.
-                const bool jab = struck_with && struck_with->srvdofunc == d2d::rules::ServerDoFunction::kJab;
                 if (struck_with && (jab || struck_with->srvdofunc == d2d::rules::ServerDoFunction::kCharge)) {
                     const int lvl = skill_level(game_data, monster, monster.skill);
                     const int more = d2d::rules::eval_calc(game_data.skills, struck_with->calc[0], {}, monster.skill, lvl);
@@ -1118,6 +1159,7 @@ bool monster_update(const GameData& game_data, const Level& level, Monster& mons
                 stats.to_hit += stats.to_hit * monster.aura_th / 100;
                 const auto taken = d2d::rules::monster_blow(foe.fighter, foe.level, foe.moving, stats, false, rng);
                 foe.take(taken);
+                if (taken.hit && smite) foe.stun_ticks = std::max(foe.stun_ticks, d2d::rules::eval_calc(game_data.skills, struck_with->calc[1], {}, monster.skill, skill_level(game_data, monster, monster.skill)));
                 if (taken.hit && monster.mana_hi > 0) foe.mana_burn += rng.range(monster.mana_lo, monster.mana_hi);   // Mana Burn
                 // Cursed (FUN_005a2530, the hit hook): 3 in 4 on its own seed
                 // (a draw's low 2 bits), Amplify Damage (skill 66) at level
@@ -1132,7 +1174,7 @@ bool monster_update(const GameData& game_data, const Level& level, Monster& mons
                     const int radius = std::clamp(amplify ? d2d::rules::eval_calc(game_data.skills, amplify->aurarange, {}, 66, curse_level) : 1, 1, 40);
                     for (auto& near_foe : foes)
                         if (near_foe.alive && !near_foe.of && std::hypot(near_foe.x - foe.x, near_foe.y - foe.y) * 5 <= float(radius))
-                            near_foe.amplify = std::max(near_foe.amplify, curse_level);
+                            near_foe.cursed = { 66, curse_level };
                 }
                 foe.melee_by.push_back(&monster);
                 const auto& res = type_info.diff[std::size_t(monster.difficulty)].res;
@@ -1335,7 +1377,7 @@ void make_boss(const GameData& game_data, Monster& monster, d2d::rules::Boss kin
     if (boss.phys_resist >= 0) monster.boss_res[0] = boss.phys_resist - type_info.diff[std::size_t(std::clamp(difficulty, 0, 2))].res[0];
     monster.stats.exp *= boss.exp_mult;
     for (int* damage : { &monster.stats.a1_min, &monster.stats.a1_max, &monster.stats.a2_min, &monster.stats.a2_max }) *damage += *damage * boss.dmg_pct / 100;
-    monster.stats.to_hit += monster.stats.to_hit * boss.tohit_pct / 100;
+    for (int* to_hit : { &monster.stats.to_hit, &monster.stats.to_hit2, &monster.stats.to_hit_s1 }) *to_hit += *to_hit * boss.tohit_pct / 100;   // every mode's
     if (boss.double_defense) monster.stats.armor_class *= 2;
     if (boss.phys_resist < 0) monster.boss_res = boss.res_add;
     else { const int set = monster.boss_res[0]; monster.boss_res = boss.res_add; monster.boss_res[0] = set; }
@@ -1377,7 +1419,7 @@ void make_boss(const GameData& game_data, Monster& monster, d2d::rules::Boss kin
 }
 
 bool hurt(const GameData& game_data, Monster& monster, int damage, std::uint32_t now_ms) {
-    if (!monster.alive() || damage <= 0) return false;
+    if (!monster.targetable() || damage <= 0) return false;
     monster.hit_points -= damage;
     monster.aware = true;
     if (!monster.alive()) set_mode(game_data, monster, "DT", now_ms);

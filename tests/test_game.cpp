@@ -225,8 +225,19 @@ int main() {
     auto& fight = world.fight;
     const auto poisoned = [&] { return std::ranges::any_of(fight.regen, &Fight::Regen::poison); };
     fight.regen.push_back({ -1.0, 0, 1000 * kTickMs, true });
-    fight.amplified[0] = fight.chilled = 1000 * kTickMs;
-    assert(fight.cure(26 * kTickMs) && !poisoned() && fight.amplified[0] == 0 && fight.chill_rate(26 * kTickMs) == -50);
+    // A monster's curse on the player is a self state's aurastats: Weaken's
+    // damagepercent -33 (par5) comes off the damage %, Amplify Damage's -100 off DR.
+    fight.update_fighters(26 * kTickMs);
+    const auto uncursed = fight.player_combat;
+    fight.curses[0] = { 72, 1, 1000 * kTickMs };
+    fight.update_fighters(26 * kTickMs);
+    assert(fight.player_combat.phys_pct == uncursed.phys_pct - 33);
+    fight.curses[0] = { 66, 1, 1000 * kTickMs };
+    fight.update_fighters(26 * kTickMs);
+    assert(fight.player_combat.dr_pct == uncursed.dr_pct - 100 && fight.player_combat.phys_pct == uncursed.phys_pct);
+    fight.chilled = 1000 * kTickMs;
+    assert(fight.cure(26 * kTickMs) && !poisoned() && fight.curses[0].until == 0 && fight.chill_rate(26 * kTickMs) == -50);
+    fight.update_fighters(26 * kTickMs);
     assert(!fight.cure(26 * kTickMs));
     fight.regen.push_back({ -1.0, 0, 1000 * kTickMs, true });
     fight.potion("yps", 26 * kTickMs);

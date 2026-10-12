@@ -41,8 +41,7 @@ struct UnitIds {
 // A DS1's units as its loader lists them (FUN_00665950): mapped ids, each
 // put at the front, so the list runs from the file's last object back.
 // Monsters need v5+; ids that map to nothing are dropped.
-// ponytail: the act 2 / act 4 monster remaps and type 4 (NPCs by name)
-// aren't there — act 1's levels don't hit them.
+// ponytail: type 4 (NPCs by name) isn't there.
 inline std::vector<Unit> ds1_units(const d2d::ds1::Map& map, const UnitIds& ids) {
     std::vector<Unit> list;
     const int version = map.version(), act = std::clamp(int(map.act()) - 1, 0, 4);
@@ -60,6 +59,13 @@ inline std::vector<Unit> ds1_units(const d2d::ds1::Map& map, const UnitIds& ids)
                 const auto [kind, id] = table[std::size_t(unit.id)];
                 unit.id = kind == 0 ? id + ids.monstats + ids.superuniques : kind == 1 ? id : kind == 2 ? id + ids.monstats : -1;
             }
+            // Monsters that are objects (FUN_00665950 by act): Act 3's 0x129 /
+            // 0x16e objects 0x17e / 0x194, Act 5's 0x202 object 0x1cd and
+            // 0x219..0x21b 0x3f5 less the id.
+            const int as_object = unit.id < 0 || unit.id >= ids.monstats ? -1
+                                : act == 2 ? (unit.id == 0x129 ? 0x17e : unit.id == 0x16e ? 0x194 : -1)
+                                : act == 4 ? (unit.id == 0x202 ? 0x1cd : unit.id >= 0x219 && unit.id <= 0x21b ? 0x3f5 - unit.id : -1) : -1;
+            if (as_object >= 0) { unit.type = unit_type::kObject; unit.id = as_object; unit.mode = 0; }
         } else if (unit.type == unit_type::kObject) {
             if (version < 6) { if (unit.id == 0x23d) unit.id = -1; }
             else unit.id = unit.id < 150 ? int(kObjPreset[std::size_t(act)][std::size_t(unit.id)]) : unit.id - 150;

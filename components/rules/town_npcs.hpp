@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <cstdint>
 #include <cstdlib>
+#include <optional>
 #include <span>
 #include <utility>
 
@@ -25,6 +26,7 @@ struct NpcBrain {
     int special_mode = 0, special_x = 0, special_y = 0, special_tries = 0; // cmd 7: +0xc mode, +0x10 x, +0x14 y, +0x18 walks
     int held = 0;             // AI control +0x14: 40 as a player starts talking (FUN_00548b00), one off a think
     int greeted = 0;          // AI control +0x18: thinks till the next greeting (60)
+    int guard_frame = 0;      // JarJar: command 10's +0x18, the frame it last moved or heeded
     bool listed = false;      // d2d: a player was talking to it last frame (to see a talk start)
 };
 
@@ -77,6 +79,37 @@ struct NpcAct {
     return { x + way_x * step_x * sign, y + way_y * step_y * sign };
 }
 
+// FUN_005e68f0, the visitor (town-npcs.md "The visitor"): what the NPC
+// does about the player it heeds, if anything (the think goes on without).
+inline std::optional<NpcAct> npc_heed(NpcBrain& brain, int x, int y, const NpcVisitor& visitor) {
+    auto stand = [](int frames) { return NpcAct{ .frames = frames }; };
+    if (!visitor.talking && brain.held <= 0) {
+        if (!visitor.present) return std::nullopt;
+        if (visitor.distance < 3 || visitor.distance > 23) {   // close: stop, greet every 60 thinks
+            auto act = stand(20);
+            if (brain.greeted == 0) { brain.greeted = 60; act.greet = true; }
+            else if (brain.greeted > 0) --brain.greeted;
+            else brain.greeted = 0;
+            return act;
+        }
+        if (npc_distance(x, y, brain.home_x, brain.home_y) > 16) {   // FUN_005e6860: home first
+            brain.linger_x = brain.home_x; brain.linger_y = brain.home_y; brain.linger_count = 12; brain.linger_stand = 10;
+            return stand(10);
+        }
+        const auto [to_x, to_y] = npc_step_toward(x, y, visitor.x, visitor.y, visitor.distance, visitor.distance < 5 ? visitor.distance - 2 : 3, 2);
+        return NpcAct{ .kind = NpcAct::Kind::walk, .x = to_x, .y = to_y, .fail = 15 };
+    }
+    // Talked to: while +0x14 is over 36, a walk to the scratch words
+    // (+0x18, +0x1c) taken as a spot no path reaches (bugs.md 16), so
+    // the think comes aidel (15) on; then stand 8 as it counts down.
+    // ponytail: with +0x14 run out game.exe schedules no think (what
+    // wakes it after the talk isn't traced); d2d thinks 8 frames on.
+    const auto act = stand(brain.held > 36 ? 15 : 8);
+    if (brain.held < 0) brain.held = 0;
+    else --brain.held;
+    return act;
+}
+
 // One think of a town NPC at subtile (x, y),
 // MonStats row `class_id`, `modes` its MonStats2 mode bits (1 << 8 S1 ...),
 // `current` its mode now, `visitor` the player it heeds. Draws only on its
@@ -95,34 +128,8 @@ inline NpcAct npc_think(NpcBrain& brain, Rng& seed, std::span<const NpcPoint> pa
         return stand(20);
     }
     // FUN_005e68f0, the visitor (town-npcs.md "The visitor").
-    if (towner) {
-    } else if (!visitor.talking && brain.held <= 0) {
-        if (visitor.present) {
-            if (visitor.distance < 3 || visitor.distance > 23) {   // close: stop, greet every 60 thinks
-                auto act = stand(20);
-                if (brain.greeted == 0) { brain.greeted = 60; act.greet = true; }
-                else if (brain.greeted > 0) --brain.greeted;
-                else brain.greeted = 0;
-                return act;
-            }
-            if (npc_distance(x, y, brain.home_x, brain.home_y) > 16) {   // FUN_005e6860: home first
-                brain.linger_x = brain.home_x; brain.linger_y = brain.home_y; brain.linger_count = 12; brain.linger_stand = 10;
-                return stand(10);
-            }
-            const auto [to_x, to_y] = npc_step_toward(x, y, visitor.x, visitor.y, visitor.distance, visitor.distance < 5 ? visitor.distance - 2 : 3, 2);
-            return walk(to_x, to_y, 15);
-        }
-    } else {
-        // Talked to: while +0x14 is over 36, a walk to the scratch words
-        // (+0x18, +0x1c) taken as a spot no path reaches (bugs.md 16), so
-        // the think comes aidel (15) on; then stand 8 as it counts down.
-        // ponytail: with +0x14 run out game.exe schedules no think (what
-        // wakes it after the talk isn't traced); d2d thinks 8 frames on.
-        const auto act = stand(brain.held > 36 ? 15 : 8);
-        if (brain.held < 0) brain.held = 0;
-        else --brain.held;
-        return act;
-    }
+    if (!towner)
+        if (auto heeded = npc_heed(brain, x, y, visitor)) return *heeded;
     // FUN_005e6ae0: a point being lingered at, one think each: back to it
     // from over 3 off, else stand.
     if (brain.linger_count > 0) {
@@ -180,6 +187,61 @@ inline NpcAct npc_think(NpcBrain& brain, Rng& seed, std::span<const NpcPoint> pa
 inline NpcAct vendor_think(Rng& seed) {
     if (seed.next() % 100 < 20) return NpcAct{ .kind = NpcAct::Kind::mode, .mode = 8 };
     return NpcAct{ .frames = 30 };
+}
+
+// MonAI JarJar (81, FUN_005e7590: the palace guard, act2guard2). Its home
+// (AI control command 10: +0xc, +0x10; +0x18 the frame it last moved or
+// heeded). Till he stands aside (FUN_0059b8b0: record 0xb's data+0x40 is
+// 2, +0x18 / +0x19 clear): once 200 frames, back home from over 1 off, else
+// heed the player; stand 20. Aside (or no record): to 3 north of home when
+// over 7 off (over 2 once data+0x40 is 2); else heed the player; else a
+// player he'd heed within 12: 100 in 1000 a spot 2 about it (FUN_005df530)
+// and stand 200; else 50 in 1000 a wander 3 (FUN_005de200); stand 120.
+// ponytail: data+0x18 / +0x19's spot (FUN_0059b8f0: data+0x30, +0x34, 4
+// up for +0x19; no heeding) isn't kept: what sets them isn't traced.
+inline NpcAct jarjar_think(NpcBrain& brain, Rng& seed, int x, int y, int frame, bool aside, bool stood_aside, const NpcVisitor& visitor) {
+    auto stand = [](int frames) { return NpcAct{ .frames = frames }; };
+    auto walk = [](int to_x, int to_y) { return NpcAct{ .kind = NpcAct::Kind::walk, .x = to_x, .y = to_y, .fail = 15 }; };
+    if (!brain.homed) {                                  // FUN_005e6800
+        brain.homed = true;
+        brain.home_x = x; brain.home_y = y;
+        return stand(20);
+    }
+    if (!aside) {
+        if (brain.guard_frame < frame && frame - brain.guard_frame < 200) return stand(20);
+        if (npc_distance(x, y, brain.home_x, brain.home_y) > 1) { brain.guard_frame = frame; return walk(brain.home_x, brain.home_y); }
+        if (auto heeded = npc_heed(brain, x, y, visitor)) { brain.guard_frame = frame; return *heeded; }
+        return stand(20);
+    }
+    const int gap = npc_distance(x, y, brain.home_x, brain.home_y - 3);
+    if ((stood_aside && gap > 2) || gap > 7) return walk(brain.home_x, brain.home_y - 3);
+    if (auto heeded = npc_heed(brain, x, y, visitor)) return *heeded;
+    // The roll below needs a player he heeds that FUN_005e68f0 didn't act on:
+    // with an interact holder (the guard's, MonStats interact) it acts on
+    // every one, so in game.exe too this never runs. Kept as written.
+    NpcAct act = stand(120);
+    if (visitor.present) {
+        if (visitor.distance < 12) {
+            if (seed(1000) < 100) {
+                int off_x = 0, off_y = 0;
+                if ((seed.next() & 1) == 0) { off_x = seed(2); off_y = 2; } else { off_x = 2; off_y = seed(2); }
+                if (seed.next() & 1) off_x = -off_x;
+                if (seed.next() & 1) off_y = -off_y;
+                act = walk(visitor.x + off_x, visitor.y + off_y);
+            }
+            act.frames = 200;
+            return act;
+        }
+    }
+    if (seed(1000) < 50) {
+        int off_x = 3, off_y = 3;
+        if ((seed.next() & 1) == 0) off_x = seed(3); else off_y = seed(3);
+        if (seed.next() & 1) off_x = -off_x;
+        if (seed.next() & 1) off_y = -off_y;
+        act = walk(x + off_x, y + off_y);
+        act.frames = 120;
+    }
+    return act;
 }
 
 }  // namespace d2d::rules

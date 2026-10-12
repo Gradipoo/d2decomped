@@ -440,11 +440,21 @@ Findings along the way:
   room whose warp leads into a town (the Sewers' ways up: the town's room
   is on its near list). d2d: the act's town rect within 6 act tiles, and a
   room holding a warp to a town. `LEVELS=41 diff_drlg.py 1-3 0 game` 3/3;
-  the Sewers' (47) way-up room now matches. Open: 47's room 48,36 rat
-  nests (PopulateFn 3) differ on a 7 x 7 test (FUN_0064d800) with equal
-  draws, game.exe placing where d2d finds a blocker (whole-game run: the
-  other way round), so a neighbour's stamp; the tombs (55, 56) still
-  differ. `objgroups.py dump` makes the level's own act now (FUN_006194a0
+  the Sewers' (47) way-up room now matches. The Sewers' goo pile (266,
+  InitFn 27, FUN_0054fc50) takes an object-seed draw: trap 3 when
+  `rgn % 1000 <= 332`. A monster's footprint goes by its pattern
+  (FUN_0064ea90, DAT_006eb3dc: SizeX 0 nothing, 1 or 2 a plus of 0x100
+  with 0x1000 on its subtile, 3 its box with 0x1000 on the plus): the
+  tombs' sarcophagus (SizeX 1) blocks a plus, their traps (SizeX 0)
+  nothing. 47, 55, 56: `diff_drlg.py 1-30 <level> objgroups` 30/30.
+  A random chest preset 580 (FUN_0054f370) in the Maggot Lair (62-64)
+  sparkles only when an object-seed draw after it's made has
+  `% 100 <= 50`. A superunique's own seed takes its minion count
+  (FUN_005a0c00: `rand(max - min + 1)`, a draw even when they're equal,
+  as every SuperUniques row has them) and then its name seed
+  (FUN_005a0ce0); Radament (hcIdx 10, FUN_005a49b0's case) then brings
+  `rand(5) + 2` skeleton5s and one each of 276, 382, 385, 389 at radius
+  4 (FUN_005b23c0). Act 2's levels 41-73: objgroups 10/10. `objgroups.py dump` makes the level's own act now (FUN_006194a0
   its act, game +0xbc + act × 4).
 
 - A warp tile (orient 10/11, style <= 7) flags its room 0x800000

@@ -124,10 +124,12 @@ static std::string dump(const OutdoorAssets& assets, std::uint32_t seed, int id,
         for (const auto& note : notes) std::fprintf(stderr, "not implemented: %s\n", note.c_str());
         return out.str();
     }
-    const auto layout = id >= level_ids::kLutGholein ? act2_layout(level_defs(assets.levels), act_seed(seed)) : act1_from_map_seed(level_defs(assets.levels), seed);
+    const auto act3 = act3_layout(level_defs(assets.levels), act_seed(seed));
+    const auto layout = id >= level_ids::kKurastDocks ? act3.levels
+                      : id >= level_ids::kLutGholein ? act2_layout(level_defs(assets.levels), act_seed(seed)) : act1_from_map_seed(level_defs(assets.levels), seed);
     if (std::getenv("DRLG_LAYOUT"))
         for (const auto& placement : layout) std::fprintf(stderr, "layout %d at %d,%d %dx%d dir %d flip %d flags %x\n", placement.level, placement.x, placement.y, placement.width, placement.height, placement.dir, placement.flip, placement.flags);
-    const auto level = outdoor_level(assets.levels, layout, id);
+    const auto level = id >= level_ids::kKurastDocks ? act3_outdoor_level(assets.levels, act3, id) : outdoor_level(assets.levels, layout, id);
     const auto outdoor = generate_outdoor(assets.data, level, level_seed(seed, id));
     pf("level %d at %d,%d size %dx%d\n", id, level.rect.x, level.rect.y, level.rect.width, level.rect.height);
     pf("flags %x\n", outdoor.flags);
@@ -494,7 +496,7 @@ int main(int argc, char** argv) {
         const auto last = dash == std::string::npos ? first : std::uint32_t(std::stoul(range.substr(dash + 1), nullptr, 0));
         for (auto index = first;; ++index) {
             const std::uint32_t seed = index * 0x9e3779b1u;
-            for (int act : { 0, 1 })
+            for (int act : { 0, 1, 2 })
                 for (int diff : { 0, 1, 2 })
                     for (int clvl : { 1, 9, 30, 75 }) {
                         std::printf("%08x %d %d %d: ", seed, act, diff, clvl);

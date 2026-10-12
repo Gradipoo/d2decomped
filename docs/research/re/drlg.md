@@ -660,6 +660,33 @@ loaded file (0x60-byte records from `buf + 0x110`, rarity at +0x20);
 loaded DT1s are a list at 0x8adbb4 `{name[0x104], buf, lib, next}`,
 cached by name.
 
+## Act 3's jungle (FUN_0067f450, levels 76–78)
+
+Act 3's outdoor build: contact spans (FUN_00675770), then FUN_0067e910
+(the jungle), FUN_0067f190 (Kurast), FUN_0067f3b0 (Travincal); no
+borders. The neighbours are act 3's edge-sharing levels (FUN_006775c0:
+each pair of 75..83 whose rects touch on one axis and overlap on the
+other, FUN_0066b880 with −1, into each level's first free Vis slot,
+others in id order).
+
+FUN_0067e910 lays the level's 2x6 cells (act3_layout) at cell (col·4,
+row·4) through FUN_006743c0 (EDX x; stack y, def, file, border 0):
+first `rand(specials == 3 ? 6 : 2)` on the level seed (+0x1c4) picks a
+row of 0x6f2328 (the six orders of 0, 1, 2); a clearing (Def > 574)
+moves to its level's set (0x6f2240: 76 +0, 77 +10, 78 +20) with the
+next file of that row; other Defs roll their file (−1). The Spider
+Forest's bottom row is the Jungle Head (573, file 1 when the last cell
+is empty), the Flayer Jungle's top row the Tail (574, file 1 when cell 1
+is empty); both take the whole row.
+
+The finish's plain rooms (the empty cells) by LevelType (FUN_006750f0 /
+FUN_0067d2d0): DT1 mask 2 → 0x44103; 16, 22, 27, 28 → 1; 21 → 4; 30, 31
+→ 0x11; ground ORed into unclaimed floor cells: 16 0x100, 21 0x120000,
+22 0x100000, 27 0xa00000, 28 0x1600000, 31 0x600000 on level 117 only.
+
+d2d: `Gen::lay_jungle`, `act3_outdoor_level`, `plain_dt1_mask`;
+`diff_drlg.py 1-10 76|77|78 tiles` 10/10, rooms 10/10, units 5/5.
+
 ## Maze levels (DrlgType 1) — FUN_00673b30
 
 The level's maze row (LvlMaze by level, FUN_0061f490: `{level,
@@ -993,6 +1020,7 @@ Conditions those results hold under, so they aren't overstated:
 | Act 2's mazes and presets (47–73): rooms, tiles, units, doors | diffed (list order), 5/5 each |
 | Act 2's desert (41–46): grids, tiles, units | diffed, 10/10 each |
 | Act 3's layout (rectangles 75–83, the jungle's cells) | diffed, 2000/2000 seeds |
+| Act 3's jungle (76–78): grids, rooms, tiles, units | diffed, 10/10 (units 5/5) |
 | Act 3+ outdoors and mazes; the Barracks' cross-level link to 27 (FUN_0066b790) | not ported |
 | Preset units that roll to stay (FUN_00667620) | ported outdoors (`stays`, units.hpp); diffed on Cold Plains' Cottages 2, whose row has Pops: presets with Scan or Pops roll at generation on the level seed (FUN_00667970), the rest on the seed of the room that copies them (room +0x14, the whole {low, high} — a maze room's was stepped once, so its high word isn't 666; diffed on the Jail and Catacombs). In the preset record's order, one step each — monsters 0xcc, 0xcd, 0x173, 0x174 kept when `low % 3 == 0`; MonPlace 0x21 when `low & 3`, 0x22 when odd, 0x23 when `!(low & 3)`, 0x24 always; objects 0xc4 / 0x105 when even, 0x245 when `low & 3`. It runs after the room's DT1 list and before its tiles (FUN_0061b730), whose seed FUN_0066ee40 resets, so tiles don't shift. Act 1: the Crypt, Jail, Catacombs, Fence Fill 1, Cottages 2 |
 | Units in other acts: the act 2 / act 4 MonPreset remaps, type-4 units (NPCs by name) | not ported |

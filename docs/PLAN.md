@@ -796,7 +796,8 @@ the quests, the thinks.
    game.exe's (`diff_drlg.py 1-20 75 npcs` 20/20); Hratli's and
    Natalya's markers make them as the game's quest words stand
    (town-npcs.md "The Kurast Docks"); the act palette follows any act.
-3. The jungle (76–78) built from its cells.
+3. The jungle (76–78) built from its cells. *Done (2026-10-12):* drlg.md
+   "Act 3's jungle"; tiles 10/10, units 5/5 on all three.
 4. Kurast (79–83).
 5. The dungeons, sewers, temples and the Durance (84–102).
 

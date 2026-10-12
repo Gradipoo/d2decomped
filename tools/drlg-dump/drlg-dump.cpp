@@ -271,8 +271,9 @@ static std::string dump_game(d2d::game::GameData& game, std::uint32_t seed, cons
         });
         const auto& area = game.area_level;
         auto alvl = [&](int id) { return area[std::size_t(id)][0]; };
-        const auto [low, high] = d2d::rules::kChestLevels[0];
-        const auto treasure_class = d2d::rules::chest_tc(0, 0, alvl(lid), alvl(low), alvl(high));
+        const int act = d2d::rules::level_act(lid);
+        const auto [low, high] = d2d::rules::kChestLevels[std::size_t(act)];
+        const auto treasure_class = d2d::rules::chest_tc(act, 0, alvl(lid), alvl(low), alvl(high));
         if (!camp) for (auto i = base; i < made.npcs.size(); ++i) objects.push_back(i);
         for (const auto npc_index : objects) {
             auto& npc = made.npcs[npc_index];

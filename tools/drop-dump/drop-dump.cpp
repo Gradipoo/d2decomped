@@ -64,8 +64,9 @@ int main(int argc, char** argv) {
             const auto [seed, unit_low, operate_fn, id, lid, diff, locked, sparkle] = std::array<int, 8>{ job[0], job[1], job[2], job[3], job[4], job[5], job[6], job[7] };
             const auto& area = data->area_level;
             auto alvl = [&](int level) { return area[std::size_t(level)][std::size_t(diff)]; };
-            const auto [low, high] = d2d::rules::kChestLevels[0];
-            const auto treasure_class = d2d::rules::chest_tc(0, diff, alvl(lid), alvl(low), alvl(high));
+            const int act = d2d::rules::level_act(lid);
+            const auto [low, high] = d2d::rules::kChestLevels[std::size_t(act)];
+            const auto treasure_class = d2d::rules::chest_tc(act, diff, alvl(lid), alvl(low), alvl(high));
             d2d::rules::Rng object_seed{ std::uint32_t(seed) }, unit{ std::uint32_t(unit_low) };
             std::vector<d2d::rules::Drop> drops;
             const auto opened = d2d::rules::open_container(operate_fn, id, locked, sparkle, object_seed,

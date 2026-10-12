@@ -732,9 +732,10 @@ leftovers (act1-gaps.md) and hosting a game wait.
    seed, ten offered, the offers off each entry's seed; checked by
    tools/emu/hire.py). The vendors' stock is game.exe's fill (store.md;
    tools/emu/store.py 10200 / 10200) with game.exe's magic affixes
-   (drops.md "Magic", 9994 / 9995). Left: JarJar's think,
-   Lut Gholein's container drops (`LEVELS=40 diff_drlg.py 1-1 0 game`
-   differs only there).
+   (drops.md "Magic", 9994 / 9995). Lut Gholein's container drops are
+   game.exe's (a container rolls its level's act's chest class, FUN_00585b90;
+   `LEVELS=40 diff_drlg.py 1-5 0 game` 5/5). Left: JarJar's think (the
+   palace guard: kept to his post, 3 north once aside; town-npcs.md).
 3. The desert (LevelType 16: 41–46): the outdoor generator with act 2's
    border and exit rules (drlg.md: exits in pairs from 0x6f112c, columns
    2 / 3 of 0x6f0630), its LvlSub / presets. *Built (2026-10-10):*

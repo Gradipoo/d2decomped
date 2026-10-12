@@ -244,11 +244,12 @@ auto World::operate(int npc_index, std::uint32_t now_ms, int force ) -> void {  
         auto alvl = [&](int id) { return std::size_t(id) < area_levels.size() ? area_levels[std::size_t(id)][std::size_t(std::clamp(diff, 0, 2))] : 1; };
         const int here = alvl(level->id);
         // Open a container (open_container) on the level's object seed, its
-        // rounds the act's chest class (chest_round) off its own unit seed;
+        // rounds its level's act's chest class (chest_round, FUN_00585b90) off its own unit seed;
         // the items are made at the area level (FUN_0055a550), the extras too.
         auto open = [&] {
-            const auto [low, high] = d2d::rules::kChestLevels[0];
-            const auto treasure_class = d2d::rules::chest_tc(0, diff, here, alvl(low), alvl(high));
+            const int act = d2d::rules::level_act(level->id);
+            const auto [low, high] = d2d::rules::kChestLevels[std::size_t(act)];
+            const auto treasure_class = d2d::rules::chest_tc(act, diff, here, alvl(low), alvl(high));
             std::vector<d2d::rules::Drop> drops;
             const auto opened = d2d::rules::open_container(object.operate_fn, object.object_id, object.locked, object.sparkle, fight.spawning.objects,
                                                            [&](int forced) { return d2d::rules::chest_round(game_data->rules, treasure_class, object.seed, drops, forced); });

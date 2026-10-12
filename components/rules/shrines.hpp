@@ -362,7 +362,10 @@ inline int trap_undead(const std::vector<int>& region, int act) {
     return act == 0 ? -1 : 234;
 }
 
-// The marker levels by act (0x6e1988).
+// A level's act (Levels.txt Act, FUN_006427f0): its id range.
+inline int level_act(int id) { return id >= 109 ? 4 : id >= 103 ? 3 : id >= 75 ? 2 : id >= 40 ? 1 : 0; }
+// The marker levels by act (0x6e1988): FUN_00585b90 takes the container's
+// level's act's pair.
 inline constexpr std::array<std::pair<int, int>, 5> kChestLevels{ { { 2, 37 }, { 41, 73 }, { 76, 102 }, { 104, 108 }, { 109, 136 } } };
 
 }  // namespace d2d::rules

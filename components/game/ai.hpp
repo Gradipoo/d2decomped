@@ -236,6 +236,10 @@ struct Monster {
     // off, its 0x1000 lifted): no one targets, hits or walks into it till
     // MagottUp (FUN_005cb170) brings it up at the nearest free spot.
     bool buried = false;
+    // A vulture aloft (FUN_005f2eb0's take-off: flags 0xe off, its stamps
+    // lifted, pattern 5, path mask 0): untargetable, it flies over
+    // anything till it lands (FUN_005f2fc0).
+    bool aloft = false;
     float leap_from_x = 0, leap_from_y = 0, leap_to_x = 0, leap_to_y = 0;
     int move_pct = 0;
     std::uint32_t laid_until = 0;
@@ -247,7 +251,7 @@ struct Monster {
     std::vector<std::pair<int, int>> path;
     bool half_freeze = false;
     [[nodiscard]] bool alive() const { return hit_points > 0; }
-    [[nodiscard]] bool targetable() const { return alive() && !buried; }   // unit flags 0xe: not a buried maggot
+    [[nodiscard]] bool targetable() const { return alive() && !buried && !aloft; }   // unit flags 0xe: not a buried maggot, a vulture aloft
     // As a target for the player's (or the merc's) hits.
     [[nodiscard]] d2d::rules::Target target(const GameData& game_data) const {
         const auto& type_info = game_data.monsters.types[std::size_t(type)];

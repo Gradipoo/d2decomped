@@ -3810,7 +3810,7 @@ auto Fight::engage(std::uint32_t now_ms) -> std::optional<std::pair<float, float
 
 auto Fight::crowd(Crowd& crowd_out) -> void {
         for (auto& monster : monsters)
-            if (monster.alive() && !monster.buried && std::abs(monster.unit.x - player.x) < 12 && std::abs(monster.unit.y - player.y) < 12) crowd_out.units.push_back(&monster.unit);
+            if (monster.targetable() && std::abs(monster.unit.x - player.x) < 12 && std::abs(monster.unit.y - player.y) < 12) crowd_out.units.push_back(&monster.unit);
         for (auto& pet : pets)                                 // pets stand in the way too (Bone Wall)
             if (pet.monster.alive() && pet.where == level) crowd_out.units.push_back(&pet.monster.unit);
     }

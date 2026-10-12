@@ -650,14 +650,16 @@ bool think(const GameData& game_data, const Level& level, Monster& monster, std:
     // The Vulture's: the spots, the rooms, a weak foe within 11 (squared
     // 0x79) at most aip3 % life (FUN_005f30f0), its group, the free spot
     // nearest its circling point.
-    // ponytail: it can always land (FUN_005f2fc0's flying collision isn't
-    // kept); a weak one is a foe (players and monsters both, in game.exe);
+    // ponytail: a weak one is a foe (players and monsters both, in game.exe);
     // one free-spot search (the level's nearest), not one per room.
     if (type_info.ai_name == "Vulture") {
         input.self_x = x; input.self_y = y; input.target_x = target_x; input.target_y = target_y;
         input.same_room = room_at(level, unit.x, unit.y) == room_at(level, target->x, target->y);
-        input.can_land = true;
-        input.grouped = monster.leader >= 0;
+        input.can_land = monster.aloft;                            // FUN_005f2fc0 fails on a landed one (pattern 1)
+        // In a group: an owner (FUN_0058f0d0: AI control +0x28 / +0x2c, set by
+        // FUN_0058f030 for a boss's minions, FUN_005a0c00), not a plain pack's.
+        // ponytail: a flagged MonStats party's (FUN_005b2830, +0xc & DAT_006ce278) and a boss's own aren't counted; no vulture has one.
+        input.grouped = monster.boss == d2d::rules::Boss::minion;
         for (const auto& foe : foes) {
             const int off_x = subtile(foe.x) - x, off_y = subtile(foe.y) - y;
             if (foe.alive && off_x * off_x + off_y * off_y <= 0x79 && foe.life_pct <= input.aip[2]) input.victim = true;
@@ -710,6 +712,13 @@ bool think(const GameData& game_data, const Level& level, Monster& monster, std:
     // (regen) left out; the Summoner's quest reads his first think (ai_state).
     for (const auto& effect : effects) {
         if (effect.kind == d2d::rules::ThinkEffect::command_done) monster.ai_command = 0;
+        // The Vulture's take-off (FUN_005f2eb0) and landing (FUN_005f2fc0:
+        // at the free spot nearest, FUN_00554ea0; pattern 1, mask 0x3c01).
+        if (effect.kind == d2d::rules::ThinkEffect::take_off) { monster.aloft = true; unit.shape.pattern = 5; unit.shape.mask = 0; }
+        if (effect.kind == d2d::rules::ThinkEffect::land) {
+            std::tie(unit.x, unit.y) = level.nearest_free(unit.x, unit.y);
+            monster.aloft = false; unit.shape.pattern = 1; unit.shape.mask = 0x3c01;
+        }
         if (effect.kind == d2d::rules::ThinkEffect::aura) { monster.aura = skill_id(game_data, type_info.skill[std::size_t(effect.id)]); monster.aura_lvl = std::max(input.aip[0], 1); }
     }
     // The unit it's at: its kin (a walk to it), the hurt one or corpse it

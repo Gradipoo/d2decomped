@@ -811,7 +811,7 @@ bool think(const GameData& game_data, const Level& level, Monster& monster, std:
             // target, else spawnx / spawny off itself.
             monster.skill_x = act.x || act.y ? target_x + act.x : x + type_info.spawn_x;
             monster.skill_y = act.x || act.y ? target_y + act.y : y + type_info.spawn_y;
-            if (monster.skill_unit >= 0) unit.dir = direction16(pack[std::size_t(corpse)].unit.x - unit.x, pack[std::size_t(corpse)].unit.y - unit.y);
+            if (monster.skill_unit >= 0) unit.dir = direction16(pack[std::size_t(monster.skill_unit)].unit.x - unit.x, pack[std::size_t(monster.skill_unit)].unit.y - unit.y);
             if (type_info.ai_name == "GargoyleTrap") {                 // square on (FUN_005f9490): along the axis it's nearer the target's
                 const bool down = std::abs(target_x - x) < std::abs(target_y - y);
                 monster.skill_x = down ? x : target_x; monster.skill_y = down ? target_y : y;

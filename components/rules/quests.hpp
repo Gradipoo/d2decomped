@@ -1836,8 +1836,6 @@ struct QuestState {
     std::array<std::uint16_t, 15> game{};   // the game's quest flags (the view's game_quests)
     int den_left = 0;                      // DAT_007bf2a4
 };
-// ponytail: the Seven Tombs' own case (record 0x723a64: quests 12 and 14's
-// bits pick states 5..7) isn't here; its record isn't ported.
 inline QuestText quest_text(const d2d::rules::QuestBits& quest_bits, int quest, const QuestState& quest_state) {
     if (quest < 1 || quest > 14 || quest == 7 || quest == 8) return {};
     const auto& rec = kQuestLogRecords[std::size_t(quest < 7 ? quest - 1 : quest - 3)];
@@ -1851,6 +1849,11 @@ inline QuestText quest_text(const d2d::rules::QuestBits& quest_bits, int quest, 
     if (bit0) {                                               // done: 13 in this game, 11 before
         log_state = b13 ? 13 : 11;
         return entry(rec[std::size_t(2 * log_state + 1)], rec[1], flag(12) ? 1 : 0, log_state, false);
+    }
+    if (quest == 14 && !b13) {                                // the Seven Tombs' own case (record 0x723a64)
+        const bool summoner = d2d::rules::qbit(quest_bits, 12, 0) || d2d::rules::qbit(quest_bits, 12, 13);
+        const int tomb = summoner && log_state == 1 ? 7 : flag(3) ? 5 : flag(4) ? 6 : 0;
+        if (tomb) return entry(rec[std::size_t(2 * tomb + 1)], rec[std::size_t(2 * tomb + 2)], 3, tomb, false);
     }
     if (b13 && bit1 && rec[2] != 0xffff) {                    // the reward's due
         log_state = rec[2] + 1;

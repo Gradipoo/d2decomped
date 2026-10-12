@@ -789,8 +789,6 @@ blocking:
 - Monster second thinks (FUN_005b0e00, monster-ai.md "Other thinks"):
   they run only as a curse ends after the think left the curse's AI;
   d2d's curses don't swap thinks, so they aren't ported.
-- A running player: game.exe's hit roll (FUN_0057ec10) skips the to-hit
-  roll on a player in mode 3 (RN); d2d still rolls it. To check.
 - Act bosses of Acts 3–5 (FUN_005b1cf0 by BaseId: Mephisto, Diablo, Izual,
   Baal, the Council's quest hooks): not in `rules::act_boss` yet.
 - Not seen on screen yet: the two-mode jab sequences (Duriel's, the

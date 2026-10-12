@@ -3823,6 +3823,7 @@ auto Fight::world(bool in_moor, std::uint32_t now_ms, float elapsed, const Crowd
             std::vector<Foe> foes{ Foe{ player.x, player.y, int(character.stats.get(d2d::d2s::kLevel)), true, player.walking, player_combat },
                                    Foe{ merc ? merc->unit.x : 0, merc ? merc->unit.y : 0, merc_st.level, merc && merc->mode != "DT",
                                         merc && merc->unit.walking, merc_fighter() } };
+            foes[0].running = owner_mode == 3;                   // RN (World: walking with run on and stamina)
             foes[0].life_pct = int(std::int64_t(character.stats.get(d2d::d2s::kLife)) * 100 / std::max<std::int64_t>(character.stats.get(d2d::d2s::kMaxLife), 1));
             foes[1].pet = true;                                  // the merc: its MonStats class's size
             foes[1].life_pct = merc ? int(std::int64_t(merc->hit_points) * 100 / std::max(merc_max_life(), 1)) : 0;

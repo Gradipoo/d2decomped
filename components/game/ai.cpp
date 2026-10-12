@@ -1172,7 +1172,7 @@ bool monster_update(const GameData& game_data, const Level& level, Monster& mons
                 }
                 for (int* damage : { &stats.a1_min, &stats.a1_max }) *damage = std::max(*damage * (100 + monster.dmg_pct + monster.aura_dmg) / 100, 0);
                 stats.to_hit += stats.to_hit * monster.aura_th / 100;
-                const auto taken = d2d::rules::monster_blow(foe.fighter, foe.level, foe.moving, stats, false, rng);
+                const auto taken = d2d::rules::monster_blow(foe.fighter, foe.level, foe.motion(), stats, false, rng);
                 foe.take(taken);
                 if (taken.hit && smite) foe.stun_ticks = std::max(foe.stun_ticks, d2d::rules::eval_calc(game_data.skills, struck_with->calc[1], {}, monster.skill, skill_level(game_data, monster, monster.skill)));
                 if (taken.hit && monster.mana_hi > 0) foe.mana_burn += rng.range(monster.mana_lo, monster.mana_hi);   // Mana Burn

@@ -273,7 +273,7 @@ struct Monster {
 struct Foe {
     float x = 0, y = 0;
     int level = 1;
-    bool alive = true, moving = false;        // moving: block falls to a third
+    bool alive = true, moving = false;        // moving: walking or running (evade, not dodge)
     d2d::rules::Fighter fighter;                    // defense, block, reductions, resistances, thorns
     int damage = 0;                           // life lost this frame, whole points
     int poison = 0, poison_ticks = 0;         // poison taken this frame: life per tick (256ths), for ticks
@@ -283,6 +283,8 @@ struct Foe {
     std::vector<const Monster*> melee_by;     // who struck at it in melee this frame (Frozen / Shiver Armor)
     int missile_hits = 0;                     // missiles that reached it this frame (Chilling Armor)
     int hits = 0;                             // hits that landed this frame (each wears its armour)
+    bool running = false;                     // the player in RN: always hit by a swing, block a third
+    [[nodiscard]] d2d::rules::Motion motion() const { return running ? d2d::rules::Motion::running : moving ? d2d::rules::Motion::walking : d2d::rules::Motion::standing; }
     int mana_burn = 0;                        // mana it lost to Mana Burn this frame
     struct Cast { int skill = -1, level = 0; };
     Cast cursed;                              // a curse cast on it this frame (a Cursed boss's Amplify Damage, the Summoner's Weaken)
@@ -478,7 +480,7 @@ void missiles_update(const Level& level, std::vector<Missile>& ms_, std::span<Fo
             const int key = -100 - int(&foe - foes.data());         // a ring's missiles strike each foe once
             if (std::ranges::contains(*missile.struck, key)) continue;
             missile.struck->push_back(key);
-            foe.take(d2d::rules::monster_blow(foe.fighter, foe.level, foe.moving, missile.src, true, rng, true));
+            foe.take(d2d::rules::monster_blow(foe.fighter, foe.level, foe.motion(), missile.src, true, rng, true));
             ++foe.missile_hits;
             return true;
         }

@@ -355,11 +355,13 @@ inline Blow player_blow(const Fighter& fighter, const Target& target, int clvl, 
     return blow;
 }
 
-// A monster's attack on the player (`moving`: walking or running;
+// A monster's attack on the player (`motion`: its mode, standing, WL or RN;
 // `missile`: a spike rather than a swing): hit chance against defense plus
-// the vs-melee / vs-missile bonus; then the defender's rolls
-// (FUN_0057dfb0 / FUN_0057dd60): block (a third while moving), Weapon
-// Block standing (two claws: weapon class HT2), then evade
+// the vs-melee / vs-missile bonus, but a swing at a running player always
+// lands (FUN_0057ec10: mode 3 skips FUN_0057d9b0); then the defender's rolls
+// (FUN_0057dfb0 / FUN_0057dd60): block (a third while running, FUN_00622d00
+// and mode not 2: walking keeps it whole), Weapon Block standing (two claws:
+// weapon class HT2), then evade
 // while moving, else dodge a swing / avoid a missile; then physical damage
 // less damage-reduced % then flat (it can reach 0), and each elemental
 // attack (at its chance) less resistance, fire / lightning / cold less
@@ -378,11 +380,14 @@ inline int chill_length(const Fighter& defender, int len) {
     return resisted(defender.half_freeze ? len / 2 : len, defender.res[2]);
 }
 struct Taken { bool hit = false, blocked = false, dodged = false; int damage = 0, poison = 0, poison_ticks = 0, chill_ticks = 0; };
-inline Taken monster_blow(const Fighter& defender, int dlvl, bool moving, const MonStats& attacker, bool second_attack, Rng& rng,
+enum class Motion : std::uint8_t { standing, walking, running };
+inline Taken monster_blow(const Fighter& defender, int dlvl, Motion motion, const MonStats& attacker, bool second_attack, Rng& rng,
                           bool missile = false) {
     Taken taken;
-    if (rng(100) >= hit_chance(attacker.to_hit, defender.defense + (missile ? defender.def_missile : defender.def_melee), attacker.level, dlvl)) return taken;
-    if (defender.block > 0 && rng(100) < (moving ? defender.block / 3 : defender.block)) { taken.blocked = true; return taken; }
+    const bool moving = motion != Motion::standing, running = motion == Motion::running;
+    if (!(running && !missile) && rng(100) >= hit_chance(attacker.to_hit, defender.defense + (missile ? defender.def_missile : defender.def_melee), attacker.level, dlvl))
+        return taken;
+    if (defender.block > 0 && rng(100) < (running ? defender.block / 3 : defender.block)) { taken.blocked = true; return taken; }
     if (!moving && defender.weapon_block > 0 && rng(100) < defender.weapon_block) { taken.blocked = true; return taken; }
     const int dodge = moving ? defender.evade : missile ? defender.avoid : defender.dodge;
     if (dodge > 0 && rng(100) < dodge) { taken.dodged = true; return taken; }

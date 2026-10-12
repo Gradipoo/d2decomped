@@ -414,7 +414,7 @@ struct ObjectRooms {
         // FUN_005b1cf0: a boss's mods, each FUN_005a4850(mod, 1); FUN_005a0320
         // counts a unique only as it first sets flag 8, so one a boss.
         // ponytail: Act 1's bosses by BaseId (Andariel, Blood Raven, the Maggot Queen); later acts' aren't.
-        if (const auto* info = type_at(type)) pop.uniques += info->base == 156 || info->base == 267 || info->base == 284 ? 1 : 0;
+        if (info) pop.uniques += info->base == 156 || info->base == 267 || info->base == 284 ? 1 : 0;
         const auto value = game.next();
         d2d::rules::Rng own{ value };
         const std::vector<d2d::rules::Components>* sets = nullptr;
@@ -500,8 +500,19 @@ struct ObjectRooms {
             tag(first, Boss::superunique, std::move(mods));
             if (spawns && first < spawns->size()) (*spawns)[first].super = superunique;
             const int minion = types[std::size_t(row)].minion[0] >= 0 ? types[std::size_t(row)].minion[0] : row;
-            for (int count = own.range(sup->min_grp, sup->max_grp); count > 0; --count)
+            for (int count = own(sup->max_grp - sup->min_grp + 1) + sup->min_grp; count > 0; --count)   // FUN_005a0c00: a draw even when MinGrp == MaxGrp
                 if (int at_x, at_y; put(minion, spot_x, spot_y, 3, false, at_x, at_y)) { made(minion, at_x, at_y); tag(spawns->size() - 1, Boss::minion); }
+            own.next();                                                 // FUN_005a0ce0: its name seed (data +0x14), unused for a superunique
+            // FUN_005a49b0 by its hcIdx: Radament's (10) company, each FUN_005b23c0
+            // at radius 4: rand(5) + 2 skeleton5s on his own seed, then a
+            // skeleton mage of each element (276, 382, 385, 389).
+            // ponytail: the other classes' cases (the Countess's AI, quest binds) aren't taken here.
+            if (superunique == 10) {
+                std::vector<int> company(std::size_t(own(5) + 2), 4);
+                company.insert(company.end(), { 0x114, 0x17e, 0x181, 0x185 });
+                for (const int hc_idx : company)
+                    if (int at_x, at_y; put(int(game_data.mon_bin[std::size_t(hc_idx)]), spot_x, spot_y, 4, false, at_x, at_y)) made(int(game_data.mon_bin[std::size_t(hc_idx)]), at_x, at_y);
+            }
             return;
         }
         party(row, own, spot_x, spot_y);
@@ -606,8 +617,8 @@ struct ObjectRooms {
     // A preset past objects.txt (FUN_0054f490's table at 0x731d28): 574-579 a
     // shrine (136), 580 / 581 a random chest (FUN_0054f370 a sparkling one,
     // FUN_0054f180), 582 a quest's (FUN_0059d830).
-    // ponytail: 574-579's kind (their range, on the unit's own seed), 580's
-    // level-62..64 roll and 582's quest check aren't taken: act 1 has none of them.
+    // ponytail: 574-579's kind (their range, on the unit's own seed) and
+    // 582's quest check aren't taken.
     int special(int id) {
         if (id < 580) return 136;
         if (id == 582) return 0x133;
@@ -628,7 +639,9 @@ struct ObjectRooms {
             if (unit.type == d2d::rules::unit_type::kObject && unit.id != 0x23d) {
                 const auto before = level.npcs.size();
                 make(unit.id > 0x23d ? special(unit.id) : unit.id, unit.x, unit.y, false);
-                if (unit.id == 580 && level.npcs.size() > before) level.npcs.back().sparkle = true;   // FUN_0054f370: FUN_005540a0(unit, 1)
+                // FUN_0054f370: FUN_005540a0(unit, 1); in the Maggot Lair (62-64) only 51 in 100, an object-seed draw after it's made.
+                const bool lair = level.id >= d2d::rules::level_ids::kMaggotLairLevel3 - 2 && level.id <= d2d::rules::level_ids::kMaggotLairLevel3;
+                if (unit.id == 580 && level.npcs.size() > before && (!lair || rgn.next() % 100 <= 50)) level.npcs.back().sparkle = true;
             }
             else if (unit.type == d2d::rules::unit_type::kWarp) game.next();                                                          // a warp tile: a unit made
         }

@@ -99,6 +99,7 @@ inline std::vector<std::string_view> player_states(const Scene& scene, const Vie
     std::vector<std::string_view> out;
     if (view.poisoned) out.push_back("poison");
     if (view.chilled) out.push_back("cold");
+    if (const auto* skill = scene.skills.get(view.curse)) out.push_back(skill->auratarget);   // a monster's curse: its auratargetstate
     for (const int buff : view.buffs) if (const auto* skill = scene.skills.get(buff)) out.push_back(skill->aurastate);
     if (view.aura > 0) if (const auto* skill = scene.skills.get(view.aura)) out.push_back(skill->aurastate);
     if (const auto state = d2d::rules::shrine_state(view.boost_code); !state.empty()) out.push_back(state);   // its overlays

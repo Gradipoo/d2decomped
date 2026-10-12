@@ -63,7 +63,7 @@ auto Fight::new_game(int difficulty) -> void {
         monsters.clear();
         mon_level = nullptr;
         area_seen.clear();
-        amplified = {};
+        curses = {};
         chilled = 0;
         kept.clear();
         next_id = 1;
@@ -103,6 +103,7 @@ auto Fight::revive(std::uint32_t now_ms) -> void {
         regen.clear();
         charges.clear();
         self_states.clear();
+        curses[0] = {};
         pmode = -1; player.mode_ms = now_ms; attack_mon = -1;
         if (merc) { merc->unit.x = player.x + 1; merc->unit.y = player.y + 1; merc->unit.path.clear(); merc->mode = "NU"; merc_target = -1; }
     }
@@ -164,9 +165,9 @@ auto Fight::potion(const std::string& code, std::uint32_t now_ms) -> void {
     }
 
 auto Fight::cure(std::uint32_t now_ms) -> bool {
-        const bool cursed = now_ms < amplified[0];
+        const bool cursed = now_ms < curses[0].until;
         const bool poisoned = std::erase_if(regen, [](const Regen& regen_entry) { return regen_entry.poison; }) > 0;
-        amplified = {};
+        curses = {};
         if (merc && merc->hit_points > 0) merc->hit_points = merc_max_life();
         return cursed || poisoned;
     }
@@ -346,6 +347,7 @@ auto Fight::update_fighters(std::uint32_t now_ms) -> void {
             if (const auto* skill = game_data->skills.get(pet.aura); skill && skill->srvdofunc == ServerDoFunction::kFriendlyAura && pet.monster.alive() && pet.where == level
                 && std::hypot(pet.monster.unit.x - player.x, pet.monster.unit.y - player.y) * 5 <= float(calc(*skill, skill->aurarange, pet.aura_level)))
                 states.push_back({ pet.aura, pet.aura_level, ~0u });
+        if (now_ms < curses[0].until) states.push_back({ curses[0].skill, curses[0].level, curses[0].until });   // a monster's curse on the player
         for (const auto& state : states) {
             const auto* skill = game_data->skills.get(state.skill);
             for (std::size_t i = 0; skill && i < skill->aurastat.size(); ++i)
@@ -3823,8 +3825,11 @@ auto Fight::world(bool in_moor, std::uint32_t now_ms, float elapsed, const Crowd
             foes[1].life_pct = merc ? int(std::int64_t(merc->hit_points) * 100 / std::max(merc_max_life(), 1)) : 0;
             if (const int row = merc_npc ? game_data->monsters.row(merc_npc->id) : -1; row >= 0)
                 foes[1].size = game_data->monsters.types[std::size_t(row)].size, foes[1].threat = game_data->monsters.types[std::size_t(row)].threat;
-            for (std::size_t k = 0; k < 2; ++k)                  // Amplify Damage on them: damage reduced -100 %
-                if (now_ms < amplified[k]) foes[k].fighter.dr_pct -= 100;
+            // The merc's curse: its damageresist (Amplify Damage's -100 %).
+            // ponytail: its other aurastats (Weaken's damagepercent) aren't on the merc's fighter.
+            if (const auto* skill = now_ms < curses[1].until ? game_data->skills.get(curses[1].skill) : nullptr)
+                for (std::size_t i = 0; i < skill->aurastat.size(); ++i)
+                    if (skill->aurastat[i] == d2d::d2s::kDamageResist) foes[1].fighter.dr_pct += calc(*skill, skill->aura_calc[i], curses[1].level);
             monster_auras(foes, now_ms);
             for (const auto& pet : pets) foes.push_back(pet_foe(pet));
             // With Confuse or Attract about, every monster is a foe too, after
@@ -3919,10 +3924,13 @@ auto Fight::world(bool in_moor, std::uint32_t now_ms, float elapsed, const Crowd
                 else if (poison.life <= old->life) *old = poison;
             }
             if (foe.chill_ticks > 0) chilled = std::max(chilled, now_ms + std::uint32_t(foe.chill_ticks) * 40);   // only ever lengthened (FUN_0057af80)
-            for (std::size_t k = 0; k < 2; ++k)                  // a Cursed boss's Amplify Damage: its auralen
-                if (const auto* skill = game_data->skills.get(66); skill && foes[k].amplify > 0) {
-                    amplified[k] = now_ms + std::uint32_t(std::max(calc(*skill, skill->auralen, foes[k].amplify), 25)) * 40;
-                    d2d::log::info("{} cursed: Amplify Damage level {}", k ? "the merc" : "the player", foes[k].amplify);
+            for (std::size_t k = 0; k < 2; ++k)                  // a monster's curse: its auralen (dimvision / terror's over AiCurseDivisor)
+                if (const auto* skill = game_data->skills.get(foes[k].cursed.skill)) {
+                    int length = calc(*skill, skill->auralen, foes[k].cursed.level);
+                    if (const int divisor = game_data->curse_divisor[std::size_t(std::clamp(game_difficulty, 0, 2))]; divisor != 0 && (skill->auratarget == "dimvision" || skill->auratarget == "terror"))
+                        length /= divisor;
+                    curses[k] = { skill->id, foes[k].cursed.level, now_ms + std::uint32_t(std::max(length, 25)) * 40 };
+                    d2d::log::info("{} cursed: {} level {}", k ? "the merc" : "the player", skill->name, foes[k].cursed.level);
                 }
             if (foe.mana_burn > 0) {                             // Mana Burn
                 character.stats.values[d2d::d2s::kMana] = std::max<std::int64_t>(character.stats.values[d2d::d2s::kMana] - (std::int64_t(foe.mana_burn) << 8), 0);

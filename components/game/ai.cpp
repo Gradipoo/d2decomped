@@ -329,11 +329,13 @@ int skill_id(const GameData& game_data, const std::string& name) {
 // GameData::mon_seqs): the rows played, a frame each; null for a plain mode.
 using SeqRows = std::vector<GameData::MonSeqFrame>;
 // A plain-mode skill d2d casts for a monster (no sequence; the Summoner's
-// SC skills): a srvmissile at the target, a nova (22), a fire wall (24).
-// ponytail: other do-funcs (Weaken's curse on the player, 30) stand.
+// SC skills): a srvmissile at the target, a nova (22), a fire wall (24),
+// a curse (30: Weaken).
+// ponytail: other do-funcs stand.
 bool castable(const d2d::rules::Skill& skill) {
     using d2d::rules::ServerDoFunction;
-    return !skill.srvmissile.empty() || skill.srvdofunc == ServerDoFunction::kNova || skill.srvdofunc == ServerDoFunction::kMissileWall;
+    return !skill.srvmissile.empty() || skill.srvdofunc == ServerDoFunction::kNova || skill.srvdofunc == ServerDoFunction::kMissileWall
+        || skill.srvdofunc == ServerDoFunction::kCurse;
 }
 // Its skill `id`'s level (Sk*lvl + the difficulty's bonus), 1 when not its own.
 int skill_level(const GameData& game_data, const Monster& monster, int id) {
@@ -1066,7 +1068,17 @@ bool monster_update(const GameData& game_data, const Level& level, Monster& mons
                 // else its srvmissile at the target.
                 using d2d::rules::ServerDoFunction;
                 const int lvl = skill_level(game_data, monster, monster.skill);
-                if (cast->srvdofunc == ServerDoFunction::kNova) {
+                if (cast->srvdofunc == ServerDoFunction::kCurse) {
+                    // do 30 (FUN_005c37c0) from a monster: its curse on each of
+                    // the player's side within aurarangecalc subtiles of the
+                    // target's spot (FUN_0056e780, enemies only), the newest in
+                    // place of the last (Fight::curses).
+                    // ponytail: a pet's curse isn't kept (only the player's and the merc's).
+                    const int radius = d2d::rules::eval_calc(game_data.skills, cast->aurarange, {}, monster.skill, lvl);
+                    for (auto& near_foe : foes)
+                        if (near_foe.alive && !near_foe.of && !foe.of && std::hypot(near_foe.x - foe.x, near_foe.y - foe.y) * 5 <= float(radius))
+                            near_foe.cursed = { monster.skill, lvl };
+                } else if (cast->srvdofunc == ServerDoFunction::kNova) {
                     const auto ring = game_data.missiles.find(cast->srvmissilea);
                     const int reach = ring == game_data.missiles.end() ? 0
                         : ring->second.range + ring->second.lev_range * lvl + d2d::rules::eval_calc(game_data.skills, cast->calc[0], {}, monster.skill, lvl);
@@ -1132,7 +1144,7 @@ bool monster_update(const GameData& game_data, const Level& level, Monster& mons
                     const int radius = std::clamp(amplify ? d2d::rules::eval_calc(game_data.skills, amplify->aurarange, {}, 66, curse_level) : 1, 1, 40);
                     for (auto& near_foe : foes)
                         if (near_foe.alive && !near_foe.of && std::hypot(near_foe.x - foe.x, near_foe.y - foe.y) * 5 <= float(radius))
-                            near_foe.amplify = std::max(near_foe.amplify, curse_level);
+                            near_foe.cursed = { 66, curse_level };
                 }
                 foe.melee_by.push_back(&monster);
                 const auto& res = type_info.diff[std::size_t(monster.difficulty)].res;

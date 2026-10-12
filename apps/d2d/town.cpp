@@ -1761,7 +1761,10 @@ auto Town::draw(std::vector<std::uint8_t>& framebuffer, const Mouse& mouse, std:
         }
         std::erase_if(state_clock.seen, [&](const auto& entry) { return frame_ms - entry.second.last > 5000; });
         Unit player_look{};
-        dress(*scene, player_look, -1, player_states(*scene, view), &state_clock);
+        auto look_states = player_states(*scene, view);
+        if (net_game)
+            for (const int row : net_game->self_states) if (std::size_t(row) < scene->state_names.size()) look_states.emplace_back(scene->state_names[std::size_t(row)]);
+        dress(*scene, player_look, -1, look_states, &state_clock);
         const bool town = d2d::rules::level_ids::is_town(level->id);                       // TN/TW in town, NU/WL outside
         // A dead player has no DD composite: DT held on its last frame.
         const auto cls = std::max(character.character_class, 0);

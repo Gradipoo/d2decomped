@@ -684,6 +684,7 @@ void load_tables(GameData& game_data, const d2d::mpq::Stack& mpqs) {
             state.item_type = std::string(states_table.get(row, "itemtype"));
             const std::string trans(states_table.get(row, "itemtrans"));
             for (std::size_t colour = 0; colour < game_data.item_colours.codes.size(); ++colour) if (!trans.empty() && game_data.item_colours.codes[colour] == trans) state.item_colour = int(colour);
+            game_data.state_names.emplace_back(states_table.get(row, "state"));
             game_data.states.emplace(std::string(states_table.get(row, "state")), std::move(state));
         }
     if (auto bytes = mpqs.try_read(R"(data\global\palette\ACT1\Pal.pl2)"); bytes && bytes->size() >= 0x53500 + 111 * 256) {

@@ -114,6 +114,10 @@ struct NetGame {
     std::unordered_map<std::uint64_t, Unit> units;
     std::vector<int> monster_velocity;   // MonStats Velocity by row: a monster's walk (empty: a player's walk)
     std::unordered_map<std::uint32_t, GroundItem> ground;   // by the host's item id
+    // The States.txt rows the host has on our player (0xa8 set, 0xa9 end):
+    // a monster's curse, an aura, a shrine's; their overlays are drawn.
+    // ponytail: 0xaa (a unit's states as it comes into view) and the other units' states aren't read.
+    std::vector<int> self_states;
     std::unordered_map<std::uint32_t, d2d::d2s::Item> own_items;   // ours as the host has them (grids, body, belt, cursor), by its ids
     std::unordered_map<std::uint32_t, d2d::d2s::Item> store_items;   // the open store's stock (0x9c 0xb), by its ids
     std::uint32_t trade_npc = 0;               // the NPC we trade with (its unit id), 0 none

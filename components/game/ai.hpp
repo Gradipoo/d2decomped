@@ -269,7 +269,8 @@ struct Foe {
     int missile_hits = 0;                     // missiles that reached it this frame (Chilling Armor)
     int hits = 0;                             // hits that landed this frame (each wears its armour)
     int mana_burn = 0;                        // mana it lost to Mana Burn this frame
-    int amplify = 0;                          // Amplify Damage cast on it this frame (a Cursed boss): its level
+    struct Cast { int skill = -1, level = 0; };
+    Cast cursed;                              // a curse cast on it this frame (a Cursed boss's Amplify Damage, the Summoner's Weaken)
     bool pet = false;                         // the merc, a summon: in the player's list
     int size = 2;                             // FUN_00620510: a player's 2, a monster's MonStats2 SizeX
     int threat = 14;                          // FUN_005dc920: a player's 14, a monster's MonStats threat

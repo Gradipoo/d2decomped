@@ -787,9 +787,8 @@ host's quests, travel and every unit's states.
 Act 2 plays from Lut Gholein to Duriel and Meshif's boat. Known gaps, none
 blocking:
 
-- Monster second thinks (FUN_005b0e00, monster-ai.md "Other thinks"):
-  they run only as a curse ends after the think left the curse's AI;
-  d2d's curses don't swap thinks, so they aren't ported.
+- Monster other thinks of Acts 3–5 (MonAI rows 51, 52, 61, 65, 128, 135,
+  140, 145, 147, 152): `rules::other_think` has Act 2's two.
 - Act bosses of Acts 3–5 (FUN_005b1cf0 by BaseId: Mephisto, Diablo, Izual,
   Baal, the Council's quest hooks): not in `rules::act_boss` yet.
 - Waiting on a live host: the joined game's checklist (quests, travel,

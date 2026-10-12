@@ -3950,7 +3950,10 @@ auto Fight::world(bool in_moor, std::uint32_t now_ms, float elapsed, const Crowd
                 character.stats.values[kLife] -= std::int64_t(foe.damage) << 8;
                 if (character.stats.values[kLife] <= 0) {
                     die(now_ms);
-                } else if (std::int64_t(foe.damage) * 12 >= character.stats.fixed(kMaxLife) && !attack_mode(pmode) && pmode != kModeBL) {
+                } else if ((std::int64_t(foe.damage) * 12 >= character.stats.fixed(kMaxLife) || now_ms < stunned) && !attack_mode(pmode) && pmode != kModeBL) {
+                    // Stunned, every hit is a get-hit, however small (FUN_0057cee0:
+                    // state 21 skips FUN_0057cb00's too-small test). That's all a
+                    // stun does to a player: no input is refused.
                     set_pmode(kModeGH, now_ms);
                 }
             }

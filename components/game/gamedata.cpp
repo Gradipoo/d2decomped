@@ -1083,6 +1083,13 @@ std::size_t set_level_tiles(Level& level, const d2d::drlg::OutdoorAssets& assets
             level.warps.push_back({ float(warp.x), float(warp.y), destination, exit_x, exit_y,
                                     (float(warp.x * 5 + slot.off_x) + 0.5f) / 5, (float(warp.y * 5 + slot.off_y) + 0.5f) / 5, warp.slot, pair });
         }
+    // 0x800000 also: a room whose warp leads into a town, the town's room on
+    // its near list (FUN_0066bd50, FUN_006426a0) — the Sewers' ways up.
+    for (const auto& warp : level.warps)
+        if (d2d::rules::level_ids::is_town(warp.destination))
+            for (std::size_t i = 0; i < made.size(); ++i)
+                if (warp.x >= float(made[i].x) && warp.x < float(made[i].x + made[i].width) && warp.y >= float(made[i].y) && warp.y < float(made[i].y + made[i].height))
+                    level.room_flags[i] |= 0x800000;
     finish_level(level);
     return placed;
 }

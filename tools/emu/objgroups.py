@@ -46,8 +46,8 @@ def dump(e, seed, lid, drops=False):
     e.call(0x536070, ecx=game)                               # sunitproxy (a game-seed step)
     e.call(0x545d80, ecx=game)                               # the quests (the Cairn Stones' preset asks for its record)
     e.call(0x541470, ecx=game)                               # the event list
-    act = e.call(0x6194a0, 0, seed, 0, game, 0, 0, lid, 0, 0)
-    e.w32(game + 0xbc, act)
+    act = e.call(0x6194a0, drlg.act_of(lid), seed, 0, game, 0, 0, lid, 0, 0)   # its act
+    e.w32(game + 0xbc + 4 * drlg.act_of(lid), act)
     lvl = drlg.find_level(e, e.r32(act + 0x48), lid)
     if not lvl: raise SystemExit(f"objgroups: level {lid} not built")
     x0, y0 = e.s32(lvl + 0x1c), e.s32(lvl + 0x20)

@@ -851,13 +851,25 @@ void place_objects(const GameData& game_data, GameData::LevelBuilder& builder, L
     level.room_flags.resize(level.rooms.size());
     level.unit_rooms.resize(level.units.size(), -1);
     // 0x30000: a room with a waypoint (objects.txt SubClass 0x40, FUN_00667e30);
-    // 0x800000: the Blood Moor's rooms next to the camp (FUN_0066bd92).
     for (std::size_t i = 0; i < level.units.size(); ++i)
         if (level.units[i].type == d2d::rules::unit_type::kObject && level.unit_rooms[i] >= 0 && (pop.obj(level.units[i].id, "SubClass") & d2d::rules::object_ids::kSubclassWaypoint))
             level.room_flags[std::size_t(level.unit_rooms[i])] |= 0x30000;
-    if (level.id == d2d::rules::level_ids::kBloodMoor && game_data.town.ds1.width() > 0) {
-        const auto& town = game_data.town;
-        const int town_x = town.world_x, town_y = town.world_y, town_w = town.ds1.width(), town_h = town.ds1.height();
+    // 0x800000 also: a room with a town room among its near rooms
+    // (FUN_0066bd50 on the near list, +0x2c; FUN_006426a0: levels 1, 40, 75,
+    // 103, 109) — the Blood Moor's by the camp, the Sewers' by Lut Gholein.
+    // The near rooms: within 6 act tiles on both axes.
+    std::array<int, 4> town{};                                    // its act's town: x, y, width, height (act tiles)
+    bool has_town = false;
+    if (level.id < d2d::rules::level_ids::kLutGholein) {
+        if (level.id != d2d::rules::level_ids::kRogueEncampment && game_data.town.ds1.width() > 0) {
+            town = { game_data.town.world_x, game_data.town.world_y, game_data.town.ds1.width(), game_data.town.ds1.height() };
+            has_town = true;
+        }
+    } else if (level.id != d2d::rules::level_ids::kLutGholein)
+        for (const auto& placed : game_data.layout_of(level.id))
+            if (placed.level == d2d::rules::level_ids::kLutGholein) { town = { placed.x, placed.y, placed.width, placed.height }; has_town = true; }
+    if (has_town) {
+        const auto [town_x, town_y, town_w, town_h] = town;
         for (std::size_t i = 0; i < level.rooms.size(); ++i) {
             const auto& made = level.rooms[i];
             const int x = level.world_x + made.x, y = level.world_y + made.y;

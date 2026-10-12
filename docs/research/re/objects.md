@@ -431,6 +431,22 @@ Check: `cd tools/emu && uv run python diff_drlg.py 1-20 <level> objgroups`.
 
 Findings along the way:
 
+- 0x800000 has three setters on a room2 (+0x28), traced by watching the
+  writes in the emulator: FUN_00666680 / FUN_00667ed0 (a preset its
+  LvlPrest row doesn't populate), FUN_0066e360 (a lit warp tile), and
+  FUN_0066bd50 (0x66bd92): a room with a town room (FUN_006426a0: levels
+  1, 40, 75, 103, 109) on its near list (+0x2c). That last is the Blood
+  Moor's rooms by the camp, the Rocky Waste's by Lut Gholein, and a maze
+  room whose warp leads into a town (the Sewers' ways up: the town's room
+  is on its near list). d2d: the act's town rect within 6 act tiles, and a
+  room holding a warp to a town. `LEVELS=41 diff_drlg.py 1-3 0 game` 3/3;
+  the Sewers' (47) way-up room now matches. Open: 47's room 48,36 rat
+  nests (PopulateFn 3) differ on a 7 x 7 test (FUN_0064d800) with equal
+  draws, game.exe placing where d2d finds a blocker (whole-game run: the
+  other way round), so a neighbour's stamp; the tombs (55, 56) still
+  differ. `objgroups.py dump` makes the level's own act now (FUN_006194a0
+  its act, game +0xbc + act × 4).
+
 - A warp tile (orient 10/11, style <= 7) flags its room 0x800000
   (FUN_0066e360) lit or not, so it gets no groups.
 - A door or warp wall tile (orient 8..11) is tile flag 2 (FUN_0066db20):

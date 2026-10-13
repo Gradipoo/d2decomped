@@ -347,7 +347,7 @@ using SeqRows = std::vector<GameData::MonSeqFrame>;
 bool castable(const d2d::rules::Skill& skill) {
     using enum d2d::rules::ServerDoFunction;
     return !skill.srvmissile.empty() || std::ranges::contains(std::array{ kNova, kMissileWall, kCurse, kScatteredBolts, kMissileAtTarget, kMonsterBreath, kBestow,
-                                                                          kMonTeleport, kPoisonNova, kHydra }, skill.srvdofunc);
+                                                                          kMonTeleport, kMonPoisonNova, kHydra }, skill.srvdofunc);
 }
 // Its skill `id`'s level (Sk*lvl + the difficulty's bonus), 1 when not its own.
 int skill_level(const GameData& game_data, const Monster& monster, int id) {
@@ -1294,7 +1294,7 @@ bool monster_update(const GameData& game_data, const Level& level, Monster& mons
                     // FUN_005ca3e0 / FUN_005cc4e0: its srvmissilea at the target (MonBlizzard's centre, the fetishes' inferno).
                     // ponytail: the breath's state 0xc and its repeat (FUN_005cc240) left out; a blizzard's centre flies there.
                     andariel_missile(game_data, monster, cast->srvmissilea, dx, dy, now_ms, missiles, lvl, cast);
-                } else if (cast->srvdofunc == ServerDoFunction::kPoisonNova) {
+                } else if (cast->srvdofunc == ServerDoFunction::kMonPoisonNova) {
                     // FUN_005ccd10: srvmissilea out 8 ways (0x6e31e8 / 0x6e31a8), and the 8 between with calc2 2.
                     const int between = d2d::rules::eval_calc(game_data.skills, cast->calc[1], {}, monster.skill, lvl) > 1 ? 2 : 1;
                     for (int way = 0; way < 8 * between; ++way) {

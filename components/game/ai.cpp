@@ -161,7 +161,7 @@ void set_mode(const GameData& game_data, Monster& monster, std::string_view mode
     monster.seq_frame = -1;                                   // a sequence's row: drawn again as it plays
     monster.unit.mode_ms = now_ms;
     monster.unit.walking = mode == "WL" || mode == "RN";
-    monster.mode_until = mode == "NU" || mode == "WL" || mode == "DD" ? 0 : now_ms + game_data.npc_timing(monster.npc, mode).length_ms();
+    monster.mode_until = mode == "NU" || mode == "WL" || mode == "DD" ? 0 : now_ms + game_data.npc_timing(monster.npc, mode).length_ms() * 100 / std::uint32_t(100 + monster.anim_pct);
 }
 
 std::vector<UnitState> npc_start(const Level& level) {
@@ -746,6 +746,7 @@ bool think(const GameData& game_data, const Level& level, Monster& monster, std:
             input.leader_mode = int(std::ranges::find(kModes, head.mode) - kModes.begin());
         }
         input.command_unit = *input.command == 1;
+        input.state_c = monster.breath_state;   // the breath's state 0xc (FUN_00639df0)
         input.skill_level = d2d::rules::monster_skill_level(type_info.sk_lvl[0], monster.difficulty);
         if (type_info.ai_name == "FrogDemon") input.spot_clear = !level.blocked(unit.x, unit.y, 0xc01);
         if (type_info.ai_name == "ZakarumZealot") {
@@ -776,14 +777,29 @@ bool think(const GameData& game_data, const Level& level, Monster& monster, std:
             if (council && squared <= 2500 && life < weakest) { aid = int(i); weakest = life; input.kin_dist = squared; }
         }
         if (priest || council) input.aid = aid >= 0;
-        // The wisps (FUN_0065a950, radius 0x20, class 0x76 willowisp1: itself
-        // too), in the pack's order; the blessing's target a player.
-        // ponytail: within 32 subtiles (squared), not the search's own shape; FUN_005541b0 taken as clear.
+        // The wisps (FUN_0065a950 / FUN_0065ac70, radius 0x20): its room alone
+        // when the square 32 round it lies inside it (FUN_0065a6b0), else its
+        // near list; FUN_0065a710 lets every room of it through (bugs.md #23);
+        // each live (FUN_0063ea40: not DT / DD) unit of BaseId 0x76 in them
+        // (FUN_005f3960, FUN_00463860), itself too. The blessing's target a player.
+        // ponytail: a room's units in the pack's order (game.exe: its unit
+        // list); FUN_005541b0 taken as clear.
         if (type_info.ai_name == "WillOWisp") {
-            for (std::size_t i = 0; i < pack.size(); ++i) {
-                const auto& other = pack[i];
-                const int off_x = subtile(other.unit.x) - x, off_y = subtile(other.unit.y) - y;
-                if (other.alive() && game_data.monsters.types[std::size_t(other.type)].base == 118 && off_x * off_x + off_y * off_y <= 0x400) wisp_finds.push_back(int(i));
+            auto rects = missile_rooms(game_data, level, unit.x, unit.y);
+            if (!rects.empty()) {
+                const auto own = rects.front();
+                const bool inside = own[0] < x - 0x20 && own[1] < y - 0x20 && x + 0x20 < own[0] + own[2] && y + 0x20 < own[1] + own[3];
+                rects.erase(rects.begin());
+                if (inside) rects = { own };
+                for (const auto& rect : rects)
+                    for (std::size_t i = 0; i < pack.size(); ++i) {
+                        const auto& other = pack[i];
+                        const int other_x = subtile(other.unit.x), other_y = subtile(other.unit.y);
+                        if (other_x < rect[0] || other_y < rect[1] || other_x >= rect[0] + rect[2] || other_y >= rect[1] + rect[3]) continue;
+                        if (other.alive() && other.mode != "DT" && other.mode != "DD" && game_data.monsters.types[std::size_t(other.type)].base == 118
+                            && !std::ranges::contains(wisp_finds, int(i)))
+                            wisp_finds.push_back(int(i));
+                    }
             }
             input.wisps = int(wisp_finds.size());
             input.bless_ok = !target->pet && !target->of;
@@ -841,6 +857,7 @@ bool think(const GameData& game_data, const Level& level, Monster& monster, std:
     for (const auto& effect : effects) {
         if (effect.kind == d2d::rules::ThinkEffect::command_done) monster.ai_command = 0;
         if (effect.kind == d2d::rules::ThinkEffect::unset) monster.set_kind = 0;   // FUN_00573120
+        if (effect.kind == d2d::rules::ThinkEffect::state && effect.id == 0xc && !effect.value) monster.breath_state = false;   // FUN_00639db0(0xc, 0)
         if (effect.kind == d2d::rules::ThinkEffect::toggle) {
             const int kept = monster.ai_state3;
             ai_toggle(game_data, monster, effect.id);
@@ -976,7 +993,7 @@ bool think(const GameData& game_data, const Level& level, Monster& monster, std:
             // the first row's mode stands for it in the logic.
             const std::string_view played = seq ? std::string_view(seq->front().mode) : std::string_view(type_info.sk_mode[std::size_t(act.n)]);
             use(played, id);
-            if (seq) monster.mode_until = now_ms + std::uint32_t(seq->size()) * game_data.npc_timing(monster.npc, played).ms_per_frame();
+            if (seq) monster.mode_until = now_ms + std::uint32_t(seq->size()) * game_data.npc_timing(monster.npc, played).ms_per_frame() * 100 / std::uint32_t(100 + monster.anim_pct);
             // Leap (srvstfunc 40, FUN_005d9d50): it lands at twice the target's
             // spot less its own, on the free spot nearest (mask 0x3c01).
             // ponytail: the nearest free spot, not FUN_0064e7b0's search.
@@ -1057,6 +1074,20 @@ bool monster_update(const GameData& game_data, const Level& level, Monster& mons
         if (monster.mode == "DT" && now_ms >= monster.mode_until) set_mode(game_data, monster, "DD", now_ms);
         return false;
     }
+    // A breath under way (FUN_005cc4e0 re-run, FUN_005417d0 type 0): a flame
+    // every calc3 frames (at least 1) at its foe till its end; the mode held.
+    // ponytail: the flame's range is its Missiles.txt row's (FUN_005cc2e0 sets calc1's when it has one).
+    if (monster.breath >= 0) {
+        if (now_ms >= monster.breath_until) monster.breath = -1;
+        else if (now_ms >= monster.breath_next) {
+            if (const auto* cast = game_data.skills.get(monster.breath)) {
+                const int lvl = skill_level(game_data, monster, monster.breath);
+                andariel_missile(game_data, monster, cast->srvmissilea, foe.x - unit.x, foe.y - unit.y, now_ms, missiles, lvl, cast);
+                monster.breath_next = now_ms + std::uint32_t(std::max(d2d::rules::eval_calc(game_data.skills, cast->calc[2], {}, monster.breath, lvl), 1)) * 40;
+            }
+            return false;
+        }
+    }
     if (monster.mode == "KB") {                                     // knocked back: along to leap_to over the mode (Fight::land)
         const float done = std::clamp(float(now_ms - monster.unit.mode_ms) / float(std::max<std::uint32_t>(monster.mode_until - monster.unit.mode_ms, 1)), 0.f, 1.f);
         monster.unit.x = monster.leap_from_x + (monster.leap_to_x - monster.leap_from_x) * done;
@@ -1109,14 +1140,14 @@ bool monster_update(const GameData& game_data, const Level& level, Monster& mons
         // runs its skill; a plain mode strikes on its action frame.
         int due = 0;
         if (seq) {
-            const int reached = std::min(int((now_ms - unit.mode_ms) / std::max<std::uint32_t>(timing.ms_per_frame(), 1)), int(seq->size()) - 1);
+            const int reached = std::min(int((now_ms - unit.mode_ms) / std::max<std::uint32_t>(timing.ms_per_frame() * 100 / std::uint32_t(100 + monster.anim_pct), 1)), int(seq->size()) - 1);
             monster.seq_mode = (*seq)[std::size_t(reached)].mode;
             monster.seq_frame = (*seq)[std::size_t(reached)].frame;
             for (; monster.seq_done <= reached; ++monster.seq_done) {
                 const int event = (*seq)[std::size_t(monster.seq_done)].event;
                 if (event == 4 || ((event == 1 || event == 2) && !monster.seq_once)) ++due;
             }
-        } else if (!monster.struck && now_ms >= unit.mode_ms + timing.action_ms()) {
+        } else if (!monster.struck && now_ms >= unit.mode_ms + timing.action_ms() * 100 / std::uint32_t(100 + monster.anim_pct)) {
             monster.struck = true;
             due = 1;
         }
@@ -1290,9 +1321,17 @@ bool monster_update(const GameData& game_data, const Level& level, Monster& mons
                         const float turn = (float(int(rng.next() % 101) - 50) / 100.f) * 1.5707963f;
                         andariel_missile(game_data, monster, cast->srvmissilea, dx * std::cos(turn) - dy * std::sin(turn), dx * std::sin(turn) + dy * std::cos(turn), now_ms, missiles, lvl, cast);
                     }
-                } else if (cast->srvdofunc == ServerDoFunction::kMissileAtTarget || cast->srvdofunc == ServerDoFunction::kMonsterBreath) {
-                    // FUN_005ca3e0 / FUN_005cc4e0: its srvmissilea at the target (MonBlizzard's centre, the fetishes' inferno).
-                    // ponytail: the breath's state 0xc and its repeat (FUN_005cc240) left out; a blizzard's centre flies there.
+                } else if (cast->srvdofunc == ServerDoFunction::kMonsterBreath) {
+                    // FUN_005cc240 / FUN_005cc4e0: state 0xc, its end calc2 frames on; a
+                    // flame now and every calc3 frames after (the breath below).
+                    monster.breath = monster.skill;
+                    monster.breath_state = true;
+                    monster.breath_until = now_ms + std::uint32_t(std::max(d2d::rules::eval_calc(game_data.skills, cast->calc[1], {}, monster.skill, lvl), 1)) * 40;
+                    monster.breath_next = now_ms;
+                    monster.next_act = std::max(monster.next_act, monster.breath_until);
+                } else if (cast->srvdofunc == ServerDoFunction::kMissileAtTarget) {
+                    // FUN_005ca3e0: its srvmissilea at the target (MonBlizzard's centre).
+                    // ponytail: a blizzard's centre flies there.
                     andariel_missile(game_data, monster, cast->srvmissilea, dx, dy, now_ms, missiles, lvl, cast);
                 } else if (cast->srvdofunc == ServerDoFunction::kMonPoisonNova) {
                     // FUN_005ccd10: srvmissilea out 8 ways (0x6e31e8 / 0x6e31a8), and the 8 between with calc2 2.
@@ -1373,6 +1412,14 @@ bool monster_update(const GameData& game_data, const Level& level, Monster& mons
                 for (int* damage : { &stats.a1_min, &stats.a1_max }) *damage = std::max(*damage * (100 + monster.dmg_pct + monster.aura_dmg) / 100, 0);
                 stats.to_hit += stats.to_hit * monster.aura_th / 100;
                 const auto taken = d2d::rules::monster_blow(foe.fighter, foe.level, foe.motion(), stats, false, rng);
+                // MonFrenzy's strike (do 109, FUN_005cdf10): a hit puts on its state
+                // (FUN_005d8c70) for ln12 frames, one more charge up to its level.
+                if (struck_with && struck_with->srvdofunc == d2d::rules::ServerDoFunction::kMonFrenzy && taken.hit) {
+                    const int lvl = skill_level(game_data, monster, monster.skill);
+                    monster.frenzy.skill = monster.skill;
+                    monster.frenzy.level = std::min(monster.frenzy.level + 1, lvl);
+                    monster.frenzy.until = now_ms + std::uint32_t(std::max(d2d::rules::eval_calc(game_data.skills, struck_with->auralen, {}, monster.skill, lvl), 1)) * 40;
+                }
                 foe.take(taken);
                 if (taken.hit && smite && (struck_with->result_flags & 8)) foe.knocked_from = std::pair{ unit.x, unit.y };
                 if (taken.hit && smite) foe.stun_ticks = std::max(foe.stun_ticks, d2d::rules::eval_calc(game_data.skills, struck_with->calc[1], {}, monster.skill, skill_level(game_data, monster, monster.skill)));

@@ -1242,10 +1242,10 @@ auto Fight::buff_tick(std::uint32_t now_ms) -> void {
 
 auto Fight::monster_states(std::uint32_t now_ms) -> void {
         for (auto& monster : monsters) {
-            monster.dmg_pct = monster.speed_pct = monster.reflect_pct = 0;
+            monster.dmg_pct = monster.speed_pct = monster.reflect_pct = monster.anim_pct = 0;
             monster.align = 0;                                // Confuse's / Attract's end (FUN_005c3db0 / 0x5c3b00), or another curse in its place
             monster.afraid = false;
-            for (auto* effect : { &monster.curse, &monster.cry }) {
+            for (auto* effect : { &monster.curse, &monster.cry, &monster.frenzy }) {
                 if (effect->skill < 0) continue;
                 if (now_ms >= effect->until) { end_state(*game_data, monster, *effect); continue; }
                 const auto* skill = game_data->skills.get(effect->skill);
@@ -1253,6 +1253,8 @@ auto Fight::monster_states(std::uint32_t now_ms) -> void {
                 for (std::size_t aura_stat = 0; aura_stat < skill->aurastat.size(); ++aura_stat) {
                     if (skill->aurastat[aura_stat] == 25) monster.dmg_pct += calc(*skill, skill->aura_calc[aura_stat], effect->level);
                     if (skill->aurastat[aura_stat] == 67) monster.speed_pct += calc(*skill, skill->aura_calc[aura_stat], effect->level);
+                    if (skill->aurastat[aura_stat] == 68 || skill->aurastat[aura_stat] == 69)   // attackrate, other_animrate: the same rate (MonFrenzy)
+                        monster.anim_pct = std::max(monster.anim_pct, calc(*skill, skill->aura_calc[aura_stat], effect->level));
                 }
                 const auto& targets = skill->auratarget;
                 if (targets == "ironmaiden") monster.reflect_pct += calc(*skill, skill->calc[0], effect->level);

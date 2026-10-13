@@ -202,10 +202,14 @@ struct Monster {
     // Terror's, Cloak of Shadows').
     struct SkillState { int skill = -1, level = 0; std::uint32_t until = 0; bool swaps = false; };
     SkillState curse, cry;
+    // MonFrenzy's state (FUN_005d8c70: "monfrenzy", its charges stat 0xa9
+    // as the level, up to the skill's own): its aurastats as curse's.
+    SkillState frenzy;
     // What they do to it, as of this frame (Fight::monster_states): its
     // damage % and speed %, the share of its melee damage it takes back
     // (Iron Maiden), Terror's state (0x38) on it.
     int dmg_pct = 0, speed_pct = 0, reflect_pct = 0;
+    int anim_pct = 0;                         // attackrate / other_animrate (stats 68 / 69): its modes play faster
     bool afraid = false;
     // Converted from a higher level (state 0x6d): its own level and life
     // (stats 0xb0 / 0xb1), put back as Conversion ends (FUN_005d01a0).
@@ -258,6 +262,12 @@ struct Monster {
     bool killable = true;
     float leap_from_x = 0, leap_from_y = 0, leap_to_x = 0, leap_to_y = 0;
     int move_pct = 0;
+    // A breath (srvdofunc 95, FUN_005cc4e0; the fetish shaman's Inferno):
+    // its srvmissilea every calc3 frames till calc2 frames on (FUN_005cc240's
+    // end, skill +0x18), the mode held; state 0xc on till its think clears it.
+    int breath = -1;
+    std::uint32_t breath_until = 0, breath_next = 0;
+    bool breath_state = false;
     std::uint32_t laid_until = 0;
     // Its unit seed (+0x20) as its look left it: what its thinks draw. A
     // special AI (AI control [0], FUN_005b0e00: the Countess's 0xd, Dim

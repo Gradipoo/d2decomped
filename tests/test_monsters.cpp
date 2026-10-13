@@ -689,7 +689,9 @@ int main() {
                     int cast_word = 0;
                     input.swings = read() != 0; input.runs = read() != 0; input.afraid = read() != 0; input.in_s4 = read() != 0; cast_word = read();
                     input.cast_word = &cast_word;
-                    if (which >= kAct3) { input.next_event = read(); input.leader_mode = read(); input.command_unit = read() != 0; input.skill_level = read(); input.state_c = read() != 0; input.spot_clear = read() != 0; input.spared = read() != 0; input.line_clear = read() != 0; input.s1_range = read(); }
+                    if (which >= kAct3) { input.next_event = read(); input.leader_mode = read(); input.command_unit = read() != 0; input.skill_level = read(); input.state_c = read() != 0; input.spot_clear = read() != 0; input.spared = read() != 0; input.line_clear = read() != 0; input.s1_range = read();
+                                         for (auto& value : input.skill678) value = read() != 0;
+                                         input.weak = read() != 0; input.near_player = read() != 0; }
                     d2d::rules::Rng seed;
                     seed.low = std::uint32_t(std::stoll([&] { std::string text; fields >> text; return text; }()));
                     seed.high = std::uint32_t(std::stoll([&] { std::string text; fields >> text; return text; }()));

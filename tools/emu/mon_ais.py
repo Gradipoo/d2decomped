@@ -129,6 +129,11 @@ def setup(rng, ai):
         s["quest21"] = rng.random() < 0.5
         s["los"] = rng.random() < 0.6                                      # FUN_005dd290: the line to the target clear (mask 4)
         s["miss_range"] = rng.choice((-1, rng.randint(0, 30)))             # MonStats MissS1 (+0x3e)'s Missiles.txt Range (+0x96), -1 none
+        # Mephisto's: Skill6..8 (+0x17a), his chooser's search (FUN_005f7700:
+        # the weakest unit within 32, a player nearest).
+        ids = rng.sample(range(400, 500), 3)
+        s["skills68"] = [rng.choice((-6 - k, ids[k])) for k in range(3)]
+        s["weak"], s["near5"] = rng.random() < 0.6, rng.random() < 0.5
     if ai == "Vulture":
         for k in range(2):                                                 # its spot words: a point, or unset
             if rng.random() < 0.5: s["ctrl"][1 + k] = s["spots"]["foe"][k] + rng.randint(-12, 12)
@@ -231,6 +236,9 @@ def install(e):
         if cb in (0x5b0d00, 0x5f06b0):                                     # the nearest kin / other monster
             if s["kin"] and S32(s["kin_d"]) < S32(e.r32(ctx + 4)):
                 e.w32(ctx, cur["units"]["kin"]); e.w32(ctx + 4, s["kin_d"])
+        elif cb == 0x5f7700:                                               # Mephisto's chooser: [3] the weakest, [5] a player nearest
+            if s["weak"]: e.w32(ctx + 12, cur["units"]["foe2"])
+            if s["near5"]: e.w32(ctx + 20, cur["units"]["kin"])
         elif cb == 0x5e0430:                                               # the weakest ally under 76 % within 50 (squared): the council's
             if s["aid"] and S32(s["kin_d"]) <= S32(e.r32(ctx + 8)): e.w32(ctx, cur["units"]["aid"])
         elif cb == 0x5f7240:                                               # a hurt zakarum within aip6 (squared): the priest's
@@ -310,6 +318,7 @@ def install(e):
     e.hook(0x64cb30, lambda e: cur["s"].get("spot_coll", 0), 4)
     e.hook(0x5ded20, lambda e: out("run", name(e.arg(0)), 0) or 1, 1)   # a move in mode 15 (RN)
     e.hook(0x5dd290, lambda e: int(cur["s"].get("los", True)), 0)
+    e.hook(0x622aa0, lambda e: int(not cur["s"].get("los", True)), 3)     # the line blocked (mask 4)
     def missile_row(e):                                                # FUN_0046ace0(ECX id): its Missiles.txt row
         if cur["s"].get("miss_range", -1) < 0: return 0
         e.mu.mem_write(cur["missile"] + 0x96, struct.pack("<h", cur["s"]["miss_range"]))
@@ -350,7 +359,9 @@ def run_game(e, s, addr, rng_moves):
     e.mu.mem_write(row + 0x170, struct.pack("<5h", *s["skills"]))
     e.mu.mem_write(row + 0x180, bytes(s["modes"]))
     e.mu.mem_write(row + 0x4f + s["diff"], bytes([s["aidel"]]))
-    if s["ai"] in ACT3_AIS: e.mu.mem_write(row + 0x3e, struct.pack("<h", 1))   # MissS1: a missile (FUN_0046ace0 answers by miss_range)
+    if s["ai"] in ACT3_AIS:
+        e.mu.mem_write(row + 0x3e, struct.pack("<h", 1))
+        e.mu.mem_write(row + 0x17a, struct.pack("<3h", *s["skills68"]))   # MissS1: a missile (FUN_0046ace0 answers by miss_range)
     for k, v in enumerate(s["ctrl"]): e.w32(ctrl + 0x14 + 4 * k, v & MASK)
     e.w32(params, ctrl); e.w32(params + 7 * 4, row)
     if s["target"]: e.w32(params + 8, units["foe"])
@@ -384,7 +395,7 @@ def outcome(s, out):
         elif k == "wait": act[5] = item[1]
         elif k == "event": act[6] = item[1]
         elif k == "skill":
-            slot = s["skills"].index(item[2])
+            slot = (s["skills"] + s.get("skills68", [])).index(item[2])
             spot = (item[4], item[5]) == s["spot"]                         # at the target's spot (the Summoner's)
             to("skill", slot, 0 if spot else item[4], 1 if spot else item[5], item[3])
         elif k == "seq": to("seq", s["skills"].index(item[1]), unit=item[2])
@@ -433,7 +444,7 @@ def dump_case(s, act, pace, effects, asks, ctrl, seed):
     else:
         nums += [1, 0, 1, 0, 0]
     if s["ai"] in ACT3_AIS:
-        nums += [s["next_event"], s["leader_mode"], int(s["cmd_unit"]), s["sk_level"], int(s["state_c"]), int(s["spot_coll"] == 0), int(spared(s)), int(s["los"]), s["miss_range"]]
+        nums += [s["next_event"], s["leader_mode"], int(s["cmd_unit"]), s["sk_level"], int(s["state_c"]), int(s["spot_coll"] == 0), int(spared(s)), int(s["los"]), s["miss_range"]] + [int(k >= 0) for k in s["skills68"]] + [int(s["weak"]), int(s["near5"])]
     nums += list(s["seed"])
     kinds = {"state": 0, "overlay": 1, "stat": 2, "rally": 3, "command_done": 4, "summoner_open": 5, "aura": 6, "land": 7, "takeoff": 8,
              "toggle": 9, "unset": 10}

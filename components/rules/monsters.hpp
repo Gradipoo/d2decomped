@@ -1180,6 +1180,10 @@ struct ThinkIn {
     // MonStats MissS1's Missiles.txt Range (FUN_0046ace0 +0x96; -1: none).
     bool command_unit = false, state_c = false, spot_clear = true, target = true, spared = false, line_clear = true;
     int s1_range = -1;
+    // Mephisto's: Skill6..8 set; his chooser's finds within 32 (FUN_005f7700:
+    // the weakest unit, a player nearest).
+    std::array<bool, 3> skill678{};
+    bool weak = false, near_player = false;
 };
 
 // A monster's skill level (FUN_00573cb0): Sk*lvl + DifficultyLevels
@@ -2403,6 +2407,90 @@ Think mon_think(std::string_view ai_name, const ThinkIn& input, Rng& rng, Away&&
         if (roll() < aip[5]) { away(6, false); *input.state = 0; return { MonAct::none }; }
         if (roll() > 89) return { MonAct::idle, 10 };
         return { MonAct::a1 };
+    }
+    // Mephisto (50, FUN_005f78b0): hurt = (100 - life %) / 5. Picks a case
+    // (state3 keeps it): past 20 off 4; one under way goes on (past 4: the
+    // fallback); under 21 % life within 5, 40 %: 1; under hurt + 50 %: 2
+    // (state rand(3) + 3 casts); else the fallback. In melee, past aip1 %:
+    // 3, else 2. Fallback: 35 % stands 10; else within 6, 35 %, walks in (4
+    // steps); else circles 4. 0: stands 5. 1: runs off 8 (can't: in melee
+    // Skill3, else 2). 2: state counts its casts down; every other one
+    // circles 3 (can't: wanders 12). Else a cast at his chooser's unit
+    // (FUN_005f77c0: aip2 % the weakest within 32, else with a player
+    // nearest aip3 % the weakest again (game.exe returns the wrong find,
+    // bugs.md #21), else the target), by the skills in a row from Skill1 (n;
+    // none: wanders 6): past Normal with no line to it or past 30 off
+    // Skill6; under 15 off, past Normal, rand < 100 / n Skill5; under 2 ×
+    // 100 / n Skill4, 3 × Skill2, else Skill1. Then under 50 - hurt % the
+    // count restarts (state2 0). 3: under hurt + 80 %, under 80 - hurt % A1,
+    // else Skill3; else circles 3 (can't: wanders 12). 4: about the target 6.
+    // ponytail: about the target always sets off, so its fallback
+    // (FUN_00540e60, keep 12 / 6) isn't taken.
+    if (ai_name == "Mephisto") {
+        const int hurt = std::max((100 - input.life_pct) / 5, 0);
+        int& phase = *input.state3;
+        bool set_off = false;
+        auto fallback = [&]() -> Think {
+            if (roll() > 64) { phase = 0; return { MonAct::idle, 10 }; }
+            const bool walks = roll() > 64;
+            phase = 0;
+            if (walks && input.dist < 6) { set_pace(0, 4); return walk; }
+            return circle(4, 0, set_off);
+        };
+        int pick = 0;
+        if (!input.in_melee) {
+            if (input.dist > 20) pick = 4;
+            else if (phase != 0) { if (unsigned(phase) > 4) return fallback(); pick = phase; }
+            else if (input.life_pct < 21 && input.dist < 5 && roll() < 40) pick = 1;
+            else if (roll() >= hurt + 50) return fallback();
+            else { pick = 2; *input.state = int(rng.next() % 3) + 3; }
+        } else if (roll() > aip[0]) pick = 3;
+        else { pick = 2; *input.state = int(rng.next() % 3) + 3; }
+        phase = pick;
+        auto circle_or_wander = [&] { auto out = circle(3, 1, set_off); return set_off ? out : think_wander(rng, 12); };
+        switch (pick) {
+        case 0: phase = 4; return { MonAct::idle, 5 };
+        case 1:
+            phase = 0;
+            set_pace(50, 0);
+            if (away(8, false)) return { MonAct::none };
+            if (input.in_melee) return cast(2);
+            [[fallthrough]];
+        case 2: {
+            if (--*input.state == 0) phase = 0;
+            if (*input.state2 == 0) { *input.state2 = 2; return circle_or_wander(); }
+            ++*input.state2;
+            auto chosen = ThinkUnit::target;
+            if (input.weak && roll() < aip[1]) chosen = ThinkUnit::second;
+            else if (input.near_player && roll() < aip[2]) chosen = input.weak ? ThinkUnit::second : ThinkUnit::none;
+            int count = 0;
+            for (int slot = 0; slot < 8 && (slot < 5 ? skill_set(slot) : input.skill678[std::size_t(slot - 5)]); ++slot) ++count;
+            Think out;
+            if (count <= 0) out = think_wander(rng, 6);
+            else {
+                const int share = 100 / count, rolled = roll();
+                const bool blocked = input.difficulty > 0 && chosen != ThinkUnit::none && !input.line_clear;
+                if (input.difficulty > 0 && (blocked || input.dist > 30)) out = cast(5, chosen);
+                else if (input.dist < 15 && rolled < share && input.difficulty > 0) out = cast(4, chosen);
+                else if (rolled < share * 2) out = cast(3, chosen);
+                else if (rolled < share * 3) out = cast(1, chosen);
+                else out = cast(0, chosen);
+            }
+            if (roll() < 50 - hurt) *input.state2 = 0;
+            return out;
+        }
+        case 3:
+            phase = 0;
+            if (roll() < hurt + 80) return roll() < 80 - hurt ? Think{ MonAct::a1 } : cast(2);
+            set_pace(50, 0);
+            return circle_or_wander();
+        default: {
+            phase = 0;
+            set_pace(50, 0);
+            auto out = think_wander(rng, 6); out.act = MonAct::around;
+            return out;
+        }
+        }
     }
     // Hydra (86, FUN_005e9e60; Mephisto's): past its end frame (state) it's
     // gone (FUN_005ddfc0); a target within 25, 60 % Skill1; else stands 10.

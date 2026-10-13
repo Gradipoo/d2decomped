@@ -371,14 +371,14 @@ struct BladeQuest {
     };
     [[nodiscard]] std::vector<QuestMsg> talk(const QuestBits& quest_bits, int npc, bool has_gidbinn) const {
         int block = -1;
-        const bool b5 = qbit(quest_bits, kQuest, 5), b6 = qbit(quest_bits, kQuest, 6), b7 = qbit(quest_bits, kQuest, 7), b8 = qbit(quest_bits, kQuest, 8);
+        const bool carried = qbit(quest_bits, kQuest, 5), given = qbit(quest_bits, kQuest, 6), merc = qbit(quest_bits, kQuest, 7), ring = qbit(quest_bits, kQuest, 8);
         if (qbit(quest_bits, kQuest, 0)) block = rewarded ? 4 : -1;
-        else if (has_gidbinn && b5 && !b8) block = 3;
-        else if (b6) {
-            if (npc == kAsheara) block = !b7 ? 5 : b8 ? -1 : 6;
-            else if (npc == kOrmus) block = !b8 ? 6 : !b7 ? 5 : -1;
-            else block = !b7 ? 5 : b8 ? -1 : 6;
-        } else if (b5) block = 4;
+        else if (has_gidbinn && carried && !ring) block = 3;
+        else if (given) {
+            if (npc == kAsheara) block = !merc ? 5 : ring ? -1 : 6;
+            else if (npc == kOrmus) block = !ring ? 6 : !merc ? 5 : -1;
+            else block = !merc ? 5 : ring ? -1 : 6;
+        } else if (carried) block = 4;
         else if (state >= 1 && state <= 3 && !has_gidbinn) block = state - 1;
         std::vector<QuestMsg> out;
         if (block >= 0)
@@ -672,8 +672,8 @@ struct GuardianQuest {
     void join(const QuestBits& quest_bits, QuestBits& game_bits) {
         if (qbit(quest_bits, kQuest, 0) || qbit(quest_bits, kQuest, 0xb) || qbit(quest_bits, 0x17, 0)) { qset(game_bits, kQuest, 13); dead = true; return; }
         static constexpr std::array<std::array<int, 3>, 8> kByBit{ { { 9, 5, 4 }, { 8, 5, 3 }, { 7, 5, 2 }, { 6, 4, 4 }, { 5, 4, 3 }, { 4, 4, 2 }, { 3, 2, 2 }, { 2, 3, 2 } } };
-        for (const auto& [bit, at, logged] : kByBit)
-            if (qbit(quest_bits, kQuest, bit)) { state = at; log = logged; return; }
+        for (const auto& [bit, stage, logged] : kByBit)
+            if (qbit(quest_bits, kQuest, bit)) { state = stage; log = logged; return; }
     }
     // The Blackened Temple done (its +0xf0 chain).
     void chain() { if (state == 0 && open) state = 1; }

@@ -22,6 +22,7 @@
 #include <outdoor_data.hpp>
 #include <object_ids.hpp>
 #include <quests.hpp>
+#include <quests_act3.hpp>
 #include <rules.hpp>
 #include <shrines.hpp>
 #include <skills.hpp>

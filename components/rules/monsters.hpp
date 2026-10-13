@@ -1171,9 +1171,12 @@ struct ThinkIn {
     // Skill1's level (FUN_006442a0, base + bonus); state 0xc (the fetish
     // shaman's Inferno) on it.
     // Its own spot clear of 0xc01 (FUN_0064cb30).
-    // A target found (search types 2 / 5 think without one).
+    // A target found (search types 2 / 5 think without one). The zealots'
+    // spare: the target a player, or a pet whose owner is (FUN_0058f090),
+    // in act 3 (FUN_006427f0), with quest 0x15 bit 0 in the monster's
+    // difficulty (FUN_0065c310).
     int next_event = 0, leader_mode = 0, skill_level = 1;
-    bool command_unit = false, state_c = false, spot_clear = true, target = true;
+    bool command_unit = false, state_c = false, spot_clear = true, target = true, spared = false;
 };
 
 // A monster's skill level (FUN_00573cb0): Sk*lvl + DifficultyLevels
@@ -2280,6 +2283,46 @@ Think mon_think(std::string_view ai_name, const ThinkIn& input, Rng& rng, Away&&
         if (roll() < aip[0]) return { MonAct::a1 };
         if (roll() < aip[2]) return circle(3, 0, set_off);
         return waits(aip[6]);
+    }
+    // ZakarumZealot (48, FUN_005f6e60): its pace Run / Velocity (0..120 %
+    // on). One it spares runs off 8 (can't: wanders 6). Hit, the first time
+    // (state2 0) under aip3 % life, it runs off 8 (can't: state2 5); then
+    // on its spot's 0x40 (FUN_0064cb30) it circles 4 in melee, else walks
+    // in. State2 counts down. Out of melee aip4 % runs in (mode RN), else
+    // walks in. In melee, after a swing (state 1) aip1 % keeps at it; else
+    // 80 % stands 10, 20 % circles 4. A swing: aip2 % A2, else A1.
+    if (ai_name == "ZakarumZealot") {
+        int pct = 0;
+        if (input.velocity > 0) pct = std::min(std::max(input.run * 100 / input.velocity - 100, 0), 120);
+        bool set_off = false;
+        if (input.spared) {
+            set_pace(pct, 0);
+            if (away(8, true)) return { MonAct::none };
+            return think_wander(rng, 6);
+        }
+        if (input.got_hit) {
+            if (*input.state2 == 0 && input.life_pct < aip[2]) {
+                *input.state = 0;
+                set_pace(pct, 0);
+                if (away(8, true)) return { MonAct::none };
+                *input.state2 = 5;
+            }
+            if (!input.spot_clear) return input.in_melee ? circle(4, 0, set_off) : walk;
+        }
+        if (*input.state2 != 0) --*input.state2;
+        if (!input.in_melee) {
+            *input.state = 0;
+            if (roll() >= aip[3]) return walk;
+            set_pace(pct, 0);
+            return { MonAct::run, 0 };
+        }
+        if (*input.state != 0 && roll() >= aip[0]) {
+            *input.state = 0;
+            if (roll() < 80) return { MonAct::idle, 10 };
+            return circle(4, 0, set_off);
+        }
+        *input.state = 1;
+        return { roll() < aip[1] ? MonAct::a2 : MonAct::a1 };
     }
     // Hydra (86, FUN_005e9e60; Mephisto's): past its end frame (state) it's
     // gone (FUN_005ddfc0); a target within 25, 60 % Skill1; else stands 10.

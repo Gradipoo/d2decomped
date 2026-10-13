@@ -120,6 +120,13 @@ def setup(rng, ai):
         s["sk_level"] = rng.choice((0, 1, rng.randint(-2, 40)))           # FUN_006442a0: Skill1's level
         s["state_c"] = rng.random() < 0.4                                  # state 0xc (the shaman's Inferno) on
         s["spot_coll"] = rng.choice((0, 0, 1, 0x400, 0xc01))                # FUN_0064cb30: its own spot's collision (mask 0xc01)
+        # The zealots' spare test: the target a player (type 0), or a pet
+        # (FUN_0058f090) whose owner's found (FUN_00552f60 type 0); in act 3
+        # (the level FUN_0061a1b0 names); its quest 0x15 bit 0 (FUN_0065c310).
+        s["foe_kind"] = rng.choice(("player", "pet", "monster"))
+        s["owner"] = rng.random() < 0.7
+        s["act3"] = rng.random() < 0.7
+        s["quest21"] = rng.random() < 0.5
     if ai == "Vulture":
         for k in range(2):                                                 # its spot words: a point, or unset
             if rng.random() < 0.5: s["ctrl"][1 + k] = s["spots"]["foe"][k] + rng.randint(-12, 12)
@@ -294,8 +301,24 @@ def install(e):
     e.hook(0x5ddfc0, lambda e: out("gone"), 3)
     e.hook(0x6439b0, lambda e: 1, 1)                                   # its Skill1 record (FUN_006442a0 reads none of it here)
     e.hook(0x6442a0, lambda e: cur["s"].get("sk_level", 0) & MASK, 3)
-    e.hook(0x64cb30, lambda e: cur["s"].get("spot_coll", 0), 4)                         # it leaves the game (mode 0)
-    e.hook(0x552f60, lambda e: cur["units"]["kin"] if cur["s"].get("cmd_unit") else 0, 1)                          # it dies (the egg hatched)                                   # Radament's: FUN_00599420 (the quest's)
+    e.hook(0x64cb30, lambda e: cur["s"].get("spot_coll", 0), 4)
+    e.hook(0x5ded20, lambda e: out("run", name(e.arg(0)), 0) or 1, 1)   # a move in mode 15 (RN)
+    def owner(e):                                                      # FUN_0058f090(ECX unit, EDX &id, &type)
+        from unicorn.x86_const import UC_X86_REG_EDX
+        pet = cur["s"].get("foe_kind") == "pet"
+        e.w32(e.mu.reg_read(UC_X86_REG_EDX), 7 if pet else MASK)
+        if pet: e.w32(e.arg(0), 0)
+        return 0
+    e.hook(0x58f090, owner, 1)
+    e.hook(0x61a1b0, lambda e: 80 if cur["s"].get("act3") else 40, 1)
+    e.hook(0x6221a0, lambda e: cur["pcdata"], 1)
+    e.hook(0x65c310, lambda e: int(cur["s"].get("quest21", False) and e.arg(1) == 0x15 and e.arg(2) == 0), 3)                         # it leaves the game (mode 0)
+    def by_id(e):                                                      # FUN_00552f60(ECX game, EDX type, id)
+        from unicorn.x86_const import UC_X86_REG_EDX
+        if cur["s"]["ai"] == "ZakarumZealot" and e.mu.reg_read(UC_X86_REG_EDX) == 0:
+            return cur["units"]["foe2"] if cur["s"]["foe_kind"] == "pet" and cur["s"]["owner"] else 0   # id -1 (no owner) finds none
+        return cur["units"]["kin"] if cur["s"].get("cmd_unit") else 0
+    e.hook(0x552f60, by_id, 1)                          # it dies (the egg hatched)                                   # Radament's: FUN_00599420 (the quest's)
 
 
 def run_game(e, s, addr, rng_moves):
@@ -319,6 +342,9 @@ def run_game(e, s, addr, rng_moves):
     e.w32(params, ctrl); e.w32(params + 7 * 4, row)
     if s["target"]: e.w32(params + 8, units["foe"])
     e.w32(params + 20, s["dist"]); e.w32(params + 24, int(s["melee"]))
+    if s["ai"] == "ZakarumZealot":
+        e.w32(units["foe"], 0 if s["foe_kind"] == "player" else 1)
+        e.w32(units["foe2"], 0)                                          # the owner, a player
     if s["ai"] in ACT3_AIS:
         e.w32(units["kin"] + 0x10, s["leader_mode"]); e.w32(mon + 0x10, s["leader_mode"])
     if s["ai"] in CURSE_AIS:
@@ -326,7 +352,7 @@ def run_game(e, s, addr, rng_moves):
         data, rows = alloc(0x1000), alloc(0x1a8 * 0x106)                 # MonStats: the unit's row's flag byte +0xd (bit 1: interact)
         e.w32(0x744304, data); e.w32(data + 0xa80, 0x106); e.w32(data + 0xa78, rows)
         e.mu.mem_write(rows + 0x1a8 * 0x100 + 0xd, bytes([2 if s["interact"] else 0]))
-    CUR.update(s=s, out=[], units=units, names=names, paths=paths, moves=rng_moves, cmd=cmd, frees=0)
+    CUR.update(s=s, out=[], units=units, names=names, paths=paths, moves=rng_moves, cmd=cmd, frees=0, pcdata=alloc(0x40))
     e.call(addr, params, ecx=game, edx=mon)
     word = [e.r32(cmd + 0x18)] if s["ai"] == "SandMaggotOther" else []
     return CUR["out"], [S32(e.r32(ctrl + 0x14 + 4 * k)) for k in range(3)] + word, (e.r32(mon + 0x20), e.r32(mon + 0x24))
@@ -372,6 +398,13 @@ def outcome(s, out):
     return act, pace, effects, asks
 
 
+def spared(s):
+    """The zealot's spare test, as its code reaches it."""
+    if s["ai"] != "ZakarumZealot": return False
+    player = s["foe_kind"] == "player" or (s["foe_kind"] == "pet" and s["owner"])
+    return player and s["act3"] and s["quest21"]
+
+
 def dump_case(s, act, pace, effects, asks, ctrl, seed):
     """A tests/mon_ais_cases.inc line: the scene | the moves asked | what it comes to."""
     nums = [ORDER.index(s["ai"]), s["diff"], s["frame"], int(s["target"]), s["dist"], int(s["melee"]), int(s["got_hit"]), s["life"]]
@@ -387,7 +420,7 @@ def dump_case(s, act, pace, effects, asks, ctrl, seed):
     else:
         nums += [1, 0, 1, 0, 0]
     if s["ai"] in ACT3_AIS:
-        nums += [s["next_event"], s["leader_mode"], int(s["cmd_unit"]), s["sk_level"], int(s["state_c"]), int(s["spot_coll"] == 0)]
+        nums += [s["next_event"], s["leader_mode"], int(s["cmd_unit"]), s["sk_level"], int(s["state_c"]), int(s["spot_coll"] == 0), int(spared(s))]
     nums += list(s["seed"])
     kinds = {"state": 0, "overlay": 1, "stat": 2, "rally": 3, "command_done": 4, "summoner_open": 5, "aura": 6, "land": 7, "takeoff": 8,
              "toggle": 9, "unset": 10}

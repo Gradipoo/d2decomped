@@ -344,6 +344,9 @@ enum class ServerDoFunction : int {
     kMaggotLay = 87,               // FUN_005cb3c0: its MonStats spawn two subtiles toward the target
     kMonsterBreath = 95,           // FUN_005cc4e0: FetishInferno, the inferno sentries
     kBestow = 96,                  // FUN_005cc840: heals the one it's at calc1..calc2 % of its life
+    kMonTeleport = 98,             // FUN_005ccc80: to the free spot nearest its skill's point
+    kPoisonNova = 99,              // FUN_005ccd10: srvmissilea on 8 ways, 16 with calc2 2
+    kMonFrenzy = 109,              // FUN_005cdf10: a strike (FUN_005cddd0), the frenzy state on
     kBookOrScroll = 113,           // Identify, Town Portal
     kRaven = 114,
     kVine = 115,                   // FUN_005c6a80: Plague Poppy, Cycle of Life, Vines

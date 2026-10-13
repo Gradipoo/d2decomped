@@ -338,14 +338,16 @@ int skill_id(const GameData& game_data, const std::string& name) {
 // Its skill `id`'s MonSeq sequence (its Sk*mode names one; MonSeq.txt,
 // GameData::mon_seqs): the rows played, a frame each; null for a plain mode.
 using SeqRows = std::vector<GameData::MonSeqFrame>;
-// A plain-mode skill d2d casts for a monster (no sequence; the Summoner's
-// SC skills): a srvmissile at the target, a nova (22), a fire wall (24),
-// a curse (30: Weaken).
+// A plain-mode skill d2d casts for a monster (no sequence; FUN_0056f7f0
+// at its mode's action frame, SC, S1, A1 or A2): a srvmissile at the
+// target, a nova (22), a fire wall (24), a curse (30: Weaken), scattered
+// bolts (17), a missile at the target (28), a breath (95), Bestow (96), the
+// monsters' teleport (98), the poison nova (99), Hydra (144).
 // ponytail: other do-funcs stand.
 bool castable(const d2d::rules::Skill& skill) {
-    using d2d::rules::ServerDoFunction;
-    return !skill.srvmissile.empty() || skill.srvdofunc == ServerDoFunction::kNova || skill.srvdofunc == ServerDoFunction::kMissileWall
-        || skill.srvdofunc == ServerDoFunction::kCurse;
+    using enum d2d::rules::ServerDoFunction;
+    return !skill.srvmissile.empty() || std::ranges::contains(std::array{ kNova, kMissileWall, kCurse, kScatteredBolts, kMissileAtTarget, kMonsterBreath, kBestow,
+                                                                          kMonTeleport, kPoisonNova, kHydra }, skill.srvdofunc);
 }
 // Its skill `id`'s level (Sk*lvl + the difficulty's bonus), 1 when not its own.
 int skill_level(const GameData& game_data, const Monster& monster, int id) {
@@ -756,6 +758,23 @@ bool think(const GameData& game_data, const Level& level, Monster& monster, std:
         for (const auto& foe : foes)
             if (const int off_x = subtile(foe.x) - x, off_y = subtile(foe.y) - y; foe.alive && off_x * off_x + off_y * off_y <= 0x400) input.weak = true;
         input.self_x = x; input.self_y = y; input.target_x = target_x; input.target_y = target_y;
+        // The heals' searches: the priests' (FUN_005f7240) a zakarum (BaseId
+        // zealot1 / cantor1) within aip6 (squared) under 61 % life, the last
+        // found (its best is never kept, bugs.md #22); the Council's
+        // (FUN_005e0430) the weakest under 76 % within 50 (squared 2500).
+        // ponytail: the pack in its order, not the near rooms' units.
+        const bool priest = type_info.ai_name == "ZakarumPriest", council = type_info.ai_name == "HighPriest";
+        int weakest = 76;
+        for (std::size_t i = 0; (priest || council) && i < pack.size(); ++i) {
+            const auto& other = pack[i];
+            if (&other == &monster || !other.alive()) continue;
+            const int off_x = subtile(other.unit.x) - x, off_y = subtile(other.unit.y) - y, squared = off_x * off_x + off_y * off_y;
+            const int life = int(std::int64_t(other.hit_points) * 100 / std::max(other.stats.hit_points, 1));
+            const int base = game_data.monsters.types[std::size_t(other.type)].base;
+            if (priest && (base == 235 || base == 238) && squared <= input.aip[5] * input.aip[5] && life < 61) { aid = int(i); input.kin_dist = squared; }
+            if (council && squared <= 2500 && life < weakest) { aid = int(i); weakest = life; input.kin_dist = squared; }
+        }
+        if (priest || council) input.aid = aid >= 0;
     }
     auto use = [&](std::string_view mode, int skill) {             // FUN_005dead0 / FUN_005ddf90: against the target (mode ctx +8)
         monster.chase = int(target - foes.data());
@@ -898,7 +917,7 @@ bool think(const GameData& game_data, const Level& level, Monster& monster, std:
             const auto* start_skill = game_data.skills.get(id);
             const bool emerge = start_skill && start_skill->srvstfunc == d2d::rules::ServerStartFunction::kEmerge;   // a plain S1
             const bool plain = emerge || name == "SpiderLay" || name == "VampireFireball" || name == "VampireMissile"
-                            || (plain_skill && type_info.sk_mode[std::size_t(act.n)] == "SC" && castable(*plain_skill));
+                            || (plain_skill && (castable(*plain_skill) || plain_skill->srvdofunc == d2d::rules::ServerDoFunction::kMonFrenzy));   // MonFrenzy: an A2 strike
             // ponytail: a charge (its sequence walks first: Charge's srvstfunc 31
             // moves it) stands.
             // Charge (srvstfunc 31, FUN_005cf6b0): in melee it swings at once;
@@ -1206,7 +1225,7 @@ bool monster_update(const GameData& game_data, const Level& level, Monster& mons
             } else if (const int fireball = skill_id(game_data, "VampireFireball"); monster.skill >= 0 && (monster.skill == fireball || monster.skill == skill_id(game_data, "VampireMissile"))) {
                 // srvmissile vampirefireball / firehead at the target.
                 andariel_missile(game_data, monster, monster.skill == fireball ? "vampirefireball" : "firehead", dx, dy, now_ms, missiles, skill_level(game_data, monster, monster.skill));
-            } else if (const auto* cast = !seq && monster.mode == "SC" && monster.skill >= 0 ? game_data.skills.get(monster.skill) : nullptr; cast && castable(*cast)) {
+            } else if (const auto* cast = !seq && monster.skill >= 0 ? game_data.skills.get(monster.skill) : nullptr; cast && castable(*cast)) {
                 // A plain SC cast (FUN_0056f7f0: its do-func, then its
                 // srvmissile): the nova's ring of 64 srvmissilea out to its
                 // range + LevRange a level + calc1 (FUN_005c9b50 ->
@@ -1236,6 +1255,47 @@ bool monster_update(const GameData& game_data, const Level& level, Monster& mons
                     }
                 } else if (cast->srvdofunc == ServerDoFunction::kMissileWall) {
                     countess_firewall(game_data, monster, now_ms, missiles, cast->srvmissilea);
+                } else if (cast->srvdofunc == ServerDoFunction::kScatteredBolts) {
+                    // FUN_005c9300: calc1 of its srvmissilea (FUN_00646ca0) from it toward the target.
+                    // ponytail: each aimed off by up to a quarter turn on the game's seed, not FUN_005c9290's own steering.
+                    for (int bolts = std::max(d2d::rules::eval_calc(game_data.skills, cast->calc[0], {}, monster.skill, lvl), 1); bolts > 0; --bolts) {
+                        const float turn = (float(int(rng.next() % 101) - 50) / 100.f) * 1.5707963f;
+                        andariel_missile(game_data, monster, cast->srvmissilea, dx * std::cos(turn) - dy * std::sin(turn), dx * std::sin(turn) + dy * std::cos(turn), now_ms, missiles, lvl, cast);
+                    }
+                } else if (cast->srvdofunc == ServerDoFunction::kMissileAtTarget || cast->srvdofunc == ServerDoFunction::kMonsterBreath) {
+                    // FUN_005ca3e0 / FUN_005cc4e0: its srvmissilea at the target (MonBlizzard's centre, the fetishes' inferno).
+                    // ponytail: the breath's state 0xc and its repeat (FUN_005cc240) left out; a blizzard's centre flies there.
+                    andariel_missile(game_data, monster, cast->srvmissilea, dx, dy, now_ms, missiles, lvl, cast);
+                } else if (cast->srvdofunc == ServerDoFunction::kPoisonNova) {
+                    // FUN_005ccd10: srvmissilea out 8 ways (0x6e31e8 / 0x6e31a8), and the 8 between with calc2 2.
+                    const int between = d2d::rules::eval_calc(game_data.skills, cast->calc[1], {}, monster.skill, lvl) > 1 ? 2 : 1;
+                    for (int way = 0; way < 8 * between; ++way) {
+                        const float angle = float(way) * 2 * 3.14159265f / float(8 * between);
+                        andariel_missile(game_data, monster, cast->srvmissilea, std::cos(angle), std::sin(angle), now_ms, missiles, lvl, cast);
+                    }
+                } else if (cast->srvdofunc == ServerDoFunction::kBestow) {
+                    // ZakarumHeal (do 96, FUN_005cc840): as Bestow (the sequence's, below).
+                    const int high = std::min(std::max(d2d::rules::eval_calc(game_data.skills, cast->calc[1], {}, monster.skill, lvl), 0), 100);
+                    const int low = std::min(std::max(d2d::rules::eval_calc(game_data.skills, cast->calc[0], {}, monster.skill, lvl), 0), high);
+                    const int pct = monster.seed(high - low) + low;
+                    if (monster.skill_unit >= 0 && std::size_t(monster.skill_unit) < pack.size())
+                        if (auto& healed = pack[std::size_t(monster.skill_unit)]; healed.alive())
+                            healed.hit_points = std::clamp(healed.hit_points + healed.stats.hit_points * pct / 100, 1, healed.stats.hit_points);
+                } else if (cast->srvdofunc == ServerDoFunction::kMonTeleport) {
+                    // FUN_005ccc80: to the free spot nearest its skill's point (FUN_00554ea0).
+                    std::tie(unit.x, unit.y) = level.nearest_free((float(monster.skill_x) + 0.5f) / 5, (float(monster.skill_y) + 0.5f) / 5);
+                } else if (cast->srvdofunc == ServerDoFunction::kHydra) {
+                    // FUN_005ca910: three of its summon (hydra1) at the target, each gone Param1 frames on (AI control +0x14).
+                    // ponytail: side by side, not FUN_0056d2c0's spots.
+                    if (const auto summoned = game_data.monsters.by_id.find(cast->summon); born && summoned != game_data.monsters.by_id.end())
+                        for (int head = 0; head < 3; ++head) {
+                            auto hydra = make_monster(game_data, summoned->second, foe.x + float(head - 1) * 0.6f, foe.y, rng, monster.difficulty);
+                            std::tie(hydra.unit.x, hydra.unit.y) = level.nearest_free(hydra.unit.x, hydra.unit.y);
+                            hydra.aware = true;
+                            hydra.seed = d2d::rules::Rng{ rng.next() };
+                            hydra.ai_state = int(now_ms / 40) + cast->par[0];
+                            born->push_back(std::move(hydra));
+                        }
                 } else {
                     andariel_missile(game_data, monster, cast->srvmissile, dx, dy, now_ms, missiles, lvl, cast);
                 }

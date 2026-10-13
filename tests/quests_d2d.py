@@ -357,6 +357,17 @@ try:
     assert int(re.search(r"bits=0x([0-9a-f]+)", cmd("debug quest 32 show")).group(1), 16) & 1, "word 0x20 bit 0 not set"
     until("his afterglow (FUN_005bd390)", lambda: re.search(r"the Dark Wanderer's afterglow: [78]\b", log_text()), 5)
     print("OK: the Dark Wanderer walks off and is gone (a3q7)")
+    # a3q6: Mephisto dead (FUN_005bc8b0) sets word 0x16 bits 0, 0xb, 0xd and
+    # opens the hellgate; a player by the bridge (within 18) raises it, up
+    # the next check (FUN_005bcac0). Map seed 3: it's by the level's middle.
+    cmd("debug goto 102")
+    until("in the Durance of Hate 3", lambda: level() == 102, 60)
+    until("Mephisto made", lambda: any(l.startswith("mephisto\t") for l in cmd("monsters").splitlines()), 30)
+    cmd("debug kill")
+    until("the hellgate opens", lambda: "Mephisto is dead, the hellgate opens" in log_text(), 10)
+    assert int(re.search(r"bits=0x([0-9a-f]+)", cmd("debug quest 22 show")).group(1), 16) & 0x2801 == 0x2801, "word 0x16 bits 0 / 0xb / 0xd not set"
+    until("the bridge is up", lambda: "the bridge is up" in log_text(), 10)
+    print("OK: Mephisto dead, the hellgate open, the bridge up (a3q6)")
     cmd("quit")
 finally:
     if proc.poll() is None:

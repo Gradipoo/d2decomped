@@ -419,6 +419,9 @@ auto World::operate(int npc_index, std::uint32_t now_ms, int force ) -> void {  
             d2d::log::info("The Tainted Sun: the altar, the sun's back ({} drops)", drops.size() + std::size_t(use.amulets));
             return;
         }
+        // The hellgate (OperateFn 46): to the Pandemonium Fortress (103).
+        // ponytail: Act 4 isn't built; it only says so.
+        if (object.operate_fn == d2d::rules::operate_fn::kHellgate) { d2d::log::info("The hellgate: Act 4 isn't built yet"); return; }
         // The orifice (OperateFn 25, FUN_0059dc70): with the Horadric Staff
         // carried it takes it (FUN_0059dd80: the staff and its parts gone,
         // the Horadric Staff done, the way down to Duriel after its timer);
@@ -826,6 +829,7 @@ auto World::new_game() -> void {
         doors.clear();
         fires.clear();
         afterglow_made = false;
+        mephisto_dead = false;
         traps.clear();
         treasure.clear();
         cain_walk = {};
@@ -1017,6 +1021,61 @@ auto World::andariel_died(const Fight::Kill& kill, std::uint32_t now_ms) -> void
         for (const auto* codes : { d2d::rules::AndyQuest::kChipped, d2d::rules::AndyQuest::kChipped, d2d::rules::AndyQuest::kStandard })
             loot.put({ codes[loot.rng.next() % 7] }, kill.x, kill.y, kill.level, fight.spawning.game, now_ms);
         d2d::log::info("Sisters to the Slaughter: Andariel is dead, return to Warriv");
+    }
+
+// Mephisto's death hook (a3q6, FUN_005bc8b0: record slot +0xc0). The
+// killer, and each player in the Durance's third level (FUN_005bc190), not
+// done gets word 0x16 bits 0xd, 0 and 0xb and progression diff x 4 (5 in
+// LoD) + 3 (FUN_005bc140 -> FUN_00538680), and a Mephisto's Soulstone
+// ("mss ", FUN_00559a30) unless it had bit 0xb. The record's state goes
+// to 2; the hellgate (InitFn 44 put its id at +4) to mode 1, its event 1
+// FrameCnt1 + 1 frames on taking it to mode 2 (FUN_00581490).
+// ponytail: one player, the World's; the soulstone falls at his spot (the
+// dying unit's), not by FUN_00559a30's own search.
+auto World::mephisto_died(const Fight::Kill& kill, std::uint32_t now_ms) -> void {
+        mephisto_dead = true;
+        bridge_check = now_ms + 24 * kTickMs;
+        auto& bits = quests();
+        if (!d2d::rules::qbit(bits, 0x16, 0)) {
+            const bool had_stone = d2d::rules::qbit(bits, 0x16, 0xb);
+            for (const int bit : { 0xd, 0, 0xb }) d2d::rules::qset(bits, 0x16, bit);
+            const int diff = character.header.active_difficulty();
+            character.header.progression = std::uint8_t(std::max<int>(character.header.progression, diff * (character.header.expansion() ? 5 : 4) + 3));
+            if (!had_stone) loot.put({ .code = "mss" }, kill.x, kill.y, kill.level, fight.spawning.game, now_ms);
+        }
+        if (const Level* durance = game_data->level(d2d::rules::level_ids::kDuranceOfHateLevel3)) {
+            const auto gate = std::ranges::find(durance->npcs, d2d::rules::object_ids::kHellgate, &Npc::object_id);
+            if (gate != durance->npcs.end()) doors[{ durance, int(gate - durance->npcs.begin()) }] = Door{ 1, now_ms };
+        }
+        d2d::log::info("The Guardian: Mephisto is dead, the hellgate opens");
+    }
+
+// The hellgate's event 1 (mode 1 -> 2 at FrameCnt1 + 1 frames) and the
+// bridge's event 7 (FUN_005bcac0, every 24 frames): with Mephisto dead and
+// a player within 18 of it (FUN_00641530), mode 0 -> 1 (it rises), and at
+// the next 1 -> 2, its collision lifted (FUN_00623830: no HasCollision2).
+// ponytail: the bridge's checks run while the player's on its level.
+auto World::mephisto_bridge(std::uint32_t now_ms) -> void {
+        if (!mephisto_dead || level->id != d2d::rules::level_ids::kDuranceOfHateLevel3) return;
+        for (std::size_t i = 0; i < level->npcs.size(); ++i) {
+            const auto& gate = level->npcs[i];
+            const auto state = doors.find({ level, int(i) });
+            if (gate.object_id == d2d::rules::object_ids::kHellgate && state != doors.end() && state->second.mode == 1
+                && now_ms - state->second.when >= std::uint32_t(gate.op_frames + 1) * kTickMs)
+                state->second = Door{ 2, now_ms };
+        }
+        if (now_ms < bridge_check) return;
+        bridge_check = now_ms + 24 * kTickMs;
+        for (std::size_t i = 0; i < level->npcs.size(); ++i) {
+            const auto& bridge = level->npcs[i];
+            if (bridge.object_id != d2d::rules::object_ids::kMephistoBridge) continue;
+            auto& state = doors.try_emplace({ level, int(i) }, Door{ 0, 0 }).first->second;
+            const int off_x = int(std::floor(player.x * 5)) - int(std::floor(bridge.x * 5)), off_y = int(std::floor(player.y * 5)) - int(std::floor(bridge.y * 5));
+            if (state.mode == 2 || d2d::rules::unit_distance(off_x, off_y, 2, bridge.size_x) >= 18) continue;
+            state = Door{ state.mode + 1, now_ms };
+            if (state.mode == 2) set_footprint(*level, bridge, false);
+            d2d::log::info("The Guardian: the bridge {}", state.mode == 1 ? "rises" : "is up");
+        }
     }
 
 // Blood Raven's death hook (FUN_00590ec0).
@@ -2272,8 +2331,10 @@ auto World::tick(const std::vector<Command>& cmds, std::uint32_t now_ms, std::ui
             if (kill.type == d2d::rules::monster_ids::kSummoner && summoner.killed(quests(), level->id == d2d::rules::SummonerQuest::kSanctuary))
                 d2d::log::info("The Summoner: dead");
             if (kill.super == d2d::rules::TowerQuest::kCountess) countess_died(now_ms);
+            if (kill.type == d2d::rules::monster_ids::kMephisto && !hosted_quests) mephisto_died(kill, now_ms);
         }
         fight.kills.clear();
+        mephisto_bridge(now_ms);
         // The Summoner goes for the player (FUN_005f85c0's first think -> FUN_0059c330).
         // His first think (FUN_005f85c0: AI control +0x14 0 -> 1) opens it (FUN_0059c330).
         if (!summoner.started && !hosted_quests && level->id == d2d::rules::SummonerQuest::kSanctuary)

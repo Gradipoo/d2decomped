@@ -25,6 +25,7 @@ inline constexpr int kMeshif = 210;      // meshif1: Lut Gholein's
 inline constexpr int kMeshifAct3 = 264;  // meshif2: Kurast Docks'
 inline constexpr int kPalaceGuard = 331;   // act2guard2 (MonAI JarJar): at the palace gate
 inline constexpr int kAndariel = 156;
+inline constexpr int kMephisto = 242;
 inline constexpr int kDarkWanderer = 368;                  // a3q7's, the Spider Forest's head (MonAI 91)
 inline constexpr int kFara = 178;
 inline constexpr int kHratli = 253;

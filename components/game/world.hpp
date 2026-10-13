@@ -169,6 +169,10 @@ struct World {
     struct Fire { const Level* level; const Npc* npc; float x, y; std::uint32_t born = 0, gone = 0; };
     std::vector<Fire> fires;               // chest traps 5 / 7 left these burning; the afterglow till `gone`
     bool afterglow_made = false;           // a3q7's record +0xc: the Dark Wanderer's afterglow, once a game
+    // a3q6's record (0x14, a3q6.cpp): +0xc 2 once Mephisto's dead; the
+    // bridge's event 7 (FUN_005bcac0) every 24 frames from then.
+    bool mephisto_dead = false;
+    std::uint32_t bridge_check = 0;
     // The player's town portal: [0] where it was cast, [1] its twin in town
     // (FUN_0056d130 / FUN_0056cf40); a new one closes the old pair. [2]:
     // the Cairn Stones' portal to Tristram (object 60, FUN_005a9930), [3]
@@ -396,6 +400,8 @@ struct World {
     void arrive(const Level* destination, float arrive_x, float arrive_y, const char* how);
     std::vector<d2d::rules::QuestMsg> quest_talk(int hc_idx, bool fresh = true);   // every quest's messages from that NPC (fresh: rolls the guard's line)
     void andariel_died(const Fight::Kill& kill, std::uint32_t now_ms);
+    void mephisto_died(const Fight::Kill& kill, std::uint32_t now_ms);
+    void mephisto_bridge(std::uint32_t now_ms);
     void blood_raven_died(std::uint32_t now_ms);
     void radament_died(const Fight::Kill& kill, std::uint32_t now_ms);
     void transmute(std::uint32_t now_ms);

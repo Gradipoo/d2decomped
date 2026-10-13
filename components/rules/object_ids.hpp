@@ -47,6 +47,7 @@ inline constexpr int kSanctuaryPortal = 34; // FUN_005846b0: Palace Cellar 3 <->
 inline constexpr int kJournal = 42;         // FUN_0059b970: Horazon's Journal
 inline constexpr int kOrifice = 25;         // FUN_0059dc70: where the Horadric Staff goes        // FUN_0059a7e0: the Tainted Sun's altar
 inline constexpr int kStash = 32;
+inline constexpr int kHellgate = 46;        // the red portal to the Pandemonium Fortress (a3q6)
 inline constexpr int kCubeChest = 39, kScrollChest = 40, kShaftChest = 41;   // the Horadric Staff's chests (FUN_00599df0 / FUN_00599c10 / FUN_00599cf0)
 }  // namespace operate_fn
 
@@ -55,6 +56,8 @@ namespace object_ids {
 inline constexpr int kExplodingBarrel = 11;   // Barrel (BarrelExploding)
 inline constexpr int kStoneAlpha = 17;        // the Cairn stone the portal opens by
 inline constexpr int kGibbet = 26;
+inline constexpr int kMephistoBridge = 341;   // InitFn 45: rises over the lava once he's dead (a3q6)
+inline constexpr int kHellgate = 342;         // InitFn 44: the red portal to Act 4 (a3q6)
 inline constexpr int kLargeChestR = 371;      // the Countess' treasure chests
 inline constexpr int kSparklyChest = 397;     // rolls its own table (open_container)
 inline constexpr int kSubclassWaypoint = 0x40;   // objects.txt SubClass bit: a waypoint

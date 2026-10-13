@@ -826,6 +826,19 @@ the quests, the thinks.
    (monsters.md "Act 3's jungle"). Step 1 done; a store now opens on its
    first full tab in the app too (it showed tab 0).
 
+**Step 2 — the act's monsters (2026-10-13):** 14 of 15 Act 3 MonAI thinks
+as game.exe's (monster-ai.md "Act 3's thinks"; `mon_ais.py`, 5000 runs
+each): Mosquito, ThornHulk, FrogDemon, the tentacles, FetishShaman,
+FetishBlowgun, the zealots and priests, the Council, Mephisto, his hydras;
+in play through `ai.cpp`, Submerge / Emerge as the maggots' burrow. Left:
+WillOWisp (it paths in its think), plain S1 casts (ZakarumHeal / Lightning,
+MonTeleport, Hydra) and MonFrenzy, which stand.
+
+**Step 3 — Mephisto (2026-10-13):** a3q6's death hook (quests-act3.md):
+word 0x16, progression to Act 4, the soulstone, the hellgate open (its DC6
+parts drawn) and the bridge up. Left: Act 4 itself (the hellgate says so),
+Act 3's other quests.
+
 ## Checkpoint 2026-10-13: Act 3's docks and jungle done
 
 PR #22 (merged): Meshif's boat lands in a Kurast Docks that's game.exe's

@@ -84,6 +84,7 @@ inline constexpr int kSpiderCavern = 85;
 inline constexpr int kKurastSewersLevel1 = 92;
 inline constexpr int kDuranceOfHateLevel1 = 100;
 inline constexpr int kDuranceOfHateLevel2 = 101;
+inline constexpr int kDuranceOfHateLevel3 = 102;          // Mephisto's
 inline constexpr int kBloodyFoothills = 110;
 inline constexpr int kFrigidHighlands = 111;
 inline constexpr int kArreatPlateau = 112;

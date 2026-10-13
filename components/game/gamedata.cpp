@@ -752,7 +752,8 @@ void add_object(const GameData& game_data, const d2d::txt::Table& objects, const
                  && npc.operate_fn != d2d::rules::operate_fn::kSunAltar   // the Tainted Sun's altar: its quest's mode, 0 till used (InitFn 20)
                  && npc.operate_fn != d2d::rules::operate_fn::kCubeChest && npc.operate_fn != d2d::rules::operate_fn::kScrollChest
                  && npc.operate_fn != d2d::rules::operate_fn::kShaftChest   // the Horadric Staff's chests: shut till opened (InitFns 31..33 do nothing)
-                 && (npc.operate_fn != d2d::rules::operate_fn::kWaypoint || d2d::rules::level_ids::is_town(into.id)));   // waypoints: on in towns (InitFn 17)
+                 && (npc.operate_fn != d2d::rules::operate_fn::kWaypoint || d2d::rules::level_ids::is_town(into.id))   // waypoints: on in towns (InitFn 17)
+                 && oid != d2d::rules::object_ids::kHellgate);   // the hellgate: a3q6's mode, 0 till Mephisto's dead (InitFn 44)
     npc.mode   = lit_mode ? "ON" : "NU";
     // Hover name when selectable in its start mode (Selectable0 = NU,
     // 2 = ON): objects.txt Name through the string tables.

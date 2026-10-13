@@ -55,6 +55,25 @@ using namespace d2d::drlg;
 
 static bool g_units = false;                            // print rooms' units instead of their tiles
 static bool g_seeds = false;                            // print rooms' room1 seeds instead of their tiles
+// The units kind brings rooms up in $ORDER, as drlg.py bring_up: list
+// positions (the list newest first), shuffled as walk_order shuffles; the
+// other kinds bring them up in list order.
+static std::vector<std::size_t> units_order(std::size_t count, std::uint32_t seed) {
+    const char* kind = std::getenv("ORDER");
+    if (!g_units || !kind || std::string(kind) == "list") return {};
+    std::vector<std::size_t> order(count);
+    for (std::size_t i = 0; i < count; ++i) order[i] = i;
+    if (std::string(kind) == "reverse") std::ranges::reverse(order);
+    if (std::string(kind) == "shuffle") {
+        std::uint32_t x = seed;
+        for (std::size_t i = count; i-- > 1;) {
+            x = (x * 1103515245u + 12345u) & 0x7fffffffu;
+            std::swap(order[i], order[x % (i + 1)]);
+        }
+    }
+    return order;
+}
+
 static std::string dump(const OutdoorAssets& assets, std::uint32_t seed, int id, const RoomDt1s* dt1s = nullptr) {
     std::ostringstream out;
     char buffer[256];
@@ -93,7 +112,7 @@ static std::string dump(const OutdoorAssets& assets, std::uint32_t seed, int id,
         for (const auto& room : sorted)
             pf("%d,%d %dx%d kind %d seed %08x def %d file %d at %d,%d\n", room.x, room.y, room.width, room.height, room.kind, room.seed, room.def, room.file, room.preset_x, room.preset_y);
         if (dt1s) {
-            auto built = level_room_tiles(rooms, {}, assets.data, *dt1s, id, warp_slots(assets, id), notes);
+            auto built = level_room_tiles(rooms, {}, assets.data, *dt1s, id, warp_slots(assets, id), notes, units_order(rooms.size(), seed));
             std::ranges::sort(built, {}, [](const auto& room) { return std::tuple(room.y, room.x); });
             if (g_seeds) {
                 for (const auto& room : built) pf("room1 %d,%d seed %08x\n", room.x, room.y, room.room1_seed);
@@ -144,7 +163,7 @@ static std::string dump(const OutdoorAssets& assets, std::uint32_t seed, int id,
     for (const auto& room : rooms) pf("%d,%d %dx%d kind %d seed %08x\n", room.x, room.y, room.width, room.height, room.kind, room.seed);
     auto notes = outdoor.notes;
     if (dt1s) {                                         // plain rooms' tiles, as tools/emu/drlg.py tiles
-        auto built = level_room_tiles(outdoor.rooms, outdoor.plain, assets.data, *dt1s, id, warp_slots(assets, id), notes);
+        auto built = level_room_tiles(outdoor.rooms, outdoor.plain, assets.data, *dt1s, id, warp_slots(assets, id), notes, units_order(outdoor.rooms.size(), seed));
         std::ranges::sort(built, {}, [](const auto& room) { return std::tuple(room.y, room.x); });
         if (g_seeds) {
             for (const auto& room : built) pf("room1 %d,%d seed %08x\n", room.x, room.y, room.room1_seed);

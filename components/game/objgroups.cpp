@@ -10,6 +10,7 @@
 #include "gamedata.hpp"
 #include <level_ids.hpp>
 #include <quests.hpp>
+#include <units.hpp>
 #include <monsters.hpp>
 #include <montypes.hpp>
 #include <object_ids.hpp>
@@ -422,9 +423,9 @@ struct ObjectRooms {
             return nearby && std::ranges::any_of(ways, [&](const auto& way) { return (x - way.first) * (x - way.first) + (y - way.second) * (y - way.second) < warp_dist; });
         };
         if (by_water(type)) {                            // FUN_0054dc40's 20 tries, each its area then the water (FUN_005b3040)
-            const int left = spawn_room.x + 1, top = spawn_room.y + 1, width = spawn_room.x + spawn_room.width - left, height = spawn_room.y + spawn_room.height - top;
+            const int left = spawn_room.x + 1, top = spawn_room.y + 1, span_x = spawn_room.x + spawn_room.width - left, span_y = spawn_room.y + spawn_room.height - top;
             for (int tries = 0; tries < 20; ++tries) {
-                const int x = seed(width) + left, y = seed(height) + top;
+                const int x = seed(span_x) + left, y = seed(span_y) + top;
                 if (by_way(x, y) || (in_area && area_id(x, y) != area.id)) continue;
                 if (int water_x, water_y; water_spot(water_x, water_y)) { out_x = x; out_y = y; return true; }
             }

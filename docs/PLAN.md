@@ -782,6 +782,33 @@ vultures, the Maggot Queen's poison hit, Radament's corpse reach, the
 Seven Tombs' log, Meshif taking the staff's parts, and in a joined game the
 host's quests, travel and every unit's states.
 
+## Road to Act 3 (from 2026-10-12, branch `act3`)
+
+Same road as Act 2's: the levels diffed against game.exe, then the town,
+the quests, the thinks.
+
+**Step 1 — the act's levels, checked with `diff_drlg.py`:**
+1. The layout (FUN_006789b0): the docks, the jungle's three pieces and
+   their cells, Kurast stacked above. *Done (2026-10-12):* `act3_layout`
+   (drlg.md "Act 3's layout"); `diff_drlg.py 1-2000 75 layout`: 2000/2000.
+2. The Kurast Docks (75, LvlPrest 529) as a town. *Rooms, tiles and
+   units already matched (20/20, units 10/10).* Its NPCs think as
+   game.exe's (`diff_drlg.py 1-20 75 npcs` 20/20); Hratli's and
+   Natalya's markers make them as the game's quest words stand
+   (town-npcs.md "The Kurast Docks"); the act palette follows any act.
+3. The jungle (76–78) built from its cells. *Done (2026-10-12):* drlg.md
+   "Act 3's jungle"; tiles 10/10, units 5/5 on all three. Builds in
+   play; the docks walk into the Spider Forest and back. MonPlace
+   fetish / fetish shaman / tentacle heads (FUN_0054e600) placed.
+   *Population exact (2026-10-13):* `diff_drlg.py 76|77|78 monsters`
+   10/10 / 5/5, `LEVELS=75,76,77,78 game` 5/5. The collision grid
+   stamps shadows' subtile flags too (fixed act 2's desert as well);
+   spawnCol 1 types spawn on water (FUN_005b2700), a tentacle head
+   spreads its tentacles (FUN_005b2570), the Dark Wanderer's marker
+   (a3q7) makes him (monsters.md "Act 3's jungle").
+4. Kurast (79–83).
+5. The dungeons, sewers, temples and the Durance (84–102).
+
 ## Checkpoint 2026-10-12: Act 2 done, what's still open
 
 Act 2 plays from Lut Gholein to Duriel and Meshif's boat. Known gaps, none

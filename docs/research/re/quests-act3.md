@@ -115,7 +115,58 @@ figurine due (both 1 at init), +4 its carrier, +0x10 items carried.
 d2d: `rules::GoldenBirdQuest`; the carrier is the first boss the World sees
 on an act 3 level; pickups polled. `tests/quests_d2d.py` plays it.
 
+## Khalim's Will (a3q2.cpp)
+
+Cain's (245) all; state 1 entering the Great Marsh (77), 2 Cain told (543:
+bit 2). Each part shown sets its bit (`FUN_005b8060`: 545 eye 3, 546 brain
+4, 544 heart 6, 547 flail 5, 548 the Will 7). Talk (`FUN_005bd630`, blocks
+0x73f1a0: greetings 0..5, the same as topics 6..11), "!" (`FUN_005bd500`)
+and log (`FUN_005bd850`: no done case) by the parts carried.
+
+- **The chests** (objects 405 / 407 / 406, OperateFns 57 heart / 58 eye / 59
+  brain: `FUN_005b8860` / `005b8940` / `005b8a20`): rand(5) + 5 gold piles on
+  the quest seed, the part for each player who needs it, a chest's drops
+  (`FUN_00585b90`). In the sewers 2 (93), the Spider Cavern (85), the Flayer
+  Dungeon 3 (91).
+- **The sewers' stairs** (366, InitFn 41 `FUN_005b8660`: the record's +8
+  mode; OperateFn 44 `FUN_005b84e0`: in mode 2 the warp tiles of its room are
+  made usable, `FUN_0059d9d0` → `FUN_005550b0`) open by the lever (367, InitFn
+  42, OperateFn 45 `FUN_005b8530`: the stairs to mode 1, +8 = 2).
+- **The Will** made in the Cube (`FUN_005b86e0` from the transmute, 0x5664d4).
+
+## The Blackened Temple (a3q5.cpp)
+
+State: 1 entering the Causeway (82), 3 Ormus told (594; 2 with the game's
+bit 13), 5 leaving the docks (4), 6 / 7 the Council dead (the orb whole /
+broken), 7 done. Data: +0xc the orb broken, +0xd / +0xe the flail / a Cube
+dropped, +0x34 Council left, +0x38 the orb's hits, +0x3c / +0x40 players
+needing a flail / a Cube (`FUN_005bb7b0`).
+
+- **The Council**: superuniques 26 / 27 / 29 (Ismail, Geleb, Toorc; their
+  class's case in `FUN_005a49b0`'s switch, 0x5a4ea4 → 2) carry the record.
+  Each death (`FUN_005bbc00`): the first drops `qf1 ` per player needing it,
+  the next `box ` per player without; the last: state 6 / 7, everyone in act
+  3 in the killer's room or next to it bit 13 and bit 0 (Khalim's Will done)
+  or bit 4 (`FUN_005bae20`), the rest bit 14. The orb (0x16e) dying: unit flag
+  0x20000.
+- **The orb** (object 404, InitFn 60 `FUN_005bbba0`; OperateFn 53
+  `FUN_005bb980`): with the Will in hand (`FUN_0063bef0`, weapon type 0x2d),
+  the second hit: word 0x12 bits 0, 13, the Will taken, word 0x15 bit 0 for
+  one with bit 4; the orb monster gone, the object mode 1, +0xc set, the chain.
+- **Cain** 626 with bit 4 (`FUN_005bb210`): Khalim's parts taken once his
+  Will's done; bit 0, bit 4 off; state 7.
+- Talk `FUN_005bafd0` (blocks 0x7408b8, state → 0x740ed8), "!"
+  `FUN_005bad60`, join `FUN_005bb480`; no log function (+0xe8 0).
+
 ## The Guardian (a3q6.cpp)
+
+State: 1 opened (a3q5's chain, `LAB_005bcc60`, or a level past 97), 3 Ormus
+told (628; 2), then 5 (4 with the game's bit 13) leaving the docks, in the
+Durance 1 or 3; 7 the report taken. Talk `FUN_005bc270` (blocks 0x740ef8,
+state → 0x741518; bit 0xb → block 5: every docks NPC greets with the report,
+657..663, `FUN_005bc5a0` clears bit 0xb); "!" `FUN_005bbfe0` (Ormus while
+given out, everyone with bit 0xb); join `LAB_005bcc80` (bit 0, 0xb or word
+0x17 bit 0: +0xc 2, the hellgate open).
 
 Record callbacks (`FUN_005bcdc0`): +0xc0 a monster dies `FUN_005bc8b0`,
 +0xa0 `FUN_005bc270`, +0xcc `FUN_005bc5a0`, +0xac entering a level

@@ -178,6 +178,7 @@ auto World::view() const -> View {
             view.quest_log[d2d::rules::BladeQuest::kQuest] = std::uint8_t(blade.log_state(quest_bits, carries(d2d::rules::BladeQuest::kGidbinn)));
             view.quest_log[d2d::rules::KhalimQuest::kQuest] = std::uint8_t(khalim.log_state(quest_bits, khalim_parts(), temple.orb_broken));
             view.quest_log[d2d::rules::BlackenedTempleQuest::kQuest] = std::uint8_t(temple.log_state(quest_bits));
+            view.quest_log[d2d::rules::GuardianQuest::kQuest] = std::uint8_t(guardian.log_state(quest_bits));
             view.quest_log[d2d::rules::LamEsenQuest::kQuest] = std::uint8_t(lam_esen.log_state(quest_bits, carries("bbb"), !fight.remote_monsters, d2d::rules::level_act(level->id) == 2));
             view.quest_log[d2d::rules::SevenTombsQuest::kQuest] = std::uint8_t(tombs.log_state(quest_bits));
             for (int quest = 1; quest < 15; ++quest) {
@@ -870,6 +871,9 @@ auto World::new_game() -> void {
         khalim.join(quests(), khalim_parts());
         temple = {};
         temple.join(quests(), game_bits);
+        guardian = {};
+        guardian.join(quests(), game_bits);
+        bridge_check = 0;
         blade = {};
         blade.join(quests(), carries(d2d::rules::BladeQuest::kGidbinn));
         had_gidbinn = carries(d2d::rules::BladeQuest::kGidbinn); gidbinn_timer = 0; gidbinn_altar = -1;
@@ -923,7 +927,6 @@ auto World::new_game() -> void {
         doors.clear();
         fires.clear();
         afterglow_made = false;
-        mephisto_dead = false;
         traps.clear();
         treasure.clear();
         cain_walk = {};
@@ -958,6 +961,7 @@ auto World::swap_npcs(const Level* from) -> void {
         if (from && from != level) cain.enter(quests(), from->id, level->id);
         if (from && from != level) radament.enter(quests(), from->id);
         if (from && from != level) lam_esen.enter(quests(), from->id, level->id);
+        if (from && from != level) guardian.enter(quests(), from->id, level->id, d2d::rules::qbit(game_bits, d2d::rules::GuardianQuest::kQuest, 13));
         if (from && from != level) { khalim.enter(level->id); temple.enter(quests(), from->id, level->id, d2d::rules::qbit(game_bits, d2d::rules::BlackenedTempleQuest::kQuest, 13)); }
         if (from && from != level) blade.enter(quests(), from->id, level->id, carries(d2d::rules::BladeQuest::kGidbinn));
         if (from && from != level && from->id == d2d::rules::level_ids::kLutGholein) staff.rewarded = false;   // LAB_00599a00
@@ -1078,6 +1082,7 @@ auto World::quest_talk(int hc_idx, bool fresh) -> std::vector<d2d::rules::QuestM
         std::ranges::copy(lam_esen.talk(quests(), hc_idx, carries(d2d::rules::LamEsenQuest::kTome)), std::back_inserter(out));
         std::ranges::copy(khalim.talk(quests(), hc_idx, khalim_parts(), !temple.orb_broken), std::back_inserter(out));
         std::ranges::copy(temple.talk(quests(), hc_idx), std::back_inserter(out));
+        std::ranges::copy(guardian.talk(quests(), hc_idx), std::back_inserter(out));
         std::ranges::copy(blade.talk(quests(), hc_idx, carries(d2d::rules::BladeQuest::kGidbinn)), std::back_inserter(out));
         std::ranges::copy(golden_bird.talk(quests(), hc_idx, carries(d2d::rules::GoldenBirdQuest::kFigurine), carries(d2d::rules::GoldenBirdQuest::kBird)), std::back_inserter(out));
         std::ranges::copy(tainted.talk(quests(), hc_idx), std::back_inserter(out));
@@ -1136,7 +1141,7 @@ auto World::andariel_died(const Fight::Kill& kill, std::uint32_t now_ms) -> void
 // ponytail: one player, the World's; the soulstone falls at his spot (the
 // dying unit's), not by FUN_00559a30's own search.
 auto World::mephisto_died(const Fight::Kill& kill, std::uint32_t now_ms) -> void {
-        mephisto_dead = true;
+        guardian.killed();
         bridge_check = now_ms + 24 * kTickMs;
         auto& bits = quests();
         if (!d2d::rules::qbit(bits, 0x16, 0)) {
@@ -1159,9 +1164,10 @@ auto World::mephisto_died(const Fight::Kill& kill, std::uint32_t now_ms) -> void
 // the next 1 -> 2, its collision lifted (FUN_00623830: no HasCollision2).
 // ponytail: the bridge's checks run while the player's on its level.
 auto World::mephisto_bridge(std::uint32_t now_ms) -> void {
-        if (!mephisto_dead || level->id != d2d::rules::level_ids::kDuranceOfHateLevel3) return;
+        if (!guardian.dead || level->id != d2d::rules::level_ids::kDuranceOfHateLevel3) return;
         for (std::size_t i = 0; i < level->npcs.size(); ++i) {
             const auto& gate = level->npcs[i];
+            if (gate.object_id == d2d::rules::object_ids::kHellgate && !doors.contains({ level, int(i) })) doors[{ level, int(i) }] = Door{ 2, now_ms };   // InitFn 44: the record's 2 at a join
             const auto state = doors.find({ level, int(i) });
             if (gate.object_id == d2d::rules::object_ids::kHellgate && state != doors.end() && state->second.mode == 1
                 && now_ms - state->second.when >= std::uint32_t(gate.op_frames + 1) * kTickMs)
@@ -2010,6 +2016,7 @@ auto World::deal(const Command& command) -> bool {
             // Khalim's Will (FUN_005b8060): Cain's bits; the Blackened Temple
             // (FUN_005bb210): Cain's done, Khalim's parts gone once his Will's done.
             khalim.said(quests(), hc_idx, message->string);
+            guardian.said(quests(), hc_idx, message->string, d2d::rules::qbit(game_bits, d2d::rules::GuardianQuest::kQuest, 13));
             if (temple.said(quests(), game_bits, hc_idx, message->string, d2d::rules::qbit(game_bits, d2d::rules::BlackenedTempleQuest::kQuest, 13))) {
                 using K = d2d::rules::KhalimQuest;
                 for (const char* part : { K::kEyeCode, K::kHeartCode, K::kBrainCode, K::kFlailCode, K::kWillCode }) while (carries(part)) take_carried(part);
@@ -2481,7 +2488,7 @@ auto World::tick(const std::vector<Command>& cmds, std::uint32_t now_ms, std::ui
                                   || d2d::rules::HratliGreeting::alert(quests(), level->npcs[i].hc_idx)
                                   || lam_esen.alert(quests(), level->npcs[i].hc_idx, carries(d2d::rules::LamEsenQuest::kTome))
                                   || khalim.alert(quests(), level->npcs[i].hc_idx, khalim_parts(), !temple.orb_broken)
-                                  || temple.alert(quests(), level->npcs[i].hc_idx)
+                                  || temple.alert(quests(), level->npcs[i].hc_idx) || guardian.alert(quests(), level->npcs[i].hc_idx)
                                   || blade.alert(quests(), level->npcs[i].hc_idx, carries(d2d::rules::BladeQuest::kGidbinn))
                                   || d2d::rules::GoldenBirdQuest::alert(quests(), level->npcs[i].hc_idx, carries(d2d::rules::GoldenBirdQuest::kFigurine), carries(d2d::rules::GoldenBirdQuest::kBird))
                                   || tainted.alert(quests(), level->npcs[i].hc_idx) || d2d::rules::HoradricStaffQuest::alert(quests(), level->npcs[i].hc_idx, staff_items())
@@ -2534,6 +2541,7 @@ auto World::tick(const std::vector<Command>& cmds, std::uint32_t now_ms, std::ui
         }
         fight.kills.clear();
         loot.blessed_find = fight.wisp_blessing.find; loot.blessed_until = fight.wisp_blessing.until;
+        if (d2d::rules::qbit(quests(), d2d::rules::BlackenedTempleQuest::kQuest, 0)) guardian.chain();   // a3q5's +0xf0
         mephisto_bridge(now_ms);
         // The Golden Bird: the first boss made in act 3 carries it (FUN_00544e80:
         // not an NPC, not class 0x197); its items picked up (FUN_005ba6a0).

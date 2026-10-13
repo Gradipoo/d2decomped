@@ -492,7 +492,10 @@ try:
     until("the hellgate opens", lambda: "Mephisto is dead, the hellgate opens" in log_text(), 10)
     assert int(re.search(r"bits=0x([0-9a-f]+)", cmd("debug quest 22 show")).group(1), 16) & 0x2801 == 0x2801, "word 0x16 bits 0 / 0xb / 0xd not set"
     until("the bridge is up", lambda: "the bridge is up" in log_text(), 10)
-    print("OK: Mephisto dead, the hellgate open, the bridge up (a3q6)")
+    assert bits(0x16) & 0x800, f"no report due: {bits(0x16):#x}"
+    go(75)
+    talk_until("Ormus", lambda: not bits(0x16) & 0x800, "the report not taken")
+    print("OK: Mephisto dead, the hellgate open, the bridge up, the report (a3q6)")
     cmd("quit")
 finally:
     if proc.poll() is None:

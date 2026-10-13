@@ -839,6 +839,15 @@ word 0x16, progression to Act 4, the soulstone, the hellgate open (its DC6
 parts drawn) and the bridge up. Left: Act 4 itself (the hellgate says so),
 Act 3's other quests.
 
+**Step 4 — the quests (2026-10-13):** all of a3q0..a3q6 as game.exe's
+(quests-act3.md, `rules/quests_act3.hpp`; message tables by
+`tools/emu/quest_msgs.py`): Hratli's greeting, Lam Esen's Tome, the Golden
+Bird, the Blade of the Old Religion, Khalim's Will (chests, the sewers'
+lever, the Cube), the Blackened Temple (the Council, the orb) and the
+Guardian's report. `tests/quests_d2d.py` plays them all. The plain casts
+(S1 / A1 / A2: heals, lightning, teleport, Hydra) and the will-o-wisps'
+dance are in too (monster-ai.md). Act 3 is done; next: Act 4.
+
 ## Checkpoint 2026-10-13: Act 3's docks and jungle done
 
 PR #22 (merged): Meshif's boat lands in a Kurast Docks that's game.exe's

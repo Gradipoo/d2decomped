@@ -172,7 +172,6 @@ struct World {
     bool afterglow_made = false;           // a3q7's record +0xc: the Dark Wanderer's afterglow, once a game
     // a3q6's record (0x14, a3q6.cpp): +0xc 2 once Mephisto's dead; the
     // bridge's event 7 (FUN_005bcac0) every 24 frames from then.
-    bool mephisto_dead = false;
     std::uint32_t bridge_check = 0;
     // The player's town portal: [0] where it was cast, [1] its twin in town
     // (FUN_0056d130 / FUN_0056cf40); a new one closes the old pair. [2]:
@@ -227,6 +226,7 @@ struct World {
     d2d::rules::BladeQuest blade;
     d2d::rules::KhalimQuest khalim;
     d2d::rules::BlackenedTempleQuest temple;
+    d2d::rules::GuardianQuest guardian;    // its +0xc 2: Mephisto dead (the hellgate, the bridge)
     [[nodiscard]] d2d::rules::KhalimQuest::Parts khalim_parts() const;
     bool had_gidbinn = false;
     std::uint32_t gidbinn_timer = 0;       // a3q3's 7 ticks from the altar's use (FUN_00543f10 -> FUN_005b9a30)

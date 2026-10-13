@@ -651,4 +651,79 @@ struct BlackenedTempleQuest {
     [[nodiscard]] int log_state(const QuestBits& quest_bits) const { return quest_log(quest_bits, kQuest, state, log, 6); }
 };
 
+// The Guardian (a3q6.cpp, record 0x14, word 0x16): opened by the Blackened
+// Temple's chain (+0xf0, LAB_005bcc60: state 1) or a level past 97 (the
+// temples and the Durance; FUN_005bc3c0); Ormus (255) tells (628: state 3, 2
+// with the game's bit 13; marks on the talk's close). Mephisto's death
+// (World::mephisto_died: bits 13, 0, 0xb) and then any of the docks' NPCs'
+// report (657..663: block 5, greeting) clears bit 0xb (state 7 when done
+// here). A join with it done (bit 0, bit 0xb, or Act 4's word 0x17 bit 0)
+// finds Mephisto dead (data+0xc 2: the hellgate open, the bridge up).
+struct GuardianQuest {
+    static constexpr int kQuest = 0x16, kOrmus = monster_ids::kOrmus, kTells = 628, kReportFirst = 657, kReportLast = 663;
+    static constexpr int kDocks = 75, kDuranceOfHate1 = 100, kDuranceOfHate3 = 102;
+    bool open = true;              // +9
+    int state = 0;                 // +0xc
+    int log = 0;                   // +0xb
+    bool dead = false;             // data+0xc 2: Mephisto's dead
+    bool rewarded = false;         // +0x1c
+
+    // The player joins (LAB_005bcc80).
+    void join(const QuestBits& quest_bits, QuestBits& game_bits) {
+        if (qbit(quest_bits, kQuest, 0) || qbit(quest_bits, kQuest, 0xb) || qbit(quest_bits, 0x17, 0)) { qset(game_bits, kQuest, 13); dead = true; return; }
+        static constexpr std::array<std::array<int, 3>, 8> kByBit{ { { 9, 5, 4 }, { 8, 5, 3 }, { 7, 5, 2 }, { 6, 4, 4 }, { 5, 4, 3 }, { 4, 4, 2 }, { 3, 2, 2 }, { 2, 3, 2 } } };
+        for (const auto& [bit, at, logged] : kByBit)
+            if (qbit(quest_bits, kQuest, bit)) { state = at; log = logged; return; }
+    }
+    // The Blackened Temple done (its +0xf0 chain).
+    void chain() { if (state == 0 && open) state = 1; }
+    // A level change (FUN_005bc3c0).
+    void enter(const QuestBits& quest_bits, int from, int into, bool game_done) {
+        const int later = game_done ? 4 : 5;
+        if (from == kDocks && state >= 2 && state <= 3 && !qbit(quest_bits, kQuest, 0) && !qbit(quest_bits, kQuest, 0xb)) state = later;
+        if (into > 97 && open && state == 0) state = 1;
+        if (into == kDuranceOfHate1 && state == 1) state = later;
+        if (into == kDuranceOfHate3 && state != 4 && state != 5) state = later;
+    }
+    // Mephisto died (World::mephisto_died).
+    void killed() { dead = true; rewarded = true; }
+    // The player heard `string` from `npc` (FUN_005bc5a0).
+    void said(QuestBits& quest_bits, int npc, int string, bool game_done) {
+        if (!qbit(quest_bits, kQuest, 0xb) && qbit(quest_bits, kQuest, 0)) return;
+        if (npc == kOrmus && string == kTells) { state = game_done ? 2 : 3; return; }
+        if (string < kReportFirst || string > kReportLast || !qbit(quest_bits, kQuest, 0xb)) return;
+        if (qbit(quest_bits, kQuest, 13)) state = 7;
+        qset(quest_bits, kQuest, 0xb, false);
+    }
+    // What `npc` says (FUN_005bc270; blocks 0x740ef8, state -> 0x741518).
+    struct E { int npc, string; bool greet; };
+    static inline const std::vector<E> kBlocks[7] = {
+        { { 255, 628, true } },
+        { { 254, 629, false }, { 255, 631, false }, { 264, 633, false }, { 252, 635, false }, { 253, 637, false }, { 245, 639, false }, { 297, 641, false } },
+        { { 254, 630, false }, { 255, 632, false }, { 264, 634, false }, { 253, 638, false }, { 245, 640, false }, { 297, 642, false } },
+        { { 254, 643, false }, { 255, 645, false }, { 264, 647, false }, { 252, 649, false }, { 253, 651, false }, { 245, 653, false }, { 297, 655, false } },
+        { { 254, 644, false }, { 255, 646, false }, { 264, 648, false }, { 252, 650, false }, { 253, 652, false }, { 245, 654, false }, { 297, 656, false } },
+        { { 254, 657, true }, { 255, 658, true }, { 264, 659, true }, { 252, 660, true }, { 253, 661, true }, { 245, 662, true }, { 297, 663, true } },
+        { { 254, 657, false }, { 255, 658, false }, { 264, 659, false }, { 252, 660, false }, { 253, 661, false }, { 245, 662, false }, { 297, 663, false } },
+    };
+    [[nodiscard]] std::vector<QuestMsg> talk(const QuestBits& quest_bits, int npc) const {
+        int block = -1;
+        if (qbit(quest_bits, kQuest, 0xb)) block = 5;
+        else if (qbit(quest_bits, kQuest, 0)) block = rewarded ? 6 : -1;
+        else if (state > 5) block = qbit(quest_bits, kQuest, 13) ? 6 : -1;
+        else if (state >= 1) block = state - 1;
+        std::vector<QuestMsg> out;
+        if (block >= 0)
+            for (const auto& entry : kBlocks[block]) if (entry.npc == npc) out.push_back({ entry.string, entry.greet });
+        return out;
+    }
+    // The "!" (FUN_005bbfe0): Ormus while given out, everyone with the report due.
+    [[nodiscard]] bool alert(const QuestBits& quest_bits, int npc) const {
+        if (!qbit(quest_bits, kQuest, 0) && npc == kOrmus && state == 1) return true;
+        return qbit(quest_bits, kQuest, 0xb);
+    }
+    // No log function of its own (+0xe8 0): the records' usual one.
+    [[nodiscard]] int log_state(const QuestBits& quest_bits) const { return quest_log(quest_bits, kQuest, state, log, 6); }
+};
+
 }  // namespace d2d::rules

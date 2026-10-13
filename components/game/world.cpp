@@ -2050,7 +2050,7 @@ auto World::tick(const std::vector<Command>& cmds, std::uint32_t now_ms, std::ui
         // The day moves a frame a tick (40 ms); a stall doesn't fast-forward it.
         if (now_ms - day_at > 1000) day_at = now_ms;
         for (; now_ms - day_at >= kTickMs; day_at += kTickMs) {
-            day.step();
+            day.step(act());
             if (andy.tick() && level->id == d2d::rules::level_ids::kCatacombsLevel4) fight.portal_due = true;   // tick 10 of her death (FUN_00596490)
             burial.tick();
             radament.tick();

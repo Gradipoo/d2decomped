@@ -334,6 +334,28 @@ try:
     time.sleep(2)
     assert not alive(), f"the Blood Moor came back after the trip east: {len(alive())} alive"
     print("OK: an act left stays as it was (the Blood Moor still clear)")
+
+    # a3q7: the Dark Wanderer (MonAI 91) stands by the Spider Forest's head
+    # till the player's within 20 subtiles, walks 20 north, and is gone once
+    # the player's near at his next think; every player in act 3 gets quest
+    # word 0x20 bit 0. Map seed 3: his marker (object 368) at cell (28.6,
+    # 187.6), he at its x + 7 subtiles (drlg-dump 3 76 units).
+    def wanderer():
+        rows = [line.split("\t") for line in cmd("monsters").splitlines() if line.startswith("darkwanderer\t")]
+        return (float(rows[0][1]), float(rows[0][2])) if rows else None
+    cmd("debug goto 76")
+    until("in the Spider Forest", lambda: level() == 76, 60)
+    cmd("debug warp 22 190")                            # some 40 subtiles off: he waits
+    until("the Dark Wanderer made", lambda: wanderer() is not None, 30)
+    start = wanderer()
+    time.sleep(2)
+    assert wanderer() == start, f"the Dark Wanderer moved with no one near: {start} -> {wanderer()}"
+    cmd(f"debug warp {int(start[0])} {int(start[1]) + 2}")
+    until("the Dark Wanderer sets off north", lambda: wanderer() is None or wanderer()[1] < start[1] - 0.3, 20)
+    cmd(f"debug warp {int(start[0])} {int(start[1]) - 2}")   # by his spot (the merc may have held him up: he tries 3 more times)
+    until("the Dark Wanderer gone", lambda: wanderer() is None, 30)
+    assert int(re.search(r"bits=0x([0-9a-f]+)", cmd("debug quest 32 show")).group(1), 16) & 1, "word 0x20 bit 0 not set"
+    print("OK: the Dark Wanderer walks off and is gone (a3q7)")
     cmd("quit")
 finally:
     if proc.poll() is None:

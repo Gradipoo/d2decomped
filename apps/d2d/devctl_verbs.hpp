@@ -557,6 +557,7 @@ void register_game_verbs(d2d::devctl::Channel& channel, Window& win, Screen& scr
         if (!scene) return std::string("err no scene\n");
         std::string out;
         for (const auto& monster : town.net_game ? town.view.monsters : town.fight.monsters) {   // a joined game: the host's
+            if (monster.gone) continue;                                                        // left the game (the Dark Wanderer)
             const float dx = monster.unit.x - town.player.x, dy = monster.unit.y - town.player.y;
             const int screen_x = int(kScreenWidth) / 2 + int(std::lround((dx - dy) * (kIsoW / 2)));
             const int screen_y = kViewY + int(std::lround((dx + dy) * (kIsoH / 2)));

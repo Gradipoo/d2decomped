@@ -3266,7 +3266,7 @@ auto Fight::necropet_turn(Pet& pet, std::uint32_t now_ms, float elapsed, const C
             const auto& other_type = game_data->monsters.types[std::size_t(other.type)];
             const int foe_x = sub(other.unit.x), foe_y = sub(other.unit.y);
             auto& entry = nears.emplace_back(d2d::rules::NearFoe{ d2d::rules::near_distance(foe_x - pet_x, foe_y - pet_y, other_type.size), other.align, other_type.threat,
-                                                                  false, true, !other.alive(), town });
+                                                                  false, true, !other.targetable(), town });   // FUN_005dca70: no unit flag 0x4, no target
             entry.blocked = need_sight && entry.distance <= 0x23 && d2d::rules::sight_blocked(foe_x, foe_y, other_type.size, pet_x, pet_y, size, wall);
         }
         const auto pick = d2d::rules::search_near(nears, 2, need_sight);
@@ -3364,7 +3364,7 @@ auto Fight::pet_think_turn(Pet& pet, std::uint32_t now_ms, float elapsed, const 
             const auto& other_type = game_data->monsters.types[std::size_t(other.type)];
             const int foe_x = sub(other.unit.x), foe_y = sub(other.unit.y);
             auto& entry = nears.emplace_back(d2d::rules::NearFoe{ d2d::rules::near_distance(foe_x - pet_x, foe_y - pet_y, other_type.size), other.align, other_type.threat,
-                                                                  false, true, !other.alive(), town });
+                                                                  false, true, !other.targetable(), town });   // FUN_005dca70: no unit flag 0x4, no target
             entry.blocked = need_sight && entry.distance <= 0x23 && d2d::rules::sight_blocked(foe_x, foe_y, other_type.size, pet_x, pet_y, size, wall);
         }
         const auto pick = d2d::rules::search_near(nears, 2, need_sight);

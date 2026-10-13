@@ -61,6 +61,7 @@ struct ObjectRooms {
     d2d::rules::Rng seed;                               // the room's (room1 +0x6c)
     d2d::rules::Rng game;                               // the game seed (game +0xd0): a step per unit made
     std::array<std::uint8_t, 96> game_quests{};         // Spawning's
+    bool orb_smashed = false;                            // Spawning's
     std::bitset<128> superuniques;                      // made (game +0x1d30)
     d2d::rules::Region region;                          // the level's monster region: their looks
     Level::GroupRoom* out = nullptr;
@@ -130,15 +131,19 @@ struct ObjectRooms {
         const bool operated = level.npcs.size() > before && level.npcs.back().preoperated;
         const auto unit = game.next();                                 // FUN_00552df0: its seed
         // InitFn 60 (FUN_005bbba0, object 404 in Travincal), run before the
-        // object's footprint (FUN_00554850): the compelling orb (0x16e) on its
-        // spot (FUN_005b3090: radius -1) unless quest 0x13's record has made it
-        // (+0x28); with the quest done (+0xc) the object shows broken (mode 2).
-        // ponytail: the record's "made" bit and the broken look aren't kept: a room comes up once.
+        // object's footprint (FUN_00554850): with the orb smashed (record 0x13
+        // +0xc) the object goes to mode 2 (FUN_00624690: broken, no light, no
+        // collision, not selectable); then the compelling orb (0x16e) on its
+        // spot (FUN_005b3090: radius -1) unless the record has made it (+0x28).
+        // The made bit only matters when a room comes up again, which d2d's
+        // never do (populate once a game), so it isn't kept.
+        bool broken = false;
         if (obj(id, "InitFn") == 60) {
+            if (orb_smashed && level.npcs.size() > before) { broken = true; level.npcs.back().mode = "ON"; level.npcs.back().name.clear(); }
             if (spawns) leader = int(spawns->size());
             monster(int(game_data.mon_bin[0x16e]), x, y, 0);
         }
-        if (obj(id, operated ? "HasCollision2" : "HasCollision0")) stamp(x, y, obj(id, "SizeX"), obj(id, "SizeY"), bits);
+        if (obj(id, operated || broken ? "HasCollision2" : "HasCollision0")) stamp(x, y, obj(id, "SizeX"), obj(id, "SizeY"), bits);
         if (level.npcs.size() > before) {
             auto& npc = level.npcs.back();
             if (obj(id, "InitFn") != 3 && obj(id, "InitFn") != 57) npc.seed = d2d::rules::Rng{ unit };
@@ -753,7 +758,7 @@ struct ObjectRooms {
                 // InitFn 43 (FUN_005bd1f0, a3q7, object 368 by the jungle's head): the Dark
                 // Wanderer (0x170) 7 subtiles east of it, its spot only; a3q7's init (FUN_005bd300)
                 // leaves him due in every game.
-                // ponytail: his walk (a3q7's think) isn't ported; he stands.
+                // His walk: ai.cpp's DarkWanderer.
                 if (init == 43) { auto east = unit; east.x += 7; monster_or_npc(0x170, east, 0, false); }
             }
             else if (unit.type == d2d::rules::unit_type::kWarp) game.next();                                                          // a warp tile: a unit made
@@ -933,6 +938,7 @@ void ObjectRooms::load(Spawning& spawning, std::size_t room_index) {
     game = spawning.game;
     superuniques = spawning.superuniques;
     game_quests = spawning.game_quests;
+    orb_smashed = spawning.orb_smashed;
     region = std::size_t(level.id) < spawning.regions.size() ? spawning.regions[std::size_t(level.id)] : d2d::rules::Region{};
     auto& state = spawning.levels[&level];
     rooms_up(spawning);

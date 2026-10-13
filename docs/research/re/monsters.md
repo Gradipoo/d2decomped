@@ -503,7 +503,27 @@ diff_drlg.py game`.
   nothing there.
 - **The Dark Wanderer** (object 368, InitFn 43, FUN_005bd1f0, a3q7):
   MonStats 0x170 at the marker's x + 7, its spot only, once a game
-  (a3q7's init, FUN_005bd300, sets the record's "due" byte).
+  (a3q7's init, FUN_005bd300, sets the record's "due" byte; record 0x1c,
+  word 0x20: data +1 due, +4 / +8 the spot). His think is MonAI 91,
+  DarkWanderer (FUN_005ea130, search type 1). His spot (FUN_005bd0d0,
+  worked out once, +2): 20 subtiles north, else 11 north, 2 east or west
+  of that, else 8 north, else 3 north, the first clear of 0x3c01
+  (FUN_006229f0). AI control +0x14 0 -> 1. A foe 20 or more off (the
+  think's AI distance): stand 40. Under 20, state 1: walk there
+  (FUN_005ded90), state 2. State 2: within 2 of the spot (FUN_005dc5c0),
+  or after 3 more walks (+0x18, FUN_005de190(0, 0) first), unit flag
+  0x20000, gone (FUN_005ddfc0), and the record (FUN_005bd4a0: +0xd, +0x10
+  his id) two ticks on (FUN_005bd390) gives every player in act 3 word
+  0x20 bit 0 (FUN_005bd260) and leaves 7 or 8 objects 0x83 ("vile dog
+  afterglow", InitFn 59: lit, mode 1, gone 27 frames on) round his spot
+  at (±3, ±3) (0x741538), from offset `seed & 1` on, each at a free spot
+  near it (FUN_00545340, 0x3f11). d2d: ai.cpp's DarkWanderer, `gone`;
+  not the afterglow. `tests/quests_d2d.py` walks him off (map seed 3).
+- **Unkillable monsters** (MonStats killable 0: the Dark Wanderer, the
+  compelling orb, chickens, bats, the camp's cow, traps) are made without
+  unit flag 0x4 (game.exe's Dark Wanderer: +0xc4 0x8200a, a plain monster
+  0x8200e), so FUN_005dca70 and the merc's search pass them over and no
+  hit lands. d2d: `Monster::killable` in `targetable()`.
 - The collision grid (FUN_0064c900) takes the shadow layer's DT1
   subtile flags too (act 2's desert's prickly shadows; Act 1's shadows
   carry none).
@@ -520,6 +540,14 @@ diff_drlg.py game`. Kurast needed nothing new. Travincal:
   +0xc set the object goes to mode 2. The InitFn (FUN_00555230 at
   0x5553fe) runs before the object's mode and footprint (0x55545d), so
   the object doesn't block its own orb.
+- **The orb broken**: record 0x13's join (FUN_005bb480) sets data +0xc
+  when a player's word 0x12 (Khalim's Will) has bit 0; striking the orb
+  with the Flail (FUN_005bb980) sets it too. InitFn 60 then puts object
+  404 in mode 2 (one frame, no light, no collision, not selectable) and
+  still makes the orb monster (+0x28 is per game; checked in the
+  emulator: mode 2, then 0x16e made). The records' "made" bytes (the
+  orb's +0x28, Hratli's 0xe +0 / +1, Natalya's 0x14 +0x20) only stop a
+  second unit when a room comes up again; d2d populates each room once.
 - **FUN_005b1cf0** for base 0x16e: FUN_005436b0(0x13), unit flag
   0x20000, MonUMod 22. The whole switch, by BaseId (an uber by its own
   row): Andariel 22 + quest 6, uber (0x2c3) 23, 6, 29; Duriel quests 0xd,

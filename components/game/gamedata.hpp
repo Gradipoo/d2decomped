@@ -827,6 +827,9 @@ struct Spawning {
     // The game's quest words (World::game_bits, a d2d::rules::QuestBits), as
     // the town markers' inits read them (FUN_00544760).
     std::array<std::uint8_t, 96> game_quests{};
+    // a3q5's record 0x13, its data +0xc: Khalim's Will done by a player at the
+    // join (word 0x12 bit 0, FUN_005bb480): the compelling orb comes up broken.
+    bool orb_smashed = false;
     const Level* room_level = nullptr;                     // the player's room
     int room = -1;
 };

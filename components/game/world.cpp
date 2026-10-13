@@ -124,7 +124,7 @@ auto World::view() const -> View {
             // each player). ponytail: a radius of 28 cells, not rooms; waits for
             // networking (what a client is sent).
             for (const auto& monster : fight.monsters)
-                if (std::abs(monster.unit.x - player.x) < 28 && std::abs(monster.unit.y - player.y) < 28) {
+                if (!monster.gone && std::abs(monster.unit.x - player.x) < 28 && std::abs(monster.unit.y - player.y) < 28) {
                     view.monsters.push_back(monster);
                     view.monsters.back().npc.colour = monster_colour(monster);
                 }
@@ -774,6 +774,7 @@ auto World::new_game() -> void {
         for (int quest = 1; quest < 15; ++quest)
             closed_at_join[std::size_t(quest)] = d2d::rules::qbit(quests(), quest, 0) || d2d::rules::qbit(quests(), quest, 15);
         game_bits = {};
+        fight.spawning.orb_smashed = d2d::rules::qbit(quests(), 0x12, 0);   // a3q5's join (FUN_005bb480): Khalim's Will done
         d2d::rules::ActTwoOpening::join(quests(), game_bits);
         radament = {};
         radament.join(quests(), game_bits, carries("ass"));
@@ -2022,6 +2023,10 @@ auto World::tick(const std::vector<Command>& cmds, std::uint32_t now_ms, std::ui
         // start building when it changes (GameData::level).
         game_data->poll_levels();
         fight.spawning.game_quests = game_bits;          // the town markers' inits read them as rooms come up
+        // a3q7: the Dark Wanderer gone (ai.cpp) marks every player in act 3 (FUN_005bd260: word 0x20 bit 0, if missing).
+        if (d2d::rules::level_act(level->id) == 2 && !d2d::rules::qbit(quests(), 0x20, 0)
+            && std::ranges::any_of(fight.monsters, [](const Monster& monster) { return monster.gone && monster.type == d2d::rules::monster_ids::kDarkWanderer; }))
+            d2d::rules::qset(quests(), 0x20, 0);
         if (level != wanted_near) { want_nearby(*game_data, *level); wanted_near = level; }
         item_ids();
         // The day moves a frame a tick (40 ms); a stall doesn't fast-forward it.

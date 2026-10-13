@@ -249,6 +249,12 @@ struct Monster {
     // lifted, pattern 5, path mask 0): untargetable, it flies over
     // anything till it lands (FUN_005f2fc0).
     bool aloft = false;
+    // Gone from the game without dying (FUN_005ddfc0: the Dark Wanderer at
+    // his walk's end): no corpse, no kill, not drawn.
+    bool gone = false;
+    // MonStats killable (game.exe: unit flag 0x4 off, FUN_005dca70's test):
+    // the Dark Wanderer, the compelling orb. No one targets or hits it.
+    bool killable = true;
     float leap_from_x = 0, leap_from_y = 0, leap_to_x = 0, leap_to_y = 0;
     int move_pct = 0;
     std::uint32_t laid_until = 0;
@@ -262,8 +268,8 @@ struct Monster {
     bool other = false;
     std::vector<std::pair<int, int>> path;
     bool half_freeze = false;
-    [[nodiscard]] bool alive() const { return hit_points > 0; }
-    [[nodiscard]] bool targetable() const { return alive() && !buried && !aloft; }   // unit flags 0xe: not a buried maggot, a vulture aloft
+    [[nodiscard]] bool alive() const { return hit_points > 0 && !gone; }
+    [[nodiscard]] bool targetable() const { return alive() && killable && !buried && !aloft; }   // unit flags 0xe: not a buried maggot, a vulture aloft, an unkillable one
     // As a target for the player's (or the merc's) hits.
     [[nodiscard]] d2d::rules::Target target(const GameData& game_data) const {
         const auto& type_info = game_data.monsters.types[std::size_t(type)];

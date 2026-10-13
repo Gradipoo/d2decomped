@@ -437,6 +437,7 @@ int main(int argc, char** argv) {
                     out << " specials " << cells.specials << '\n';
                 }
                 out << "roll " << act3.roll << '\n';
+                if (std::getenv("LAYOUT_STATS")) std::fprintf(stderr, "stats %u tries %d failed %d\n", seed, act3.tries, int(act3.failed));   // grids laid, game.exe's endless retry cut off
                 if (argc > 5) std::ofstream(fs::path(argv[4]) / (std::to_string(seed) + ".txt")) << out.str();
                 else std::fputs(out.str().c_str(), stdout);
                 if (seed == last) break;

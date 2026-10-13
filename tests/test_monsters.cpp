@@ -643,11 +643,17 @@ int main() {
             {
                 static constexpr std::string_view kCases[] = {
 #include "mon_ais_cases.inc"
+#include "mon_ais3_cases.inc"
                 };
                 // Then the curse thinks (special AI 10 / 11) and the other thinks.
-                static constexpr std::array<std::string_view, 22> kAis{ "Duriel", "Swarm", "PinHead", "Mummy", "SandLeaper", "ClawViper", "PantherWoman", "PantherJavelin",
+                // Then Act 3's (mon_ais.py ACT3_AIS), their other thinks last.
+                static constexpr std::array<std::string_view, 37> kAis{ "Duriel", "Swarm", "PinHead", "Mummy", "SandLeaper", "ClawViper", "PantherWoman", "PantherJavelin",
                                                                        "Scarab", "BatDemon", "Baboon", "SandRaider", "GreaterMummy", "SandMaggot", "Summoner", "Vulture",
-                                                                       "MaggotEgg", "MaggotLarva", "DimVision", "Terror", "BatDemon", "SandMaggot" };
+                                                                       "MaggotEgg", "MaggotLarva", "DimVision", "Terror", "BatDemon", "SandMaggot",
+                                                                       "Mosquito", "ThornHulk", "WillOWisp", "ZakarumZealot", "ZakarumPriest", "FrogDemon", "Tentacle",
+                                                                       "TentacleHead", "FetishShaman", "HighPriest", "Hydra", "FetishBlowgun", "Mephisto", "FrogDemon", "FetishShaman" };
+                constexpr int kAct3 = 22;
+                auto other = [](int which) { return which == 20 || which == 21 || which >= 35; };
                 using d2d::rules::ThinkEffect;
                 int checked = 0;
                 for (const std::string_view case_line : kCases) {
@@ -683,6 +689,7 @@ int main() {
                     int cast_word = 0;
                     input.swings = read() != 0; input.runs = read() != 0; input.afraid = read() != 0; input.in_s4 = read() != 0; cast_word = read();
                     input.cast_word = &cast_word;
+                    if (which >= kAct3) { input.next_event = read(); input.leader_mode = read(); input.command_unit = read() != 0; }
                     d2d::rules::Rng seed;
                     seed.low = std::uint32_t(std::stoll([&] { std::string text; fields >> text; return text; }()));
                     seed.high = std::uint32_t(std::stoll([&] { std::string text; fields >> text; return text; }()));
@@ -703,7 +710,7 @@ int main() {
                     const auto ai_name = kAis[std::size_t(which)];
                     const auto act = which == 18 ? d2d::rules::dim_vision_think(input, seed)
                                    : which == 19 ? d2d::rules::terror_think(input, seed, away)
-                                   : which >= 20 ? d2d::rules::other_think(ai_name, input)
+                                   : other(which) ? d2d::rules::other_think(ai_name, input)
                                                  : d2d::rules::mon_think(ai_name, input, seed, away);
                     assert(asked == asks.size());
                     for (const auto& effect : effects)                     // the toggle back clears the scratch words (FUN_005b0e00)

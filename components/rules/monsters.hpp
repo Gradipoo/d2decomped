@@ -1165,6 +1165,11 @@ struct ThinkIn {
     // +0x18 (FUN_0058efa0).
     bool swings = true, runs = false, afraid = true, in_s4 = false;
     int* cast_word = nullptr;
+    // Act 3's: its next think event's frame (FUN_005415a0 type 1, 0 none);
+    // its group leader's mode (unit +0x10; the tentacles' head: 12 DD, 14
+    // S4), with `grouped`; its command's unit found (FUN_00552f60).
+    int next_event = 0, leader_mode = 0;
+    bool command_unit = false;
 };
 
 // A monster's skill level (FUN_00573cb0): Sk*lvl + DifficultyLevels
@@ -2046,6 +2051,161 @@ Think mon_think(std::string_view ai_name, const ThinkIn& input, Rng& rng, Away&&
         if (*input.state == 0 && roll() < aip[0]) { *input.state = 1; return { MonAct::a1 }; }
         *input.state = 0;
         return { MonAct::idle, aip[1] };
+    }
+    // Act 3's (docs/research/re/monster-ai.md "Act 3's thinks"). A circle
+    // (FUN_005df7d0) says whether it set off, as `away` does.
+    auto circle = [&](int count, int flag, bool& set_off) { auto out = think_circle(rng, count); out.y = flag; set_off = away(count, false); return out; };
+    auto at = [](Think out, ThinkUnit unit) { out.unit = unit; return out; };
+    // Mosquito (24, FUN_005f3730): in melee, aip3 % (or before its first
+    // swing, state2 0) it swings: aip4 % Skill1, else A1; else 80 % stands
+    // 15, 20 % flies off (state 2). Off: walks in (state 0); state 1 drifts
+    // (wander 4) for aip5 thinks; state 2 backs off 10, then drifts.
+    if (ai_name == "Mosquito") {
+        if (input.in_melee) {
+            if (roll() < aip[2] || *input.state2 == 0) {
+                ++*input.state2;
+                if (input.skill[0] && roll() < aip[3]) return cast(0);
+                return { MonAct::a1 };
+            }
+            if (roll() > 20) return { MonAct::idle, 15 };
+            *input.state = 2; *input.state2 = 0;
+        }
+        switch (*input.state) {
+        case 0: set_pace(100, 0); return walk0;
+        case 1: {
+            set_pace(50, 0);
+            const auto out = think_wander(rng, 4);
+            if (++*input.state2 > aip[4]) *input.state = *input.state2 = 0;
+            return out;
+        }
+        case 2:
+            set_pace(100, 0);
+            away(10, false);
+            *input.state = 1; *input.state2 = 0;
+            return { MonAct::none };
+        default:
+            *input.state = *input.state2 = 0;
+            return { MonAct::idle, 10 };
+        }
+    }
+    // ThornHulk (27, FUN_005f4850): out of melee it runs in. In melee, its
+    // frenzy (Skill1) on (state: thinks left) it keeps casting; else aip1
+    // % it fights: with no cooldown (state2) aip4 % frenzies (state aip6),
+    // else aip2 % A1, else A2; else aip3 % circles 4, else stands 15. A
+    // cast waits aip5 past its next think event, if one's due.
+    if (ai_name == "ThornHulk") {
+        if (!input.in_melee) { *input.state = 0; return { MonAct::run, 7 }; }
+        auto frenzy = [&] {
+            auto out = cast(0);
+            if (input.frame < input.next_event) out.wait = aip[4] - input.frame + input.next_event;
+            return out;
+        };
+        if (*input.state < 1) {
+            if (roll() >= aip[0]) {
+                if (roll() >= aip[2]) return { MonAct::idle, 15 };
+                bool set_off = false;
+                return circle(4, 0, set_off);
+            }
+            if (*input.state2 < 1 && roll() < aip[3]) { *input.state = aip[5]; return frenzy(); }
+            --*input.state2;
+            return { roll() >= aip[1] ? MonAct::a1 : MonAct::a2 };
+        }
+        const auto out = frenzy();
+        if (--*input.state < 1) *input.state2 = 3;
+        return out;
+    }
+    // Tentacle (56, FUN_005f8f80) and TentacleHead (57, FUN_005f9270): the
+    // head's tentacles die with it (no group leader), or 40 % once it's
+    // dying (DD). Skill1 (rise) first, then on timers (state2: frames,
+    // state3: 1 up, 2 under): up, Skill2 (submerge, at itself) after aip4 ×
+    // 25 frames when the target's in melee or within aip6 (a tentacle 5 %
+    // anyway, its head not in S4); under, Skill1 again after aip3 × 25
+    // past aip6 off, or out of melee aip2 % (a tentacle: 50 % with its head
+    // in S4; the head waits 20, not 8). Up, not due: wait aip5. Else in
+    // melee aip1 % A1 (the head: at its second target), else stands aip5.
+    if (ai_name == "Tentacle" || ai_name == "TentacleHead") {
+        const bool head = ai_name == "TentacleHead";
+        if (!head && !input.grouped) return { MonAct::die };
+        if (!head && input.leader_mode == 12 && roll() < 40) return { MonAct::die };
+        auto rise = [&](int wait) {
+            auto out = cast(0); out.wait = wait;
+            *input.state2 = aip[2] * 25 + input.frame; *input.state3 = 1;
+            return out;
+        };
+        if (input.skill[0]) {
+            if (*input.state3 == 0) return rise(8);
+            if (*input.state3 == 2 && *input.state2 < input.frame
+                && (aip[5] < input.dist || (!input.in_melee && roll() < aip[1]) || (!head && input.leader_mode == 14 && roll() < 50)))
+                return rise(head ? 20 : 8);
+        }
+        if (input.skill[1] && *input.state3 == 1) {
+            if (*input.state2 < input.frame && (input.in_melee || input.dist < aip[5] || (!head && input.leader_mode != 14 && roll() < 5))) {
+                *input.state2 = aip[3] * 25 + input.frame; *input.state3 = 2;
+                return cast(1, ThinkUnit::self);
+            }
+        }
+        if (*input.state3 == 1) return { MonAct::none, 0, 0, 0, ThinkUnit::target, aip[4] };
+        if (head) {
+            const auto second = input.second ? ThinkUnit::second : ThinkUnit::none;
+            return roll() >= aip[0] ? Think{ MonAct::idle, aip[4] } : at({ MonAct::a1 }, second);
+        }
+        if (input.in_melee && roll() < aip[0]) return { MonAct::a1 };
+        return { MonAct::idle, aip[4] };
+    }
+    // FetishBlowgun (96, FUN_005e1250): its group's command first (1: A1 at
+    // the unit, 14: a walk to it, at 50 %), done either way. Past aip1 out
+    // of melee it closes about the target (6, at 50 %); in melee or under 6
+    // off, aip2 % it breaks off (state 2). State 0: shoots its second
+    // target (none: circles 4) for rand(3) + 3 thinks, then state 1: circles
+    // 6 (none: stands 10). State 2: under 13 off it backs off 14 (can't: A1
+    // at the second target); else 20 % circles 4, or stands 10.
+    if (ai_name == "FetishBlowgun") {
+        if (*input.command) {
+            if ((*input.command == 1 || *input.command == 14) && input.command_unit) {
+                *input.state = *input.state2 = 0;
+                effect(ThinkEffect::command_done);
+                if (*input.command == 1) return at({ MonAct::a1 }, ThinkUnit::kin);
+                set_pace(50, 0);
+                return at(walk0, ThinkUnit::kin);
+            }
+            effect(ThinkEffect::command_done);
+        }
+        if (!input.in_melee && aip[0] < input.dist) {
+            set_pace(50, 0);
+            auto out = think_wander(rng, 6); out.act = MonAct::around;
+            return out;
+        }
+        if ((input.in_melee || input.dist < 6) && roll() < aip[1]) *input.state = 2;
+        const auto second = input.second ? ThinkUnit::second : ThinkUnit::none;
+        bool set_off = false;
+        switch (*input.state) {
+        case 0: {
+            ++*input.state2;
+            if (rng(3) + 3 < *input.state2) { *input.state = 1; *input.state2 = 0; }
+            if (input.second) return at({ MonAct::a1 }, ThinkUnit::second);
+            return circle(4, 0, set_off);
+        }
+        case 1: {
+            *input.state = *input.state2 = 0;
+            set_pace(50, 0);
+            const auto out = circle(6, 1, set_off);
+            return set_off ? out : Think{ MonAct::idle, 10 };
+        }
+        case 2:
+            if (input.dist < 13) {
+                set_pace(50, 0);
+                if (away(14, false)) return { MonAct::none };
+                *input.state = *input.state2 = 0;
+                return at({ MonAct::a1 }, second);
+            }
+            if (roll() <= 19) {
+                const auto out = circle(4, 1, set_off);
+                if (set_off) return out;
+            }
+            *input.state = *input.state2 = 0;
+            return { MonAct::idle, 10 };
+        default: return { MonAct::idle, 10 };
+        }
     }
     return { MonAct::untraced };
 }

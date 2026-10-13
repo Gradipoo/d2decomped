@@ -44,8 +44,14 @@ AIS = {
     # The curse thinks (special AI table 0x73d358, row + 8: 10 Dim Vision /
     # Cloak, 11 Terror / Howl) and the MonAI rows' other thinks (row + 12).
     "DimVision": 0x5e8020, "Terror": 0x5e8140, "BatDemonOther": 0x5f4fd0, "SandMaggotOther": 0x5f1750,
+    # Act 3's (monster-ai.md "Act 3's thinks").
+    "Mosquito": 0x5f3730, "ThornHulk": 0x5f4850, "WillOWisp": 0x5f39b0, "ZakarumZealot": 0x5f6e60, "ZakarumPriest": 0x5f72d0,
+    "FrogDemon": 0x5f8260, "Tentacle": 0x5f8f80, "TentacleHead": 0x5f9270, "FetishShaman": 0x5f9a80, "HighPriest": 0x5e0490,
+    "Hydra": 0x5e9e60, "FetishBlowgun": 0x5e1250, "Mephisto": 0x5f78b0,
+    "FrogDemonOther": 0x5f81d0, "FetishShamanOther": 0x5f9950,
 }
 CURSE_AIS = ("DimVision", "Terror", "BatDemonOther", "SandMaggotOther")
+ACT3_AIS = tuple(list(AIS)[list(AIS).index("Mosquito"):])
 ORDER = list(AIS)
 # Think acts (rules::MonAct) by name; units (rules::ThinkUnit).
 ACTS = ["idle", "a1", "a2", "s2", "skill", "walk", "run", "approach", "keep", "circle", "wander", "none", "die", "around",
@@ -100,6 +106,14 @@ def setup(rng, ai):
     if ai in CURSE_AIS:
         s["a1"], s["rn"], s["interact"] = rng.random() < 0.8, rng.random() < 0.6, rng.random() < 0.15
         s["afraid"], s["in_s4"], s["cast_word"] = rng.random() < 0.8, rng.random() < 0.3, rng.choice((0, 1, 1, 2))
+    # Act 3's: its next think event's frame (FUN_005415a0 type 1, 0 none),
+    # its group leader's mode (+0x10: the tentacles' head, 12 DD / 14 S4),
+    # its command's unit found (FUN_00552f60), a circle that can set off.
+    if ai in ACT3_AIS:
+        s["next_event"] = rng.choice((0, s["frame"] + rng.randint(-30, 60)))
+        s["leader_mode"] = rng.choice((1, 2, 4, 12, 12, 14, 14, rng.randint(0, 15)))
+        s["cmd_unit"] = rng.random() < 0.7
+        s["command"] = rng.choice((None, 1, 2, 14))
     if ai == "Vulture":
         for k in range(2):                                                 # its spot words: a point, or unset
             if rng.random() < 0.5: s["ctrl"][1 + k] = s["spots"]["foe"][k] + rng.randint(-12, 12)
@@ -143,8 +157,9 @@ def install(e):
     e.hook(0x5defe0, away, 3)
     def circle(e):                                                     # FUN_005df7d0: a step, then at the target
         sd = seed(); v = sd.step(); put(sd)
-        out("circle", name(e.arg(0)), S32(e.arg(1)), e.arg(2), int((v & 0xff) >= 0x80))
-        return 1
+        ok = moved() if cur["s"]["ai"] in ACT3_AIS else 1                   # Act 3's read whether it set off
+        out("circle", name(e.arg(0)), S32(e.arg(1)), e.arg(2), int((v & 0xff) >= 0x80), ok)
+        return ok
     e.hook(0x5df7d0, circle, 3)
     def wander_draws(n):                                               # FUN_005de200 / FUN_005df530's three draws
         sd = seed()
@@ -264,7 +279,10 @@ def install(e):
     def command14(e):
         e.w32(cur["cmd"] + 0x18, cur["s"]["cast_word"])
         return cur["cmd"]
-    e.hook(0x58efa0, command14, 2)                          # it dies (the egg hatched)                                   # Radament's: FUN_00599420 (the quest's)
+    e.hook(0x58efa0, command14, 2)
+    # Act 3's.
+    e.hook(0x5415a0, lambda e: cur["s"].get("next_event", 0) & MASK, 1)
+    e.hook(0x552f60, lambda e: cur["units"]["kin"] if cur["s"].get("cmd_unit") else 0, 1)                          # it dies (the egg hatched)                                   # Radament's: FUN_00599420 (the quest's)
 
 
 def run_game(e, s, addr, rng_moves):
@@ -288,6 +306,8 @@ def run_game(e, s, addr, rng_moves):
     e.w32(params, ctrl); e.w32(params + 7 * 4, row)
     if s["target"]: e.w32(params + 8, units["foe"])
     e.w32(params + 20, s["dist"]); e.w32(params + 24, int(s["melee"]))
+    if s["ai"] in ACT3_AIS:
+        e.w32(units["kin"] + 0x10, s["leader_mode"]); e.w32(mon + 0x10, s["leader_mode"])
     if s["ai"] in CURSE_AIS:
         e.w32(mon + 0x10, 11 if s["in_s4"] else 1)
         data, rows = alloc(0x1000), alloc(0x1a8 * 0x106)                 # MonStats: the unit's row's flag byte +0xd (bit 1: interact)
@@ -321,7 +341,9 @@ def outcome(s, out):
             asks.append((item[2], item[4]))
             if item[4]: to("none")
             elif not item[3] and s["ai"] == "Terror": to("idle", s["aidel"])   # flags 0: FUN_005a73e0's think aidel on
-        elif k == "circle": to("circle", item[2], item[4], item[3], item[1])
+        elif k == "circle":
+            if s["ai"] in ACT3_AIS: asks.append((item[2], item[5]))
+            to("circle", item[2], item[4], item[3], item[1])
         elif k == "wander": to("wander", item[1], item[2], item[3])
         elif k == "around": to("around", item[2], item[3], item[4], item[1])
         elif k == "pace":
@@ -350,6 +372,8 @@ def dump_case(s, act, pace, effects, asks, ctrl, seed):
         nums += [int(s["a1"] and not s["interact"]), int(s["rn"]), int(s["afraid"]), int(s["in_s4"]), s["cast_word"]]
     else:
         nums += [1, 0, 1, 0, 0]
+    if s["ai"] in ACT3_AIS:
+        nums += [s["next_event"], s["leader_mode"], int(s["cmd_unit"])]
     nums += list(s["seed"])
     kinds = {"state": 0, "overlay": 1, "stat": 2, "rally": 3, "command_done": 4, "summoner_open": 5, "aura": 6, "land": 7, "takeoff": 8,
              "toggle": 9, "unset": 10}

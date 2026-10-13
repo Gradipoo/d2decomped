@@ -806,7 +806,11 @@ the quests, the thinks.
    spawnCol 1 types spawn on water (FUN_005b2700), a tentacle head
    spreads its tentacles (FUN_005b2570), the Dark Wanderer's marker
    (a3q7) makes him (monsters.md "Act 3's jungle").
-4. Kurast (79–83).
+4. Kurast (79–83). *Done (2026-10-13):* drlg.md "Kurast and Travincal"
+   (FUN_0067f190 walls, inner presets and scatter; FUN_0067f3b0);
+   `diff_drlg.py 79..83 tiles` 20/20 each, units 5/5, monsters 5/5.
+   Travincal's compelling orb (InitFn 60) made as game.exe's (monsters.md
+   "Kurast and Travincal"); all five build in play.
 5. The dungeons, sewers, temples and the Durance (84–102).
 
 ## Checkpoint 2026-10-13: Act 3's docks and jungle done

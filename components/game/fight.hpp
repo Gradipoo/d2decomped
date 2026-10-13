@@ -935,6 +935,9 @@ struct Fight {
     // Reading a scroll or a tome (Skills.txt 219 / 220): its skill cast,
     // no mana, anywhere but in town (checkfunc 5).
     bool portal_due = false;                       // Town Portal's action frame came
+    // The wisps' dance's blessing on the player (FUN_005f39b0): stat 0x50
+    // (magic find) for 0x1a5e00 frames, the last one's.
+    struct Blessing { int find = 0; std::uint32_t until = 0; } wisp_blessing;
     bool cast_scroll(int skill, std::uint32_t now_ms);
     bool cast(int skill, std::uint32_t now_ms);
     // Frenzy's state (FUN_005d8c70): each hit that lands raises it a level,

@@ -4030,6 +4030,7 @@ auto Fight::world(bool in_moor, std::uint32_t now_ms, float elapsed, const Crowd
             for (std::size_t i = sides; i < foes.size(); ++i)
                 if (const auto monster_index = i - sides; hurt(*game_data, monsters[monster_index], foes[i].damage, now_ms))
                     killed(monster_index, now_ms, cursed(monsters[monster_index]) || std::ranges::any_of(foes[i].melee_by, cursed, [](const Monster* attacker) -> const Monster& { return *attacker; }));
+            if (foes[0].blessed) wisp_blessing = { foes[0].blessed, now_ms + 0x1a5e00u * 40 };   // FUN_006251f0: 0x1a5e00 frames
             foes.resize(sides);
             for (auto& young : born) add_monster(std::move(young));
             boss_events(foes, now_ms);

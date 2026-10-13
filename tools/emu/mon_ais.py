@@ -55,9 +55,9 @@ ACT3_AIS = tuple(list(AIS)[list(AIS).index("Mosquito"):])
 ORDER = list(AIS)
 # Think acts (rules::MonAct) by name; units (rules::ThinkUnit).
 ACTS = ["idle", "a1", "a2", "s2", "skill", "walk", "run", "approach", "keep", "circle", "wander", "none", "die", "around",
-        "home", "point", "untraced", "s3", "s4", "seq", "fly", "gone", "s1"]
+        "home", "point", "untraced", "s3", "s4", "seq", "fly", "gone", "s1", "sc", "mode_at", "move_to"]
 UNIT = {"foe": 0, None: 1, "foe2": 2, "kin": 3, "aid": 4, "mon": 5}
-MODE_ACT = {4: "a1", 5: "a2", 8: "s1", 9: "s2", 10: "s3", 11: "s4"}
+MODE_ACT = {4: "a1", 5: "a2", 7: "sc", 8: "s1", 9: "s2", 10: "s3", 11: "s4"}
 
 
 def setup(rng, ai):
@@ -134,6 +134,25 @@ def setup(rng, ai):
         ids = rng.sample(range(400, 500), 3)
         s["skills68"] = [rng.choice((-6 - k, ids[k])) for k in range(3)]
         s["weak"], s["near5"] = rng.random() < 0.6, rng.random() < 0.5
+        # The wisps': how many its search finds (FUN_0065a950), its target a
+        # player (unit type 0) not out of reach (FUN_005541b0).
+        s["wisps"] = rng.choice((0, 1, 3, 4, 4, 5, 5, 6))
+        s["busy"] = rng.random() < 0.3
+        if ai == "WillOWisp":
+            s["foe_kind"] = rng.choice(("player", "monster"))
+            s["frame"] = rng.choice((s["frame"], s["frame"] - s["frame"] % 67, s["frame"] - s["frame"] % 337))   # its 67th / 337th frames
+            s["ctrl"][0] = rng.choice((0, 1, 2, 3, 4, 5, 6, rng.randint(0, 12)))   # its states (0..12)
+            s["ctrl"][2] = rng.randint(0, 6) if s["ctrl"][0] >= 5 else rng.choice((s["ctrl"][2], rng.randint(0, 6)))
+            if s["ctrl"][0] >= 5 and rng.random() < 0.5:               # at its step's point on a 67th frame: the casts, the next step, the blessing
+                steps6 = [(0, 0), (-10, -3), (1, -5), (6, 0), (4, 10), (-9, -2), (-6, -11), (-2, -5), (6, 1), (0, 13), (-12, 0), (7, 5), (-3, -11), (-15, -3),
+                          (-6, -3), (-4, -5), (-6, -13), (-12, -2), (-6, 2), (-5, 5), (1, 11), (-13, -6), (-8, -11), (-7, 0), (1, 8), (-5, -8), (-8, 1), (1, -6), (6, 9)]
+                steps5 = [(-5, 0), (-5, -5), (3, -5), (6, 3), (3, 6), (-5, 3)]
+                state, word3 = s["ctrl"][0], s["ctrl"][2]
+                step = steps5[word3] if state == 5 and word3 <= 5 else steps6[word3 + state * 4 - 24] if state >= 6 and word3 <= 4 else (0, 0)
+                fx, fy = s["spots"]["foe"]
+                s["spots"]["mon"] = (fx + step[0] + rng.randint(-1, 1), fy + step[1] + rng.randint(-1, 1))
+                s["frame"] -= s["frame"] % 67
+                s["ctrl"][1] = rng.choice((0, 1, 2, 3, 3))
     if ai == "Vulture":
         for k in range(2):                                                 # its spot words: a point, or unset
             if rng.random() < 0.5: s["ctrl"][1 + k] = s["spots"]["foe"][k] + rng.randint(-12, 12)
@@ -303,7 +322,7 @@ def install(e):
         return 0
     e.hook(0x5b0e00, toggle, 2)
     e.hook(0x540e60, lambda e: 0, 2)                                   # its pending think events dropped
-    e.hook(0x5417d0, lambda e: out("event", S32(e.arg(1)) - cur["s"]["frame"]), 4)   # a think event at frame + n
+    e.hook(0x5417d0, lambda e: out("event", S32(e.arg(1)) - cur["s"]["frame"]) if e.arg(0) != 0xc else 0, 4)   # a think event at frame + n (0xc: the wisps' blessing's end)
     e.hook(0x573120, lambda e: out("unset"), 0)
     e.hook(0x5df140, away, 3)
     def command14(e):
@@ -312,7 +331,24 @@ def install(e):
     e.hook(0x58efa0, command14, 2)
     # Act 3's.
     e.hook(0x5415a0, lambda e: cur["s"].get("next_event", 0) & MASK, 1)
-    e.hook(0x5ddfc0, lambda e: out("gone"), 3)
+    e.hook(0x5ddfc0, lambda e: out("gone", S32(e.arg(0)), S32(e.arg(1)), S32(e.arg(2))), 3)   # a mode at a point (0: it leaves the game)
+    def wisps(e):                                                      # FUN_0065a950(.., &ctx, ..): the finds' list (+4) and count (+0x18)
+        found = [cur["units"][n] for n in ("kin", "aid", "foe2", "foe", "mon", "kin")][:cur["s"]["wisps"]]
+        lst = e.alloc(4 * 8)
+        for k, u in enumerate(found): e.w32(lst + 4 * k, u)
+        e.w32(e.arg(1) + 4, lst); e.w32(e.arg(1) + 0x18, len(found))
+        return 0
+    e.hook(0x65a950, wisps, 8)
+    e.hook(0x65ac70, lambda e: 0, 1)
+    e.hook(0x65aa00, lambda e: 0, 1)
+    from unicorn.x86_const import UC_X86_REG_ECX as ECX
+    e.hook(0x58ec00, lambda e: out("word", cur["word_index"].setdefault(e.mu.reg_read(ECX), len(cur["word_index"])), e.mu.reg_read(EDX), S32(e.arg(0))), 1)
+    e.hook(0x5de490, lambda e: out("move_to", S32(e.arg(0)), S32(e.arg(1)), S32(e.arg(2))) or 1, 3)
+    e.hook(0x5541b0, lambda e: int(cur["s"].get("busy", False)), 0)
+    e.hook(0x6251f0, lambda e: cur["pcdata"], 5)
+    e.hook(0x627150, lambda e: out("bless", e.arg(1), S32(e.arg(2))), 4)
+    e.hook(0x6260b0, lambda e: 0, 2)
+    e.hook(0x626e10, lambda e: 0, 3)
     e.hook(0x6439b0, lambda e: 1, 1)                                   # its Skill1 record (FUN_006442a0 reads none of it here)
     e.hook(0x6442a0, lambda e: cur["s"].get("sk_level", 0) & MASK, 3)
     e.hook(0x64cb30, lambda e: cur["s"].get("spot_coll", 0), 4)
@@ -366,7 +402,7 @@ def run_game(e, s, addr, rng_moves):
     e.w32(params, ctrl); e.w32(params + 7 * 4, row)
     if s["target"]: e.w32(params + 8, units["foe"])
     e.w32(params + 20, s["dist"]); e.w32(params + 24, int(s["melee"]))
-    if s["ai"] == "ZakarumZealot":
+    if s["ai"] in ("ZakarumZealot", "WillOWisp"):
         e.w32(units["foe"], 0 if s["foe_kind"] == "player" else 1)
         e.w32(units["foe2"], 0)                                          # the owner, a player
     if s["ai"] in ACT3_AIS:
@@ -376,7 +412,7 @@ def run_game(e, s, addr, rng_moves):
         data, rows = alloc(0x1000), alloc(0x1a8 * 0x106)                 # MonStats: the unit's row's flag byte +0xd (bit 1: interact)
         e.w32(0x744304, data); e.w32(data + 0xa80, 0x106); e.w32(data + 0xa78, rows)
         e.mu.mem_write(rows + 0x1a8 * 0x100 + 0xd, bytes([2 if s["interact"] else 0]))
-    CUR.update(s=s, out=[], units=units, names=names, paths=paths, moves=rng_moves, cmd=cmd, frees=0, pcdata=alloc(0x40), missile=alloc(0x1a4))
+    CUR.update(s=s, out=[], units=units, names=names, paths=paths, moves=rng_moves, cmd=cmd, frees=0, pcdata=alloc(0x40), missile=alloc(0x1a4), word_index={})
     e.call(addr, params, ecx=game, edx=mon)
     word = [e.r32(cmd + 0x18)] if s["ai"] == "SandMaggotOther" else []
     return CUR["out"], [S32(e.r32(ctrl + 0x14 + 4 * k)) for k in range(3)] + word, (e.r32(mon + 0x20), e.r32(mon + 0x24))
@@ -413,7 +449,9 @@ def outcome(s, out):
             if item[1]: pace[0] = item[1]
             if item[2]: pace[1] = item[2]
         elif k == "die": to("die")
-        elif k == "gone": to("gone")
+        elif k == "gone": to("gone") if item[1] == 0 else to("mode_at", item[1], item[2], item[3], None)
+        elif k == "move_to": to("move_to", item[3], item[1], item[2], None)
+        elif k == "word": effects.append(("set_word", item[1] * 4 + item[2], item[3]))
         elif k == "keep": to("keep", item[3], item[4], item[2], item[1])
         elif k == "fly": to("fly", item[3], item[1], item[2], None)
         elif k == "aura": effects.append(("aura", s["skills"].index(item[1])))
@@ -444,10 +482,10 @@ def dump_case(s, act, pace, effects, asks, ctrl, seed):
     else:
         nums += [1, 0, 1, 0, 0]
     if s["ai"] in ACT3_AIS:
-        nums += [s["next_event"], s["leader_mode"], int(s["cmd_unit"]), s["sk_level"], int(s["state_c"]), int(s["spot_coll"] == 0), int(spared(s)), int(s["los"]), s["miss_range"]] + [int(k >= 0) for k in s["skills68"]] + [int(s["weak"]), int(s["near5"])]
+        nums += [s["next_event"], s["leader_mode"], int(s["cmd_unit"]), s["sk_level"], int(s["state_c"]), int(s["spot_coll"] == 0), int(spared(s)), int(s["los"]), s["miss_range"]] + [int(k >= 0) for k in s["skills68"]] + [int(s["weak"]), int(s["near5"]), s["wisps"], int(s["foe_kind"] == "player" and not s["busy"])]
     nums += list(s["seed"])
     kinds = {"state": 0, "overlay": 1, "stat": 2, "rally": 3, "command_done": 4, "summoner_open": 5, "aura": 6, "land": 7, "takeoff": 8,
-             "toggle": 9, "unset": 10}
+             "toggle": 9, "unset": 10, "set_word": 11, "bless": 12}
     keep = lambda x: int(x[0] == "toggle" and s["ai"] == "SandMaggotOther")          # it puts the third word back after
     eff = [f"{kinds[x[0]]} {x[1] if len(x) > 1 else 0} {x[2] if len(x) > 2 else keep(x)}" for x in effects]
     tail = [ACTS.index(act[0])] + act[1:] + pace + ctrl[:3] + list(seed) + ctrl[3:4]   # the SandMaggot's command word after, last

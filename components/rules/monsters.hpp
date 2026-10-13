@@ -1076,7 +1076,7 @@ inline std::pair<int, int> andariel_spray_aim(int dir64, int frame) {
 // A think's rand(100)s are one step each of the monster's seed (+0x20),
 // drawn here in game.exe's order; a skill test with no skill (-1) draws
 // nothing.
-enum class MonAct : std::uint8_t { idle, a1, a2, s2, skill, walk, run, approach, keep, circle, wander, none, die, around, home, point, untraced, s3, s4, seq, fly, gone, s1 };
+enum class MonAct : std::uint8_t { idle, a1, a2, s2, skill, walk, run, approach, keep, circle, wander, none, die, around, home, point, untraced, s3, s4, seq, fly, gone, s1, sc, mode_at, move_to };
 // Whom an act is at: the think's target, no unit, the second target
 // (FUN_005ddc30), the search's find (FUN_005dd0b0: kin, a corpse), the hurt
 // one it heals, itself.
@@ -1099,7 +1099,9 @@ struct Think {
 // keeping the third scratch word), its skill-set target cleared
 // (FUN_00573120).
 struct ThinkEffect {
-    enum Kind : std::uint8_t { state, overlay, stat, rally, command_done, summoner_open, aura, land, take_off, toggle, unset } kind;
+    // The wisps': set_word (FUN_0058ec00: id = its find's index x 4 + the
+    // word 1..3), bless (a stat on the player it's at: id the stat).
+    enum Kind : std::uint8_t { state, overlay, stat, rally, command_done, summoner_open, aura, land, take_off, toggle, unset, set_word, bless } kind;
     int id = 0, value = 0;
 };
 struct ThinkIn {
@@ -1184,6 +1186,11 @@ struct ThinkIn {
     // the weakest unit, a player nearest).
     std::array<bool, 3> skill678{};
     bool weak = false, near_player = false;
+    // The wisps': the wisps within 32 (FUN_0065a950, class 0x76, itself
+    // too); its target a player not out of reach (FUN_005541b0) for the
+    // dance's blessing.
+    int wisps = 0;
+    bool bless_ok = false;
 };
 
 // A monster's skill level (FUN_00573cb0): Sk*lvl + DifficultyLevels
@@ -1194,14 +1201,14 @@ inline int monster_skill_level(int sk_lvl, int difficulty) {
 }
 
 inline bool traced_ai(std::string_view ai_name) {
-    static constexpr std::array<std::string_view, 54> kTraced{ "Skeleton", "Zombie", "Bighead", "BloodHawk", "Brute", "Wraith", "Goatman",
+    static constexpr std::array<std::string_view, 55> kTraced{ "Skeleton", "Zombie", "Bighead", "BloodHawk", "Brute", "Wraith", "Goatman",
                                                                "CorruptRogue", "QuillRat", "CorruptArcher", "CorruptLancer", "SkeletonBow", "Fallen", "FallenShaman", "FoulCrowNest",
                                                                "BloodRaven", "SkeletonMage", "GargoyleTrap", "Arach", "Vampire", "Fetish", "Griswold", "Smith",
                                                                "Duriel", "Swarm", "PinHead", "Mummy", "SandLeaper", "ClawViper", "PantherWoman", "PantherJavelin",
                                                                "Scarab", "BatDemon", "Baboon", "SandRaider", "GreaterMummy", "SandMaggot", "Summoner", "Vulture",
                                                                "MaggotEgg", "MaggotLarva", "DarkWanderer",
                                                                "Mosquito", "ThornHulk", "ZakarumZealot", "ZakarumPriest", "FrogDemon", "Tentacle", "TentacleHead",
-                                                               "FetishShaman", "HighPriest", "Hydra", "FetishBlowgun", "Mephisto" };
+                                                               "FetishShaman", "HighPriest", "Hydra", "FetishBlowgun", "Mephisto", "WillOWisp" };
     return std::ranges::contains(kTraced, ai_name);
 }
 
@@ -2493,6 +2500,90 @@ Think mon_think(std::string_view ai_name, const ThinkIn& input, Rng& rng, Away&&
             return out;
         }
         }
+    }
+    // WillOWisp (25, FUN_005f39b0). With a target past the cooldown (state3,
+    // a frame) within 32 (squared 0x400) and state under 4, rand(1000) <=
+    // difficulty + 2: state 4. 4: the wisps within 32 (itself too); four
+    // dance (word 1 6) and five (5), each word 2 0 and word 3 its place + 1,
+    // all standing to the next 337th frame; else state 2, stands 8. Dancing
+    // (6..12 a step, 5 the fives' one): to the target + its step's point
+    // (0x6e.. tables on the stack, by word 3 + state x 4) a walk (mode 2,
+    // FUN_005de490), 34 % a wander 4 instead, while past 3 off; there, on
+    // each 67th frame, up to 3 casts (SC, FUN_005ddfc0 mode 7) at the target
+    // + the step's other point, then the next step (past 12, or the fives':
+    // state 2, cooldown 1800 frames), standing to the next 337th frame; a
+    // player it's at gets stat 0x50 (magic find) (difficulty + 1) x 50 for
+    // 0x1a5e00 frames each step. 1: S1 (in melee state 3; else aip1 %,
+    // state 2), else walks in (aip3 %) or wanders 6. Else: out of melee SC
+    // (state 2 or aip1 %), in melee A1 (state 3 or aip2 %), state 0; else
+    // aip3 % walks in, wanders 4 (state 1, state2 3).
+    if (ai_name == "WillOWisp") {
+        static constexpr std::array<std::pair<int, int>, 53> kSteps{ { {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, { 0, 0 },
+            { -10, -3 }, { 1, -5 }, { 6, 0 }, { 4, 10 }, { -9, -2 }, { -6, -11 }, { -2, -5 }, { 6, 1 }, { 0, 13 }, { -12, 0 }, { 7, 5 }, { -3, -11 }, { -15, -3 }, { -6, -3 },
+            { -4, -5 }, { -6, -13 }, { -12, -2 }, { -6, 2 }, { -5, 5 }, { 1, 11 }, { -13, -6 }, { -8, -11 }, { -7, 0 }, { 1, 8 }, { -5, -8 }, { -8, 1 }, { 1, -6 }, { 6, 9 } } };
+        static constexpr std::array<std::pair<int, int>, 53> kCasts{ { {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, { 6, 9 },
+            { 1, -5 }, { 6, 0 }, { 4, 10 }, { -10, -3 }, { 1, 8 }, { -9, -2 }, { -5, 4 }, { 1, 8 }, { -12, 0 }, { 7, 5 }, { -3, -11 }, { 11, -2 }, { 7, 9 }, { -15, -3 },
+            { -6, -13 }, { 9, 7 }, { -5, -7 }, { -5, -7 }, { 9, 0 }, { -12, -2 }, { -8, -11 }, { -2, -6 }, { -2, -6 }, { -13, -6 }, { -8, 1 }, { 1, -6 }, { 6, 9 }, { 0, 0 } } };
+        static constexpr std::array<std::pair<int, int>, 6> kFiveSteps{ { { -5, 0 }, { -5, -5 }, { 3, -5 }, { 6, 3 }, { 3, 6 }, { -5, 3 } } };
+        static constexpr std::array<std::pair<int, int>, 6> kFiveCasts{ { { 0, 0 }, { 6, 3 }, { 3, 6 }, { -5, 3 }, { -5, -5 }, { 3, -5 } } };
+        int& state = *input.state;
+        int& count = *input.state2;
+        int& word3 = *input.state3;
+        const int frame = input.frame;
+        auto stand_to = [&](int period) { return Think{ MonAct::idle, period - frame % period }; };
+        const int off_x = input.target_x - input.self_x, off_y = input.target_y - input.self_y;
+        if (input.target && frame > word3 && off_x * off_x + off_y * off_y < 0x400 && state < 4 && rng(1000) <= input.difficulty + 2) state = 4;
+        if (state == 4) {
+            if (input.wisps == 4 || input.wisps == 5) {
+                for (int found = 0; found < input.wisps; ++found) {
+                    effect(ThinkEffect::set_word, found * 4 + 1, input.wisps == 4 ? 6 : 5);
+                    effect(ThinkEffect::set_word, found * 4 + 2, 0);
+                    effect(ThinkEffect::set_word, found * 4 + 3, found + 1);
+                }
+                return stand_to(337);
+            }
+            state = 2;
+            return { MonAct::idle, 8 };
+        }
+        if (state >= 5) {
+            const bool five = state == 5;
+            if (word3 > (five ? 5 : 4)) { state = 2; return { MonAct::idle, 8 }; }
+            const std::size_t step = five ? std::size_t(word3) : std::size_t(word3 + state * 4);
+            if (step >= kSteps.size()) { state = 2; return { MonAct::idle, 8 }; }
+            const auto [to_x, to_y] = five ? kFiveSteps[step] : kSteps[step];
+            const int point_x = input.target_x + to_x, point_y = input.target_y + to_y;
+            const int across = std::abs(input.self_x - point_x), down = std::abs(input.self_y - point_y);
+            if ((down < across ? down + across * 2 : across + down * 2) / 2 > 3) {   // FUN_005dc5c0
+                if (rng(100) < 34) return think_wander(rng, 4);
+                return { MonAct::move_to, 2, point_x, point_y, ThinkUnit::none };
+            }
+            if (frame % 67 != 0) return stand_to(67);
+            if (count < 3) {
+                const auto [cast_x, cast_y] = five ? kFiveCasts[step] : kCasts[step];
+                ++count;
+                if (cast_x == 0 && cast_y == 0) return stand_to(five ? 337 : 67);
+                return { MonAct::mode_at, 7, input.target_x + cast_x, input.target_y + cast_y, ThinkUnit::none };
+            }
+            if (five) { state = 2; word3 = frame + 1800; return stand_to(337); }
+            ++state; count = 0;
+            if (state - 6 > 6) { state = 2; word3 = frame + 1800; }
+            if (input.bless_ok) effect(ThinkEffect::bless, 0x50, (input.difficulty + 1) * 50);
+            return stand_to(337);
+        }
+        if (state == 1) {
+            if (count <= 0) {
+                if (input.in_melee) { state = 3; return { MonAct::s1, 0, 0, 0, ThinkUnit::none }; }
+                if (roll() < aip[0]) { state = 2; return { MonAct::s1, 0, 0, 0, ThinkUnit::none }; }
+            }
+            --count;
+            state = 1;
+            return roll() < aip[2] ? walk0 : think_wander(rng, 6);
+        }
+        if (!input.in_melee) {
+            if (state == 2 || roll() < aip[0]) { state = 0; return { MonAct::sc }; }
+        } else if (state == 3 || roll() < aip[1]) { state = 0; return { MonAct::a1 }; }
+        state = 1; count = 3;
+        return roll() < aip[2] ? walk0 : think_wander(rng, 4);
     }
     // Hydra (86, FUN_005e9e60; Mephisto's): past its end frame (state) it's
     // gone (FUN_005ddfc0); a target within 25, 60 % Skill1; else stands 10.

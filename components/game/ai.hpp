@@ -222,6 +222,7 @@ struct Monster {
     // when the spray began (subtiles), a random walk under way (to
     // unit.goal) rather than a chase.
     int skill = -1, skill_frame = 0, skill_x = 0, skill_y = 0;
+    bool at_point = false;                    // its mode's shot at (skill_x, skill_y), not its foe (FUN_005ddfc0: the wisps' dance)
     bool wandering = false;
     // The MonAI thinks: the last mode it left other than NU (monster data
     // +0x54, FUN_005a68e0; GH: it got hit), the AI's scratch words (+0x14,
@@ -310,6 +311,7 @@ struct Foe {
     int life_pct = 100;                       // FUN_00621f20 (a Fetish's think): life x 100 / max life
     const Monster* of = nullptr;              // a monster in the fight (Confuse, Attract: monsters fight monsters)
     bool a3q5_done = false;                   // a player, or its pet, with quest 0x15 bit 0 (the zealots spare it)
+    int blessed = 0;                          // the wisps' dance's magic find (stat 0x50) put on it this frame
     void take(const d2d::rules::Taken& taken) {
         blocked = blocked || taken.blocked;
         hits += taken.hit ? 1 : 0;

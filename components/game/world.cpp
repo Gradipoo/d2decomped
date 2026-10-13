@@ -2334,6 +2334,7 @@ auto World::tick(const std::vector<Command>& cmds, std::uint32_t now_ms, std::ui
             if (kill.type == d2d::rules::monster_ids::kMephisto && !hosted_quests) mephisto_died(kill, now_ms);
         }
         fight.kills.clear();
+        loot.blessed_find = fight.wisp_blessing.find; loot.blessed_until = fight.wisp_blessing.until;
         mephisto_bridge(now_ms);
         // The Summoner goes for the player (FUN_005f85c0's first think -> FUN_0059c330).
         // His first think (FUN_005f85c0: AI control +0x14 0 -> 1) opens it (FUN_0059c330).

@@ -680,6 +680,7 @@ bool think(const GameData& game_data, const Level& level, Monster& monster, std:
     std::vector<d2d::rules::ThinkEffect> effects;
     input.effects = &effects;
     int kin = -1, aid = -1;
+    std::vector<int> wisp_finds;
     {
         const bool panther = type_info.ai_name == "PantherWoman" || type_info.ai_name == "PantherJavelin";
         const bool raider = type_info.ai_name == "SandRaider", mummy = type_info.ai_name == "GreaterMummy";
@@ -775,13 +776,25 @@ bool think(const GameData& game_data, const Level& level, Monster& monster, std:
             if (council && squared <= 2500 && life < weakest) { aid = int(i); weakest = life; input.kin_dist = squared; }
         }
         if (priest || council) input.aid = aid >= 0;
+        // The wisps (FUN_0065a950, radius 0x20, class 0x76 willowisp1: itself
+        // too), in the pack's order; the blessing's target a player.
+        // ponytail: within 32 subtiles (squared), not the search's own shape; FUN_005541b0 taken as clear.
+        if (type_info.ai_name == "WillOWisp") {
+            for (std::size_t i = 0; i < pack.size(); ++i) {
+                const auto& other = pack[i];
+                const int off_x = subtile(other.unit.x) - x, off_y = subtile(other.unit.y) - y;
+                if (other.alive() && game_data.monsters.types[std::size_t(other.type)].base == 118 && off_x * off_x + off_y * off_y <= 0x400) wisp_finds.push_back(int(i));
+            }
+            input.wisps = int(wisp_finds.size());
+            input.bless_ok = !target->pet && !target->of;
+        }
     }
     auto use = [&](std::string_view mode, int skill) {             // FUN_005dead0 / FUN_005ddf90: against the target (mode ctx +8)
         monster.chase = int(target - foes.data());
         unit.dir = direction16(dx, dy);
         set_mode(game_data, monster, mode, now_ms);
         monster.skill = skill; monster.struck = false; monster.wandering = false; monster.seq_done = 0; monster.seq_once = false;
-        monster.skill_frame = 0; monster.skill_x = target_x; monster.skill_y = target_y;
+        monster.skill_frame = 0; monster.skill_x = target_x; monster.skill_y = target_y; monster.at_point = false;
         attack_starts(game_data, monster, mode, rng);
     };
     // FUN_005defe0 / FUN_005df140: n subtiles on from the target, by axis.
@@ -845,6 +858,12 @@ bool think(const GameData& game_data, const Level& level, Monster& monster, std:
         if (effect.kind == d2d::rules::ThinkEffect::rally && effect.id == 1)
             for (auto& other : pack)
                 if (&other != &monster && other.alive() && other.leader == int(&monster - pack.data())) other.ai_command = 1;
+        // The wisps' dance: its finds' AI words (FUN_0058ec00), the blessing.
+        if (effect.kind == d2d::rules::ThinkEffect::set_word && std::size_t(effect.id / 4) < wisp_finds.size()) {
+            auto& wisp = pack[std::size_t(wisp_finds[std::size_t(effect.id / 4)])];
+            (effect.id % 4 == 1 ? wisp.ai_state : effect.id % 4 == 2 ? wisp.ai_state2 : wisp.ai_state3) = effect.value;
+        }
+        if (effect.kind == d2d::rules::ThinkEffect::bless) target->blessed = effect.value;
         if (effect.kind == d2d::rules::ThinkEffect::aura) { monster.aura = skill_id(game_data, type_info.skill[std::size_t(effect.id)]); monster.aura_lvl = std::max(input.aip[0], 1); }
     }
     // The unit it's at: its kin (a walk to it), the hurt one or corpse it
@@ -866,6 +885,13 @@ bool think(const GameData& game_data, const Level& level, Monster& monster, std:
         case MonAct::s3: use("S3", -1); return true;
         case MonAct::s4: use("S4", -1); return true;
         case MonAct::s1: use("S1", -1); return true;               // the Council's MissS1
+        case MonAct::sc: use("SC", -1); return true;               // the wisps' MissC
+        case MonAct::mode_at:                                      // FUN_005ddfc0: mode n at a point (the wisps' SC)
+            use("SC", -1);
+            monster.skill_x = act.x; monster.skill_y = act.y; monster.at_point = true;
+            unit.dir = direction16(float(act.x - x), float(act.y - y));
+            return true;
+        case MonAct::move_to: walk_to(act.x - x, act.y - y, false); return true;   // FUN_005de490: to the point
         case MonAct::gone: monster.gone = true; return true;       // FUN_005ddfc0: Mephisto's hydras at their end
         case MonAct::walk: case MonAct::approach: case MonAct::run:  // FUN_005deb60 at the target
             if (at_unit) { walk_to(subtile(at_unit->unit.x) - x, subtile(at_unit->unit.y) - y, act.act == MonAct::run); return true; }
@@ -1095,23 +1121,25 @@ bool monster_update(const GameData& game_data, const Level& level, Monster& mons
             due = 1;
         }
         for (; due > 0; --due) {
-            const auto& shot = monster.mode == "A1" ? type_info.miss_a1 : type_info.miss_a2;   // MissA1 / MissA2
-            const auto fired = shot.empty() || !attack ? game_data.missiles.end() : game_data.missiles.find(shot);
+            const auto& shot = monster.mode == "A1" ? type_info.miss_a1 : monster.mode == "SC" ? type_info.miss_c : type_info.miss_a2;   // MissA1 / MissA2 / MissC
+            const auto fired = shot.empty() || !(attack || monster.mode == "SC") ? game_data.missiles.end() : game_data.missiles.find(shot);
             // Quick Strike (srvdofunc 92, FUN_005cbf90 -> FUN_0056ecb0): its
             // srvmissilea raven1, Blood Raven's MissA1 too.
             if ((monster.skill < 0 || skill("Quick Strike")) && fired != game_data.missiles.end()) {   // fire: at the foe, from here
                 const auto& missile_info = fired->second;
                 // MissA's level: MonsterSkillBonus + 1 (FUN_005a7670, objects.md "Trap-Missile").
                 const int lvl = d2d::rules::monster_skill_level(1, monster.difficulty);
-                const float speed = missile_speed(missile_info, lvl), distance = std::max(dist, 0.01f);
-                Missile x{ &missile_info, unit.x, unit.y, dx / distance * speed, dy / distance * speed, direction32(dx, dy), now_ms,
+                // At its point instead when its mode was set there (the wisps' dance).
+                const float aim_x = monster.at_point ? (float(monster.skill_x) + 0.5f) / 5 - unit.x : dx, aim_y = monster.at_point ? (float(monster.skill_y) + 0.5f) / 5 - unit.y : dy;
+                const float speed = missile_speed(missile_info, lvl), distance = std::max(std::hypot(aim_x, aim_y), 0.01f);
+                Missile x{ &missile_info, unit.x, unit.y, aim_x / distance * speed, aim_y / distance * speed, direction32(aim_x, aim_y), now_ms,
                            now_ms + std::uint32_t(missile_info.range) * 40, monster.stats };
-                x.level = lvl; x.to = { unit.x + dx, unit.y + dy }; x.owner = monster.id;
-                const bool first = monster.mode == "A1";                       // an A1 shot carries A1's damage
-                x.src.a2_min = (first ? monster.stats.a1_min : monster.stats.a2_min) * missile_info.src_damage / 128 + missile_info.min;
-                x.src.a2_max = (first ? monster.stats.a1_max : monster.stats.a2_max) * missile_info.src_damage / 128 + missile_info.max;
-                if (first)                                                     // and its elements (a Skeleton Mage's El1 A1): the blow rolls A2's
-                    for (auto& element : x.src.elements) element.mode = element.mode == "A1" ? "A2" : "";
+                x.level = lvl; x.to = { unit.x + aim_x, unit.y + aim_y }; x.owner = monster.id;
+                const bool first = monster.mode == "A1", cast = monster.mode == "SC";   // an A1 shot carries A1's damage; SC's only its elements (El SC)
+                x.src.a2_min = (cast ? 0 : (first ? monster.stats.a1_min : monster.stats.a2_min) * missile_info.src_damage / 128) + missile_info.min;
+                x.src.a2_max = (cast ? 0 : (first ? monster.stats.a1_max : monster.stats.a2_max) * missile_info.src_damage / 128) + missile_info.max;
+                if (first || cast)                                             // and its elements (a Skeleton Mage's El1 A1): the blow rolls A2's
+                    for (auto& element : x.src.elements) element.mode = element.mode == (cast ? "SC" : "A1") ? "A2" : "";
                 missiles.push_back(x);
                 // Multishot (FUN_005a3610, the missile hook): two more, aimed a
                 // subtile to either side.

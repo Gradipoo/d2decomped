@@ -296,7 +296,8 @@ struct Act3Layout {
     std::vector<Placed> levels;                   // 75..83
     std::array<JungleCells, 3> jungle;            // 76, 77, 78
     int roll = 0;                                 // FUN_00642da0's act 3 roll (act +0x474)
-    bool failed = false;                          // game.exe asserts (OutPlace.cpp 0x78c / 0x799)
+    bool failed = false;                          // game.exe asserts (OutPlace.cpp 0x78c / 0x799), or no layout could be made
+    int tries = 0;                                // grids and river paths laid (bounded)
 };
 
 // The clearing Defs by a cell's branch bits >> 4 (0x6f13bc), and a path
@@ -319,6 +320,9 @@ inline Act3Layout act3_layout(const LevelDefs& defs, d2d::rules::Rng act_seed) {
     out.levels.push_back({ level_ids::kKurastDocks, docks.offset_x, docks.offset_y, docks.width, docks.height });
     const int width = def(level_ids::kSpiderForest).width, height = def(level_ids::kSpiderForest).height;
     const int cols = width / 32, rows = height / 32;
+    if (cols < 2 || rows < 4) { out.failed = true; return out; }   // the ways in and out need 2 columns, 4 rows (Levels.txt row missing or short)
+    // ponytail: game.exe retries without end; 1000 is far past any seed's need (2000 diffed seeds), it marks the layout failed
+    constexpr int kTries = 1000;
     struct Piece { int x = 0, y = 0, dir = 0; std::vector<int> children; int cell_x = 0, cell_y = 0; JungleCells cells; };
     std::array<Piece, 3> pieces;
     pieces[0].x = docks.offset_x;
@@ -352,6 +356,7 @@ inline Act3Layout act3_layout(const LevelDefs& defs, d2d::rules::Rng act_seed) {
     const std::array<int, 4> step = { -grid_w, grid_w, 1, -1 };   // up, down, right, left
     const std::array<int, 4> branch_bit = { 0x80, 0x40, 0x20, 0x10 };
     for (bool done = false; !done;) {
+        if (++out.tries > kTries) { out.failed = true; return out; }
         owner.assign(cells, 0); order.assign(cells, 0); mark.assign(cells, 0); bits.assign(cells, 0);
         for (int index = 0; index < 3; ++index) {
             auto& piece = pieces[std::size_t(index)];
@@ -392,7 +397,8 @@ inline Act3Layout act3_layout(const LevelDefs& defs, d2d::rules::Rng act_seed) {
                     if (steps > 1 && row > 1 && mark[beside] == 0) { ++branches; mark[beside] = 2; }
                     --row;
                 }
-            } while (branches < 2);
+            } while (branches < 2 && ++out.tries <= kTries);
+            if (out.tries > kTries) { out.failed = true; return out; }
             while (branches > 3) {                // at most three: drop one at random
                 const int drop = act_seed(branches);
                 int seen = 0;

@@ -78,5 +78,9 @@ int main() {
         }
         for (std::size_t i = 4; i < 9; ++i) assert(layout.levels[i].y + layout.levels[i].height == layout.levels[i - 1].y);
     }
+    // No jungle row (or one too small): a failed layout, not a hang.
+    auto no_jungle = act3;
+    no_jungle.erase(76);
+    assert(act3_layout(no_jungle, d2d::rules::Rng{ 1 }).failed);
     std::puts("test_drlg: ok");
 }

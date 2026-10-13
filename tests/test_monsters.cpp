@@ -667,7 +667,7 @@ int main() {
                     bool rally = false;
                     std::vector<ThinkEffect> effects;
                     d2d::rules::ThinkIn input;
-                    input.difficulty = read(); input.frame = read(); (void)read();
+                    input.difficulty = read(); input.frame = read(); input.target = read() != 0;
                     input.dist = read(); input.in_melee = read() != 0; input.got_hit = read() != 0; input.life_pct = read();
                     for (auto& value : ctrl) value = read();
                     for (auto& value : input.aip) value = read();
@@ -689,7 +689,7 @@ int main() {
                     int cast_word = 0;
                     input.swings = read() != 0; input.runs = read() != 0; input.afraid = read() != 0; input.in_s4 = read() != 0; cast_word = read();
                     input.cast_word = &cast_word;
-                    if (which >= kAct3) { input.next_event = read(); input.leader_mode = read(); input.command_unit = read() != 0; input.skill_level = read(); input.state_c = read() != 0; }
+                    if (which >= kAct3) { input.next_event = read(); input.leader_mode = read(); input.command_unit = read() != 0; input.skill_level = read(); input.state_c = read() != 0; input.spot_clear = read() != 0; }
                     d2d::rules::Rng seed;
                     seed.low = std::uint32_t(std::stoll([&] { std::string text; fields >> text; return text; }()));
                     seed.high = std::uint32_t(std::stoll([&] { std::string text; fields >> text; return text; }()));

@@ -109,6 +109,8 @@ def setup(rng, ai):
     # Act 3's: its next think event's frame (FUN_005415a0 type 1, 0 none),
     # its group leader's mode (+0x10: the tentacles' head, 12 DD / 14 S4),
     # its command's unit found (FUN_00552f60), a circle that can set off.
+    if ai in ("FrogDemon", "Tentacle", "TentacleHead", "Hydra"):        # search types 2 / 5: a think with none found
+        s["target"] = rng.random() < 0.85
     if ai in ACT3_AIS:
         s["skills"] = [k if k >= 0 else -1 - n for n, k in enumerate(s["skills"])]   # unset ones distinct: a cast of one names its slot
         s["next_event"] = rng.choice((0, s["frame"] + rng.randint(-30, 60)))
@@ -117,6 +119,7 @@ def setup(rng, ai):
         s["command"] = rng.choice((None, 1, 2, 14))
         s["sk_level"] = rng.choice((0, 1, rng.randint(-2, 40)))           # FUN_006442a0: Skill1's level
         s["state_c"] = rng.random() < 0.4                                  # state 0xc (the shaman's Inferno) on
+        s["spot_coll"] = rng.choice((0, 0, 1, 0x400, 0xc01))                # FUN_0064cb30: its own spot's collision (mask 0xc01)
     if ai == "Vulture":
         for k in range(2):                                                 # its spot words: a point, or unset
             if rng.random() < 0.5: s["ctrl"][1 + k] = s["spots"]["foe"][k] + rng.randint(-12, 12)
@@ -290,7 +293,8 @@ def install(e):
     e.hook(0x5415a0, lambda e: cur["s"].get("next_event", 0) & MASK, 1)
     e.hook(0x5ddfc0, lambda e: out("gone"), 3)
     e.hook(0x6439b0, lambda e: 1, 1)                                   # its Skill1 record (FUN_006442a0 reads none of it here)
-    e.hook(0x6442a0, lambda e: cur["s"].get("sk_level", 0) & MASK, 3)                         # it leaves the game (mode 0)
+    e.hook(0x6442a0, lambda e: cur["s"].get("sk_level", 0) & MASK, 3)
+    e.hook(0x64cb30, lambda e: cur["s"].get("spot_coll", 0), 4)                         # it leaves the game (mode 0)
     e.hook(0x552f60, lambda e: cur["units"]["kin"] if cur["s"].get("cmd_unit") else 0, 1)                          # it dies (the egg hatched)                                   # Radament's: FUN_00599420 (the quest's)
 
 
@@ -383,7 +387,7 @@ def dump_case(s, act, pace, effects, asks, ctrl, seed):
     else:
         nums += [1, 0, 1, 0, 0]
     if s["ai"] in ACT3_AIS:
-        nums += [s["next_event"], s["leader_mode"], int(s["cmd_unit"]), s["sk_level"], int(s["state_c"])]
+        nums += [s["next_event"], s["leader_mode"], int(s["cmd_unit"]), s["sk_level"], int(s["state_c"]), int(s["spot_coll"] == 0)]
     nums += list(s["seed"])
     kinds = {"state": 0, "overlay": 1, "stat": 2, "rally": 3, "command_done": 4, "summoner_open": 5, "aura": 6, "land": 7, "takeoff": 8,
              "toggle": 9, "unset": 10}

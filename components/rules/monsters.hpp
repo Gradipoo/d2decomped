@@ -1170,8 +1170,10 @@ struct ThinkIn {
     // S4), with `grouped`; its command's unit found (FUN_00552f60).
     // Skill1's level (FUN_006442a0, base + bonus); state 0xc (the fetish
     // shaman's Inferno) on it.
+    // Its own spot clear of 0xc01 (FUN_0064cb30).
+    // A target found (search types 2 / 5 think without one).
     int next_event = 0, leader_mode = 0, skill_level = 1;
-    bool command_unit = false, state_c = false;
+    bool command_unit = false, state_c = false, spot_clear = true, target = true;
 };
 
 // A monster's skill level (FUN_00573cb0): Sk*lvl + DifficultyLevels
@@ -2127,10 +2129,11 @@ Think mon_think(std::string_view ai_name, const ThinkIn& input, Rng& rng, Away&&
     // melee aip1 % A1 (the head: at its second target), else stands aip5.
     if (ai_name == "Tentacle" || ai_name == "TentacleHead") {
         const bool head = ai_name == "TentacleHead";
+        const auto target = input.target ? ThinkUnit::target : ThinkUnit::none;
         if (!head && !input.grouped) return { MonAct::die };
         if (!head && input.leader_mode == 12 && roll() < 40) return { MonAct::die };
         auto rise = [&](int wait) {
-            auto out = cast(0); out.wait = wait;
+            auto out = cast(0, target); out.wait = wait;
             *input.state2 = aip[2] * 25 + input.frame; *input.state3 = 1;
             return out;
         };
@@ -2151,7 +2154,7 @@ Think mon_think(std::string_view ai_name, const ThinkIn& input, Rng& rng, Away&&
             const auto second = input.second ? ThinkUnit::second : ThinkUnit::none;
             return roll() >= aip[0] ? Think{ MonAct::idle, aip[4] } : at({ MonAct::a1 }, second);
         }
-        if (input.in_melee && roll() < aip[0]) return { MonAct::a1 };
+        if (input.in_melee && roll() < aip[0]) return at({ MonAct::a1 }, target);
         return { MonAct::idle, aip[4] };
     }
     // FetishBlowgun (96, FUN_005e1250): its group's command first (1: A1 at
@@ -2231,11 +2234,58 @@ Think mon_think(std::string_view ai_name, const ThinkIn& input, Rng& rng, Away&&
         bool set_off = false;
         return circle(4, 0, set_off);
     }
+    // FrogDemon (52, FUN_005f8260; search type 5): state3 0 at first, 1
+    // under, 2 up. First: past 12 off Skill1 (dive, wait 8) and under;
+    // else up by Skill2 if it can land (FUN_005f2fc0), else stands 12 (up
+    // if its spot is clear of 0xc01). Under: Skill2 (surface, at itself)
+    // when it can land within aip8, or within 19 after 65 dives (state2);
+    // else stays under (take-off, wait 24, state2 + 1). Up: no target waits
+    // 32; out of melee, past aip6 aip4 % circles 3, else approaches 4;
+    // within it aip5 % A2, else aip4 % circles 4, else waits aip7. In melee
+    // aip2 % A2, else aip1 % A1, aip3 % circles 3, else waits aip7. Taking
+    // off or landing waits 12 (the Vulture's).
+    if (ai_name == "FrogDemon") {
+        int& phase = *input.state3;
+        auto surface = [&](Think out) { out.act = MonAct::skill; out.n = 1; out.unit = ThinkUnit::self; phase = 2; return out; };
+        auto waits = [](int frames) { Think out{ MonAct::none }; out.wait = frames; return out; };
+        bool set_off = false;
+        if (phase == 0) {
+            if (input.skill[0] && input.dist > 12) {
+                effect(ThinkEffect::take_off);
+                phase = 1;
+                auto out = cast(0, input.target ? ThinkUnit::target : ThinkUnit::none); out.wait = 12;
+                return out;
+            }
+            if (input.skill[1] && input.can_land) { effect(ThinkEffect::land); return surface(waits(12)); }
+            if (input.spot_clear) phase = 2;
+            return { MonAct::idle, 12 };
+        }
+        if (phase == 1) {
+            if (input.skill[1] && input.can_land && (input.dist < aip[7] || (input.dist <= 19 && *input.state2 >= 65))) {
+                effect(ThinkEffect::land);
+                return surface(waits(12));
+            }
+            effect(ThinkEffect::take_off);
+            ++*input.state2; phase = 1;
+            return waits(24);
+        }
+        if (!input.target) return waits(32);
+        if (!input.in_melee) {
+            if (aip[5] <= input.dist) return roll() >= aip[3] ? Think{ MonAct::approach, 4 } : circle(3, 0, set_off);
+            if (roll() < aip[4]) return { MonAct::a2 };
+            if (roll() < aip[3]) return circle(4, 0, set_off);
+            return waits(aip[6]);
+        }
+        if (roll() < aip[1]) return { MonAct::a2 };
+        if (roll() < aip[0]) return { MonAct::a1 };
+        if (roll() < aip[2]) return circle(3, 0, set_off);
+        return waits(aip[6]);
+    }
     // Hydra (86, FUN_005e9e60; Mephisto's): past its end frame (state) it's
     // gone (FUN_005ddfc0); a target within 25, 60 % Skill1; else stands 10.
     if (ai_name == "Hydra") {
         if (*input.state < input.frame) return { MonAct::gone };
-        if (input.dist < 25 && roll() < 60) return cast(0);
+        if (input.target && input.dist < 25 && roll() < 60) return cast(0);
         return { MonAct::idle, 10 };
     }
     return { MonAct::untraced };
@@ -2300,7 +2350,7 @@ inline void ai_toggle(int& special, bool& other, std::array<int*, 3> scratch, in
 // MonAI rows with an other think (the fourth word) d2d has: 15 SandMaggot,
 // 29 BatDemon. ponytail: rows 51, 52, 61, 65, 128, 135, 140, 145, 147, 152
 // (Acts 3..5) have one too; not ported, so they stay on their own think.
-inline bool has_other_think(std::string_view ai_name) { return ai_name == "SandMaggot" || ai_name == "BatDemon" || ai_name == "FetishShaman"; }
+inline bool has_other_think(std::string_view ai_name) { return ai_name == "SandMaggot" || ai_name == "BatDemon" || ai_name == "FetishShaman" || ai_name == "FrogDemon"; }
 
 // Dim Vision's and Cloak of Shadows' think (special AI 10, FUN_005e8020;
 // search type 1): in melee with a swing it swings (A1, mode 4); else 20 %
@@ -2362,6 +2412,21 @@ inline Think other_think(std::string_view ai_name, const ThinkIn& input) {
         input.effects->push_back({ ThinkEffect::toggle, 0, 1 });
         Think out{ MonAct::none };
         out.event = 1;
+        return out;
+    }
+    // FrogDemon's (FUN_005f81d0): up (state3 past 1) with a Skill1, not on
+    // a curse's think (special 10 / 11), it dives (Skill1, under, take-off);
+    // else toggled back, waits 1.
+    // ponytail: the special taken as 0, as an other think runs.
+    if (ai_name == "FrogDemon") {
+        if (input.skill[0] && *input.state3 > 1) {
+            *input.state3 = 1;
+            input.effects->push_back({ ThinkEffect::take_off, 0, 0 });
+            Think out{ MonAct::skill, 0 }; out.wait = 12;
+            return out;
+        }
+        input.effects->push_back({ ThinkEffect::toggle, 0, 0 });
+        Think out{ MonAct::none }; out.wait = 1;
         return out;
     }
     // FetishShaman's (FUN_005f9950): its Inferno state off, toggled back,

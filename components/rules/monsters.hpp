@@ -1076,7 +1076,7 @@ inline std::pair<int, int> andariel_spray_aim(int dir64, int frame) {
 // A think's rand(100)s are one step each of the monster's seed (+0x20),
 // drawn here in game.exe's order; a skill test with no skill (-1) draws
 // nothing.
-enum class MonAct : std::uint8_t { idle, a1, a2, s2, skill, walk, run, approach, keep, circle, wander, none, die, around, home, point, untraced, s3, s4, seq, fly };
+enum class MonAct : std::uint8_t { idle, a1, a2, s2, skill, walk, run, approach, keep, circle, wander, none, die, around, home, point, untraced, s3, s4, seq, fly, gone };
 // Whom an act is at: the think's target, no unit, the second target
 // (FUN_005ddc30), the search's find (FUN_005dd0b0: kin, a corpse), the hurt
 // one it heals, itself.
@@ -1168,8 +1168,10 @@ struct ThinkIn {
     // Act 3's: its next think event's frame (FUN_005415a0 type 1, 0 none);
     // its group leader's mode (unit +0x10; the tentacles' head: 12 DD, 14
     // S4), with `grouped`; its command's unit found (FUN_00552f60).
-    int next_event = 0, leader_mode = 0;
-    bool command_unit = false;
+    // Skill1's level (FUN_006442a0, base + bonus); state 0xc (the fetish
+    // shaman's Inferno) on it.
+    int next_event = 0, leader_mode = 0, skill_level = 1;
+    bool command_unit = false, state_c = false;
 };
 
 // A monster's skill level (FUN_00573cb0): Sk*lvl + DifficultyLevels
@@ -2207,6 +2209,35 @@ Think mon_think(std::string_view ai_name, const ThinkIn& input, Rng& rng, Away&&
         default: return { MonAct::idle, 10 };
         }
     }
+    // FetishShaman (65, FUN_005f9a80): Inferno (Skill1) when the target's
+    // AI distance is under Skill1's level (FUN_006442a0, at least 1) and
+    // its state (0xc) is off, its group told to attack (command 1); else
+    // that state off. A dead fetish within aip5 (FUN_005f99a0, squared;
+    // the nearest): aip1 % with Skill3 usable, the group sent there
+    // (command 14) and Skill3's sequence on it when its squared distance is
+    // at most aip3 (game.exe compares it unsquared), else about it 10.
+    // Else aip4 % circles 4, else stands 10.
+    if (ai_name == "FetishShaman") {
+        const int reach = input.skill[0] ? std::max(input.skill_level, 1) : 1;
+        if (input.skill[0] && input.dist < reach && !input.state_c) { effect(ThinkEffect::rally, 1); return cast(0); }
+        if (input.state_c) effect(ThinkEffect::state, 0xc, 0);
+        if (input.corpse && input.kin_dist <= aip[4] * aip[4] && roll() < aip[0] && input.usable) {
+            effect(ThinkEffect::rally, 14);
+            if (input.kin_dist <= aip[2]) return at({ MonAct::seq, 2 }, ThinkUnit::kin);
+            auto out = think_wander(rng, 10); out.act = MonAct::around; out.unit = ThinkUnit::kin;
+            return out;
+        }
+        if (roll() >= aip[3]) return { MonAct::idle, 10 };
+        bool set_off = false;
+        return circle(4, 0, set_off);
+    }
+    // Hydra (86, FUN_005e9e60; Mephisto's): past its end frame (state) it's
+    // gone (FUN_005ddfc0); a target within 25, 60 % Skill1; else stands 10.
+    if (ai_name == "Hydra") {
+        if (*input.state < input.frame) return { MonAct::gone };
+        if (input.dist < 25 && roll() < 60) return cast(0);
+        return { MonAct::idle, 10 };
+    }
     return { MonAct::untraced };
 }
 
@@ -2269,7 +2300,7 @@ inline void ai_toggle(int& special, bool& other, std::array<int*, 3> scratch, in
 // MonAI rows with an other think (the fourth word) d2d has: 15 SandMaggot,
 // 29 BatDemon. ponytail: rows 51, 52, 61, 65, 128, 135, 140, 145, 147, 152
 // (Acts 3..5) have one too; not ported, so they stay on their own think.
-inline bool has_other_think(std::string_view ai_name) { return ai_name == "SandMaggot" || ai_name == "BatDemon"; }
+inline bool has_other_think(std::string_view ai_name) { return ai_name == "SandMaggot" || ai_name == "BatDemon" || ai_name == "FetishShaman"; }
 
 // Dim Vision's and Cloak of Shadows' think (special AI 10, FUN_005e8020;
 // search type 1): in melee with a swing it swings (A1, mode 4); else 20 %
@@ -2332,6 +2363,13 @@ inline Think other_think(std::string_view ai_name, const ThinkIn& input) {
         Think out{ MonAct::none };
         out.event = 1;
         return out;
+    }
+    // FetishShaman's (FUN_005f9950): its Inferno state off, toggled back,
+    // stands 1.
+    if (ai_name == "FetishShaman") {
+        if (input.state_c) input.effects->push_back({ ThinkEffect::state, 0xc, 0 });
+        input.effects->push_back({ ThinkEffect::toggle, 0, 0 });   // to AI control +0, 0 on an other think
+        return { MonAct::idle, 1 };
     }
     return { MonAct::untraced };
 }

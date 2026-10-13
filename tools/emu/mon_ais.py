@@ -55,7 +55,7 @@ ACT3_AIS = tuple(list(AIS)[list(AIS).index("Mosquito"):])
 ORDER = list(AIS)
 # Think acts (rules::MonAct) by name; units (rules::ThinkUnit).
 ACTS = ["idle", "a1", "a2", "s2", "skill", "walk", "run", "approach", "keep", "circle", "wander", "none", "die", "around",
-        "home", "point", "untraced", "s3", "s4", "seq", "fly"]
+        "home", "point", "untraced", "s3", "s4", "seq", "fly", "gone"]
 UNIT = {"foe": 0, None: 1, "foe2": 2, "kin": 3, "aid": 4, "mon": 5}
 MODE_ACT = {4: "a1", 5: "a2", 9: "s2", 10: "s3", 11: "s4"}
 
@@ -110,10 +110,13 @@ def setup(rng, ai):
     # its group leader's mode (+0x10: the tentacles' head, 12 DD / 14 S4),
     # its command's unit found (FUN_00552f60), a circle that can set off.
     if ai in ACT3_AIS:
+        s["skills"] = [k if k >= 0 else -1 - n for n, k in enumerate(s["skills"])]   # unset ones distinct: a cast of one names its slot
         s["next_event"] = rng.choice((0, s["frame"] + rng.randint(-30, 60)))
         s["leader_mode"] = rng.choice((1, 2, 4, 12, 12, 14, 14, rng.randint(0, 15)))
         s["cmd_unit"] = rng.random() < 0.7
         s["command"] = rng.choice((None, 1, 2, 14))
+        s["sk_level"] = rng.choice((0, 1, rng.randint(-2, 40)))           # FUN_006442a0: Skill1's level
+        s["state_c"] = rng.random() < 0.4                                  # state 0xc (the shaman's Inferno) on
     if ai == "Vulture":
         for k in range(2):                                                 # its spot words: a point, or unset
             if rng.random() < 0.5: s["ctrl"][1 + k] = s["spots"]["foe"][k] + rng.randint(-12, 12)
@@ -193,7 +196,7 @@ def install(e):
         out("stat", e.arg(1), S32(e.arg(2)))
         return 0
     e.hook(0x627260, setstat, 4)
-    e.hook(0x58f730, lambda e: out("rally"), 1)
+    e.hook(0x58f730, lambda e: out("rally", e.r32(e.arg(0) + 8)) if cur["s"]["ai"] in ACT3_AIS else out("rally"), 1)   # Act 3's: the command's kind
     e.hook(0x58ef40, lambda e: 0, 1)
     e.hook(0x58ed10, lambda e: out("command_done"), 0)
     e.hook(0x59c330, lambda e: out("summoner_open"), 0)
@@ -215,6 +218,9 @@ def install(e):
         s, ctx, cb = cur["s"], e.arg(0), e.arg(1)
         if cb in (0x5b0d00, 0x5f06b0):                                     # the nearest kin / other monster
             if s["kin"] and S32(s["kin_d"]) < S32(e.r32(ctx + 4)):
+                e.w32(ctx, cur["units"]["kin"]); e.w32(ctx + 4, s["kin_d"])
+        elif cb == 0x5f99a0:                                               # a dead fetish within aip5 (squared): the shaman's
+            if s["corpse"] and S32(s["kin_d"]) <= S32(e.r32(ctx + 8)):
                 e.w32(ctx, cur["units"]["kin"]); e.w32(ctx + 4, s["kin_d"])
         elif cb == 0x5f30f0:                                               # a weak one within 11 (the Vulture's)
             if s["victim"]: e.w32(ctx, cur["units"]["foe2"])
@@ -266,7 +272,7 @@ def install(e):
     from unicorn.x86_const import UC_X86_REG_EDX as EDX
     e.hook(0x46c140, lambda e: int(cur["s"]["a1"] if e.mu.reg_read(EDX) == 4 else cur["s"]["rn"] if e.mu.reg_read(EDX) == 15 else 0), 0)
     e.hook(0x457490, lambda e: int(cur["s"]["interact"] and e.mu.reg_read(EDX) == 9), 0)
-    e.hook(0x639df0, lambda e: int(cur["s"].get("afraid", False) and e.arg(1) == 0x38), 2)
+    e.hook(0x639df0, lambda e: int(cur["s"].get("afraid", False) and e.arg(1) == 0x38 or cur["s"].get("state_c", False) and e.arg(1) == 0xc), 2)
     def toggle(e):                                                     # FUN_005b0e00 back to the MonAI row's think: the reset branch
         out("toggle", e.arg(1))
         for k in range(3): e.w32(e.arg(0) + 0x14 + 4 * k, 0)
@@ -282,6 +288,9 @@ def install(e):
     e.hook(0x58efa0, command14, 2)
     # Act 3's.
     e.hook(0x5415a0, lambda e: cur["s"].get("next_event", 0) & MASK, 1)
+    e.hook(0x5ddfc0, lambda e: out("gone"), 3)
+    e.hook(0x6439b0, lambda e: 1, 1)                                   # its Skill1 record (FUN_006442a0 reads none of it here)
+    e.hook(0x6442a0, lambda e: cur["s"].get("sk_level", 0) & MASK, 3)                         # it leaves the game (mode 0)
     e.hook(0x552f60, lambda e: cur["units"]["kin"] if cur["s"].get("cmd_unit") else 0, 1)                          # it dies (the egg hatched)                                   # Radament's: FUN_00599420 (the quest's)
 
 
@@ -350,6 +359,7 @@ def outcome(s, out):
             if item[1]: pace[0] = item[1]
             if item[2]: pace[1] = item[2]
         elif k == "die": to("die")
+        elif k == "gone": to("gone")
         elif k == "keep": to("keep", item[3], item[4], item[2], item[1])
         elif k == "fly": to("fly", item[3], item[1], item[2], None)
         elif k == "aura": effects.append(("aura", s["skills"].index(item[1])))
@@ -373,7 +383,7 @@ def dump_case(s, act, pace, effects, asks, ctrl, seed):
     else:
         nums += [1, 0, 1, 0, 0]
     if s["ai"] in ACT3_AIS:
-        nums += [s["next_event"], s["leader_mode"], int(s["cmd_unit"])]
+        nums += [s["next_event"], s["leader_mode"], int(s["cmd_unit"]), s["sk_level"], int(s["state_c"])]
     nums += list(s["seed"])
     kinds = {"state": 0, "overlay": 1, "stat": 2, "rally": 3, "command_done": 4, "summoner_open": 5, "aura": 6, "land": 7, "takeoff": 8,
              "toggle": 9, "unset": 10}

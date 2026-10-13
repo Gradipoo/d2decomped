@@ -455,6 +455,7 @@ inline bool apply_view(const GameData& game_data, std::span<const std::uint8_t> 
         auto& monster = mon(i32());
         wire::monster_look(input, monster);
         if (monster.type < 0 || std::size_t(monster.type) >= game_data.monsters.types.size()) return false;
+        monster.killable = game_data.monsters.types[std::size_t(monster.type)].killable;   // not sent: MonStats', as make_monster's
     }
     for (int count = u16(); count > 0 && input.ok; --count) wire::monster_state(input, mon(i32()));
     for (int count = u16(); count > 0 && input.ok; --count) {

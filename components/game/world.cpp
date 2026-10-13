@@ -825,6 +825,7 @@ auto World::new_game() -> void {
         other_npcs.clear();
         doors.clear();
         fires.clear();
+        afterglow_made = false;
         traps.clear();
         treasure.clear();
         cain_walk = {};

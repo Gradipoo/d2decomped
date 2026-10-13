@@ -143,6 +143,7 @@ def quest_stubbed(e, fn, *args):
     finally:
         for addr, code in saved.items():
             e.mu.mem_write(addr, code)
+            e.mu.ctl_remove_cache(addr, addr + len(code))
 
 
 def game_dump(e, seed, levels, kind="shuffle"):

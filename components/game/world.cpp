@@ -174,6 +174,7 @@ auto World::view() const -> View {
             view.quest_log[d2d::rules::HoradricStaffQuest::kQuest] = std::uint8_t(staff.log_state(quest_bits, staff_items(), tainted.used));
             view.quest_log[d2d::rules::ArcaneQuest::kQuest] = std::uint8_t(arcane.log_state(quest_bits));
             view.quest_log[d2d::rules::SummonerQuest::kQuest] = std::uint8_t(summoner.log_state(quest_bits));
+            view.quest_log[d2d::rules::GoldenBirdQuest::kQuest] = std::uint8_t(golden_bird.log_state(quest_bits, carries(d2d::rules::GoldenBirdQuest::kFigurine), carries(d2d::rules::GoldenBirdQuest::kBird), !fight.remote_monsters));
             view.quest_log[d2d::rules::LamEsenQuest::kQuest] = std::uint8_t(lam_esen.log_state(quest_bits, carries("bbb"), !fight.remote_monsters, d2d::rules::level_act(level->id) == 2));
             view.quest_log[d2d::rules::SevenTombsQuest::kQuest] = std::uint8_t(tombs.log_state(quest_bits));
             for (int quest = 1; quest < 15; ++quest) {
@@ -796,6 +797,9 @@ auto World::new_game() -> void {
         d2d::rules::HratliGreeting::join(quests(), game_bits);
         lam_esen = {};
         lam_esen.join(quests(), game_bits, carries(d2d::rules::LamEsenQuest::kTome));
+        golden_bird = {};
+        golden_bird.join(quests(), carries(d2d::rules::GoldenBirdQuest::kBird), carries(d2d::rules::GoldenBirdQuest::kFigurine));
+        had_figurine = carries(d2d::rules::GoldenBirdQuest::kFigurine); had_bird = carries(d2d::rules::GoldenBirdQuest::kBird);
         tainted = {};
         tainted.join(quests(), game_bits);
         arcane = {};
@@ -994,6 +998,7 @@ auto World::quest_talk(int hc_idx, bool fresh) -> std::vector<d2d::rules::QuestM
         std::ranges::copy(radament.talk(quests(), hc_idx), std::back_inserter(out));
         std::ranges::copy(d2d::rules::HratliGreeting::talk(quests(), hc_idx, character.header.cls), std::back_inserter(out));
         std::ranges::copy(lam_esen.talk(quests(), hc_idx, carries(d2d::rules::LamEsenQuest::kTome)), std::back_inserter(out));
+        std::ranges::copy(golden_bird.talk(quests(), hc_idx, carries(d2d::rules::GoldenBirdQuest::kFigurine), carries(d2d::rules::GoldenBirdQuest::kBird)), std::back_inserter(out));
         std::ranges::copy(tainted.talk(quests(), hc_idx), std::back_inserter(out));
         std::ranges::copy(staff.talk(quests(), hc_idx, staff_items()), std::back_inserter(out));
         std::ranges::copy(arcane.talk(quests(), hc_idx, [&] {          // the guard's line: one roll a talk on the quest seed
@@ -1346,6 +1351,16 @@ auto World::cain_step(std::uint32_t now_ms, float elapsed) -> void {
 // FUN_00558110: the cursor's item, then all the player's items.
 // N-player gap: the quest item's difficulty (stat 0x164, questdiffcheck) isn't checked.
 auto World::carries(std::string_view code) const -> bool { return (held && held->code == code) || std::ranges::contains(character.items, code, &d2d::d2s::Item::code); }
+// FUN_005466b0: a quest item made into the player's inventory, at their feet when there's no room.
+auto World::give_item(std::string_view code, std::uint32_t now_ms) -> void {
+        d2d::d2s::Item item;
+        item.code = std::string(code);
+        item.identified = true;
+        const auto& lay = game_data->inv_layout[std::size_t(std::max(character.character_class, 0))];
+        const int boxes = game_data->belts[std::size_t(belt_index(*game_data, character.items))].boxes;
+        if (d2d::rules::pick_up(game_data->rules, character.items, item, lay.cols ? lay.cols : 10, lay.rows ? lay.rows : 4, boxes) != d2d::rules::Pickup::kGone)
+            loot.put({ .code = std::string(code) }, player.x, player.y, 1, fight.spawning.game, now_ms);
+    }
 // FUN_00544160: a quest item taken from the player, the cursor's first.
 auto World::take_carried(std::string_view code) -> void {
         if (held && held->code == code) { held.reset(); return; }
@@ -1896,6 +1911,13 @@ auto World::deal(const Command& command) -> bool {
                 character.stats.values[d2d::d2s::kStatPts] += heard.stat_points;
                 d2d::log::info("Lam Esen's Tome: handed to Alkor, +{} stat points", heard.stat_points);
             }
+            // The Golden Bird (FUN_005ba320): the figurine for the bird at Meshif's, the bird to Alkor, his potion.
+            using Bird = d2d::rules::GoldenBirdQuest;
+            const auto bird = golden_bird.said(quests(), game_bits, hc_idx, message->string, carries(Bird::kFigurine), carries(Bird::kBird));
+            if (bird.takes_figurine) take_carried(Bird::kFigurine);
+            if (bird.gives_bird) { give_item(Bird::kBird, now); had_bird = true; d2d::log::info("The Golden Bird: Meshif's golden bird"); }
+            if (bird.takes_bird) take_carried(Bird::kBird);
+            if (bird.gives_potion) { give_item(Bird::kPotion, now); d2d::log::info("The Golden Bird: Alkor's Potion of Life"); }
             const int radament_was = radament.state;
             radament.said(quests(), game_bits, hc_idx, message->string);
             if (radament_was != 5 && radament.state == 5) tombs.chain();        // Radament's +0xf0: on to record 13's
@@ -1949,6 +1971,13 @@ auto World::apply(const Command& command, std::uint32_t now_ms) -> void {
         if (const auto* use = std::get_if<cmd::UseItem>(&command)) {
             const auto found = std::ranges::find(character.items, use->item, &d2d::d2s::Item::id);
             if (found != character.items.end() && (found->code == "tsc" || found->code == "tbk")) read_portal(found, now_ms);
+            else if (found != character.items.end() && found->code == d2d::rules::GoldenBirdQuest::kPotion) {   // the Potion of Life (0x55e44e)
+                if (!hosted_quests && d2d::rules::GoldenBirdQuest::drink(quests())) {
+                    character.stats.values[d2d::d2s::kMaxLife] += std::int64_t(d2d::rules::GoldenBirdQuest::kLifeBonus) << 8;
+                    character.items.erase(found);
+                    d2d::log::info("The Golden Bird: the Potion of Life, +20 life");
+                }
+            }
             else if (found != character.items.end() && found->code == "ass") {   // the Book of Skill (0x55e3d0)
                 if (!hosted_quests && d2d::rules::RadamentQuest::read_book(quests())) {   // a joined game's: the host's (the use went to it)
                     ++character.stats.values[d2d::d2s::kSkillPts];
@@ -2333,6 +2362,7 @@ auto World::tick(const std::vector<Command>& cmds, std::uint32_t now_ms, std::ui
                                   || d2d::rules::ActTwoOpening::alert(quests(), level->npcs[i].hc_idx) || radament.alert(quests(), level->npcs[i].hc_idx)
                                   || d2d::rules::HratliGreeting::alert(quests(), level->npcs[i].hc_idx)
                                   || lam_esen.alert(quests(), level->npcs[i].hc_idx, carries(d2d::rules::LamEsenQuest::kTome))
+                                  || d2d::rules::GoldenBirdQuest::alert(quests(), level->npcs[i].hc_idx, carries(d2d::rules::GoldenBirdQuest::kFigurine), carries(d2d::rules::GoldenBirdQuest::kBird))
                                   || tainted.alert(quests(), level->npcs[i].hc_idx) || d2d::rules::HoradricStaffQuest::alert(quests(), level->npcs[i].hc_idx, staff_items())
                                   || arcane.alert(quests(), level->npcs[i].hc_idx) || d2d::rules::SummonerQuest::alert(quests(), level->npcs[i].hc_idx)
                                   || tombs.alert(quests(), level->npcs[i].hc_idx);
@@ -2363,10 +2393,26 @@ auto World::tick(const std::vector<Command>& cmds, std::uint32_t now_ms, std::ui
                 d2d::log::info("The Summoner: dead");
             if (kill.super == d2d::rules::TowerQuest::kCountess) countess_died(now_ms);
             if (kill.type == d2d::rules::monster_ids::kMephisto && !hosted_quests) mephisto_died(kill, now_ms);
+            if (!hosted_quests && golden_bird.killed(quests(), kill.id)) {   // FUN_005bab60: its carrier drops the jade figurine
+                loot.put({ .code = d2d::rules::GoldenBirdQuest::kFigurine }, kill.x, kill.y, kill.level, fight.spawning.game, now_ms);
+                d2d::log::info("The Golden Bird: the jade figurine drops on level {}", level->id);
+            }
         }
         fight.kills.clear();
         loot.blessed_find = fight.wisp_blessing.find; loot.blessed_until = fight.wisp_blessing.until;
         mephisto_bridge(now_ms);
+        // The Golden Bird: the first boss made in act 3 carries it (FUN_00544e80:
+        // not an NPC, not class 0x197); its items picked up (FUN_005ba6a0).
+        // ponytail: the first the World sees in the level's list, not the game's placement order; pickups polled.
+        if (!hosted_quests && golden_bird.armed && d2d::rules::level_act(level->id) == 2)
+            for (const auto& monster : fight.monsters)
+                if ((monster.boss == d2d::rules::Boss::unique || monster.boss == d2d::rules::Boss::superunique) && monster.type != 0x197
+                    && !game_data->mon_is_npc[std::size_t(monster.type)]) { golden_bird.made(monster.id); break; }
+        if (const bool figurine = carries(d2d::rules::GoldenBirdQuest::kFigurine), bird = carries(d2d::rules::GoldenBirdQuest::kBird); !hosted_quests) {
+            if (figurine && !had_figurine && golden_bird.picked_up(quests(), false)) d2d::log::info("The Golden Bird: the jade figurine (FUN_00553380)");
+            if (bird && !had_bird) golden_bird.picked_up(quests(), true);
+            had_figurine = figurine; had_bird = bird;
+        }
         // The tome picked up / dropped (a3q1's +0xb0 / +0xb4, FUN_005b7970 / FUN_005b7a00).
         // ponytail: polled from what's carried, not the item events.
         if (const bool tome = carries(d2d::rules::LamEsenQuest::kTome); !hosted_quests && tome && lam_esen.state == 3) lam_esen.picked_up();

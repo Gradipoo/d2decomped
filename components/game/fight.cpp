@@ -1473,7 +1473,7 @@ auto Fight::killed(std::size_t monster_index, std::uint32_t now_ms, bool credit)
         auto& monster = monsters[monster_index];
         if (!credit) {                                      // a monster's kill (FUN_0057e7b0: no player behind it)
             loot.drop(monster, spawning.game, now_ms);
-            kills.push_back({ monster.type, monster.unit.x, monster.unit.y, monster.stats.level, monster.super });
+            kills.push_back({ monster.type, monster.unit.x, monster.unit.y, monster.stats.level, monster.super, monster.id });
             return;
         }
         const auto save_class = std::size_t(std::max(character.character_class, 0));
@@ -1489,7 +1489,7 @@ auto Fight::killed(std::size_t monster_index, std::uint32_t now_ms, bool credit)
             cues.cue(d2d::rules::sound_ids::kCursorLevelUp, now_ms, player.x, player.y);
         }
         loot.drop(monster, spawning.game, now_ms);
-        kills.push_back({ monster.type, monster.unit.x, monster.unit.y, monster.stats.level, monster.super });
+        kills.push_back({ monster.type, monster.unit.x, monster.unit.y, monster.stats.level, monster.super, monster.id });
     }
 
 auto Fight::merc_fighter() const -> d2d::rules::Fighter {

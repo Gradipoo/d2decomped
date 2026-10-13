@@ -379,6 +379,33 @@ try:
     talk_until("Alkor", lambda: bits(0x11) & 1, "the tome not taken")
     assert int(state()["statpts"]) == points + 5, f"no 5 stat points: {points} -> {state()['statpts']}"
     print("OK: Hratli's greeting, Lam Esen's Tome (a3q0, a3q1)")
+    # a3q4: The Golden Bird. The first boss made in act 3 carries the jade
+    # figurine; Cain hears of it (bit 2), Meshif makes the golden bird, Cain
+    # (bit 4), Alkor takes it (bit 1) and brews the Potion of Life: +20 life.
+    for lid in (76, 77, 78, 80, 81):
+        if "the jade figurine drops on level" in log_text(): break
+        go(lid)
+        time.sleep(1)
+        cmd("debug kill")
+    dropped = re.search(r"the jade figurine drops on level (\d+)", log_text())
+    assert dropped, "no boss dropped the jade figurine"
+    go(int(dropped.group(1)))
+    figurine = [l.split("\t") for l in cmd("ground").splitlines() if l.startswith("j34\t")]
+    assert figurine, f"no figurine on the ground: {cmd('ground')!r}"
+    cmd(f"cmd pickup {figurine[0][4].lstrip('#')}")
+    until("the figurine carried", lambda: "j34" in cmd("items"), 20)
+    go(75)
+    talk_until("Cain", lambda: bits(0x14) & 4, "Cain didn't hear of the figurine")
+    talk_until("Meshif", lambda: "g34" in cmd("items"), "no golden bird")
+    talk_until("Cain", lambda: bits(0x14) & 0x10, "Cain didn't see the bird")
+    talk_until("Alkor", lambda: bits(0x14) & 2, "Alkor didn't take the bird")
+    talk_until("Alkor", lambda: bits(0x14) & 1, "no Potion of Life")
+    life = int(state()["life"].split("/")[1])
+    potion = [l for l in cmd("items").splitlines() if l.startswith("[xyz ")]
+    assert potion, f"no Potion of Life: {cmd('items')!r}"
+    cmd(f"cmd use {re.search(r'id=(\d+)', potion[0]).group(1)}")
+    until("+20 life", lambda: int(state()["life"].split("/")[1]) >= life + 20, 10)
+    print("OK: the Golden Bird (a3q4)")
     # a3q6: Mephisto dead (FUN_005bc8b0) sets word 0x16 bits 0, 0xb, 0xd and
     # opens the hellgate; a player by the bridge (within 18) raises it, up
     # the next check (FUN_005bcac0). Map seed 3: it's by the level's middle.

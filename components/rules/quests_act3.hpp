@@ -142,4 +142,137 @@ struct LamEsenQuest {
     }
 };
 
+// The Golden Bird (a3q4.cpp, record 0x12, word 0x14). The first unique or
+// superunique placed in act 3 (FUN_005a09e0 -> FUN_00544e80: not an NPC,
+// MonStats +0xd & 0x40, nor class 0x197) while the record's armed (data+1,
+// +0xc at init) carries the quest (FUN_005bac70); its death (FUN_005bab60)
+// drops the jade figurine ("j34 ") unless its killer's done. Cain hears of it
+// (527: bit 2), Meshif (264) swaps it for the golden bird ("g34 ", 529), Cain
+// on the bird (531: bit 4), Alkor takes the bird (534: bit 1) and brews the
+// Potion of Life ("xyz ", 538: bits 0, 13, 5; 2..11 cleared, FUN_0065c3e0):
+// drunk with bit 5, +20 max life (0x55e44e: stat 7 0x1400) and bit 5 clears.
+// N-player gap: one player: the carried count and the rewarded list.
+struct GoldenBirdQuest {
+    static constexpr int kQuest = 0x14, kCain = monster_ids::kCainAct3, kAsheara = monster_ids::kAsheara, kMeshif = monster_ids::kMeshifAct3,
+                         kAlkor = monster_ids::kAlkor;
+    static constexpr int kCainFigurine = 527, kMeshifSwap = 529, kCainBird = 531, kAlkorTakes = 534, kAlkorPotion = 538;
+    static constexpr const char *kFigurine = "j34", *kBird = "g34", *kPotion = "xyz";
+    static constexpr int kLifeBonus = 20;
+    bool open = true;              // +9
+    int state = 0;                 // +0xc: 1 figurine, 2 Cain told, 3 the bird, 4 Alkor has it, 5 done
+    int log = 0;                   // +0xb
+    bool armed = true;             // data+1: the next boss made in act 3 carries it
+    bool due = true;               // data+0xc: the figurine's still to drop
+    int bound = -1;                // data+4: its carrier's unit id
+    bool flourished = false;       // bit 6's flourish on the figurine's first pickup
+    bool rewarded = false;         // +0x1c: given the potion this game
+
+    // The player joins (FUN_005ba870).
+    void join(const QuestBits& quest_bits, bool has_bird, bool has_figurine) {
+        if (qbit(quest_bits, kQuest, 0) || qbit(quest_bits, kQuest, 1)) { open = false; due = armed = false; return; }
+        if (has_bird) { due = armed = false; state = 3; log = qbit(quest_bits, kQuest, 4) ? 4 : 3; return; }
+        if (has_figurine) { due = armed = false; state = log = qbit(quest_bits, kQuest, 2) ? 2 : 1; }
+    }
+    // A boss made in act 3 (FUN_00544e80 -> FUN_005bac70).
+    void made(int unit_id) {
+        if (!open || !due || !armed) return;
+        bound = unit_id;
+        armed = false;
+    }
+    // Its carrier died (FUN_005bab60): the figurine drops unless the killer's done.
+    bool killed(const QuestBits& quest_bits, int unit_id) {
+        if (!open || !due || unit_id != bound) return false;
+        bound = -1;
+        if (qbit(quest_bits, kQuest, 0)) return false;
+        due = false;
+        if (state == 0) state = 1;
+        return true;
+    }
+    // A quest item picked up (FUN_005ba6a0): the bird, state 3; the figurine,
+    // state 1 and bit 6 (the flourish, unit event 0x23, the first time).
+    // Returns whether to play the flourish.
+    bool picked_up(QuestBits& quest_bits, bool bird) {
+        if (qbit(quest_bits, kQuest, 0) || qbit(quest_bits, kQuest, 1)) return false;
+        state = bird ? 3 : 1;
+        if (bird || qbit(quest_bits, kQuest, 6)) return false;
+        qset(quest_bits, kQuest, 6);
+        return true;
+    }
+    // What `npc` says (FUN_005b9ed0; blocks 0x7401d0).
+    struct E { int npc, string; bool greet; };
+    static inline const std::vector<E> kBlocks[8] = {
+        { { 245, 527, true }, { 252, 528, false } },
+        { { 264, 529, true } },
+        { { 245, 531, false }, { 254, 534, true }, { 297, 530, false }, { 253, 532, false }, { 252, 533, false } },
+        { { 245, 531, true }, { 253, 532, false }, { 252, 533, false } },
+        { { 254, 534, false }, { 255, 535, false }, { 253, 536, false }, { 297, 537, false } },
+        { { 254, 538, true }, { 264, 539, false }, { 245, 540, false }, { 255, 541, false } },
+        { { 254, 538, false }, { 264, 539, false }, { 245, 540, false }, { 255, 541, false }, { 297, 542, false } },
+        { { 245, 527, false }, { 252, 528, false } },
+    };
+    [[nodiscard]] std::vector<QuestMsg> talk(const QuestBits& quest_bits, int npc, bool has_figurine, bool has_bird) const {
+        int block = -1;
+        if (qbit(quest_bits, kQuest, 0)) block = rewarded ? 6 : -1;
+        else if (qbit(quest_bits, kQuest, 1)) block = 5;
+        else if (has_bird) block = npc == kCain && !qbit(quest_bits, kQuest, 4) ? 3 : 2;
+        else if (has_figurine) {
+            const bool told = qbit(quest_bits, kQuest, 2), asks = npc == kCain || npc == kAsheara;
+            block = asks ? (told ? 7 : 0) : 1;
+        }
+        std::vector<QuestMsg> out;
+        if (block >= 0)
+            for (const auto& entry : kBlocks[block]) if (entry.npc == npc) out.push_back({ entry.string, entry.greet });
+        return out;
+    }
+    // The "!" (FUN_005b9d90).
+    [[nodiscard]] static bool alert(const QuestBits& quest_bits, int npc, bool has_figurine, bool has_bird) {
+        if (qbit(quest_bits, kQuest, 0) || qbit(quest_bits, kQuest, 1)) return false;
+        if (npc == kAlkor) return has_bird;
+        if (npc == kMeshif) return has_figurine;
+        if (npc == kCain) return (has_figurine && !qbit(quest_bits, kQuest, 2)) || (has_bird && !qbit(quest_bits, kQuest, 4));
+        return false;
+    }
+    // The player heard `string` from `npc` (FUN_005ba320): what changes hands.
+    struct Heard { bool takes_figurine = false, gives_bird = false, takes_bird = false, gives_potion = false; };
+    Heard said(QuestBits& quest_bits, QuestBits& game_bits, int npc, int string, bool has_figurine, bool has_bird) {
+        Heard out;
+        if (qbit(quest_bits, kQuest, 0)) return out;
+        if (npc == kCain && string == kCainFigurine) { qset(quest_bits, kQuest, 2); if (state == 1) state = 2; }
+        if (npc == kCain && string == kCainBird) qset(quest_bits, kQuest, 4);
+        if (npc == kMeshif && string == kMeshifSwap && has_figurine) { out.takes_figurine = out.gives_bird = true; state = 3; }
+        if (npc == kAlkor && string == kAlkorTakes && has_bird && !qbit(quest_bits, kQuest, 1)) {
+            out.takes_bird = true;
+            if (open && state != 4) state = 4;
+            qset(quest_bits, kQuest, 1);
+        }
+        if (npc == kAlkor && string == kAlkorPotion && qbit(quest_bits, kQuest, 1)) {
+            qset(quest_bits, kQuest, 1, false);
+            qset(quest_bits, kQuest, 0);
+            qset(quest_bits, kQuest, 13);
+            for (int bit = 2; bit < 12; ++bit) qset(quest_bits, kQuest, bit, false);
+            qset(quest_bits, kQuest, 5);
+            if (open) state = 5;
+            out.gives_potion = rewarded = true;
+            qset(game_bits, kQuest, 13);
+        }
+        return out;
+    }
+    // The Potion of Life drunk (0x55e44e): bit 5 clears, +20 max life.
+    static bool drink(QuestBits& quest_bits) {
+        if (!qbit(quest_bits, kQuest, 5)) return false;
+        qset(quest_bits, kQuest, 5, false);
+        return true;
+    }
+    // Its log (FUN_005ba170).
+    [[nodiscard]] int log_state(const QuestBits& quest_bits, bool has_figurine, bool has_bird, bool single_player) const {
+        if (!qbit(quest_bits, 0xf, 0)) return 0;
+        if (qbit(quest_bits, kQuest, 1)) return 5;
+        if (qbit(quest_bits, kQuest, 0)) return qbit(quest_bits, kQuest, 13) ? 0xd : 0xb;
+        if (has_bird) return qbit(quest_bits, kQuest, 4) ? 4 : 3;
+        if (has_figurine) return qbit(quest_bits, kQuest, 2) ? 2 : 1;
+        if (!open) return 0;
+        return log > 5 ? (single_player ? 6 : 7) : log;
+    }
+};
+
 }  // namespace d2d::rules

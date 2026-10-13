@@ -56,6 +56,36 @@ unit event 0x23), +0x18 the stand's mode.
 d2d: `rules::LamEsenQuest`; the pickup / drop are polled from what's
 carried. `tests/quests_d2d.py` plays it.
 
+## The Golden Bird (a3q4.cpp)
+
+State (EDX): 1 the figurine (dropped, 0x36f; picked up, 0x26e), 2 Cain told
+(527, 0x1de), 3 the bird (Meshif's 529, 0x236; picked up, 0x263), 4 Alkor
+took it (534, 0x1fd), 5 done (538, 0x218). Data: +1 armed, +0xc the
+figurine due (both 1 at init), +4 its carrier, +0x10 items carried.
+
+- **The carrier.** `FUN_005a09e0` (placing a unique, superunique or preset
+  special) calls `FUN_00544e80`: in act 3, record 0x12 open, the monster not
+  class 0x197 and not MonStats +0xd & 0x40, → `FUN_005bac70` while armed and
+  due: the quest bound to it (`FUN_005436b0(0x12)`), +0xc0 = `FUN_005bab60`.
+- **Its death** (`FUN_005bab60`): unless the killer has bit 0, `j34 ` drops
+  (`FUN_00559a30`), due off, state 1.
+- **Talk** (`FUN_005b9ed0`, blocks 0x7401d0): done → block 6 once rewarded;
+  bit 1 → 5; the bird: Cain without bit 4 → 3, else 2; the figurine: Cain or
+  Asheara → 0 (7 once bit 2), the rest 1.
+- **Heard** (`FUN_005ba320`): Cain 527 bit 2; Cain 531 bit 4; Meshif 529 with
+  the figurine: it goes, `g34 ` made (`FUN_005466b0`); Alkor 534 with the bird:
+  it goes, bit 1; Alkor 538 with bit 1: bit 1 off, bits 0, 13, bits 2..11 off
+  (`FUN_0065c3e0`), bit 5, `xyz ` made, the game's bit 13.
+- **"!"** (`FUN_005b9d90`): not done and no bit 1: Alkor with the bird,
+  Meshif with the figurine, Cain with the figurine and no bit 2 or the bird
+  and no bit 4.
+- **The Potion of Life** (0x55e44e): with bit 5, bit 5 off and +20 max life
+  (`FUN_006272b0` stat 7, 0x1400); else event 0x13. Picking it up wants bit 5
+  (`FUN_0055cc90`).
+
+d2d: `rules::GoldenBirdQuest`; the carrier is the first boss the World sees
+on an act 3 level; pickups polled. `tests/quests_d2d.py` plays it.
+
 ## The Guardian (a3q6.cpp)
 
 Record callbacks (`FUN_005bcdc0`): +0xc0 a monster dies `FUN_005bc8b0`,

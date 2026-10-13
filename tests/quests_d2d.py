@@ -121,7 +121,7 @@ def object_index(object_id):
 def talk(name):
     """Walk up to a camp NPC, talk, close the talk (a quest given counts as it closes)."""
     npc = [l.split("\t") for l in cmd("npcs").splitlines() if l.split("\t")[0].endswith(name)]
-    assert npc, f"{name} not in camp: {[l for l in cmd('debug presets').splitlines() if 'Cain' in l]} level {level()}"
+    assert npc, f"{name} not in camp: {cmd('npcs')!r} level {level()}"
     cmd(f"debug warp {float(npc[0][5]) + 0.9} {float(npc[0][6]) + 0.7}")
     cmd(f"cmd interact {npc[0][4]}")
     until(f"{name} speaks", lambda: state()["speech"] != "0")
@@ -180,6 +180,15 @@ def topic(name):
     until(f"{name} speaks", lambda: state()["speech"] != "0")
     cmd("key Escape")
     until(f"{name}'s talk closes", lambda: state()["speech"] == "0")
+
+
+def pick_up(code, seconds=20):
+    """Walk onto a ground item and take it into the inventory."""
+    found = [l.split("\t") for l in cmd("ground").splitlines() if l.startswith(code + "\t")]
+    assert found, f"no {code} on the ground: {cmd('ground')!r}"
+    cmd(f"debug warp {found[0][5]} {found[0][6]}")
+    cmd(f"cmd pickup {found[0][4].lstrip('#')}")
+    until(f"{code} carried", lambda: f"[{code} " in cmd("items"), seconds)
 
 
 def operate(index, seconds=4):
@@ -370,10 +379,7 @@ try:
     stand_at = [o for o in presets()[0] if o[0] == stand][0]
     cmd(f"debug warp {stand_at[2]} {stand_at[3]}"); cmd("debug kill")
     operate(stand)
-    tome = [l.split("\t") for l in cmd("ground").splitlines() if l.startswith("bbb\t")]
-    assert tome, f"the stand dropped no tome: {cmd('ground')!r}"
-    cmd(f"cmd pickup {tome[0][4].lstrip('#')}")
-    until("the tome carried", lambda: "bbb" in cmd("items"), 10)
+    pick_up("bbb")
     go(75)
     points = int(state()["statpts"])
     talk_until("Alkor", lambda: bits(0x11) & 1, "the tome not taken")
@@ -390,10 +396,7 @@ try:
     dropped = re.search(r"the jade figurine drops on level (\d+)", log_text())
     assert dropped, "no boss dropped the jade figurine"
     go(int(dropped.group(1)))
-    figurine = [l.split("\t") for l in cmd("ground").splitlines() if l.startswith("j34\t")]
-    assert figurine, f"no figurine on the ground: {cmd('ground')!r}"
-    cmd(f"cmd pickup {figurine[0][4].lstrip('#')}")
-    until("the figurine carried", lambda: "j34" in cmd("items"), 20)
+    pick_up("j34")
     go(75)
     talk_until("Cain", lambda: bits(0x14) & 4, "Cain didn't hear of the figurine")
     talk_until("Meshif", lambda: "g34" in cmd("items"), "no golden bird")
@@ -406,6 +409,32 @@ try:
     cmd(f"cmd use {re.search(r'id=(\d+)', potion[0]).group(1)}")
     until("+20 life", lambda: int(state()["life"].split("/")[1]) >= life + 20, 10)
     print("OK: the Golden Bird (a3q4)")
+    # a3q3: The Blade of the Old Religion. The Flayer Jungle opens it, Hratli
+    # tells (bit 3), the altar (object 252) calls the guardians, their unique
+    # drops the Gidbinn; Ormus takes it (bit 6) and gives a ring (bit 8),
+    # Asheara a free mercenary (bit 7): done.
+    go(78)
+    go(75)
+    talk_until("Hratli", lambda: bits(0x13) & 8, "Hratli didn't tell of the Gidbinn")
+    go(78)
+    cmd("debug warp 21 52"); time.sleep(1); cmd("debug kill")   # map seed 3: the altar's room (16, 48), 27 / 22 subtiles in
+    altar = object_index(252)
+    altar_at = [o for o in presets()[0] if o[0] == altar][0]
+    cmd(f"debug warp {altar_at[2]} {altar_at[3]}"); cmd("debug kill")
+    operate(altar)
+    until("the guardians", lambda: "the guardians come" in log_text(), 10)
+    time.sleep(1)
+    cmd("debug kill")
+    until("the Gidbinn drops", lambda: "the Gidbinn drops" in log_text(), 10)
+    pick_up("g33")
+    go(75)
+    talk_until("Ormus", lambda: bits(0x13) & 0x40, "Ormus didn't take the Gidbinn")
+    talk_until("Ormus", lambda: bits(0x13) & 0x100, "no ring from Ormus")
+    assert re.search(r"^\[rin ", cmd("items"), re.MULTILINE), "no ring in the inventory"
+    cmd("debug warp 7 18"); time.sleep(1)                # Asheara's room comes up (map seed 3: room (0, 16))
+    talk_until("Asheara", lambda: bits(0x13) & 0x80, "no free mercenary")
+    assert bits(0x13) & 1, f"the Blade not done: {bits(0x13):#x}"
+    print("OK: the Blade of the Old Religion (a3q3)")
     # a3q6: Mephisto dead (FUN_005bc8b0) sets word 0x16 bits 0, 0xb, 0xd and
     # opens the hellgate; a player by the bridge (within 18) raises it, up
     # the next check (FUN_005bcac0). Map seed 3: it's by the level's middle.

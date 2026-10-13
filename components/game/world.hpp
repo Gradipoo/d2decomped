@@ -224,6 +224,10 @@ struct World {
     d2d::rules::RadamentQuest radament;    // and Radament's Lair
     d2d::rules::LamEsenQuest lam_esen;     // Act 3's (quests_act3.hpp)
     d2d::rules::GoldenBirdQuest golden_bird;
+    d2d::rules::BladeQuest blade;
+    bool had_gidbinn = false;
+    std::uint32_t gidbinn_timer = 0;       // a3q3's 7 ticks from the altar's use (FUN_00543f10 -> FUN_005b9a30)
+    int gidbinn_altar = -1;                // the altar's Level::npcs index
     bool had_figurine = false, had_bird = false;   // the Golden Bird's items, last tick (its pickups)
     d2d::rules::TaintedSunQuest tainted;   // and the Tainted Sun
     d2d::rules::HoradricStaffQuest staff;  // and the Horadric Staff
@@ -310,7 +314,7 @@ struct World {
     static bool operable(int operate_fn) {
         using namespace d2d::rules::operate_fn;
         return std::ranges::contains(std::array{ kCasket, kShrine, kUrn, kChest, kBarrel, kExplodingBarrel, kCorpse, kArmorStand, kWeaponRack, kWell, kBookshelf, kTrapObject,
-                                                 kCubeChest, kScrollChest, kShaftChest, kTeleportPad, kLamTome, kHellgate }, operate_fn)
+                                                 kCubeChest, kScrollChest, kShaftChest, kTeleportPad, kLamTome, kHellgate, kGidbinnAltar }, operate_fn)
             || is_door(operate_fn);
     }
     static bool is_door(int operate_fn) {
@@ -439,7 +443,7 @@ struct World {
     // Whether the player carries an item of `code`.
     [[nodiscard]] bool carries(std::string_view code) const;
     void take_carried(std::string_view code);
-    void give_item(std::string_view code, std::uint32_t now_ms);
+    void give_item(std::string_view code, std::uint32_t now_ms, int ilvl = 1, int quality = 2);
     void set_waypoint(int index) { if (index >= 0 && index < 40) character.header.waypoints[std::size_t(character.header.active_difficulty())][std::size_t(index >> 3)] |= std::uint8_t(1 << (index & 7)); }
 
     // Dying (FUN_00580ec0 → FUN_00535ab0), killed by a monster:

@@ -576,9 +576,9 @@ void register_game_verbs(d2d::devctl::Channel& channel, Window& win, Screen& scr
         std::string out;
         for (const auto& ground_item : town.net_game ? town.view.ground : town.loot.ground) {   // a joined game: the host's
             const float dx = ground_item.x - town.player.x, dy = ground_item.y - town.player.y;
-            out += std::format("{}\t{}\t{}\t{}\t#{}\n", ground_item.item.code, ground_item.label,
+            out += std::format("{}\t{}\t{}\t{}\t#{}\t{:.1f}\t{:.1f}\n", ground_item.item.code, ground_item.label,
                                int(kScreenWidth) / 2 + int(std::lround((dx - dy) * (kIsoW / 2))),
-                               kViewY + int(std::lround((dx + dy) * (kIsoH / 2))), ground_item.id);
+                               kViewY + int(std::lround((dx + dy) * (kIsoH / 2))), ground_item.id, ground_item.x, ground_item.y);
         }
         return out + "ok\n";
     });

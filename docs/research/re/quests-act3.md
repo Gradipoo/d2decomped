@@ -56,6 +56,35 @@ unit event 0x23), +0x18 the stand's mode.
 d2d: `rules::LamEsenQuest`; the pickup / drop are polled from what's
 carried. `tests/quests_d2d.py` plays it.
 
+## The Blade of the Old Religion (a3q3.cpp)
+
+State (EDX): 1 given out (entering the Flayer Jungle, 78; the altar used),
+2 Hratli told (571, 0x293), 3 under way (leaving the docks, 0x1e2), 4 the
+Gidbinn carried (0x2c6), 5 handed in (587, 0x26d). Data: +0 the Gidbinn
+found, +1 Hratli's told (marks on the talk's close, `LAB_005b8c50`), +2 the
+guardians came, +3 the altar used, +5 the timer set, +8 / +0xc the altar's
+spot, +0x1c Gidbinns carried, +0x20 lost, +0x24 the guardian's id, +0x2c
+the altar's mode.
+
+- **The altar** (objects.txt 252 "gidbinn decoy": InitFn 25 `FUN_005b9ae0`,
+  OperateFn 31 `FUN_005b9b40`; the stand 251, InitFn 39): used with none of
+  bits 0, 7, 8: mode 1; the first use sets a 7-tick timer (`FUN_00543f10`,
+  `FUN_005b9a30`): with a player in its room, `FUN_005b9930` makes a unique
+  pack of class 0x197 (fetish11, `FUN_005a43e0`) and the record's +0xc0 =
+  `FUN_005b9980`: the unique's death drops `g33 ` and marks everyone
+  (`FUN_005b8b20`: carried bit 5; found bit 4 and bit 2; told bit 3).
+- **Heard** (`FUN_005b9240`): Ormus 587 with the Gidbinn, bit 5, no bit 8:
+  it goes, bit 6, the game's bit 13, state 5; Ormus 593 with bit 6: bit 8, a
+  rare ring (`FUN_005466b0("rin ", 21 / 35 / 75, 6)`); Asheara 589: bit 7, a
+  free mercenary (`FUN_00579180`: the first on her list, hired, the list
+  rolled anew). Bits 7 and 8: 13 and 0.
+- **"!"** (`FUN_005b8e10`), **talk** (`FUN_005b8ec0`, blocks 0x73fb98, state
+  → 0x7401b8), **log** (`FUN_005b8cc0`) and **join** (`FUN_005b9700`) as
+  `rules::BladeQuest`.
+
+d2d: `rules::BladeQuest`; the guardians' "room" is 20 cells; the lost log
+(+0x20, 7 / 8) is left out. `tests/quests_d2d.py` plays it.
+
 ## The Golden Bird (a3q4.cpp)
 
 State (EDX): 1 the figurine (dropped, 0x36f; picked up, 0x26e), 2 Cain told

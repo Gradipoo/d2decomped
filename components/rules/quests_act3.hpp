@@ -7,6 +7,7 @@
 #include <monster_ids.hpp>
 #include <quests.hpp>
 
+#include <array>
 #include <vector>
 
 namespace d2d::rules {
@@ -272,6 +273,157 @@ struct GoldenBirdQuest {
         if (has_figurine) return qbit(quest_bits, kQuest, 2) ? 2 : 1;
         if (!open) return 0;
         return log > 5 ? (single_player ? 6 : 7) : log;
+    }
+};
+
+// The Blade of the Old Religion (a3q3.cpp, record 0x11, word 0x13): given
+// out once someone reaches the Flayer Jungle (78: state 0 -> 1); Hratli
+// (253) tells (571: state 2). The Gidbinn's altar (object 252 "gidbinn
+// decoy", InitFn 25 / OperateFn 31; the stand 251, InitFn 39) used: 7 ticks
+// on, with a player in its room, a unique fetish pack (fetish11, class
+// 0x197; FUN_005b9930) comes; its death (FUN_005b9980) drops the Gidbinn
+// ("g33 "). Ormus (255) takes it (587: bit 6; state 5, the chain) and gives
+// a rare ring (593: bit 8; item level 21 / 35 / 75); Asheara (252) a free
+// mercenary (589: bit 7, FUN_00579180). Both: bits 13 and 0. Bits: 2 told,
+// 3 Hratli's told, 4 the Gidbinn found, 5 carried, 9 its first pickup, 14
+// others'. N-player gap: one player: the party's bits (FUN_005b91b0).
+struct BladeQuest {
+    static constexpr int kQuest = 0x13, kHratli = monster_ids::kHratli, kOrmus = monster_ids::kOrmus, kAsheara = monster_ids::kAsheara;
+    static constexpr int kHratliTells = 571, kOrmusTakes = 587, kAshearaMerc = 589, kOrmusRing = 593;
+    static constexpr int kFlayerJungle = 78, kDocks = 75, kGuardian = 407, kTimerTicks = 7;
+    static constexpr const char *kGidbinn = "g33", *kRing = "rin";
+    static constexpr std::array<int, 3> kRingLevel{ 21, 35, 75 };
+    bool open = true;              // +9
+    int state = 0;                 // +0xc: 1 given out, 2 told, 3 under way, 4 carried, 5 handed in
+    int log = 0;                   // +0xb
+    bool found = false;            // data+0: the Gidbinn dropped
+    bool told_pending = false;     // data+1: Hratli's told, marks on the talk's close
+    bool spawned = false;          // data+2: the guardians came
+    bool used = false;             // data+3: the altar used
+    bool altar_done = false;       // data+0x2c 2: the altar's mode
+    int guardian = -1;             // data+0x24: the unique's id
+    bool rewarded = false;         // +0x1c
+
+    // FUN_005b8b20: a player's bits as it stands.
+    void mark(QuestBits& quest_bits, bool has_gidbinn) const {
+        if (qbit(quest_bits, kQuest, 0) || qbit(quest_bits, kQuest, 6)) return;
+        if (has_gidbinn) { qset(quest_bits, kQuest, 5); return; }
+        if (!found) { if (state == 2) qset(quest_bits, kQuest, 3); return; }
+        qset(quest_bits, kQuest, 4);
+        if (!qbit(quest_bits, kQuest, 3)) qset(quest_bits, kQuest, 2);
+    }
+    // The player joins (FUN_005b9700).
+    void join(QuestBits& quest_bits, bool has_gidbinn) {
+        if (qbit(quest_bits, kQuest, 0)) { altar_done = true; return; }
+        if (has_gidbinn) { state = log = 4; return; }
+        if (qbit(quest_bits, kQuest, 6)) {
+            altar_done = true; state = 5;
+            if (!qbit(quest_bits, kQuest, 7)) { log = 5; return; }
+            if (qbit(quest_bits, kQuest, 8)) { qset(quest_bits, kQuest, 0); open = false; return; }
+            log = 6;
+            return;
+        }
+        if (qbit(quest_bits, kQuest, 5)) { state = 3; log = 2; }
+        if (qbit(quest_bits, kQuest, 4) || qbit(quest_bits, kQuest, 3)) { state = 2; log = 2; }
+        else if (qbit(quest_bits, kQuest, 2)) { state = 3; log = 1; }
+    }
+    // A level change (LAB_005b9090).
+    void enter(QuestBits& quest_bits, int from, int into, bool has_gidbinn) {
+        if (into == kFlayerJungle && open && state == 0) state = 1;
+        if (from == kDocks && state == 2 && !qbit(quest_bits, kQuest, 0) && !qbit(quest_bits, kQuest, 15)) { state = 3; mark(quest_bits, has_gidbinn); }
+    }
+    // The altar used (OperateFn 31, FUN_005b9b40): one with bits 0, 7 or 8
+    // gets the flourish; else the first use starts the 7-tick timer.
+    // Returns whether the timer starts.
+    bool use_altar(const QuestBits& quest_bits) {
+        if (altar_done || qbit(quest_bits, kQuest, 0) || qbit(quest_bits, kQuest, 7) || qbit(quest_bits, kQuest, 8) || !open) return false;
+        if (state == 0) state = 1;
+        const bool first = !used;
+        used = true;
+        return first;
+    }
+    // The guardian killed (FUN_005b9980): the Gidbinn drops.
+    bool killed(int unit_id) {
+        if (!spawned || !open || unit_id != guardian) return false;
+        found = true;
+        guardian = -1;
+        return true;
+    }
+    // The Gidbinn picked up (FUN_005b9520): state 4, bit 9's flourish once.
+    bool picked_up(QuestBits& quest_bits) {
+        if (!open) return false;
+        state = 4;
+        mark(quest_bits, true);
+        if (qbit(quest_bits, kQuest, 9)) return false;
+        qset(quest_bits, kQuest, 9);
+        return true;
+    }
+    // What `npc` says (FUN_005b8ec0; blocks 0x73fb98, state -> 0x7401b8).
+    struct E { int npc, string; bool greet; };
+    static inline const std::vector<E> kBlocks[7] = {
+        { { 253, 571, true } },
+        { { 254, 572, false }, { 255, 573, false }, { 264, 574, false }, { 252, 575, false }, { 253, 576, false }, { 245, 577, false }, { 297, 578, false } },
+        { { 254, 579, false }, { 255, 580, false }, { 264, 581, false }, { 252, 582, false }, { 253, 583, false }, { 245, 584, false }, { 297, 585, false } },
+        { { 254, 586, false }, { 255, 587, true }, { 264, 588, false }, { 253, 590, false }, { 245, 591, false }, { 297, 592, false } },
+        { { 264, 588, false }, { 254, 586, false }, { 245, 591, false }, { 297, 592, false } },
+        { { 264, 588, false }, { 252, 589, true }, { 254, 586, false }, { 245, 591, false }, { 297, 592, false } },
+        { { 255, 593, true } },
+    };
+    [[nodiscard]] std::vector<QuestMsg> talk(const QuestBits& quest_bits, int npc, bool has_gidbinn) const {
+        int block = -1;
+        const bool b5 = qbit(quest_bits, kQuest, 5), b6 = qbit(quest_bits, kQuest, 6), b7 = qbit(quest_bits, kQuest, 7), b8 = qbit(quest_bits, kQuest, 8);
+        if (qbit(quest_bits, kQuest, 0)) block = rewarded ? 4 : -1;
+        else if (has_gidbinn && b5 && !b8) block = 3;
+        else if (b6) {
+            if (npc == kAsheara) block = !b7 ? 5 : b8 ? -1 : 6;
+            else if (npc == kOrmus) block = !b8 ? 6 : !b7 ? 5 : -1;
+            else block = !b7 ? 5 : b8 ? -1 : 6;
+        } else if (b5) block = 4;
+        else if (state >= 1 && state <= 3 && !has_gidbinn) block = state - 1;
+        std::vector<QuestMsg> out;
+        if (block >= 0)
+            for (const auto& entry : kBlocks[block]) if (entry.npc == npc) out.push_back({ entry.string, entry.greet });
+        return out;
+    }
+    // The "!" (FUN_005b8e10).
+    [[nodiscard]] bool alert(const QuestBits& quest_bits, int npc, bool has_gidbinn) const {
+        if (qbit(quest_bits, kQuest, 0)) return false;
+        if (npc == kHratli) return !has_gidbinn && state == 1;
+        if (npc == kOrmus) return has_gidbinn || (qbit(quest_bits, kQuest, 6) && !qbit(quest_bits, kQuest, 8));
+        if (npc == kAsheara) return qbit(quest_bits, kQuest, 6) && !qbit(quest_bits, kQuest, 7);
+        return false;
+    }
+    // The player heard `string` from `npc` (FUN_005b9240).
+    struct Heard { bool takes_gidbinn = false, ring = false, merc = false; };
+    Heard said(QuestBits& quest_bits, QuestBits& game_bits, int npc, int string, bool has_gidbinn) {
+        Heard out;
+        if (qbit(quest_bits, kQuest, 0)) return out;
+        if (npc == kHratli && string == kHratliTells) { state = 2; told_pending = true; }
+        if (npc == kOrmus && string == kOrmusTakes) {
+            if (has_gidbinn && qbit(quest_bits, kQuest, 5) && !qbit(quest_bits, kQuest, 8)) { out.takes_gidbinn = true; qset(quest_bits, kQuest, 6); }
+            if (open) { qset(game_bits, kQuest, 13); state = 5; }
+        }
+        auto both = [&] { if (qbit(quest_bits, kQuest, 7) && qbit(quest_bits, kQuest, 8)) { qset(quest_bits, kQuest, 13); qset(quest_bits, kQuest, 0); rewarded = true; } };
+        if (npc == kOrmus && string == kOrmusRing && qbit(quest_bits, kQuest, 6) && !qbit(quest_bits, kQuest, 8)) { qset(quest_bits, kQuest, 8); out.ring = true; both(); }
+        if (npc == kAsheara && string == kAshearaMerc && !qbit(quest_bits, kQuest, 7)) { qset(quest_bits, kQuest, 7); out.merc = true; both(); }
+        return out;
+    }
+    // The talk closed (LAB_005b8c50): Hratli's told marks.
+    void talk_closed(QuestBits& quest_bits, int npc, bool has_gidbinn) {
+        if (npc == kHratli && told_pending) { told_pending = false; mark(quest_bits, has_gidbinn); }
+    }
+    // Its log (FUN_005b8cc0).
+    [[nodiscard]] int log_state(const QuestBits& quest_bits, bool has_gidbinn) const {
+        if (!qbit(quest_bits, 0xf, 0)) return 0;
+        if (qbit(quest_bits, kQuest, 0)) return qbit(quest_bits, kQuest, 13) ? 0xd : 0xb;
+        if (has_gidbinn) return 4;
+        if (!qbit(quest_bits, kQuest, 6)) {
+            if (qbit(quest_bits, kQuest, 4)) return found ? 3 : 2;
+            if (qbit(quest_bits, kQuest, 3)) return 2;
+            return qbit(quest_bits, kQuest, 2) ? 1 : 0;
+        }
+        if (!qbit(quest_bits, kQuest, 7)) return 5;
+        return qbit(quest_bits, kQuest, 8) ? 0 : 6;
     }
 };
 

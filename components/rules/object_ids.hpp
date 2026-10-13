@@ -47,6 +47,7 @@ inline constexpr int kSanctuaryPortal = 34; // FUN_005846b0: Palace Cellar 3 <->
 inline constexpr int kJournal = 42;         // FUN_0059b970: Horazon's Journal
 inline constexpr int kOrifice = 25;         // FUN_0059dc70: where the Horadric Staff goes        // FUN_0059a7e0: the Tainted Sun's altar
 inline constexpr int kStash = 32;
+inline constexpr int kGidbinnAltar = 31;    // FUN_005b9b40: the Gidbinn's altar (a3q3, object 252)
 inline constexpr int kLamTome = 28;         // FUN_005b7a60: Lam Esen's tome on its stand (a3q1)
 inline constexpr int kHellgate = 46;        // the red portal to the Pandemonium Fortress (a3q6)
 inline constexpr int kCubeChest = 39, kScrollChest = 40, kShaftChest = 41;   // the Horadric Staff's chests (FUN_00599df0 / FUN_00599c10 / FUN_00599cf0)

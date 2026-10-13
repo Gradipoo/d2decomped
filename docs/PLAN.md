@@ -782,7 +782,7 @@ vultures, the Maggot Queen's poison hit, Radament's corpse reach, the
 Seven Tombs' log, Meshif taking the staff's parts, and in a joined game the
 host's quests, travel and every unit's states.
 
-## Road to Act 3 (from 2026-10-12, branch `act3`)
+## Road to Act 3 (from 2026-10-12; steps 1.1–1.3 in PR #22)
 
 Same road as Act 2's: the levels diffed against game.exe, then the town,
 the quests, the thinks.
@@ -808,6 +808,27 @@ the quests, the thinks.
    (a3q7) makes him (monsters.md "Act 3's jungle").
 4. Kurast (79–83).
 5. The dungeons, sewers, temples and the Durance (84–102).
+
+## Checkpoint 2026-10-13: Act 3's docks and jungle done
+
+PR #22 (merged): Meshif's boat lands in a Kurast Docks that's game.exe's
+(rooms, tiles, units, NPC thinks, trade, repair, hire, gamble), and the
+Spider Forest, Great Marsh and Flayer Jungle are game.exe's down to
+every monster's spot (`diff_drlg.py 76|77|78 monsters`, `LEVELS=75,76,77,78
+game`). The collision fix (shadows block) holds for every outdoor level
+of acts 1–3.
+
+Open, by the road above:
+
+- Step 1.4: Kurast (79–83): FUN_0067f190's bazaar / upper Kurast /
+  causeway presets, FUN_0067f3b0's Travincal.
+- Step 1.5: the dungeons, sewers, temples and the Durance (84–102):
+  act 3's maze types (FUN_00673b30) and presets.
+- The Dark Wanderer stands (a3q7's walk, its quest record's think).
+- Act 3's quests, MonAI thinks (rows 51, 52, 61, 65 …) and Mephisto's
+  hooks (FUN_005b1cf0): step 2 and 3 of the road.
+- A store opens on its first tab even when that one's empty (the World
+  picks the first full tab; the app shows tab 0): all acts.
 
 ## Checkpoint 2026-10-12: Act 2 done, what's still open
 

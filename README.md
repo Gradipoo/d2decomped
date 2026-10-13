@@ -16,8 +16,9 @@ data we own, and lets us adventure together.
 D2Decomp is an unfinished project—not the original game or a
 complete replacement. Acts I and II play through: character setup, the Rogue
 Encampment and Lut Gholein, every area from the Blood Moor to Duriel's lair,
-and all twelve quests. Meshif sails on to Kurast Docks, where Act III's
-content isn't built yet. d2d can also join a game hosted by the original game
+and all twelve quests. Meshif sails on to Kurast Docks, and Act III's
+jungle (the Spider Forest, Great Marsh and Flayer Jungle) is built; Kurast
+and the rest of Act III aren't yet. d2d can also join a game hosted by the original game
 over TCP/IP.
 
 | Area | Progress |
@@ -30,7 +31,7 @@ over TCP/IP.
 | Act II levels | ✅ 100% (35 of 35; maps match the original's) |
 | Act II quests | ✅ 100% (6 of 6) |
 | Act II matching the original exactly | Maps, town, vendors, hirelings, monster AI checked against the original ✅; a few details left |
-| Act III | 🚧 Kurast Docks only |
+| Act III levels | 🚧 4 of 28 (Kurast Docks and the jungle; maps, monsters and objects match the original's) |
 | Acts IV–V | Not started |
 | Single player, softcore and hardcore | ✅ Runs as a one-player client/server, like the original |
 | Multiplayer over TCP/IP (a d2d host) | Not started |

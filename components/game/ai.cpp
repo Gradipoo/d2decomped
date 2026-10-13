@@ -396,8 +396,9 @@ int room_at(const Level& level, float x, float y) {
 // tools/emu/search.py checks the pick and the flags against game.exe.
 // ponytail: a dead pet is skipped (game.exe drops it from the list);
 // mode 5's candidates are every foe in the fight, in foes order (game.exe:
-// the near rooms' units, room by room), and the area FUN_0061b130 reads is
-// the room_areas rect at the unit; a dead monster leaves list 9.
+// the near rooms' units, room by room); a dead monster leaves list 9.
+// Mode 5's "in the searcher's area" compares area ids (FUN_0061b130,
+// area_id_at), which carry across rooms; the flag (+0x24) is the record's.
 int area_at(const Level& level, float x, float y) {
     const int room = room_at(level, x, y);
     if (room >= 0 && std::size_t(room) < level.room_areas.size())
@@ -426,13 +427,13 @@ Search search_target(const GameData& game_data, const Level& level, Monster& mon
     const int best = aidist > 0 ? aidist : 35;
     const auto wall = [&](int at_x, int at_y) { return level.blocked((float(at_x) + 0.5f) / 5, (float(at_y) + 0.5f) / 5, 0x04); };
     const auto nearby = [&](const Foe& foe) { return d2d::rules::near_distance(subtile(foe.x) - x, subtile(foe.y) - y, foe.size); };
-    const int here = area_at(level, unit.x, unit.y);
+    const auto here = area_id_at(level, unit.x, unit.y);                // FUN_0061b130: mode 5 compares area ids
     const auto mode5 = [&](int align) {                             // FUN_005dd0b0 mode 5
         std::vector<d2d::rules::NearFoe> nears;
         for (const auto& foe : foes) {
             auto& entry = nears.emplace_back(d2d::rules::NearFoe{ nearby(foe), foe.of ? foe.of->align : 2, foe.threat, foe.of == &monster, foe.of || foe.pet, !foe.alive, town });
             entry.blocked = need_sight && entry.distance <= 0x23 && d2d::rules::sight_blocked(subtile(foe.x), subtile(foe.y), foe.size, x, y, type_info.size, wall);
-            entry.waking = foe.of && foe.alive && foe.of->sighted && here >= 0 && area_at(level, foe.x, foe.y) == here;
+            entry.waking = foe.of && foe.alive && foe.of->sighted && area_id_at(level, foe.x, foe.y) == here;
         }
         return d2d::rules::search_near(nears, align, need_sight);
     };

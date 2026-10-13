@@ -65,13 +65,14 @@ struct MercAct {
 // the same at pace 60. Not standing, it stands 5. Standing on bit 0x40, 6 in
 // 128 (12 for the bow and spear mercs, all but MonStats 0x152 / 0x230 /
 // 0x231) wander 5. Outside town, a foe under 25 off: the attack think. On
-// bit 0x40, wander 5. On another level than the owner: 8 off his path end at
+// bit 0x40, wander 5. In another spawn area than the owner (FUN_0061b130
+// ids, which carry across rooms and levels): 8 off his path end at
 // pace 60. Within 1 of him: path type 7 to a spot 4 about him, else 4 away
 // on each axis, else to his path end (steps 0x28). Else 5 in 100 a spot 16
 // about him; else it stands 5. A spot "n about" (FUN_005df530 / de200 /
 // df400): one step of its seed picks the axis that's n off (low bit 0: y),
 // the other rand(n), two more steps their signs. Rolls on the merc's seed
-// (+0x20). `level_at(x, y)` names the level under a subtile (FUN_0061b130);
+// (+0x20). `level_at(x, y)` is the spawn area id under a subtile (FUN_0061b130);
 // `try_move(move)` sets off, true when it finds a path.
 template <class LevelAt, class TryMove>
 MercAct hireable_think(const MercView& view, Rng& seed, LevelAt&& level_at, TryMove&& try_move) {

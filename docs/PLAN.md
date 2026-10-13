@@ -813,7 +813,9 @@ the quests, the thinks.
    "Kurast and Travincal"); all five build in play. The whole act as one
    game: `LEVELS=75,..,83 diff_drlg.py 1-20 75 game` 20/20 (floor lists and
    areas follow the rooms' order; water packs search the room they stand
-   in; tiles shared with the level next door).
+   in; tiles shared with the level next door). Spawn area ids as game.exe's,
+   merged across rooms (`area_ids.py` every tile 5/5 on 79-81, 3, 6); mode
+   5's search and the pet / merc thinks compare them (FUN_0061b130).
 5. The dungeons, sewers, temples and the Durance (84–102).
 
 ## Checkpoint 2026-10-13: Act 3's docks and jungle done

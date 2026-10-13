@@ -547,6 +547,21 @@ void populate(const GameData& game_data, Spawning& spawning, const Level& level,
 
 int room_of(const Level& level, float x, float y) { return room_holding(room_rects(level), level, x, y); }
 
+std::uint32_t area_id_at(const Level& level, float x, float y) {
+    auto id_in = [](const Level& holder, float at_x, float at_y) -> std::uint32_t {
+        const int room = room_of(holder, at_x, at_y);
+        if (room < 0) return 0;
+        if (std::size_t(room) >= holder.room_areas.size() || holder.room_areas[std::size_t(room)].empty()) return 1;
+        for (const auto& area : holder.room_areas[std::size_t(room)])
+            if (int(at_x) >= area.left && int(at_y) >= area.top && int(at_x) < area.right && int(at_y) < area.bottom) return area.id;
+        return 0xffffffffu;
+    };
+    if (level.inside(x, y)) return id_in(level, x, y);
+    for (const auto& beside : level.nearby)
+        if (beside.level->inside(x - float(beside.dx), y - float(beside.dy))) return id_in(*beside.level, x - float(beside.dx), y - float(beside.dy));
+    return 0;
+}
+
 std::vector<std::pair<const Level*, int>> near_rooms(const GameData& game_data, const Level& level, float x, float y) {
     std::vector<std::pair<const Level*, int>> rooms;
     const int room = room_holding(room_rects(level), level, x, y);

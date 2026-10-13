@@ -1793,13 +1793,7 @@ auto Fight::merc_turn(std::uint32_t now_ms, float elapsed, const Crowd& crowd, b
                                    .end_y = sub(player.path.empty() ? player.y : player.path.back().second),
                                    .ring = footsteps, .cursor = footstep_cursor,
                                    .on_bit40 = level->blocked(unit.x, unit.y, 0x40), .town = town, .target = target_gap };
-        auto level_at = [&](int x, int y) {                            // FUN_0061b130
-            const float cell_x = centre(x), cell_y = centre(y);
-            if (level->inside(cell_x, cell_y)) return level->id;
-            for (const auto& neighbour : level->nearby)
-                if (neighbour.level->inside(cell_x - float(neighbour.dx), cell_y - float(neighbour.dy))) return neighbour.level->id;
-            return 0;
-        };
+        auto level_at = [&](int x, int y) { return int(area_id_at(*level, centre(x), centre(y))); };   // FUN_0061b130: the area id there
         std::vector<std::pair<float, float>> route;
         auto try_move = [&](const d2d::rules::MercMove& move) {
             route = move_route(*level, unit, merc_x, merc_y, move, crowd);
@@ -3299,13 +3293,7 @@ auto Fight::necropet_turn(Pet& pet, std::uint32_t now_ms, float elapsed, const C
             view.clear = d2d::rules::pet_line_clear(pet_x, pet_y, size, view.foe_x, view.foe_y,
                                                     [&](int at_x, int at_y) { return level->blocked(centre(at_x), centre(at_y), 0x805); });
         }
-        auto level_at = [&](int x, int y) {                            // FUN_0061b130
-            const float cell_x = centre(x), cell_y = centre(y);
-            if (level->inside(cell_x, cell_y)) return level->id;
-            for (const auto& neighbour : level->nearby)
-                if (neighbour.level->inside(cell_x - float(neighbour.dx), cell_y - float(neighbour.dy))) return neighbour.level->id;
-            return 0;
-        };
+        auto level_at = [&](int x, int y) { return int(area_id_at(*level, centre(x), centre(y))); };   // FUN_0061b130: the area id there
         std::vector<std::pair<float, float>> route;
         auto try_move = [&](const d2d::rules::MercMove& move) {
             if (move.unit != 0) return found >= 0 && set_off(*level, unit, monsters[std::size_t(found)].unit.x, monsters[std::size_t(found)].unit.y, true, crowd);

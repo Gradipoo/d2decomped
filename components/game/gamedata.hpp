@@ -921,6 +921,12 @@ void relevel(Level& level, const std::vector<std::size_t>& came_up, const GameDa
 std::vector<std::pair<const Level*, int>> near_rooms(const GameData& game_data, const Level& level, float x, float y);
 // The room holding (x, y) cells (its Level::rooms index), -1 none.
 int room_of(const Level& level, float x, float y);
+// FUN_0061b130: the spawn area id (record +0x28) at (x, y) cells: the room
+// holding it, this level's or a level's next door (FUN_00463740: the room
+// or its near list), its Logicals rect's id, a whole room's 1; 0 when no
+// room holds it.
+// ponytail: any room next door, not only the unit's room's near list.
+std::uint32_t area_id_at(const Level& level, float x, float y);
 bool build_outdoor(const GameData& game_data, d2d::mpq::Stack& mpqs, d2d::drlg::OutdoorAssets& assets, Level& level);
 bool build_maze(const GameData& game_data, d2d::mpq::Stack& mpqs, d2d::drlg::OutdoorAssets& assets, Level& level, std::size_t row);
 std::unique_ptr<Level> build_level(const GameData& game_data, GameData::LevelBuilder& builder, int id);

@@ -58,7 +58,8 @@ struct PetAct {
 
 // How a pet follows its owner, on a PetView: FUN_005e3ea0 (`follow`) and
 // FUN_005e45d0 (`decide`, follow or fight). Both put what they did in
-// `act`; `level_at(x, y)` names the level under a subtile (FUN_0061b130);
+// `act`; `level_at(x, y)` is the spawn area id under a subtile (FUN_0061b130,
+// game::area_id_at: ids carry across rooms and levels, 0 off every room);
 // `try_move(move)` sets off, true when it finds a path.
 template <class LevelAt, class TryMove>
 class PetFollow {
@@ -207,7 +208,7 @@ private:
 // if not: with a foe outside town, in melee 80 in 100 a swing (else stand
 // 10), out of melee a walk at it (pace 0xc steps, path type 0xd, 1 off) —
 // none found marks it unreachable and 70 in 100 wanders 4, else stands 10.
-// No foe: it wanders 4. `level_at(x, y)` names the level under a subtile
+// No foe: it wanders 4. `level_at(x, y)` is the spawn area id under a subtile
 // (FUN_0061b130); `try_move(move)` sets off, true when it finds a path
 // (`move.foe`: at the foe).
 template <class LevelAt, class TryMove>

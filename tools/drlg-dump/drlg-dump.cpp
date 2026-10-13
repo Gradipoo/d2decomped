@@ -272,6 +272,12 @@ static std::string dump_game(d2d::game::GameData& game, std::uint32_t seed, cons
                 std::snprintf(line, sizeof line, "room %d,%d r1 %08x seed %08x post %08x rgn %08x game %08x", made.rooms[room].x, made.rooms[room].y,
                               made.room1_seeds[room], group.pre, group.post, spawning.objects.low, spawning.game.low);
             out << line;
+            // $AREA_IDS=<level>: each room's spawn areas, clipped rect and id (tools/emu area_ids.py).
+            if (const char* ids_level = std::getenv("AREA_IDS"); ids_level && std::atoi(ids_level) == lid) {
+                std::fprintf(stderr, "areas %d,%d:", made.rooms[room].x, made.rooms[room].y);
+                for (const auto& area : made.room_areas[room]) std::fprintf(stderr, " %d,%d,%d,%d=%u", area.left, area.top, area.right, area.bottom, area.id);
+                std::fprintf(stderr, "\n");
+            }
             for (; from < made.npcs.size(); ++from)
                 if (made.npcs[from].root == "objects") out << ' ' << made.npcs[from].object_id << '@' << int(made.npcs[from].x * 5) << ',' << int(made.npcs[from].y * 5);
             out << '\n';

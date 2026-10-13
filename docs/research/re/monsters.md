@@ -542,5 +542,26 @@ a shuffled order) needed three things the one-level diffs never hit:
   Causeway's top) come up with the other level's rooms already up, as the
   camp's did for the Blood Moor.
 
-Area ids (+0x28) count on across a level (level +0x1dc), where d2d's
-restart per room; only equality within a room is used.
+**Area ids** (+0x28) carry across rooms. A room without Logicals
+(FUN_0066ccb0) is one area of id 1 and sets the level's counter (+0x1dc)
+to 1. A Logicals room (FUN_0066d110) labels from the counter (0 taken as
+1; the first label one past it; after, one past the last), then
+FUN_0066d040 joins it to each near room of its level that's up and
+touches it (FUN_0066b860 gap 1): along its border, top and bottom rows
+then left and right columns, edges included (FUN_0066cf60), a cell on
+the other room too with both ids set, different and alike in +0x20 gives
+this room's id the other's (FUN_0066c770: every area of the room with
+that id, and, if any changed, the same in its near rooms of the level,
+whole rooms aside). Lookups read the room's grid of records over its
+(w+1)x(h+1) cells, the rects unclipped (+0x00), not the clipped +0x10.
+So most open floor is id 1, level-wide.
+
+FUN_0061b130(room1, x, y) is the id at a point: the room holding it, the
+given one or one of its near list, any level (FUN_00463740); 0 when none.
+Population compares it inside one room; mode 5's search (FUN_005dca70)
+and the pet and merc thinks (FUN_005e45d0, FUN_005e52d0, the follow's
+candidate spots) compare two points, so two outdoor levels' whole rooms
+(both 1) count as one area, and a Logicals room's walled-off part as
+another. d2d: room_tiles.hpp `logic_areas` / `merge_areas`,
+`game::area_id_at`; `tools/emu/area_ids.py` calls FUN_0061b130 at every
+tile as each room populates.

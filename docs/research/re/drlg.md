@@ -1071,7 +1071,7 @@ Conditions those results hold under, so they aren't overstated:
 | LvlSub CheckAll stamps | not ported (no act 1 wilderness row uses them) |
 | Act 2's doors (FUN_0066d9e0, the tombs' and lair's objects 0x5b / 0x5c with their rand(3)) | generated, diffed with the mazes' units |
 | Doors in acts 3–5, tile word bit 4 on non-plain paths beyond what these levels hit | not ported |
-| Logical areas (FUN_0066ccb0 / FUN_0066d110; room_tiles.hpp `logic_areas`) | diffed bit-exact on every Logicals room of act 1, seeds 1-3 (ids are ours, only id != 0 is used) |
+| Logical areas (FUN_0066ccb0 / FUN_0066d110; room_tiles.hpp `logic_areas`) | diffed bit-exact on every Logicals room of act 1, seeds 1-3; ids as game.exe gives them, merged across rooms (FUN_0066d040; monsters.md "Area ids"), `area_ids.py` at every tile |
 | Room collision, automap | not diffed |
 | Monster population on these rooms (components/rules/monsters.hpp) | uses the proven room seeds; its own rolls not diffed |
 | The app's use of it: d2d draws and walks the proven picks in the Blood Moor and the Den of Evil (`Level::picks`), and its warps take the player between them; where a warp puts the player is traced (below, "Taking a warp"); what counts as clicking one (2 cells, not LvlWarp's Select box) is a guess | wired up; warp arrival traced, not diffed |

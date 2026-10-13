@@ -1194,12 +1194,14 @@ inline int monster_skill_level(int sk_lvl, int difficulty) {
 }
 
 inline bool traced_ai(std::string_view ai_name) {
-    static constexpr std::array<std::string_view, 42> kTraced{ "Skeleton", "Zombie", "Bighead", "BloodHawk", "Brute", "Wraith", "Goatman",
+    static constexpr std::array<std::string_view, 54> kTraced{ "Skeleton", "Zombie", "Bighead", "BloodHawk", "Brute", "Wraith", "Goatman",
                                                                "CorruptRogue", "QuillRat", "CorruptArcher", "CorruptLancer", "SkeletonBow", "Fallen", "FallenShaman", "FoulCrowNest",
                                                                "BloodRaven", "SkeletonMage", "GargoyleTrap", "Arach", "Vampire", "Fetish", "Griswold", "Smith",
                                                                "Duriel", "Swarm", "PinHead", "Mummy", "SandLeaper", "ClawViper", "PantherWoman", "PantherJavelin",
                                                                "Scarab", "BatDemon", "Baboon", "SandRaider", "GreaterMummy", "SandMaggot", "Summoner", "Vulture",
-                                                               "MaggotEgg", "MaggotLarva", "DarkWanderer" };
+                                                               "MaggotEgg", "MaggotLarva", "DarkWanderer",
+                                                               "Mosquito", "ThornHulk", "ZakarumZealot", "ZakarumPriest", "FrogDemon", "Tentacle", "TentacleHead",
+                                                               "FetishShaman", "HighPriest", "Hydra", "FetishBlowgun", "Mephisto" };
     return std::ranges::contains(kTraced, ai_name);
 }
 

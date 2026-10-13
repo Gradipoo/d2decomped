@@ -14,6 +14,7 @@
 #include <missiles.hpp>
 #include <monsters.hpp>
 #include <pets.hpp>
+#include <quests.hpp>
 #include <rules.hpp>
 #include <sequences.hpp>
 #include <shadows.hpp>
@@ -3997,6 +3998,9 @@ auto Fight::world(bool in_moor, std::uint32_t now_ms, float elapsed, const Crowd
                     if (skill->aurastat[i] == d2d::d2s::kDamageResist) foes[1].fighter.dr_pct += calc(*skill, skill->aura_calc[i], curses[1].level);
             monster_auras(foes, now_ms);
             for (const auto& pet : pets) foes.push_back(pet_foe(pet));
+            // FUN_0065c310(pcdata +0x10 + diff * 4, 0x15, 0): the zealots' spare (a pet's owner's, FUN_0058f090).
+            const bool a3q5 = d2d::rules::qbit(character.header.quests[std::size_t(std::clamp(character.header.active_difficulty(), 0, 2))], 0x15, 0);
+            for (auto& foe : foes) foe.a3q5_done = a3q5;
             // With Confuse or Attract about, every monster is a foe too, after
             // the player's list (lists 8 / 9, FUN_005dd0b0 mode 5's units),
             // hit as the player is (combat.md). Its death drops; the player

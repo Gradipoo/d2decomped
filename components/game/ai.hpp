@@ -309,6 +309,7 @@ struct Foe {
     int threat = 14;                          // FUN_005dc920: a player's 14, a monster's MonStats threat
     int life_pct = 100;                       // FUN_00621f20 (a Fetish's think): life x 100 / max life
     const Monster* of = nullptr;              // a monster in the fight (Confuse, Attract: monsters fight monsters)
+    bool a3q5_done = false;                   // a player, or its pet, with quest 0x15 bit 0 (the zealots spare it)
     void take(const d2d::rules::Taken& taken) {
         blocked = blocked || taken.blocked;
         hits += taken.hit ? 1 : 0;

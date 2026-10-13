@@ -1076,7 +1076,7 @@ inline std::pair<int, int> andariel_spray_aim(int dir64, int frame) {
 // A think's rand(100)s are one step each of the monster's seed (+0x20),
 // drawn here in game.exe's order; a skill test with no skill (-1) draws
 // nothing.
-enum class MonAct : std::uint8_t { idle, a1, a2, s2, skill, walk, run, approach, keep, circle, wander, none, die, around, home, point, untraced, s3, s4, seq, fly, gone };
+enum class MonAct : std::uint8_t { idle, a1, a2, s2, skill, walk, run, approach, keep, circle, wander, none, die, around, home, point, untraced, s3, s4, seq, fly, gone, s1 };
 // Whom an act is at: the think's target, no unit, the second target
 // (FUN_005ddc30), the search's find (FUN_005dd0b0: kin, a corpse), the hurt
 // one it heals, itself.
@@ -1177,7 +1177,9 @@ struct ThinkIn {
     // difficulty (FUN_0065c310).
     int next_event = 0, leader_mode = 0, skill_level = 1;
     // The line to the target clear of mask 4 (FUN_005dd290).
+    // MonStats MissS1's Missiles.txt Range (FUN_0046ace0 +0x96; -1: none).
     bool command_unit = false, state_c = false, spot_clear = true, target = true, spared = false, line_clear = true;
+    int s1_range = -1;
 };
 
 // A monster's skill level (FUN_00573cb0): Sk*lvl + DifficultyLevels
@@ -2357,6 +2359,50 @@ Think mon_think(std::string_view ai_name, const ThinkIn& input, Rng& rng, Away&&
         bool set_off = false;
         if (roll() < 30) return circle(4, 0, set_off);
         return { MonAct::idle, 20 };
+    }
+    // HighPriest (85, FUN_005e0490; the Council): state 0 picks. In melee,
+    // aip1 % A1 (state 1), else backs off 6. Off cooldown (state2), aip2 %
+    // Skill2 at the weakest ally under 76 % life within 50 (FUN_005e0430;
+    // aip3 on); within aip8 aip4 % Skill1 at the target and one of the four
+    // corners 5 off it (FUN_00472210, 0x6e337c; 100 on). With an S1
+    // missile (MissS1) aip5 % within its Range - 2: S1. Else 80 % circles 3
+    // within aip8, approaches 6 past it. Else (state 1): out of melee, under
+    // 6 aip7 % S1; aip6 % stands 10 (state 0); else 30 % wanders 12, 70 %
+    // walks in. In melee aip7 % S1, else aip6 % backs off 6 (state 0), else
+    // 90 % A1, 10 % stands 10.
+    if (ai_name == "HighPriest") {
+        const Think s1{ MonAct::s1 };
+        bool set_off = false;
+        if (*input.state == 0) {
+            if (input.in_melee) {
+                if (roll() >= aip[0]) { away(6, false); return { MonAct::none }; }
+                *input.state = 1;
+                return { MonAct::a1 };
+            }
+            if (input.skill[1] && *input.state2 < input.frame && roll() < aip[1] && input.aid && input.kin_dist <= 2500) {
+                *input.state2 = aip[2] + input.frame;
+                return cast(1, ThinkUnit::aid);
+            }
+            if (input.skill[0] && *input.state2 < input.frame && input.dist < aip[7] && roll() < aip[3]) {
+                static constexpr std::array<std::pair<int, int>, 4> kCorners{ { { -5, -5 }, { 5, -5 }, { 5, 5 }, { -5, 5 } } };
+                const auto [corner_x, corner_y] = kCorners[rng.next() & 3];
+                *input.state2 = input.frame + 100;
+                return { MonAct::skill, 0, input.target_x + corner_x, input.target_y + corner_y };
+            }
+            if (aip[4] > 0 && input.s1_range >= 0 && input.dist < input.s1_range - 2 && roll() < aip[4]) return s1;
+            if (roll() < 80) return input.dist <= aip[7] ? circle(3, 0, set_off) : Think{ MonAct::approach, 6 };
+        }
+        *input.state = 1;
+        if (!input.in_melee) {
+            if (input.dist < 6 && roll() < aip[6]) return s1;
+            if (roll() < aip[5]) { *input.state = 0; return { MonAct::idle, 10 }; }
+            if (roll() > 69) return think_wander(rng, 12);
+            return walk;
+        }
+        if (roll() < aip[6]) return s1;
+        if (roll() < aip[5]) { away(6, false); *input.state = 0; return { MonAct::none }; }
+        if (roll() > 89) return { MonAct::idle, 10 };
+        return { MonAct::a1 };
     }
     // Hydra (86, FUN_005e9e60; Mephisto's): past its end frame (state) it's
     // gone (FUN_005ddfc0); a target within 25, 60 % Skill1; else stands 10.

@@ -55,9 +55,9 @@ ACT3_AIS = tuple(list(AIS)[list(AIS).index("Mosquito"):])
 ORDER = list(AIS)
 # Think acts (rules::MonAct) by name; units (rules::ThinkUnit).
 ACTS = ["idle", "a1", "a2", "s2", "skill", "walk", "run", "approach", "keep", "circle", "wander", "none", "die", "around",
-        "home", "point", "untraced", "s3", "s4", "seq", "fly", "gone"]
+        "home", "point", "untraced", "s3", "s4", "seq", "fly", "gone", "s1"]
 UNIT = {"foe": 0, None: 1, "foe2": 2, "kin": 3, "aid": 4, "mon": 5}
-MODE_ACT = {4: "a1", 5: "a2", 9: "s2", 10: "s3", 11: "s4"}
+MODE_ACT = {4: "a1", 5: "a2", 8: "s1", 9: "s2", 10: "s3", 11: "s4"}
 
 
 def setup(rng, ai):
@@ -128,6 +128,7 @@ def setup(rng, ai):
         s["act3"] = rng.random() < 0.7
         s["quest21"] = rng.random() < 0.5
         s["los"] = rng.random() < 0.6                                      # FUN_005dd290: the line to the target clear (mask 4)
+        s["miss_range"] = rng.choice((-1, rng.randint(0, 30)))             # MonStats MissS1 (+0x3e)'s Missiles.txt Range (+0x96), -1 none
     if ai == "Vulture":
         for k in range(2):                                                 # its spot words: a point, or unset
             if rng.random() < 0.5: s["ctrl"][1 + k] = s["spots"]["foe"][k] + rng.randint(-12, 12)
@@ -230,6 +231,8 @@ def install(e):
         if cb in (0x5b0d00, 0x5f06b0):                                     # the nearest kin / other monster
             if s["kin"] and S32(s["kin_d"]) < S32(e.r32(ctx + 4)):
                 e.w32(ctx, cur["units"]["kin"]); e.w32(ctx + 4, s["kin_d"])
+        elif cb == 0x5e0430:                                               # the weakest ally under 76 % within 50 (squared): the council's
+            if s["aid"] and S32(s["kin_d"]) <= S32(e.r32(ctx + 8)): e.w32(ctx, cur["units"]["aid"])
         elif cb == 0x5f7240:                                               # a hurt zakarum within aip6 (squared): the priest's
             if s["aid"] and S32(s["kin_d"]) <= S32(e.r32(ctx + 12)): e.w32(ctx, cur["units"]["aid"])
         elif cb == 0x5f99a0:                                               # a dead fetish within aip5 (squared): the shaman's
@@ -307,6 +310,11 @@ def install(e):
     e.hook(0x64cb30, lambda e: cur["s"].get("spot_coll", 0), 4)
     e.hook(0x5ded20, lambda e: out("run", name(e.arg(0)), 0) or 1, 1)   # a move in mode 15 (RN)
     e.hook(0x5dd290, lambda e: int(cur["s"].get("los", True)), 0)
+    def missile_row(e):                                                # FUN_0046ace0(ECX id): its Missiles.txt row
+        if cur["s"].get("miss_range", -1) < 0: return 0
+        e.mu.mem_write(cur["missile"] + 0x96, struct.pack("<h", cur["s"]["miss_range"]))
+        return cur["missile"]
+    e.hook(0x46ace0, missile_row, 0)
     def owner(e):                                                      # FUN_0058f090(ECX unit, EDX &id, &type)
         from unicorn.x86_const import UC_X86_REG_EDX
         pet = cur["s"].get("foe_kind") == "pet"
@@ -342,6 +350,7 @@ def run_game(e, s, addr, rng_moves):
     e.mu.mem_write(row + 0x170, struct.pack("<5h", *s["skills"]))
     e.mu.mem_write(row + 0x180, bytes(s["modes"]))
     e.mu.mem_write(row + 0x4f + s["diff"], bytes([s["aidel"]]))
+    if s["ai"] in ACT3_AIS: e.mu.mem_write(row + 0x3e, struct.pack("<h", 1))   # MissS1: a missile (FUN_0046ace0 answers by miss_range)
     for k, v in enumerate(s["ctrl"]): e.w32(ctrl + 0x14 + 4 * k, v & MASK)
     e.w32(params, ctrl); e.w32(params + 7 * 4, row)
     if s["target"]: e.w32(params + 8, units["foe"])
@@ -356,7 +365,7 @@ def run_game(e, s, addr, rng_moves):
         data, rows = alloc(0x1000), alloc(0x1a8 * 0x106)                 # MonStats: the unit's row's flag byte +0xd (bit 1: interact)
         e.w32(0x744304, data); e.w32(data + 0xa80, 0x106); e.w32(data + 0xa78, rows)
         e.mu.mem_write(rows + 0x1a8 * 0x100 + 0xd, bytes([2 if s["interact"] else 0]))
-    CUR.update(s=s, out=[], units=units, names=names, paths=paths, moves=rng_moves, cmd=cmd, frees=0, pcdata=alloc(0x40))
+    CUR.update(s=s, out=[], units=units, names=names, paths=paths, moves=rng_moves, cmd=cmd, frees=0, pcdata=alloc(0x40), missile=alloc(0x1a4))
     e.call(addr, params, ecx=game, edx=mon)
     word = [e.r32(cmd + 0x18)] if s["ai"] == "SandMaggotOther" else []
     return CUR["out"], [S32(e.r32(ctrl + 0x14 + 4 * k)) for k in range(3)] + word, (e.r32(mon + 0x20), e.r32(mon + 0x24))
@@ -424,7 +433,7 @@ def dump_case(s, act, pace, effects, asks, ctrl, seed):
     else:
         nums += [1, 0, 1, 0, 0]
     if s["ai"] in ACT3_AIS:
-        nums += [s["next_event"], s["leader_mode"], int(s["cmd_unit"]), s["sk_level"], int(s["state_c"]), int(s["spot_coll"] == 0), int(spared(s)), int(s["los"])]
+        nums += [s["next_event"], s["leader_mode"], int(s["cmd_unit"]), s["sk_level"], int(s["state_c"]), int(s["spot_coll"] == 0), int(spared(s)), int(s["los"]), s["miss_range"]]
     nums += list(s["seed"])
     kinds = {"state": 0, "overlay": 1, "stat": 2, "rally": 3, "command_done": 4, "summoner_open": 5, "aura": 6, "land": 7, "takeoff": 8,
              "toggle": 9, "unset": 10}

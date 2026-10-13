@@ -10,6 +10,7 @@
 #include <monster_ids.hpp>
 #include <monsters.hpp>
 #include <rules.hpp>
+#include <shrines.hpp>
 #include <skills.hpp>
 #include <town_npcs.hpp>
 #include <uniques.hpp>

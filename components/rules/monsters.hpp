@@ -2071,7 +2071,7 @@ Think mon_think(std::string_view ai_name, const ThinkIn& input, Rng& rng, Away&&
     // Act 3's (docs/research/re/monster-ai.md "Act 3's thinks"). A circle
     // (FUN_005df7d0) says whether it set off, as `away` does.
     auto circle = [&](int count, int flag, bool& set_off) { auto out = think_circle(rng, count); out.y = flag; set_off = away(count, false); return out; };
-    auto at = [](Think out, ThinkUnit unit) { out.unit = unit; return out; };
+    auto aimed_at = [](Think out, ThinkUnit unit) { out.unit = unit; return out; };
     // Mosquito (24, FUN_005f3730): in melee, aip3 % (or before its first
     // swing, state2 0) it swings: aip4 % Skill1, else A1; else 80 % stands
     // 15, 20 % flies off (state 2). Off: walks in (state 0); state 1 drifts
@@ -2164,9 +2164,9 @@ Think mon_think(std::string_view ai_name, const ThinkIn& input, Rng& rng, Away&&
         if (*input.state3 == 1) return { MonAct::none, 0, 0, 0, ThinkUnit::target, aip[4] };
         if (head) {
             const auto second = input.second ? ThinkUnit::second : ThinkUnit::none;
-            return roll() >= aip[0] ? Think{ MonAct::idle, aip[4] } : at({ MonAct::a1 }, second);
+            return roll() >= aip[0] ? Think{ MonAct::idle, aip[4] } : aimed_at({ MonAct::a1 }, second);
         }
-        if (input.in_melee && roll() < aip[0]) return at({ MonAct::a1 }, target);
+        if (input.in_melee && roll() < aip[0]) return aimed_at({ MonAct::a1 }, target);
         return { MonAct::idle, aip[4] };
     }
     // FetishBlowgun (96, FUN_005e1250): its group's command first (1: A1 at
@@ -2181,9 +2181,9 @@ Think mon_think(std::string_view ai_name, const ThinkIn& input, Rng& rng, Away&&
             if ((*input.command == 1 || *input.command == 14) && input.command_unit) {
                 *input.state = *input.state2 = 0;
                 effect(ThinkEffect::command_done);
-                if (*input.command == 1) return at({ MonAct::a1 }, ThinkUnit::kin);
+                if (*input.command == 1) return aimed_at({ MonAct::a1 }, ThinkUnit::kin);
                 set_pace(50, 0);
-                return at(walk0, ThinkUnit::kin);
+                return aimed_at(walk0, ThinkUnit::kin);
             }
             effect(ThinkEffect::command_done);
         }
@@ -2199,7 +2199,7 @@ Think mon_think(std::string_view ai_name, const ThinkIn& input, Rng& rng, Away&&
         case 0: {
             ++*input.state2;
             if (rng(3) + 3 < *input.state2) { *input.state = 1; *input.state2 = 0; }
-            if (input.second) return at({ MonAct::a1 }, ThinkUnit::second);
+            if (input.second) return aimed_at({ MonAct::a1 }, ThinkUnit::second);
             return circle(4, 0, set_off);
         }
         case 1: {
@@ -2213,7 +2213,7 @@ Think mon_think(std::string_view ai_name, const ThinkIn& input, Rng& rng, Away&&
                 set_pace(50, 0);
                 if (away(14, false)) return { MonAct::none };
                 *input.state = *input.state2 = 0;
-                return at({ MonAct::a1 }, second);
+                return aimed_at({ MonAct::a1 }, second);
             }
             if (roll() <= 19) {
                 const auto out = circle(4, 1, set_off);
@@ -2238,7 +2238,7 @@ Think mon_think(std::string_view ai_name, const ThinkIn& input, Rng& rng, Away&&
         if (input.state_c) effect(ThinkEffect::state, 0xc, 0);
         if (input.corpse && input.kin_dist <= aip[4] * aip[4] && roll() < aip[0] && input.usable) {
             effect(ThinkEffect::rally, 14);
-            if (input.kin_dist <= aip[2]) return at({ MonAct::seq, 2 }, ThinkUnit::kin);
+            if (input.kin_dist <= aip[2]) return aimed_at({ MonAct::seq, 2 }, ThinkUnit::kin);
             auto out = think_wander(rng, 10); out.act = MonAct::around; out.unit = ThinkUnit::kin;
             return out;
         }
@@ -2377,7 +2377,7 @@ Think mon_think(std::string_view ai_name, const ThinkIn& input, Rng& rng, Away&&
     // walks in. In melee aip7 % S1, else aip6 % backs off 6 (state 0), else
     // 90 % A1, 10 % stands 10.
     if (ai_name == "HighPriest") {
-        const Think s1{ MonAct::s1 };
+        const Think shoot{ MonAct::s1 };
         bool set_off = false;
         if (*input.state == 0) {
             if (input.in_melee) {
@@ -2395,17 +2395,17 @@ Think mon_think(std::string_view ai_name, const ThinkIn& input, Rng& rng, Away&&
                 *input.state2 = input.frame + 100;
                 return { MonAct::skill, 0, input.target_x + corner_x, input.target_y + corner_y };
             }
-            if (aip[4] > 0 && input.s1_range >= 0 && input.dist < input.s1_range - 2 && roll() < aip[4]) return s1;
+            if (aip[4] > 0 && input.s1_range >= 0 && input.dist < input.s1_range - 2 && roll() < aip[4]) return shoot;
             if (roll() < 80) return input.dist <= aip[7] ? circle(3, 0, set_off) : Think{ MonAct::approach, 6 };
         }
         *input.state = 1;
         if (!input.in_melee) {
-            if (input.dist < 6 && roll() < aip[6]) return s1;
+            if (input.dist < 6 && roll() < aip[6]) return shoot;
             if (roll() < aip[5]) { *input.state = 0; return { MonAct::idle, 10 }; }
             if (roll() > 69) return think_wander(rng, 12);
             return walk;
         }
-        if (roll() < aip[6]) return s1;
+        if (roll() < aip[6]) return shoot;
         if (roll() < aip[5]) { away(6, false); *input.state = 0; return { MonAct::none }; }
         if (roll() > 89) return { MonAct::idle, 10 };
         return { MonAct::a1 };

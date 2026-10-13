@@ -641,7 +641,7 @@ int main() {
             // game.exe's own runs, the back-offs' answers replayed): the scene,
             // what it comes to, its effects, the AI control and seed after.
             {
-                static constexpr std::string_view kCases[] = {
+                static const std::string_view kCases[] = {   // not constexpr: their lengths pass the step limit
 #include "mon_ais_cases.inc"
 #include "mon_ais3_cases.inc"
                 };

@@ -1793,14 +1793,14 @@ auto Fight::merc_turn(std::uint32_t now_ms, float elapsed, const Crowd& crowd, b
                                    .end_y = sub(player.path.empty() ? player.y : player.path.back().second),
                                    .ring = footsteps, .cursor = footstep_cursor,
                                    .on_bit40 = level->blocked(unit.x, unit.y, 0x40), .town = town, .target = target_gap };
-        auto level_at = [&](int x, int y) { return int(area_id_at(*level, centre(x), centre(y))); };   // FUN_0061b130: the area id there
+        auto area_at = [&](int from_x, int from_y, int x, int y) { return int(area_id_at(*game_data, *level, centre(from_x), centre(from_y), centre(x), centre(y))); };   // FUN_0061b130
         std::vector<std::pair<float, float>> route;
         auto try_move = [&](const d2d::rules::MercMove& move) {
             route = move_route(*level, unit, merc_x, merc_y, move, crowd);
             return !route.empty();
         };
         using Kind = d2d::rules::MercAct::Kind;
-        const auto act = d2d::rules::hireable_think(view, merc->seed, level_at, try_move);
+        const auto act = d2d::rules::hireable_think(view, merc->seed, area_at, try_move);
         const int aidel = type_info && type_info->diff[std::size_t(std::clamp(character.header.active_difficulty(), 0, 2))].aidel > 0
                               ? type_info->diff[std::size_t(std::clamp(character.header.active_difficulty(), 0, 2))].aidel : 15;
         merc_chase = false;
@@ -3293,7 +3293,7 @@ auto Fight::necropet_turn(Pet& pet, std::uint32_t now_ms, float elapsed, const C
             view.clear = d2d::rules::pet_line_clear(pet_x, pet_y, size, view.foe_x, view.foe_y,
                                                     [&](int at_x, int at_y) { return level->blocked(centre(at_x), centre(at_y), 0x805); });
         }
-        auto level_at = [&](int x, int y) { return int(area_id_at(*level, centre(x), centre(y))); };   // FUN_0061b130: the area id there
+        auto area_at = [&](int from_x, int from_y, int x, int y) { return int(area_id_at(*game_data, *level, centre(from_x), centre(from_y), centre(x), centre(y))); };   // FUN_0061b130
         std::vector<std::pair<float, float>> route;
         auto try_move = [&](const d2d::rules::MercMove& move) {
             if (move.unit != 0) return found >= 0 && set_off(*level, unit, monsters[std::size_t(found)].unit.x, monsters[std::size_t(found)].unit.y, true, crowd);
@@ -3301,7 +3301,7 @@ auto Fight::necropet_turn(Pet& pet, std::uint32_t now_ms, float elapsed, const C
             return !route.empty();
         };
         using Kind = d2d::rules::PetAct::Kind;
-        const auto act = d2d::rules::necropet_think(view, monster.seed, level_at, try_move);
+        const auto act = d2d::rules::necropet_think(view, monster.seed, area_at, try_move);
         monster.force_sight = act.unreachable;
         const int aidel = type_info.diff[std::size_t(difficulty)].aidel > 0 ? type_info.diff[std::size_t(difficulty)].aidel : 15;
         if (act.kind == Kind::moved || act.kind == Kind::chase) {
@@ -3447,13 +3447,7 @@ auto Fight::pet_think_turn(Pet& pet, std::uint32_t now_ms, float elapsed, const 
             return &other != &pet && other.monster.alive() && other.where == level
                 && d2d::rules::merc_gap(pet_x, pet_y, size, sub(other.monster.unit.x), sub(other.monster.unit.y)) < 2;
         }));
-        auto level_under = [&](int x, int y) {                            // FUN_0061b130
-            const float cell_x = centre(x), cell_y = centre(y);
-            if (level->inside(cell_x, cell_y)) return level->id;
-            for (const auto& neighbour : level->nearby)
-                if (neighbour.level->inside(cell_x - float(neighbour.dx), cell_y - float(neighbour.dy))) return neighbour.level->id;
-            return 0;
-        };
+        auto area_under = [&](int from_x, int from_y, int x, int y) { return int(area_id_at(*game_data, *level, centre(from_x), centre(from_y), centre(x), centre(y))); };   // FUN_0061b130
         std::vector<std::pair<float, float>> route;
         int chased = -1;
         auto move_pet = [&](const d2d::rules::MercMove& move) {
@@ -3471,18 +3465,18 @@ auto Fight::pet_think_turn(Pet& pet, std::uint32_t now_ms, float elapsed, const 
             decltype(move_pet)& move_to;
             d2d::rules::PetView& view;
             d2d::rules::Rng& seed;
-            decltype(level_under)& level_of;
+            decltype(area_under)& area_of;
             std::function<void()> teleport_to;
             d2d::rules::PetAct last;
             bool try_move(const d2d::rules::MercMove& move) { return move_to(move); }
             bool follow(int mode, bool run, int pct, int reach) {
-                d2d::rules::PetFollow follower(view, seed, level_of, move_to);
+                d2d::rules::PetFollow follower(view, seed, area_of, move_to);
                 const bool took = follower.follow(mode, run, pct, reach);
                 last = follower.act;
                 return took;
             }
             bool decide(PetUnit foe, bool melee, bool stay, int reach) {
-                d2d::rules::PetFollow follower(view, seed, level_of, move_to);
+                d2d::rules::PetFollow follower(view, seed, area_of, move_to);
                 const bool took = follower.decide(foe != PetUnit::none, melee, stay, reach);
                 last = follower.act;
                 return took;
@@ -3492,7 +3486,7 @@ auto Fight::pet_think_turn(Pet& pet, std::uint32_t now_ms, float elapsed, const 
             void give_hands() { give(); }
             [[nodiscard]] d2d::rules::PetAct followed() const { return last; }
         };
-        World world{ move_pet, view, monster.seed, level_under, [&] { std::tie(unit.x, unit.y) = free_spot(*level, crowd, unit, player.x, player.y); }, {} };
+        World world{ move_pet, view, monster.seed, area_under, [&] { std::tie(unit.x, unit.y) = free_spot(*level, crowd, unit, player.x, player.y); }, {} };
         const auto& ai_name = type_info.ai_name;
         // The Shadow Warrior: the owner's left / right skills (given when its
         // think gets that far, at FUN_005eaf00's level: give_hands), its

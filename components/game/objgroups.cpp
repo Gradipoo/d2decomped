@@ -474,8 +474,8 @@ struct ObjectRooms {
         stamp_shape(at_x, at_y, shape - 1, 0x1000);
         // FUN_005b1cf0: a boss's mods, each FUN_005a4850(mod, 1); FUN_005a0320
         // counts a unique only as it first sets flag 8, so one a boss.
-        // ponytail: Act 1's bosses by BaseId (Andariel, Blood Raven, the Maggot Queen) and Travincal's orb; later acts' aren't.
-        if (info) pop.uniques += info->base == 156 || info->base == 267 || info->base == 284 || info->base == 366 ? 1 : 0;
+        // The Smith's a superunique, counted as one already.
+        if (info) pop.uniques += info->base != 0x192 && d2d::rules::act_boss(type, info->base) ? 1 : 0;
         const auto value = game.next();
         d2d::rules::Rng own{ value };
         const std::vector<d2d::rules::Components>* sets = nullptr;
@@ -766,10 +766,9 @@ struct ObjectRooms {
             const auto listed = std::ranges::find_if(level.mon.mon, [&](int mon_row) { return mon_row >= 0 && std::size_t(mon_row) < types.size() && types[std::size_t(mon_row)].base == types[std::size_t(row)].base; });
             if (listed != level.mon.mon.end()) row = *listed;
             else if (std::ranges::any_of(level.mon.mon, [](int mon_row) { return mon_row >= 0; })) {
-                // FUN_0063ec70: else up its class while the next's Level is at most MonLvl1Ex + 1.
-                // ponytail: NextInClass as the rows of its base in order.
+                // FUN_0063ec70: else up its class (NextInClass) while the next's Level is at most MonLvl1Ex + 1.
                 const int top = std::size_t(level.id) < game_data.area_level.size() ? game_data.area_level[std::size_t(level.id)][0] + 1 : 0;
-                for (int next = types[std::size_t(row)].base + 1; std::size_t(next) < types.size() && types[std::size_t(next)].base == types[std::size_t(row)].base && types[std::size_t(next)].level[0] <= top; ++next) row = next;
+                for (int next = types[std::size_t(row)].next_in_class; next >= 0 && std::size_t(next) < types.size() && types[std::size_t(next)].level[0] <= top; next = types[std::size_t(next)].next_in_class) row = next;
             }
             const int base = types[std::size_t(row)].base, id = level.id;
             auto bin = [&](int bin_row) { return int(game_data.mon_bin[std::size_t(bin_row)]); };
@@ -792,8 +791,7 @@ struct ObjectRooms {
             else if (code == 10 || code == 11) {                                                       // a tentacle head (0x105, FUN_0054da60):
                 const int depth = level.id >= 0x4c && level.id <= 0x4e ? 1 : level.id >= 0x5c && level.id <= 0x5d ? 2 : 0;   // 0x54eb60 by level
                 int row = int(game_data.mon_bin[0x105]);
-                // ponytail: NextInClass as the next row of its base (tentaclehead1..3 are)
-                for (int step = 0; step < depth && std::size_t(row + 1) < types.size() && types[std::size_t(row + 1)].base == types[std::size_t(row)].base; ++step) ++row;
+                for (int step = 0; step < depth && types[std::size_t(row)].next_in_class >= 0; ++step) row = types[std::size_t(row)].next_in_class;   // NextInClass
                 tentacle_ns = code == 10;
                 monster(row, unit.x, unit.y, 0);                                                         // its spot only; NS (10) in mode 4
                 tentacle_ns = false;

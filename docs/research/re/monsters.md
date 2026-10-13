@@ -521,9 +521,20 @@ diff_drlg.py game`. Kurast needed nothing new. Travincal:
   0x5553fe) runs before the object's mode and footprint (0x55545d), so
   the object doesn't block its own orb.
 - **FUN_005b1cf0** for base 0x16e: FUN_005436b0(0x13), unit flag
-  0x20000, MonUMod 22. Its Act 3 cases besides: 0xd3 (quests 0xd, 9),
-  0xfa (quest 0xc, flag 0x800), 0x154..0x157 flag 0x20000, 0x197 /
-  0x199 quests 0x11 / 0x18.
+  0x20000, MonUMod 22. The whole switch, by BaseId (an uber by its own
+  row): Andariel 22 + quest 6, uber (0x2c3) 23, 6, 29; Duriel quests 0xd,
+  9, uber (0x2c4) 6, 18; Radament (0xe5) quest 8; Mephisto 22 + quest
+  0x14, uber (0x2c0) 22, 30, 17, 8, 6; Diablo 22 + quest 0x17, uber
+  (0x2c1) 22, 8, 6; the Summoner (0xfa) quest 0xc, flag 0x800,
+  FUN_00573570; Izual 22 + quest 0x16, uber (0x2c2) 6, 18; Blood Raven 12,
+  22, quest 2, stat 0x76; the Maggot Queen 23, 22; the Fire Golem
+  FUN_005a4850(0x1f, 0); the bone prisons (0x154..0x157) flag 0x20000;
+  the Smith 22; fetish11 (0x197) quest 0x11; Hephasto (0x199) quest 0x18;
+  the prison door (0x1b2) quest 0x20; Nihlathak (0x20e) 22 + quest 0x22;
+  the ancients (0x21c) FUN_005b1c50; Baal (0x220) 22 + quest 0x24, uber
+  (0x2c5) 22, 18, 8, 6. d2d `rules::act_boss` has every mod list (read
+  from the code; only Act 1's, the Maggot Queen's and the orb's diffed),
+  not the ancients' or the Fire Golem's.
 - The oracle needs `objgroups.QUEST_STUBS` here: the council's
   superunique specials read quest flags (FUN_00544760).
 

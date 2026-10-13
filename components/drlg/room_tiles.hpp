@@ -165,7 +165,7 @@ inline constexpr int kMask[6][5] = { { -1, 0, 0, -1, 0 }, { 23, 0, 5, 21, 17 }, 
 // rooms' up already (index < own: the level's own), merge_areas below.
 inline void merge_areas(std::vector<BuiltRoom>& rooms, std::size_t self, std::size_t own);
 inline void logic_areas(std::vector<BuiltRoom>& rooms, std::size_t self, std::size_t own, const std::vector<std::size_t>& nearby,
-                        const std::vector<std::uint32_t>& orients, const std::vector<std::uint32_t>& floors, std::uint32_t& next_label) {
+                        const std::vector<std::uint32_t>& orients, const std::vector<std::uint32_t>& floors, std::uint32_t& next_label, bool merge = true) {
     auto& room = rooms[self];
     const int width = room.width + 1, height = room.height + 1;
     std::vector<std::uint32_t> labels(std::size_t(width * height));
@@ -239,7 +239,7 @@ inline void logic_areas(std::vector<BuiltRoom>& rooms, std::size_t self, std::si
             room.areas.insert(room.areas.begin(), area);
         }
     next_label = first_label + (count - first_label) + 1;                                                 // +0x1dc += labels made + 1
-    merge_areas(rooms, self, own);
+    if (merge) merge_areas(rooms, self, own);
 }
 
 // FUN_0066ceb0's record at cell (x, y) of an up room (on its rect, edges
@@ -298,10 +298,12 @@ inline void merge_areas(std::vector<BuiltRoom>& rooms, std::size_t self, std::si
 // a room's picks and its share of an edge depend on which are up already.
 // `outside`: the up rooms of the levels next door (the camp's) in this
 // level's tiles, list order; up before the level's, after them in the result.
+// `up_count`: how many of `order` are up; the rest are laid for their tiles, but
+// their spawn areas join nothing (they aren't up in game.exe yet).
 inline std::vector<BuiltRoom> level_room_tiles(const std::vector<Outdoor::RoomSeed>& made, const std::vector<PlainRoom>& plain,
                                                const OutdoorData& data, const RoomDt1s& dt1s, int level,
                                                const std::array<WarpSlot, 8>& slots, std::vector<std::string>& notes,
-                                               const std::vector<std::size_t>& order = {}, std::vector<BuiltRoom> outside = {}) {
+                                               const std::vector<std::size_t>& order = {}, std::vector<BuiltRoom> outside = {}, std::size_t up_count = SIZE_MAX) {
     using namespace room_tiles_detail;
     auto note = [&](std::string message) { if (std::ranges::find(notes, message) == notes.end()) notes.push_back(std::move(message)); };
     std::vector<BuiltRoom> rooms;                       // game.exe's list: newest room first
@@ -631,7 +633,7 @@ inline std::vector<BuiltRoom> level_room_tiles(const std::vector<Outdoor::RoomSe
         }
         if (pre->logicals)
             logic_areas(rooms, room_index, own, nearby, map->walls().empty() ? Words{} : slice(map->walls()[0], true),
-                        [&] { auto words = map->floors().empty() ? Words(std::size_t(slice_w * slice_h)) : slice(map->floors()[0], false); edges(words, 0x84); return words; }(), next_label);
+                        [&] { auto words = map->floors().empty() ? Words(std::size_t(slice_w * slice_h)) : slice(map->floors()[0], false); edges(words, 0x84); return words; }(), next_label, step < up_count);
         else
             next_label = 1;                                // FUN_0066ccb0
         room.room1_seed = rng.next();

@@ -165,7 +165,7 @@ void load_monsters(GameData& game_data, const d2d::mpq::Stack& mpqs) {
         auto& type_info = monsters.types[row_index];
         auto text = [&](std::string column) { return monstats.get(row_index, column); };
         type_info.id = text("Id"); type_info.code = text("Code"); type_info.name_key = text("NameStr"); type_info.ai_name = text("AI");
-        type_info.base = row(text("BaseId"));
+        type_info.base = row(text("BaseId")); type_info.next_in_class = row(text("NextInClass"));
         type_info.min_grp = num(text("MinGrp")); type_info.max_grp = num(text("MaxGrp"));
         type_info.party_min = num(text("PartyMin")); type_info.party_max = num(text("PartyMax"));
         type_info.sparse = num(text("sparsePopulate")); type_info.rarity = num(text("Rarity"));

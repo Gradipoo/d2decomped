@@ -237,7 +237,9 @@ int main() {
         assert(blood_raven && (blood_raven->mods == std::vector<int>{ 12, 22 }) && blood_raven->half_freeze);
         assert(act_boss(0x192, 0x192) && act_boss(0x192, 0x192)->mods == std::vector<int>{ 22 });
         assert(act_boss(0x11c, 0x11c) && (act_boss(0x11c, 0x11c)->mods == std::vector<int>{ 23, 22 }));   // the Maggot Queen: poison hit
-        assert(!act_boss(0x2c3, 0x9c) && !act_boss(5, 5) && bar_name_colour(Boss::unique, "andariel") == kNameGold);
+        assert(act_boss(0x2c3, 0x9c) && (act_boss(0x2c3, 0x9c)->mods == std::vector<int>{ 23, 6, 29 }));   // uber Andariel (FUN_005b1cf0)
+        assert(act_boss(0xf2, 0xf2) && (act_boss(0x2c0, 0xf2)->mods == std::vector<int>{ 22, 30, 17, 8, 6 }) && !act_boss(0xd3, 0xd3));   // Mephisto, uber; Duriel none
+        assert(!act_boss(5, 5) && bar_name_colour(Boss::unique, "andariel") == kNameGold);
         // A monster's sound set (FUN_004ca410): the Countess's own; a boss
         // or minion zombie's UMonSound; a plain one's MonSound.
         MonType zombie_sounds;
@@ -422,7 +424,7 @@ int main() {
                 d2d::rules::Rng seed;
                 seed.low = entry.low; seed.high = entry.high;
                 std::size_t next = 0;
-                const auto act = d2d::rules::hireable_think(view, seed, [&](int x, int) { return x - 5000 >= entry.split ? 2 : 1; },
+                const auto act = d2d::rules::hireable_think(view, seed, [&](int, int, int x, int) { return x - 5000 >= entry.split ? 2 : 1; },
                     [&](const d2d::rules::MercMove& move) {
                         assert(next < entry.tried.size());
                         const auto& want = entry.tried[next++];
@@ -500,7 +502,7 @@ int main() {
                     d2d::rules::Rng seed;
                     seed.low = entry.low; seed.high = entry.high;
                     std::size_t next = 0;
-                    const auto act = d2d::rules::necropet_think(view, seed, [&](int x, int) { return x - 5000 >= entry.split ? 2 : 1; },
+                    const auto act = d2d::rules::necropet_think(view, seed, [&](int, int, int x, int) { return x - 5000 >= entry.split ? 2 : 1; },
                         [&](const d2d::rules::MercMove& move) {
                             assert(next < entry.tried.size());
                             const auto& want = entry.tried[next++];

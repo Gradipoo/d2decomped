@@ -315,6 +315,7 @@ struct Level {
     LevelDt1s tile_dt1s;
     const d2d::drlg::OutdoorAssets* assets = nullptr;
     std::vector<std::size_t> laid;                     // the order (list indices) relevel last laid its rooms in, empty: list order
+    std::size_t laid_up = 0;                           // and how many of them were up (their spawn areas merged)
     // The walk grid as the tiles alone make it (finish_level, before any
     // footprint): what room_objects' collision starts from.
     std::vector<std::uint16_t> tile_walk;
@@ -921,12 +922,11 @@ void relevel(Level& level, const std::vector<std::size_t>& came_up, const GameDa
 std::vector<std::pair<const Level*, int>> near_rooms(const GameData& game_data, const Level& level, float x, float y);
 // The room holding (x, y) cells (its Level::rooms index), -1 none.
 int room_of(const Level& level, float x, float y);
-// FUN_0061b130: the spawn area id (record +0x28) at (x, y) cells: the room
-// holding it, this level's or a level's next door (FUN_00463740: the room
-// or its near list), its Logicals rect's id, a whole room's 1; 0 when no
-// room holds it.
-// ponytail: any room next door, not only the unit's room's near list.
-std::uint32_t area_id_at(const Level& level, float x, float y);
+// FUN_0061b130(room, x, y): the spawn area id (record +0x28) at (x, y)
+// cells as seen from the room holding (from_x, from_y): that room if it
+// holds the point, else the first of its near list that does, any level
+// (FUN_00463740); its Logicals rect's id, a whole room's 1; 0 when none.
+std::uint32_t area_id_at(const GameData& game_data, const Level& level, float from_x, float from_y, float x, float y);
 bool build_outdoor(const GameData& game_data, d2d::mpq::Stack& mpqs, d2d::drlg::OutdoorAssets& assets, Level& level);
 bool build_maze(const GameData& game_data, d2d::mpq::Stack& mpqs, d2d::drlg::OutdoorAssets& assets, Level& level, std::size_t row);
 std::unique_ptr<Level> build_level(const GameData& game_data, GameData::LevelBuilder& builder, int id);

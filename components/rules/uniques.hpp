@@ -135,9 +135,10 @@ inline std::vector<int> superunique_mods(const UMods& umods, const MonType& type
 // stat 0x76 (half freeze). Their quests (FUN_005436b0 6 / 2) key off the
 // kill in d2d (World::andariel_died, blood_raven_died). The Smith (0x192)
 // gets mod 22 alone, no quest call. The Maggot Queen (0x11c) gets 23
-// (poison hit, its init FUN_005a1e00: make_boss's) and 22.
-// ponytail: Act 1's and the Maggot Queen; later acts' cases and the uber
-// Andariel aren't here.
+// (poison hit, its init FUN_005a1e00: make_boss's) and 22. Travincal's
+// compelling orb (0x16e) gets 22 and unit flag 0x20000, and asks quest 0x13.
+// ponytail: Act 1's, the Maggot Queen and the orb; later acts' cases and
+// the uber Andariel aren't here.
 struct ActBoss {
     std::vector<int> mods;
     bool half_freeze = false;
@@ -147,6 +148,7 @@ inline std::optional<ActBoss> act_boss(int monstats_row, int base) {
     if (base == 0x10b) return ActBoss{ { umod::bloodraven, umod::questcomplete }, true };
     if (base == 0x192) return ActBoss{ { umod::questcomplete }, false };
     if (base == 0x11c) return ActBoss{ { umod::poisonhit, umod::questcomplete }, false };
+    if (base == 0x16e) return ActBoss{ { umod::questcomplete }, false };
     return std::nullopt;
 }
 

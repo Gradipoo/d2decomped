@@ -507,3 +507,22 @@ diff_drlg.py game`.
 - The collision grid (FUN_0064c900) takes the shadow layer's DT1
   subtile flags too (act 2's desert's prickly shadows; Act 1's shadows
   carry none).
+
+## Kurast and Travincal (2026-10-13)
+
+Checked: `diff_drlg.py 79..83 monsters` 5/5 (446 + 97 rooms), `LEVELS=75,..,83
+diff_drlg.py game`. Kurast needed nothing new. Travincal:
+
+- **The compelling orb** (object 404, InitFn 60, FUN_005bbba0, quest
+  0x13's record): unless the record's +0x28 says it's made, MonStats
+  0x16e on the object's spot (FUN_005b3090 → FUN_005b2a00, radius −1:
+  the spot only, mask by spawnCol); then +0x28 = 1, +0x2c its id; with
+  +0xc set the object goes to mode 2. The InitFn (FUN_00555230 at
+  0x5553fe) runs before the object's mode and footprint (0x55545d), so
+  the object doesn't block its own orb.
+- **FUN_005b1cf0** for base 0x16e: FUN_005436b0(0x13), unit flag
+  0x20000, MonUMod 22. Its Act 3 cases besides: 0xd3 (quests 0xd, 9),
+  0xfa (quest 0xc, flag 0x800), 0x154..0x157 flag 0x20000, 0x197 /
+  0x199 quests 0x11 / 0x18.
+- The oracle needs `objgroups.QUEST_STUBS` here: the council's
+  superunique specials read quest flags (FUN_00544760).

@@ -128,8 +128,17 @@ struct ObjectRooms {
         const bool door = obj(id, "IsDoor"), missile = obj(id, "BlockMissile");
         const std::uint16_t bits = door ? obj(id, "BlocksVis") ? 0x806 : missile ? 0x808 : 0x400 : obj(id, "SubClass") & 4 ? 0x8000 : missile ? 0x404 : 0x400;
         const bool operated = level.npcs.size() > before && level.npcs.back().preoperated;
-        if (obj(id, operated ? "HasCollision2" : "HasCollision0")) stamp(x, y, obj(id, "SizeX"), obj(id, "SizeY"), bits);
         const auto unit = game.next();                                 // FUN_00552df0: its seed
+        // InitFn 60 (FUN_005bbba0, object 404 in Travincal), run before the
+        // object's footprint (FUN_00554850): the compelling orb (0x16e) on its
+        // spot (FUN_005b3090: radius -1) unless quest 0x13's record has made it
+        // (+0x28); with the quest done (+0xc) the object shows broken (mode 2).
+        // ponytail: the record's "made" bit and the broken look aren't kept: a room comes up once.
+        if (obj(id, "InitFn") == 60) {
+            if (spawns) leader = int(spawns->size());
+            monster(int(game_data.mon_bin[0x16e]), x, y, 0);
+        }
+        if (obj(id, operated ? "HasCollision2" : "HasCollision0")) stamp(x, y, obj(id, "SizeX"), obj(id, "SizeY"), bits);
         if (level.npcs.size() > before) {
             auto& npc = level.npcs.back();
             if (obj(id, "InitFn") != 3 && obj(id, "InitFn") != 57) npc.seed = d2d::rules::Rng{ unit };
@@ -450,8 +459,8 @@ struct ObjectRooms {
         stamp_shape(at_x, at_y, shape - 1, 0x1000);
         // FUN_005b1cf0: a boss's mods, each FUN_005a4850(mod, 1); FUN_005a0320
         // counts a unique only as it first sets flag 8, so one a boss.
-        // ponytail: Act 1's bosses by BaseId (Andariel, Blood Raven, the Maggot Queen); later acts' aren't.
-        if (info) pop.uniques += info->base == 156 || info->base == 267 || info->base == 284 ? 1 : 0;
+        // ponytail: Act 1's bosses by BaseId (Andariel, Blood Raven, the Maggot Queen) and Travincal's orb; later acts' aren't.
+        if (info) pop.uniques += info->base == 156 || info->base == 267 || info->base == 284 || info->base == 366 ? 1 : 0;
         const auto value = game.next();
         d2d::rules::Rng own{ value };
         const std::vector<d2d::rules::Components>* sets = nullptr;

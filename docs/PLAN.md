@@ -816,7 +816,11 @@ the quests, the thinks.
    in; tiles shared with the level next door). Spawn area ids as game.exe's,
    merged across rooms (`area_ids.py` every tile 5/5 on 79-81, 3, 6); mode
    5's search and the pet / merc thinks compare them (FUN_0061b130).
-5. The dungeons, sewers, temples and the Durance (84–102).
+5. The dungeons, sewers, temples and the Durance (84–102). *Done
+   (2026-10-13):* drlg.md "Act 3's mazes" (LevelTypes 22–25: the ring,
+   the spider caves' def table, the sewers' ring of 5, the specials);
+   the presets matched already. `diff_drlg.py 84..102`: rooms 20/20,
+   tiles, units, monsters 5/5. All build in play.
 
 ## Checkpoint 2026-10-13: Act 3's docks and jungle done
 

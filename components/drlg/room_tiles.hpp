@@ -95,6 +95,10 @@ struct BuiltRoom {
     // portal's arrival): a town's Level::start / portal_spot.
     struct Spawn { int x, y, index; };
     std::vector<Spawn> spawns;
+    // Its visible warp walls that made a unit (FUN_0066e260): the slot is the
+    // wall's style, which two slots sharing a LvlWarp id (the Kurast Sewers'
+    // ways up) can't be told from the unit alone. No 0x800000 for these.
+    std::vector<Warp> wall_warps;
 };
 
 namespace room_tiles_detail {
@@ -449,7 +453,10 @@ inline std::vector<BuiltRoom> level_room_tiles(const std::vector<Outdoor::RoomSe
         auto warp_wall = [&](std::size_t tile, std::uint32_t tile_word, int tile_orient, int x, int y) {
             const int style = int((tile_word >> 20) & 0x3f), seq = int((tile_word >> 8) & 0xff);
             const auto& warp_slot = slots[std::size_t(style)];
-            if ((seq == 0 || seq == 4) && !warp_unit(warp_slot, x, y)) return;
+            if (seq == 0 || seq == 4) {
+                if (!warp_unit(warp_slot, x, y)) return;
+                room.wall_warps.push_back({ x, y, style });
+            }
             auto& head = warp_lists.try_emplace(warp_slot.id, -1).first->second;
             room.tiles[tile].next = head;
             head = int(tile);

@@ -1124,20 +1124,14 @@ std::size_t set_level_tiles(Level& level, const d2d::drlg::OutdoorAssets& assets
         level.starts.insert(level.starts.end(), room.starts.begin(), room.starts.end());
     }
     // A warp wall alone (the Forgotten Tower's stairs: unflagged words,
-    // FUN_0066e260) leaves only its unit (type 5, the LvlWarp id): a warp
-    // at the unit's cell less the slot's offset.
+    // FUN_0066e260) leaves its unit; its slot is the wall's style
+    // (BuiltRoom::wall_warps), one warp a slot.
     std::vector<d2d::drlg::BuiltRoom::Warp> found;
     for (const auto& room : built)
         found.insert(found.end(), room.warps.begin(), room.warps.end());
     for (const auto& room : built)
-        for (const auto& unit : room.units) {
-            if (unit.type != d2d::rules::unit_type::kWarp) continue;
-            const auto slot = std::ranges::find(slots, unit.id, &d2d::drlg::WarpSlot::id);
-            if (slot == slots.end()) continue;
-            const int slot_index = int(slot - slots.begin());
-            if (std::ranges::any_of(found, [&](const auto& warp) { return warp.slot == slot_index; })) continue;
-            found.push_back({ room.x + (unit.x - slot->off_x) / 5, room.y + (unit.y - slot->off_y) / 5, slot_index });
-        }
+        for (const auto& wall : room.wall_warps)
+            if (!std::ranges::any_of(found, [&](const auto& warp) { return warp.slot == wall.slot; })) found.push_back(wall);
     if (const auto row = d2d::drlg::level_row(assets.levels, level.id))
         for (const auto& warp : found) {
             if (warp.slot < 0 || warp.slot > 7) continue;

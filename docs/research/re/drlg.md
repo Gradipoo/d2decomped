@@ -793,6 +793,32 @@ the level seed, as outdoors).
 | 18 lair | ring | yes | FUN_00672dc0 | rotation only, base 0x1e1 |
 | 19 Arcane Sanctuary | FUN_006719f0 | — | FUN_00672e50 | neither |
 
+**Act 3's mazes** (2026-10-13):
+
+| type | levels | before the grow | grows | specials | defs by links / themes / rotation |
+|---|---|---|---|---|---|
+| 22 Durance | 100, 101 | ring 2 | yes | FUN_00672f60: 0x6f0238; 101 also 0x6f0278, 0x6f02b8; 100 0x6f02b8 | 0x2f1 + mask, themes, rotation |
+| 23 spider caves | 84, 85 | ring 2 | no | none (no roll) | table 0x6ef758 + 8 (12-byte rows: masks 5, 6, 9, 10 → 659..662); 84's 662 → 664, 85's 661 → 663 |
+| 24 Flayer Dungeon, Swampy Pits | 86..89 | ring 2 | yes | FUN_00672ea0: 0x6f0138, 0x6f0178 | 0x298 + mask, themes, rotation |
+| 25 sewers | 92 | ring 5, then four ring rooms made special (0x2c5 → 0x2df, 0x2c6 → 0x2e0, 0x2c9 → 0x2e1, 0x2ca → 0x2e2: the first non-special of each; asserts 0x849..0x84c when missing) | yes | FUN_00672f00: 0x6f01b8, 0x6f01f8 | 0x2c0 + mask, themes, rotation |
+
+The ring (FUN_00670f60(n)): n − 1 rooms up, n − 1 left, n − 1 down, n − 2
+right, each the usual step from the last room placed (one that won't fit
+is freed and the chain goes on from the last), then the last linked right
+to the first and both presets redone. The specials functions roll `next
+& 3` once and run FUN_006724e0 per table, the turn moving on after each.
+The treasure rooms (90, 91), the second sewer level (93), the six temples
+(94..99) and the Durance's third level (102) are DrlgType 2 presets.
+The Kurast Sewers' first level has five warp slots: Vis0 / Vis1 the
+Bazaar (80), Vis2 / Vis3 Upper Kurast (81), Vis4 the second level, and
+its four ways up are visible warp walls (FUN_0066e260: a unit, no
+0x800000) whose LvlWarp ids repeat (58, 59, 58, 59). A wall's slot is its
+style, not its unit's id; read off the id, the ways to 81 took 80's slots,
+WarpDist (2025) left their rooms out of the entrances and monsters spawned
+by them. d2d: `BuiltRoom::wall_warps`.
+d2d: maze.hpp (`kAct3Specials`, `kSpiderDefs`, `kSewer92Specials`, the
+ring); `diff_drlg.py 84..102`: rooms 20/20, tiles, units, monsters 5/5.
+
 - **The Arcane Sanctuary** (74, FUN_006719f0, 2026-10-11): a roll `& 3`
   (the rotation), then four arms off the first room (12×12 rooms), arm a
   by side u = a: two rooms on u, one on u + 3, four on u, one on u + 1

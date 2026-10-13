@@ -127,6 +127,7 @@ def setup(rng, ai):
         s["owner"] = rng.random() < 0.7
         s["act3"] = rng.random() < 0.7
         s["quest21"] = rng.random() < 0.5
+        s["los"] = rng.random() < 0.6                                      # FUN_005dd290: the line to the target clear (mask 4)
     if ai == "Vulture":
         for k in range(2):                                                 # its spot words: a point, or unset
             if rng.random() < 0.5: s["ctrl"][1 + k] = s["spots"]["foe"][k] + rng.randint(-12, 12)
@@ -229,6 +230,8 @@ def install(e):
         if cb in (0x5b0d00, 0x5f06b0):                                     # the nearest kin / other monster
             if s["kin"] and S32(s["kin_d"]) < S32(e.r32(ctx + 4)):
                 e.w32(ctx, cur["units"]["kin"]); e.w32(ctx + 4, s["kin_d"])
+        elif cb == 0x5f7240:                                               # a hurt zakarum within aip6 (squared): the priest's
+            if s["aid"] and S32(s["kin_d"]) <= S32(e.r32(ctx + 12)): e.w32(ctx, cur["units"]["aid"])
         elif cb == 0x5f99a0:                                               # a dead fetish within aip5 (squared): the shaman's
             if s["corpse"] and S32(s["kin_d"]) <= S32(e.r32(ctx + 8)):
                 e.w32(ctx, cur["units"]["kin"]); e.w32(ctx + 4, s["kin_d"])
@@ -303,6 +306,7 @@ def install(e):
     e.hook(0x6442a0, lambda e: cur["s"].get("sk_level", 0) & MASK, 3)
     e.hook(0x64cb30, lambda e: cur["s"].get("spot_coll", 0), 4)
     e.hook(0x5ded20, lambda e: out("run", name(e.arg(0)), 0) or 1, 1)   # a move in mode 15 (RN)
+    e.hook(0x5dd290, lambda e: int(cur["s"].get("los", True)), 0)
     def owner(e):                                                      # FUN_0058f090(ECX unit, EDX &id, &type)
         from unicorn.x86_const import UC_X86_REG_EDX
         pet = cur["s"].get("foe_kind") == "pet"
@@ -420,7 +424,7 @@ def dump_case(s, act, pace, effects, asks, ctrl, seed):
     else:
         nums += [1, 0, 1, 0, 0]
     if s["ai"] in ACT3_AIS:
-        nums += [s["next_event"], s["leader_mode"], int(s["cmd_unit"]), s["sk_level"], int(s["state_c"]), int(s["spot_coll"] == 0), int(spared(s))]
+        nums += [s["next_event"], s["leader_mode"], int(s["cmd_unit"]), s["sk_level"], int(s["state_c"]), int(s["spot_coll"] == 0), int(spared(s)), int(s["los"])]
     nums += list(s["seed"])
     kinds = {"state": 0, "overlay": 1, "stat": 2, "rally": 3, "command_done": 4, "summoner_open": 5, "aura": 6, "land": 7, "takeoff": 8,
              "toggle": 9, "unset": 10}

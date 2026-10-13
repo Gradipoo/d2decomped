@@ -1176,7 +1176,8 @@ struct ThinkIn {
     // in act 3 (FUN_006427f0), with quest 0x15 bit 0 in the monster's
     // difficulty (FUN_0065c310).
     int next_event = 0, leader_mode = 0, skill_level = 1;
-    bool command_unit = false, state_c = false, spot_clear = true, target = true, spared = false;
+    // The line to the target clear of mask 4 (FUN_005dd290).
+    bool command_unit = false, state_c = false, spot_clear = true, target = true, spared = false, line_clear = true;
 };
 
 // A monster's skill level (FUN_00573cb0): Sk*lvl + DifficultyLevels
@@ -2323,6 +2324,39 @@ Think mon_think(std::string_view ai_name, const ThinkIn& input, Rng& rng, Away&&
         }
         *input.state = 1;
         return { roll() < aip[1] ? MonAct::a2 : MonAct::a1 };
+    }
+    // ZakarumPriest (49, FUN_005f72d0): in melee, or hit, under 33 % life
+    // with Skill3 (its teleport) off cooldown (state: frame, aip5 × 4 on)
+    // to a point past the target (twice as far, four times in melee) if
+    // usable; in melee then aip1 % A1. Skill1 (its heal) 25 % at the
+    // weakest zakarum (MonStats 0xeb / 0xee) under 61 % within aip6
+    // (FUN_005f7240, squared). With no line to the target, aip1 % its
+    // Skill4 (off cooldown, state2: aip5 on) aip2 %; with one, aip4 % the
+    // same, then Skill2 (state3: 20 on) aip3 %. Else 30 % circles 4, else
+    // stands 20.
+    if (ai_name == "ZakarumPriest") {
+        if (input.in_melee || input.got_hit) {
+            if (skill_set(2) && input.life_pct < 33 && *input.state < input.frame) {
+                *input.state = input.frame + aip[4] * 4;
+                const int shift = input.in_melee ? 2 : 0;
+                const int point_x = input.target_x + ((input.target_x - input.self_x) << shift);
+                const int point_y = input.target_y + ((input.target_y - input.self_y) << shift);
+                if (input.usable) return { MonAct::skill, 2, point_x, point_y, ThinkUnit::none };
+            }
+            if (input.in_melee && roll() < aip[0]) return { MonAct::a1 };
+        }
+        if (input.skill[0] && input.aid && input.kin_dist <= aip[5] * aip[5] && roll() < 25) return cast(0, ThinkUnit::aid);
+        auto skill4 = [&] { *input.state2 = aip[4] + input.frame; return cast(3); };
+        const bool ready4 = skill_set(3) && *input.state2 < input.frame;
+        if (!input.line_clear) {
+            if (roll() < aip[0] && ready4 && roll() < aip[1]) return skill4();
+        } else if (roll() < aip[3]) {
+            if (ready4 && roll() < aip[1]) return skill4();
+            if (input.skill[1] && *input.state3 < input.frame && roll() < aip[2]) { *input.state3 = input.frame + 20; return cast(1); }
+        }
+        bool set_off = false;
+        if (roll() < 30) return circle(4, 0, set_off);
+        return { MonAct::idle, 20 };
     }
     // Hydra (86, FUN_005e9e60; Mephisto's): past its end frame (state) it's
     // gone (FUN_005ddfc0); a target within 25, 60 % Skill1; else stands 10.

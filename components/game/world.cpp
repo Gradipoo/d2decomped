@@ -174,6 +174,7 @@ auto World::view() const -> View {
             view.quest_log[d2d::rules::HoradricStaffQuest::kQuest] = std::uint8_t(staff.log_state(quest_bits, staff_items(), tainted.used));
             view.quest_log[d2d::rules::ArcaneQuest::kQuest] = std::uint8_t(arcane.log_state(quest_bits));
             view.quest_log[d2d::rules::SummonerQuest::kQuest] = std::uint8_t(summoner.log_state(quest_bits));
+            view.quest_log[d2d::rules::LamEsenQuest::kQuest] = std::uint8_t(lam_esen.log_state(quest_bits, carries("bbb"), !fight.remote_monsters, d2d::rules::level_act(level->id) == 2));
             view.quest_log[d2d::rules::SevenTombsQuest::kQuest] = std::uint8_t(tombs.log_state(quest_bits));
             for (int quest = 1; quest < 15; ++quest) {
                 const bool bit0 = d2d::rules::qbit(quest_bits, quest, 0) || d2d::rules::qbit(quest_bits, quest, 15);
@@ -417,6 +418,16 @@ auto World::operate(int npc_index, std::uint32_t now_ms, int force ) -> void {  
             for (std::uint32_t gold = fight.spawning.quests.next() % 5 + 5; gold > 0; --gold) drops.push_back({ .code = "gld" });
             for (const auto& dropped : drops) loot.put(dropped, object.x, object.y, here, fight.spawning.game, now_ms);
             d2d::log::info("The Tainted Sun: the altar, the sun's back ({} drops)", drops.size() + std::size_t(use.amulets));
+            return;
+        }
+        // Lam Esen's tome on its stand (OperateFn 28, FUN_005b7a60): once, it
+        // drops there and the stand goes to mode 2; one done gets nothing.
+        if (object.operate_fn == d2d::rules::operate_fn::kLamTome) {
+            if (hosted_quests || !lam_esen.take(quests())) return;
+            loot.put({ .code = d2d::rules::LamEsenQuest::kTome }, object.x, object.y, here, fight.spawning.game, now_ms);
+            doors[{ level, npc_index }] = Door{ 2, now_ms };
+            to_mode(2);
+            d2d::log::info("Lam Esen's Tome: taken from its stand");
             return;
         }
         // The hellgate (OperateFn 46): to the Pandemonium Fortress (103).
@@ -782,6 +793,9 @@ auto World::new_game() -> void {
         d2d::rules::ActTwoOpening::join(quests(), game_bits);
         radament = {};
         radament.join(quests(), game_bits, carries("ass"));
+        d2d::rules::HratliGreeting::join(quests(), game_bits);
+        lam_esen = {};
+        lam_esen.join(quests(), game_bits, carries(d2d::rules::LamEsenQuest::kTome));
         tainted = {};
         tainted.join(quests(), game_bits);
         arcane = {};
@@ -863,6 +877,7 @@ auto World::swap_npcs(const Level* from) -> void {
         if (from && from != level) tools.enter(quests(), from->id);
         if (from && from != level) cain.enter(quests(), from->id, level->id);
         if (from && from != level) radament.enter(quests(), from->id);
+        if (from && from != level) lam_esen.enter(quests(), from->id, level->id);
         if (from && from != level && from->id == d2d::rules::level_ids::kLutGholein) staff.rewarded = false;   // LAB_00599a00
         if (from && from != level) { arcane.enter(quests(), from->id, level->id); summoner.enter(from->id, level->id); tombs.enter(quests(), from->id, level->id); }
         if (from && from != level && level->id == tombs.true_tomb)   // the orifice's InitFn 21 (FUN_0059db50): the level's rooms all come up
@@ -977,6 +992,8 @@ auto World::quest_talk(int hc_idx, bool fresh) -> std::vector<d2d::rules::QuestM
         std::ranges::copy(cain.talk(quests(), hc_idx, carries("bks")), std::back_inserter(out));
         std::ranges::copy(d2d::rules::ActTwoOpening::talk(quests(), hc_idx), std::back_inserter(out));
         std::ranges::copy(radament.talk(quests(), hc_idx), std::back_inserter(out));
+        std::ranges::copy(d2d::rules::HratliGreeting::talk(quests(), hc_idx, character.header.cls), std::back_inserter(out));
+        std::ranges::copy(lam_esen.talk(quests(), hc_idx, carries(d2d::rules::LamEsenQuest::kTome)), std::back_inserter(out));
         std::ranges::copy(tainted.talk(quests(), hc_idx), std::back_inserter(out));
         std::ranges::copy(staff.talk(quests(), hc_idx, staff_items()), std::back_inserter(out));
         std::ranges::copy(arcane.talk(quests(), hc_idx, [&] {          // the guard's line: one roll a talk on the quest seed
@@ -1329,6 +1346,11 @@ auto World::cain_step(std::uint32_t now_ms, float elapsed) -> void {
 // FUN_00558110: the cursor's item, then all the player's items.
 // N-player gap: the quest item's difficulty (stat 0x164, questdiffcheck) isn't checked.
 auto World::carries(std::string_view code) const -> bool { return (held && held->code == code) || std::ranges::contains(character.items, code, &d2d::d2s::Item::code); }
+// FUN_00544160: a quest item taken from the player, the cursor's first.
+auto World::take_carried(std::string_view code) -> void {
+        if (held && held->code == code) { held.reset(); return; }
+        if (const auto found = std::ranges::find(character.items, code, &d2d::d2s::Item::code); found != character.items.end()) character.items.erase(found);
+    }
 
 // The tree (OperateFn 12) drops the scroll by it; the stones (9) light in
 // the deciphered scroll's order, the fifth opening the way to Tristram at
@@ -1867,6 +1889,13 @@ auto World::deal(const Command& command) -> bool {
                 if (burial_was != 5 && burial.state == 5) chain(2);   // FUN_00590980
             }
             d2d::rules::ActTwoOpening::said(quests(), game_bits, hc_idx, message->string);
+            d2d::rules::HratliGreeting::said(quests(), game_bits, hc_idx, message->string);
+            // Lam Esen's Tome handed to Alkor (FUN_005b7740): the tome goes (FUN_00544160), 5 stat points.
+            if (const auto heard = lam_esen.said(quests(), game_bits, hc_idx, message->string, carries(d2d::rules::LamEsenQuest::kTome), d2d::rules::level_act(level->id) == 2); heard.takes_tome || heard.stat_points) {
+                if (heard.takes_tome) take_carried(d2d::rules::LamEsenQuest::kTome);
+                character.stats.values[d2d::d2s::kStatPts] += heard.stat_points;
+                d2d::log::info("Lam Esen's Tome: handed to Alkor, +{} stat points", heard.stat_points);
+            }
             const int radament_was = radament.state;
             radament.said(quests(), game_bits, hc_idx, message->string);
             if (radament_was != 5 && radament.state == 5) tombs.chain();        // Radament's +0xf0: on to record 13's
@@ -2302,6 +2331,8 @@ auto World::tick(const std::vector<Command>& cmds, std::uint32_t now_ms, std::ui
                                   || tools.alert(quests(), level->npcs[i].hc_idx, holding_malus(), int(character.stats.get(d2d::d2s::kLevel)))
                                   || cain.alert(quests(), level->npcs[i].hc_idx, carries("bks"))
                                   || d2d::rules::ActTwoOpening::alert(quests(), level->npcs[i].hc_idx) || radament.alert(quests(), level->npcs[i].hc_idx)
+                                  || d2d::rules::HratliGreeting::alert(quests(), level->npcs[i].hc_idx)
+                                  || lam_esen.alert(quests(), level->npcs[i].hc_idx, carries(d2d::rules::LamEsenQuest::kTome))
                                   || tainted.alert(quests(), level->npcs[i].hc_idx) || d2d::rules::HoradricStaffQuest::alert(quests(), level->npcs[i].hc_idx, staff_items())
                                   || arcane.alert(quests(), level->npcs[i].hc_idx) || d2d::rules::SummonerQuest::alert(quests(), level->npcs[i].hc_idx)
                                   || tombs.alert(quests(), level->npcs[i].hc_idx);
@@ -2336,6 +2367,10 @@ auto World::tick(const std::vector<Command>& cmds, std::uint32_t now_ms, std::ui
         fight.kills.clear();
         loot.blessed_find = fight.wisp_blessing.find; loot.blessed_until = fight.wisp_blessing.until;
         mephisto_bridge(now_ms);
+        // The tome picked up / dropped (a3q1's +0xb0 / +0xb4, FUN_005b7970 / FUN_005b7a00).
+        // ponytail: polled from what's carried, not the item events.
+        if (const bool tome = carries(d2d::rules::LamEsenQuest::kTome); !hosted_quests && tome && lam_esen.state == 3) lam_esen.picked_up();
+        else if (!hosted_quests && !tome && lam_esen.state == 4) lam_esen.dropped();
         // The Summoner goes for the player (FUN_005f85c0's first think -> FUN_0059c330).
         // His first think (FUN_005f85c0: AI control +0x14 0 -> 1) opens it (FUN_0059c330).
         if (!summoner.started && !hosted_quests && level->id == d2d::rules::SummonerQuest::kSanctuary)

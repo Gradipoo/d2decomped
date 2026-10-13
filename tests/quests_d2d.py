@@ -357,6 +357,28 @@ try:
     assert int(re.search(r"bits=0x([0-9a-f]+)", cmd("debug quest 32 show")).group(1), 16) & 1, "word 0x20 bit 0 not set"
     until("his afterglow (FUN_005bd390)", lambda: re.search(r"the Dark Wanderer's afterglow: [78]\b", log_text()), 5)
     print("OK: the Dark Wanderer walks off and is gone (a3q7)")
+    # a3q0: Hratli's greeting (word 0x10 bit 0).
+    go(75)
+    talk_until("Hratli", lambda: bits(0x10) & 1, "no greeting")
+    # a3q1: Lam Esen's Tome. Lower Kurast opens it, Alkor tells (bit 2), its
+    # stand in the Ruined Temple (94) drops it, Alkor takes it: done, +5 stat points.
+    go(79)
+    go(75)
+    talk_until("Alkor", lambda: bits(0x11) & 4, "Lam Esen's Tome not given")
+    go(94)
+    stand = object_index(193)
+    stand_at = [o for o in presets()[0] if o[0] == stand][0]
+    cmd(f"debug warp {stand_at[2]} {stand_at[3]}"); cmd("debug kill")
+    operate(stand)
+    tome = [l.split("\t") for l in cmd("ground").splitlines() if l.startswith("bbb\t")]
+    assert tome, f"the stand dropped no tome: {cmd('ground')!r}"
+    cmd(f"cmd pickup {tome[0][4].lstrip('#')}")
+    until("the tome carried", lambda: "bbb" in cmd("items"), 10)
+    go(75)
+    points = int(state()["statpts"])
+    talk_until("Alkor", lambda: bits(0x11) & 1, "the tome not taken")
+    assert int(state()["statpts"]) == points + 5, f"no 5 stat points: {points} -> {state()['statpts']}"
+    print("OK: Hratli's greeting, Lam Esen's Tome (a3q0, a3q1)")
     # a3q6: Mephisto dead (FUN_005bc8b0) sets word 0x16 bits 0, 0xb, 0xd and
     # opens the hellgate; a player by the bridge (within 18) raises it, up
     # the next check (FUN_005bcac0). Map seed 3: it's by the level's middle.

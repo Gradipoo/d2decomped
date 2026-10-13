@@ -25,6 +25,7 @@
 #include <light.hpp>
 #include <object_ids.hpp>
 #include <quests.hpp>
+#include <quests_act3.hpp>
 #include <rules.hpp>
 #include <sequences.hpp>
 
@@ -221,6 +222,7 @@ struct World {
     d2d::rules::ToolsQuest tools;          // and Tools of the Trade
     d2d::rules::CainQuest cain;            // and The Search for Cain
     d2d::rules::RadamentQuest radament;    // and Radament's Lair
+    d2d::rules::LamEsenQuest lam_esen;     // Act 3's (quests_act3.hpp)
     d2d::rules::TaintedSunQuest tainted;   // and the Tainted Sun
     d2d::rules::HoradricStaffQuest staff;  // and the Horadric Staff
     d2d::rules::ArcaneQuest arcane;        // and the Arcane Sanctuary
@@ -306,7 +308,7 @@ struct World {
     static bool operable(int operate_fn) {
         using namespace d2d::rules::operate_fn;
         return std::ranges::contains(std::array{ kCasket, kShrine, kUrn, kChest, kBarrel, kExplodingBarrel, kCorpse, kArmorStand, kWeaponRack, kWell, kBookshelf, kTrapObject,
-                                                 kCubeChest, kScrollChest, kShaftChest, kTeleportPad }, operate_fn)
+                                                 kCubeChest, kScrollChest, kShaftChest, kTeleportPad, kLamTome, kHellgate }, operate_fn)
             || is_door(operate_fn);
     }
     static bool is_door(int operate_fn) {
@@ -434,6 +436,7 @@ struct World {
     void cain_step(std::uint32_t now_ms, float elapsed);
     // Whether the player carries an item of `code`.
     [[nodiscard]] bool carries(std::string_view code) const;
+    void take_carried(std::string_view code);
     void set_waypoint(int index) { if (index >= 0 && index < 40) character.header.waypoints[std::size_t(character.header.active_difficulty())][std::size_t(index >> 3)] |= std::uint8_t(1 << (index & 7)); }
 
     // Dying (FUN_00580ec0 → FUN_00535ab0), killed by a monster:

@@ -1550,7 +1550,7 @@ auto World::deal(const Command& command) -> bool {
         if (const auto* trade = std::get_if<cmd::OpenTrade>(&command)) {
             if (std::size_t(trade->npc) >= level->npcs.size()) return true;
             if (trade->gamble) store = d2d::rules::open_gamble(tables, level->npcs[std::size_t(trade->npc)].id, clvl);
-            else if (const auto kept = stocks.find(trade->npc); kept != stocks.end()) { store = kept->second; store.mode = 0; store.tab = 0; store.pressed = {}; }
+            else if (const auto kept = stocks.find(trade->npc); kept != stocks.end()) { store = kept->second; store.mode = 0; store.first_tab(); store.pressed = {}; }
             else store = open_store(*game_data, *level, trade->npc, act(), character.header.active_difficulty(), clvl, character.expansion,
                                     fight.spawning.proxy, fight.spawning.game, &loot.found_uniques);
             store.npc = trade->npc;

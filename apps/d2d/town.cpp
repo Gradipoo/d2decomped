@@ -314,6 +314,7 @@ auto Town::publish() -> void {
             const auto keep = store;
             store = *view.store;
             if (keep.npc == store.npc) { store.tab = keep.tab; store.mode = keep.mode; store.pressed = keep.pressed; }
+            else store.first_tab();                 // the tab isn't sent: the World's pick again
         } else {
             store = {};
         }

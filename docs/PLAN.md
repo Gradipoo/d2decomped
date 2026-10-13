@@ -821,6 +821,10 @@ the quests, the thinks.
    the spider caves' def table, the sewers' ring of 5, the specials);
    the presets matched already. `diff_drlg.py 84..102`: rooms 20/20,
    tiles, units, monsters 5/5. All build in play.
+6. The Dark Wanderer's walk and afterglow. *Done (2026-10-13):* MonAI
+   91 walks him off; FUN_005bd390 leaves object 131 round where he went
+   (monsters.md "Act 3's jungle"). Step 1 done; a store now opens on its
+   first full tab in the app too (it showed tab 0).
 
 ## Checkpoint 2026-10-13: Act 3's docks and jungle done
 

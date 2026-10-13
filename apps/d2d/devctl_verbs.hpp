@@ -607,7 +607,7 @@ void register_game_verbs(d2d::devctl::Channel& channel, Window& win, Screen& scr
              + " saves=" + std::to_string(scene ? scene->saves.size() : 0)
              + " stash=" + (town.stash_open ? "1" : "0")
              + " cube=" + (town.cube_open ? "1" : "0")
-             + " store=" + std::to_string(town.store.npc >= 0 ? town.store.vendor : -1)
+             + " store=" + std::to_string(town.store.npc >= 0 ? town.store.vendor : -1) + " store_tab=" + std::to_string(town.store.tab)
              + " gold=" + std::to_string(character.stats.get(d2d::d2s::kGold))
              + " statpts=" + std::to_string(character.stats.get(d2d::d2s::kStatPts))
              + " str=" + std::to_string(character.stats.get(d2d::d2s::kStr))

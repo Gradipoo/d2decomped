@@ -590,8 +590,8 @@ bool think(const GameData& game_data, const Level& level, Monster& monster, std:
     // marks every player in act 3 (FUN_005bd4a0 -> FUN_005bd390, word 0x20
     // bit 0); else walk again.
     // ponytail: a spot's test is one subtile, not his shape (FUN_006229f0);
-    // the next move's path type (FUN_005de190) isn't set; the 7 or 8
-    // "vile dog afterglow" objects (0x83) left round him aren't made.
+    // the next move's path type (FUN_005de190) isn't set. The afterglow
+    // he leaves: World::tick.
     if (type_info.ai_name == "DarkWanderer") {
         const int home_x = subtile(monster.home_x), home_y = subtile(monster.home_y);
         auto clear = [&](int at_x, int at_y) { return !level.blocked((float(at_x) + 0.5f) / 5, (float(at_y) + 0.5f) / 5, 0x3c01); };

@@ -89,7 +89,7 @@ struct View {
     std::vector<Shot> missiles;
     int attack = -1, attack_skill = 0;     // the monster the player's attacking (unit id), with what
     std::vector<Loot::GroundItem> ground;  // the level's floor
-    struct Fire { float x, y; const Npc* npc; };
+    struct Fire { float x, y; const Npc* npc; std::uint32_t born = 0; };   // born: its mode's start (0: from the clock)
     std::vector<Fire> fires;
     // The player's town portal where they stand (which 0: where it was cast,
     // 1: its twin in town), leading to level `to`.
@@ -166,8 +166,9 @@ struct World {
     std::map<std::pair<const Level*, int>, std::uint32_t> operated;   // shrines / chests used: when
     struct Door { int mode = 0; std::uint32_t when = 0; };
     std::map<std::pair<const Level*, int>, Door> doors;   // doors used: their mode (0..7), when it changed
-    struct Fire { const Level* level; const Npc* npc; float x, y; };
-    std::vector<Fire> fires;               // chest traps 5 / 7 left these burning
+    struct Fire { const Level* level; const Npc* npc; float x, y; std::uint32_t born = 0, gone = 0; };
+    std::vector<Fire> fires;               // chest traps 5 / 7 left these burning; the afterglow till `gone`
+    bool afterglow_made = false;           // a3q7's record +0xc: the Dark Wanderer's afterglow, once a game
     // The player's town portal: [0] where it was cast, [1] its twin in town
     // (FUN_0056d130 / FUN_0056cf40); a new one closes the old pair. [2]:
     // the Cairn Stones' portal to Tristram (object 60, FUN_005a9930), [3]

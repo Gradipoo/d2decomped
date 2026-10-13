@@ -517,8 +517,11 @@ diff_drlg.py game`.
   0x20 bit 0 (FUN_005bd260) and leaves 7 or 8 objects 0x83 ("vile dog
   afterglow", InitFn 59: lit, mode 1, gone 27 frames on) round his spot
   at (±3, ±3) (0x741538), from offset `seed & 1` on, each at a free spot
-  near it (FUN_00545340, 0x3f11). d2d: ai.cpp's DarkWanderer, `gone`;
-  not the afterglow. `tests/quests_d2d.py` walks him off (map seed 3).
+  near it (FUN_00545340, 0x3f11). The spot is where he went (his unit,
+  FUN_00552f60 by the record's +0x10 id); the offsets (0x741538, index 7
+  repeats index 2: bugs.md #20) start at the quest seed's next step & 1.
+  d2d: ai.cpp's DarkWanderer, `gone`; world.cpp's afterglow (`fires`,
+  object 131 in OP, 27 ticks). `tests/quests_d2d.py` walks him off (map seed 3).
 - **Unkillable monsters** (MonStats killable 0: the Dark Wanderer, the
   compelling orb, chickens, bats, the camp's cow, traps) are made without
   unit flag 0x4 (game.exe's Dark Wanderer: +0xc4 0x8200a, a plain monster

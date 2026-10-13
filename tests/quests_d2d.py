@@ -355,6 +355,7 @@ try:
     cmd(f"debug warp {int(start[0])} {int(start[1]) - 2}")   # by his spot (the merc may have held him up: he tries 3 more times)
     until("the Dark Wanderer gone", lambda: wanderer() is None, 30)
     assert int(re.search(r"bits=0x([0-9a-f]+)", cmd("debug quest 32 show")).group(1), 16) & 1, "word 0x20 bit 0 not set"
+    until("his afterglow (FUN_005bd390)", lambda: re.search(r"the Dark Wanderer's afterglow: [78]\b", log_text()), 5)
     print("OK: the Dark Wanderer walks off and is gone (a3q7)")
     cmd("quit")
 finally:

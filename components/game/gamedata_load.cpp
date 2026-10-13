@@ -588,6 +588,9 @@ void load_npcs(GameData& game_data, const d2d::mpq::Stack& mpqs) {
         add(tmp, 162, 0, 0);
         add(tmp, 160, 0, 0);
         for (std::size_t k = 0; k < tmp.npcs.size() && k < 2; ++k) game_data.trap_fires[k] = std::move(tmp.npcs[k]);
+        Level glow_level;
+        add(glow_level, 131, 0, 0);                           // the afterglow (InitFn 59, FUN_005bd390): plays mode 1
+        if (!glow_level.npcs.empty()) { game_data.afterglow = std::move(glow_level.npcs[0]); game_data.afterglow.mode = "OP"; }
         Level portal_level;
         add(portal_level, 59, 0, 0);                          // the town portal
         if (!portal_level.npcs.empty()) game_data.town_portal = std::move(portal_level.npcs[0]);

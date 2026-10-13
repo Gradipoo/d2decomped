@@ -133,7 +133,7 @@ auto World::view() const -> View {
         if (fight.attack_mon >= 0 && std::size_t(fight.attack_mon) < fight.monsters.size()) view.attack = fight.monsters[std::size_t(fight.attack_mon)].id;
         view.attack_skill = fight.attack_skill;
         if (loot.ground_level == level) view.ground = loot.ground;
-        for (const auto& fire : fires) if (fire.level == level) view.fires.push_back({ fire.x, fire.y, fire.npc });
+        for (const auto& fire : fires) if (fire.level == level) view.fires.push_back({ fire.x, fire.y, fire.npc, fire.born });
         for (std::size_t k = 0; k < corpses.size(); ++k)
             if (corpses[k].level == level) view.corpses.push_back({ corpses[k].x, corpses[k].y, corpses[k].dir, corpses[k].gfx, int(k) });
         for (int k = 0; k < int(portal.size()); ++k)
@@ -2027,6 +2027,23 @@ auto World::tick(const std::vector<Command>& cmds, std::uint32_t now_ms, std::ui
         if (d2d::rules::level_act(level->id) == 2 && !d2d::rules::qbit(quests(), 0x20, 0)
             && std::ranges::any_of(fight.monsters, [](const Monster& monster) { return monster.gone && monster.type == d2d::rules::monster_ids::kDarkWanderer; }))
             d2d::rules::qset(quests(), 0x20, 0);
+        // FUN_005bd390, once a game: round where he went (0x741538's
+        // (dx, dy), from index `quest seed & 1`: 7 or 8; index 7 repeats
+        // index 2, bugs.md #20) object 131 at a free spot near each, mode 1,
+        // gone 27 frames on (InitFn 59).
+        // ponytail: made the tick he goes, not two on; the free spot is
+        // nearest_free's, not FUN_00545340's size 3 / mask 0x3f11 search.
+        if (const auto wanderer = std::ranges::find_if(fight.monsters, [](const Monster& monster) { return monster.gone && monster.type == d2d::rules::monster_ids::kDarkWanderer; });
+            !afterglow_made && wanderer != fight.monsters.end() && !game_data->afterglow.code.empty()) {
+            afterglow_made = true;
+            static constexpr std::array<std::pair<int, int>, 8> kAround{ { { -3, -3 }, { -3, 0 }, { -3, 3 }, { 0, -3 }, { 0, 3 }, { 3, -3 }, { 3, 0 }, { -3, 3 } } };
+            for (auto at = std::size_t(fight.spawning.quests.next() & 1); at < kAround.size(); ++at) {
+                const auto [x, y] = level->nearest_free(wanderer->unit.x + float(kAround[at].first) / 5, wanderer->unit.y + float(kAround[at].second) / 5);
+                fires.push_back({ level, &game_data->afterglow, x, y, now_ms, now_ms + 27 * kTickMs });
+            }
+            d2d::log::info("the Dark Wanderer's afterglow: {}", std::ranges::count(fires, &game_data->afterglow, &Fire::npc));
+        }
+        std::erase_if(fires, [&](const Fire& fire) { return fire.gone && now_ms >= fire.gone; });
         if (level != wanted_near) { want_nearby(*game_data, *level); wanted_near = level; }
         item_ids();
         // The day moves a frame a tick (40 ms); a stall doesn't fast-forward it.

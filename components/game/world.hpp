@@ -225,6 +225,9 @@ struct World {
     d2d::rules::LamEsenQuest lam_esen;     // Act 3's (quests_act3.hpp)
     d2d::rules::GoldenBirdQuest golden_bird;
     d2d::rules::BladeQuest blade;
+    d2d::rules::KhalimQuest khalim;
+    d2d::rules::BlackenedTempleQuest temple;
+    [[nodiscard]] d2d::rules::KhalimQuest::Parts khalim_parts() const;
     bool had_gidbinn = false;
     std::uint32_t gidbinn_timer = 0;       // a3q3's 7 ticks from the altar's use (FUN_00543f10 -> FUN_005b9a30)
     int gidbinn_altar = -1;                // the altar's Level::npcs index
@@ -314,7 +317,8 @@ struct World {
     static bool operable(int operate_fn) {
         using namespace d2d::rules::operate_fn;
         return std::ranges::contains(std::array{ kCasket, kShrine, kUrn, kChest, kBarrel, kExplodingBarrel, kCorpse, kArmorStand, kWeaponRack, kWell, kBookshelf, kTrapObject,
-                                                 kCubeChest, kScrollChest, kShaftChest, kTeleportPad, kLamTome, kHellgate, kGidbinnAltar }, operate_fn)
+                                                 kCubeChest, kScrollChest, kShaftChest, kTeleportPad, kLamTome, kHellgate, kGidbinnAltar, kKhalimHeart, kKhalimEye, kKhalimBrain,
+                                                 kSewerLever, kSewerStairs, kCompellingOrb }, operate_fn)
             || is_door(operate_fn);
     }
     static bool is_door(int operate_fn) {

@@ -427,4 +427,228 @@ struct BladeQuest {
     }
 };
 
+// Khalim's Will (a3q2.cpp, record 0x10, word 0x12): Cain's (245) all. The
+// Great Marsh (77) opens it (state 1); Cain tells (543: state 2, bit 2). The
+// parts: Khalim's eye ("qey "), brain ("qbr "), heart ("qhr ") from three
+// chests (objects 407 / 406 / 405, OperateFns 58 / 59 / 57: gold, the part,
+// a chest's drops) and his flail ("qf1 ") from the Council (a3q5's); the
+// Cube makes his Will ("qf2 ", FUN_005b86e0). Shown to Cain each sets a bit
+// (545 eye 3, 546 brain 4, 544 heart 6, 547 flail 5, 548 the Will 7). The
+// Will breaks the compelling orb (a3q5's): bit 0. The sewers' stairs
+// (object 366, InitFn 41 / OperateFn 44) open by the lever (367, InitFn 42
+// / OperateFn 45, FUN_005b8530): mode 2 (data+8) lets the way down to
+// sewers 2 be taken (FUN_0059d9d0 -> FUN_005550b0).
+struct KhalimQuest {
+    static constexpr int kQuest = 0x12, kCain = monster_ids::kCainAct3, kGreatMarsh = 77;
+    static constexpr int kTells = 543, kHeart = 544, kEye = 545, kBrain = 546, kFlail = 547, kWill = 548;
+    static constexpr const char *kEyeCode = "qey", *kBrainCode = "qbr", *kHeartCode = "qhr", *kFlailCode = "qf1", *kWillCode = "qf2";
+    struct Parts { bool eye = false, brain = false, heart = false, flail = false, will = false; };
+    bool open = true;              // +9
+    int state = 0;                 // +0xc: 1 given out, 2 told
+    int log = 0;                   // +0xb
+    bool told_pending = false;     // data+1
+    bool stairs_open = false;      // data+8 2: the sewers' stairs
+
+    // The player joins (LAB_005b8470).
+    void join(const QuestBits& quest_bits, const Parts& parts) {
+        if (qbit(quest_bits, kQuest, 0)) { open = false; stairs_open = true; return; }
+        const bool any = parts.eye || parts.brain || parts.heart || parts.flail || parts.will;
+        if (qbit(quest_bits, kQuest, 7) || qbit(quest_bits, kQuest, 2) || any) { state = 2; log = 7; }
+    }
+    // A level change (LAB_005b7ff0): into the Great Marsh, given out.
+    void enter(int into) { if (into == kGreatMarsh && open && state < 3) state = 1; }
+    // The player heard `string` from Cain (FUN_005b8060).
+    void said(QuestBits& quest_bits, int npc, int string) {
+        if (npc != kCain) return;
+        switch (string) {
+        case kTells: state = 2; qset(quest_bits, kQuest, 2); told_pending = true; break;
+        case kHeart: qset(quest_bits, kQuest, 6); break;
+        case kEye: qset(quest_bits, kQuest, 3); break;
+        case kBrain: qset(quest_bits, kQuest, 4); break;
+        case kFlail: qset(quest_bits, kQuest, 5); break;
+        case kWill: qset(quest_bits, kQuest, 7); break;
+        default: break;
+        }
+    }
+    // What Cain says (FUN_005bd630; blocks 0x73f1a0: 0..5 his greetings on
+    // the quest and each part, 6..11 the same as topics).
+    [[nodiscard]] std::vector<QuestMsg> talk(const QuestBits& quest_bits, int npc, const Parts& parts, bool orb_whole) const {
+        if (npc != kCain) return {};
+        static constexpr std::array<int, 6> kStrings{ kTells, kEye, kHeart, kBrain, kFlail, kWill };
+        auto block = [&](int index) { return std::vector<QuestMsg>{ { kStrings[std::size_t(index % 6)], index < 6 } }; };
+        if (state != 0 && !qbit(quest_bits, kQuest, 2)) return block(0);
+        if (parts.will && !qbit(quest_bits, kQuest, 7) && orb_whole) return block(5);
+        if (parts.flail && !qbit(quest_bits, kQuest, 5)) return block(4);
+        if (parts.eye && !qbit(quest_bits, kQuest, 3)) return block(1);
+        if (parts.heart && !qbit(quest_bits, kQuest, 6)) return block(2);
+        if (parts.brain && !qbit(quest_bits, kQuest, 4)) return block(3);
+        const int count = int(parts.flail) + int(parts.eye) + int(parts.heart) + int(parts.brain);
+        if (count == 0) {
+            if (parts.will) return block(11);
+            return qbit(quest_bits, kQuest, 2) ? block(6) : std::vector<QuestMsg>{};
+        }
+        if (parts.flail) return block(10);
+        if (parts.heart) return block(8);
+        if (parts.eye) return block(7);
+        if (parts.brain) return block(9);
+        return block(6);
+    }
+    // Cain's "!" (FUN_005bd500).
+    [[nodiscard]] bool alert(const QuestBits& quest_bits, int npc, const Parts& parts, bool orb_whole) const {
+        if (npc != kCain) return false;
+        if (state != 0 && !qbit(quest_bits, kQuest, 2)) return true;
+        if (parts.flail && !qbit(quest_bits, kQuest, 5)) return true;
+        if (parts.eye && !qbit(quest_bits, kQuest, 3)) return true;
+        if (parts.heart && !qbit(quest_bits, kQuest, 6)) return true;
+        if (parts.brain && !qbit(quest_bits, kQuest, 4)) return true;
+        if (parts.will && !qbit(quest_bits, kQuest, 7) && orb_whole) return true;
+        return parts.flail && parts.eye && parts.heart && parts.brain && !qbit(quest_bits, kQuest, 5);
+    }
+    // The talk closed (LAB_005b8020): the told marks.
+    void talk_closed(int npc) { if (npc == kCain) told_pending = false; }
+    // The lever pulled (FUN_005b8530): the stairs open.
+    bool pull_lever() {
+        if (stairs_open) return false;
+        stairs_open = true;
+        return true;
+    }
+    // Its log (FUN_005bd850).
+    [[nodiscard]] int log_state(const QuestBits& quest_bits, const Parts& parts, bool orb_smashed) const {
+        if (!qbit(quest_bits, 0xf, 0)) return 0;
+        // unverified (source: the other records' logs): FUN_005bd850 has no done case.
+        if (qbit(quest_bits, kQuest, 0)) return qbit(quest_bits, kQuest, 13) ? 0xd : 0xb;
+        const bool told = qbit(quest_bits, kQuest, 2);
+        if (parts.will) return orb_smashed ? 0xc : 6;
+        const int count = int(parts.flail) + int(parts.eye) + int(parts.heart) + int(parts.brain);
+        if (count == 4) return qbit(quest_bits, kQuest, 5) ? 5 : 7;
+        if (count != 0) {
+            if (!parts.eye) return 1;
+            if (!parts.brain) return 2;
+            if (!parts.heart) return 4;
+            return parts.flail ? 7 : 3;
+        }
+        return told || (open && state > 1) ? 1 : 0;
+    }
+};
+
+// The Blackened Temple (a3q5.cpp, record 0x13, word 0x15): the Kurast
+// Causeway (82) opens it (state 1); Ormus (255) tells (594: state 3, 2 if
+// the game's bit 13's set); leaving the docks, 5 (4). The Council in
+// Travincal (superuniques 26 / 27 / 29: Ismail, Geleb, Toorc) carry the
+// record (FUN_005a49b0 binds 0x13); each death (FUN_005bbc00): the first
+// drops Khalim's flail ("qf1 ") for each player in act 3 who needs one, the
+// second a Horadric Cube ("box ") for each without; the last: state 6 (7 with
+// the orb broken), everyone in act 3 by the killer gets bit 13 and bit 4 (bit
+// 0 with Khalim's Will done, FUN_005bae20), the rest bit 14. The compelling
+// orb (object 404, OperateFn 53, FUN_005bb980) hit twice with Khalim's Will
+// held: word 0x12 bits 0, 13 (Khalim's Will done), the Will gone, bit 0 for
+// one with bit 4, the orb broken. Cain (245) hears it (626) with bit 4: done
+// (bit 0; Khalim's parts gone once his Will's done). Bits: 2 told, 3 under
+// way, 4 the Council dead (Cain's due), 13 / 14 here / others'.
+// N-player gap: one player: the party's and the room's credit, the counts of
+// players needing a flail or a Cube.
+struct BlackenedTempleQuest {
+    static constexpr int kQuest = 0x15, kOrmus = monster_ids::kOrmus, kCain = monster_ids::kCainAct3, kTells = 594, kDone = 626;
+    static constexpr int kCauseway = 82, kDocks = 75;
+    static constexpr std::array<int, 3> kCouncil{ 26, 27, 29 };   // SuperUniques rows
+    static constexpr const char *kFlail = "qf1", *kCube = "box";
+    bool open = true;              // +9
+    int state = 0;                 // +0xc
+    int log = 0;                   // +0xb
+    int council = 3;               // data+0x34: Council members left
+    bool flail_dropped = false;    // data+0xd
+    bool cube_dropped = false;     // data+0xe
+    int orb_hits = 0;              // data+0x38
+    bool orb_broken = false;       // data+0xc
+    bool rewarded = false;         // +0x1c
+
+    // The player joins (LAB_005bb480).
+    void join(QuestBits& quest_bits, QuestBits& game_bits) {
+        if (qbit(quest_bits, KhalimQuest::kQuest, 0)) orb_broken = true;
+        if (qbit(quest_bits, kQuest, 0) || qbit(quest_bits, kQuest, 4)) { qset(game_bits, kQuest, 13); open = false; return; }
+        const bool tome = qbit(quest_bits, LamEsenQuest::kQuest, 0);
+        if (qbit(quest_bits, kQuest, 3)) { log = 3; state = tome ? 4 : 5; }
+        else if (qbit(quest_bits, kQuest, 2)) { log = 2; state = tome ? 2 : 3; }
+    }
+    // A level change (LAB_005bb120).
+    void enter(const QuestBits& quest_bits, int from, int into, bool game_done) {
+        if (into == kCauseway && open && state == 0) state = 1;
+        if (from != kDocks || state < 2 || state > 3 || qbit(quest_bits, kQuest, 0) || qbit(quest_bits, kQuest, 4)) return;
+        state = game_done ? 4 : 5;   // LAB_005badc0 after it marks none: the state's past 2 / 3
+    }
+    // A Council member died (FUN_005bbc00). What it drops.
+    struct Drops { bool flail = false, cube = false, last = false; };
+    Drops council_died(QuestBits& quest_bits, QuestBits& game_bits, bool in_act3, bool khalim_done, bool has_flail_or_will, bool has_cube) {
+        Drops out;
+        if (!flail_dropped) {
+            if (in_act3 && !khalim_done && !has_flail_or_will) { out.flail = true; flail_dropped = true; }
+        } else if (!cube_dropped) {
+            cube_dropped = true;
+            out.cube = in_act3 && !has_cube;
+        }
+        if (!open || council <= 0 || --council != 0) return out;
+        out.last = true;
+        state = orb_broken ? 7 : 6;
+        if (in_act3 && !qbit(quest_bits, kQuest, 0) && !qbit(quest_bits, kQuest, 4)) {
+            qset(quest_bits, kQuest, khalim_done ? 0 : 4);
+            qset(quest_bits, kQuest, 13);
+        }
+        qset(game_bits, kQuest, 13);
+        return out;
+    }
+    // The orb hit with Khalim's Will held (FUN_005bb980): broken on the second.
+    bool hit_orb(QuestBits& quest_bits) {
+        if (++orb_hits < 2 || orb_broken) return false;
+        qset(quest_bits, KhalimQuest::kQuest, 0);
+        qset(quest_bits, KhalimQuest::kQuest, 13);
+        if (qbit(quest_bits, kQuest, 4) && !qbit(quest_bits, kQuest, 0)) qset(quest_bits, kQuest, 0);
+        orb_broken = true;
+        return true;
+    }
+    // The player heard `string` (FUN_005bb210). Returns whether Khalim's
+    // parts go (Cain's, with his Will done).
+    bool said(QuestBits& quest_bits, QuestBits& game_bits, int npc, int string, bool game_done) {
+        if (qbit(quest_bits, kQuest, 0)) return false;
+        if (npc == kOrmus && string == kTells) { state = game_done ? 2 : 3; return false; }
+        if (npc != kCain || string != kDone || !qbit(quest_bits, kQuest, 4)) return false;
+        const bool parts_go = qbit(quest_bits, KhalimQuest::kQuest, 0);
+        if (qbit(quest_bits, kQuest, 13) && state != 7) { qset(game_bits, kQuest, 13); state = 7; }
+        qset(quest_bits, kQuest, 0);
+        qset(quest_bits, kQuest, 4, false);
+        rewarded = true;
+        return parts_go;
+    }
+    // What `npc` says (FUN_005bafd0; blocks 0x7408b8, state -> 0x740ed8).
+    struct E { int npc, string; bool greet; };
+    static inline const std::vector<E> kBlocks[7] = {
+        { { 255, 594, true } },
+        { { 254, 595, false }, { 255, 597, false }, { 264, 599, false }, { 252, 601, false }, { 253, 603, false }, { 245, 605, false }, { 297, 607, false } },
+        { { 254, 596, false }, { 255, 598, false }, { 264, 600, false }, { 252, 602, false }, { 253, 604, false }, { 245, 606, false }, { 297, 608, false } },
+        { { 254, 609, false }, { 255, 611, false }, { 264, 612, false }, { 252, 614, false }, { 253, 616, false }, { 245, 618, false }, { 297, 619, false } },
+        { { 254, 610, false }, { 264, 613, false }, { 252, 615, false }, { 253, 617, false }, { 297, 620, false } },
+        { { 254, 621, false }, { 255, 622, false }, { 264, 623, false }, { 252, 624, false }, { 253, 625, false }, { 245, 626, true }, { 297, 627, false } },
+        { { 254, 621, false }, { 255, 622, false }, { 264, 623, false }, { 252, 624, false }, { 253, 625, false }, { 245, 626, false }, { 297, 627, false } },
+    };
+    [[nodiscard]] std::vector<QuestMsg> talk(const QuestBits& quest_bits, int npc) const {
+        int block = -1;
+        if (qbit(quest_bits, kQuest, 4)) block = orb_broken ? -1 : 5;
+        else if (qbit(quest_bits, kQuest, 0) && !rewarded) block = -1;
+        else if (state > 5) block = qbit(quest_bits, kQuest, 13) ? 6 : -1;
+        else if (open && state >= 1) block = state - 1;
+        std::vector<QuestMsg> out;
+        if (block >= 0)
+            for (const auto& entry : kBlocks[block]) if (entry.npc == npc) out.push_back({ entry.string, entry.greet });
+        return out;
+    }
+    // The "!" (FUN_005bad60).
+    [[nodiscard]] bool alert(const QuestBits& quest_bits, int npc) const {
+        if (qbit(quest_bits, kQuest, 0)) return false;
+        if (npc == kOrmus) return state == 1;
+        if (npc == kCain) return qbit(quest_bits, kQuest, 4) && !orb_broken;
+        return false;
+    }
+    // No log function of its own (+0xe8 0): the records' usual one.
+    [[nodiscard]] int log_state(const QuestBits& quest_bits) const { return quest_log(quest_bits, kQuest, state, log, 6); }
+};
+
 }  // namespace d2d::rules

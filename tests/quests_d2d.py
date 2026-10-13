@@ -435,6 +435,53 @@ try:
     talk_until("Asheara", lambda: bits(0x13) & 0x80, "no free mercenary")
     assert bits(0x13) & 1, f"the Blade not done: {bits(0x13):#x}"
     print("OK: the Blade of the Old Religion (a3q3)")
+    # a3q2 / a3q5: Khalim's Will and the Blackened Temple. The Great Marsh
+    # opens it, Cain tells (bit 2); the eye's chest (Spider Cavern, 85), the
+    # brain's (Flayer Dungeon 3, 91), the heart's (sewers 2, 93, the lever in
+    # 92 opening the stairs); the Council in Travincal drop the flail and,
+    # dead, give bit 4; Khalim's Will in hand breaks the orb in two hits:
+    # word 0x12 bit 0 and the Blackened Temple done.
+    def objects(op):
+        return [l.split("\t") for l in cmd("debug objects").splitlines() if l.split("\t")[3:4] == [f"op{op}"]]
+    def khalim_chest(lid, op, code, near):
+        go(lid)
+        cmd(f"debug warp {near[0]} {near[1]}"); time.sleep(1)   # its room comes up (map seed 3)
+        chest = objects(op)
+        assert chest, f"no OperateFn {op} on level {lid}: {cmd('debug objects')!r}"
+        cmd(f"debug warp {chest[0][1]} {chest[0][2]}"); time.sleep(1); cmd("debug kill")
+        cmd(f"debug operate {chest[0][0]}")
+        pick_up(code)
+    go(77)
+    go(75)
+    talk_until("Cain", lambda: bits(0x12) & 4, "Khalim's Will not told")
+    khalim_chest(85, 58, "qey", (21, 26))
+    khalim_chest(91, 59, "qbr", (3, 3))
+    go(92)
+    cmd("debug warp 54 30"); time.sleep(1)           # the lever's room (48, 24)
+    lever = objects(45)
+    assert lever, "no sewers lever"
+    cmd(f"debug operate {lever[0][0]}")
+    until("the stairs open", lambda: "the sewers' stairs open" in log_text(), 5)
+    khalim_chest(93, 57, "qhr", (8, 3))
+    go(83)
+    cmd("debug warp 27 19"); time.sleep(2)
+    for _ in range(5):
+        cmd("debug kill"); time.sleep(1)
+        if "the Council is dead" in log_text(): break
+    until("the Council dead", lambda: "the Council is dead" in log_text(), 10)
+    assert bits(0x15) & 0x10, f"no bit 4 for the Council: {bits(0x15):#x}"
+    pick_up("qf1")
+    go(75)
+    talk_until("Cain", lambda: bits(0x12) & 0x20, "Cain didn't see the flail")
+    cmd("debug equip qf2 4")                         # the Cube's made it (cubemain, generic)
+    go(83)
+    orb = objects(53)
+    assert orb, "no compelling orb"
+    cmd(f"debug warp {orb[0][1]} {orb[0][2]}")
+    cmd(f"debug operate {orb[0][0]}"); cmd(f"debug operate {orb[0][0]}")
+    until("the orb broken", lambda: "the compelling orb broken" in log_text(), 5)
+    assert bits(0x12) & 1 and bits(0x15) & 1, f"Khalim's Will {bits(0x12):#x}, the Temple {bits(0x15):#x}"
+    print("OK: Khalim's Will, the Blackened Temple (a3q2, a3q5)")
     # a3q6: Mephisto dead (FUN_005bc8b0) sets word 0x16 bits 0, 0xb, 0xd and
     # opens the hellgate; a player by the bridge (within 18) raises it, up
     # the next check (FUN_005bcac0). Map seed 3: it's by the level's middle.

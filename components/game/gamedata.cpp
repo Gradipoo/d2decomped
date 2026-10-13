@@ -816,7 +816,7 @@ void finish_level(Level& level) {
             for (int cell_x = 0; cell_x < map.width(); ++cell_x)
                 for (const auto& pick : level.picks[std::size_t(cell_y) * std::size_t(map.width()) + std::size_t(cell_x)]) {
                     if (!pick.stamp) continue;
-                    if (pick.layer == 1 || (pick.layer == 0 && pick.orient != 13 && pick.orient != 15)) stamp_tile(cell_x, cell_y, *pick.stamp);
+                    if (pick.layer == 1 || pick.layer == 2 || (pick.layer == 0 && pick.orient != 13 && pick.orient != 15)) stamp_tile(cell_x, cell_y, *pick.stamp);
                     for (int k = 0; k < 25 && pick.cell; ++k) level.walk[std::size_t(cell_y * 5 + k / 5) * std::size_t(walk_width) + std::size_t(cell_x * 5 + k % 5)] |= pick.cell;
                 }
         for (const auto& patch : level.patches)
@@ -1018,8 +1018,12 @@ std::size_t set_level_tiles(Level& level, const d2d::drlg::OutdoorAssets& assets
     level.room1_seeds.assign(made.size(), 0);
     level.nopop_rooms.assign(made.size(), false);
     level.room_areas.assign(made.size(), {});
+    level.room_floors.assign(made.size(), {});
     for (const auto& room : built)
         if (room.seed) {
+            for (const auto& tile : room.tiles)
+                if (tile.layer == 1 && tile.file && tile.index >= 0 && std::size_t(tile.index) < tile.file->tiles.size())
+                    level.room_floors[std::size_t(room.seed - made.data())].push_back({ tile.x, tile.y, std::uint16_t(tile.file->tiles[std::size_t(tile.index)].material) });
             level.room1_seeds[std::size_t(room.seed - made.data())] = room.room1_seed;
             level.room_areas[std::size_t(room.seed - made.data())] = room.areas.empty() ? std::vector<d2d::drlg::Area>{ { room.x, room.y, room.x + room.width, room.y + room.height, 1, false } } : room.areas;
             const auto preset = room.seed->kind == 2 ? assets.data.presets.find(room.seed->def) : assets.data.presets.end();

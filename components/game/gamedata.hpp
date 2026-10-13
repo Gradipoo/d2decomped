@@ -292,6 +292,10 @@ struct Level {
     // preset's by walls (drlg BuiltRoom::areas), else the whole room
     // (FUN_0066ccb0). FUN_0054ec90 rolls each. By `rooms` index.
     std::vector<std::vector<d2d::drlg::Area>> room_areas;
+    // Each room's floor tiles in its list's order (room1 +8: +8 / +0xc):
+    // level tile x, y and DT1 material flags (2 water: FUN_005b2700's spots).
+    struct Floor { int x, y; std::uint16_t material; };
+    std::vector<std::vector<Floor>> room_floors;
     // Plain outdoor rooms on a road cell (g2c 0x80; room data +0x54 & 0x80):
     // FUN_00552560 (FUN_0061abb0) places no object groups there.
     std::vector<bool> road_rooms;

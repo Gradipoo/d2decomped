@@ -800,10 +800,12 @@ the quests, the thinks.
    "Act 3's jungle"; tiles 10/10, units 5/5 on all three. Builds in
    play; the docks walk into the Spider Forest and back. MonPlace
    fetish / fetish shaman / tentacle heads (FUN_0054e600) placed.
-   Open: the population isn't game.exe's yet (`LEVELS=75,76 game`
-   drifts from room 0,48): the outdoor collision past act 1 isn't
-   game.exe's (`diff_drlg.py 41|76 collision` fail; the desert's
-   population happens not to touch it).
+   *Population exact (2026-10-13):* `diff_drlg.py 76|77|78 monsters`
+   10/10 / 5/5, `LEVELS=75,76,77,78 game` 5/5. The collision grid
+   stamps shadows' subtile flags too (fixed act 2's desert as well);
+   spawnCol 1 types spawn on water (FUN_005b2700), a tentacle head
+   spreads its tentacles (FUN_005b2570), the Dark Wanderer's marker
+   (a3q7) makes him (monsters.md "Act 3's jungle").
 4. Kurast (79–83).
 5. The dungeons, sewers, temples and the Durance (84–102).
 

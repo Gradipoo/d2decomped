@@ -807,6 +807,9 @@ struct Spawning {
         std::shared_ptr<ObjectRooms> objects;
         std::vector<Level::GroupRoom> group_rooms;
         std::vector<d2d::rules::Rng> room_seeds;
+        // A room's room1 seed stepped before it populated: a water monster's
+        // party searching the room its leader stands in (FUN_005b2700).
+        std::vector<std::optional<d2d::rules::Rng>> early_seeds;
     };
     int difficulty = 0;
     d2d::rules::Rng game;

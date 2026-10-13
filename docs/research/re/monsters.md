@@ -526,3 +526,21 @@ diff_drlg.py game`. Kurast needed nothing new. Travincal:
   0x199 quests 0x11 / 0x18.
 - The oracle needs `objgroups.QUEST_STUBS` here: the council's
   superunique specials read quest flags (FUN_00544760).
+
+**The act in one game** (`LEVELS=75,..,83 diff_drlg.py game`, rooms up in
+a shuffled order) needed three things the one-level diffs never hit:
+
+- A room's floor list (FUN_00619660: room1 +8 → +8 entries, +0xc count)
+  and its Logicals areas (FUN_0066d110, from the near rooms up as it comes
+  up) depend on the order rooms come up, so both follow each relevel, as
+  the tiles and room1 seeds did.
+- FUN_005b2700 searches the room1 it's handed, on that room1's seed
+  (+0x6c). Round a point (a pack's or a party's spot) that's the room
+  holding the point, and a water spot can be on a room's shared edge row,
+  the next room's: its floors, its seed stepped, even before it populates.
+- Tiles shared across a level's edge (Travincal's bottom row on the
+  Causeway's top) come up with the other level's rooms already up, as the
+  camp's did for the Blood Moor.
+
+Area ids (+0x28) count on across a level (level +0x1dc), where d2d's
+restart per room; only equality within a room is used.

@@ -357,6 +357,7 @@ struct ObjectRooms {
     Box area{};
     std::size_t index = 0;
     std::vector<d2d::rules::Spawn>* spawns = nullptr;
+    Spawning::LevelState* level_state = nullptr;
     int leader = 0;
     d2d::rules::Population pop;
 
@@ -398,11 +399,11 @@ struct ObjectRooms {
         const auto* info = type_at(type);
         return info && info->spawn_col == 1 && (type < 0x102 || type > 0x107) && type != 0x99;
     }
-    bool water_spot(int& out_x, int& out_y) {
-        if (index >= level.room_floors.size() || level.room_floors[index].empty()) return false;
-        const auto& floors = level.room_floors[index];
+    bool water_spot(std::size_t room_at, d2d::rules::Rng& rng, int& out_x, int& out_y) {
+        if (room_at >= level.room_floors.size() || level.room_floors[room_at].empty()) return false;
+        const auto& floors = level.room_floors[room_at];
         const int count = int(floors.size());
-        const int start = std::max(seed(count), 1), stop = start - 1;
+        const int start = std::max(rng(count), 1), stop = start - 1;
         static constexpr std::array<std::pair<int, int>, 4> kAround = { { { 0, -3 }, { 3, 0 }, { 0, 3 }, { -3, 0 } } };
         for (int at_index = start; at_index != stop; at_index = (at_index + 1) % count) {
             if (at_index >= count || !(floors[std::size_t(at_index)].material & 2)) continue;   // past the list (count 1): game.exe reads beyond it
@@ -415,8 +416,22 @@ struct ObjectRooms {
     }
     // FUN_005b2a00 round (x, y) out to radius (-1: the spot only), in the
     // area being populated when `bound` (its rect and its id), else the room.
+    // A water search round a point (a leader's party or pack, radius > 0)
+    // runs in the room holding that point (a water spot can be a room's
+    // shared edge row, the next room's), on that room's seed: stepped early
+    // when it hasn't populated yet; nothing when it isn't up.
     bool put(int type, int x, int y, int radius, bool bound, int& out_x, int& out_y) {
-        if (by_water(type)) return water_spot(out_x, out_y);
+        if (by_water(type)) {
+            std::size_t other = index;
+            for (std::size_t i = 0; radius > 0 && i < level.rooms.size(); ++i)
+                if (const auto& holder = level.rooms[i]; x >= holder.x * 5 && x < (holder.x + holder.width) * 5 && y >= holder.y * 5 && y < (holder.y + holder.height) * 5) other = i;
+            if (other == index || !level_state) return water_spot(index, seed, out_x, out_y);
+            if (other < level_state->up.size() && level_state->up[other]) return water_spot(other, level_state->room_seeds[other], out_x, out_y);
+            if (std::ranges::find(level_state->order, other) == level_state->order.end()) return false;
+            auto& early = level_state->early_seeds[other];
+            if (!early) early = d2d::rules::Rng{ other < level.room1_seeds.size() ? level.room1_seeds[other] : level.rooms[other].seed };
+            return water_spot(other, *early, out_x, out_y);
+        }
         const bool in_area = bound && area.w > 0;
         auto spawn_room = bounds(in_area);
         const bool ok = d2d::rules::monster_detail::place(spawn_room, x, y, radius, [&](int test_x, int test_y) { return (!in_area || area_id(test_x, test_y) == area.id) && fits(type, test_x, test_y); }, out_x, out_y);
@@ -436,7 +451,7 @@ struct ObjectRooms {
             for (int tries = 0; tries < 20; ++tries) {
                 const int x = seed(span_x) + left, y = seed(span_y) + top;
                 if (by_way(x, y) || (in_area && area_id(x, y) != area.id)) continue;
-                if (int water_x, water_y; water_spot(water_x, water_y)) { out_x = x; out_y = y; return true; }
+                if (int water_x, water_y; water_spot(index, seed, water_x, water_y)) { out_x = x; out_y = y; return true; }
             }
             return false;
         }
@@ -856,6 +871,7 @@ ObjectRooms& rooms_of(const GameData& game_data, Spawning& spawning, const Level
     pop.stamps.assign(std::size_t(pop.width) * std::size_t(pop.height), 0);
     state.group_rooms.assign(level.rooms.size(), {});
     state.room_seeds.assign(level.rooms.size(), {});
+    state.early_seeds.assign(level.rooms.size(), std::nullopt);
     int position = 0;
     std::uint32_t slots = 0, shared = 0;                                                           // 0x10 << slot with a Warp (FUN_0066af30); its Vis another slot's too
     for (std::size_t row = 0; row < builder.levels.size(); ++row)
@@ -933,6 +949,7 @@ void ObjectRooms::load(Spawning& spawning, std::size_t room_index) {
     room = { made.x * 5, made.y * 5, made.width * 5, made.height * 5 };
     out = &state.group_rooms[index];
     spawns = &state.spawns;
+    level_state = &state;
 }
 
 // in_room: the level's rooms up so far.
@@ -994,7 +1011,8 @@ d2d::rules::Rng room_objects(const GameData& game_data, Spawning& spawning, cons
     if (index >= level.rooms.size() || !game_data.builder) return {};
     auto& pop = rooms_of(game_data, spawning, level);
     pop.load(spawning, index);
-    pop.seed = d2d::rules::Rng{ index < level.room1_seeds.size() ? level.room1_seeds[index] : level.rooms[index].seed };
+    auto& early = spawning.levels[&level].early_seeds;
+    pop.seed = index < early.size() && early[index] ? *early[index] : d2d::rules::Rng{ index < level.room1_seeds.size() ? level.room1_seeds[index] : level.rooms[index].seed };
     // FUN_0054f060; on a step with its low 15 bits clear, a MonWndr level
     // rolls a wanderer (FUN_0054eff0: under 3 in 100).
     // ponytail: the wanderer itself (FUN_0054ef50) isn't made; 3 in 3.3M rooms.

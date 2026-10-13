@@ -240,6 +240,11 @@ static std::string dump_game(d2d::game::GameData& game, std::uint32_t seed, cons
         if (!level && !camp) continue;
         if (level && spawning.levels.contains(&game.town))   // next door to the camp made already (install_level's link)
             level->nearby.push_back({ &game.town, game.town.world_x - level->world_x, game.town.world_y - level->world_y });
+        for (const auto& other : built)                       // and to the act's levels made already, both ways
+            if (level && d2d::rules::level_act(other->id) == d2d::rules::level_act(lid)) {
+                level->nearby.push_back({ other.get(), other->world_x - level->world_x, other->world_y - level->world_y });
+                other->nearby.push_back({ level.get(), level->world_x - other->world_x, level->world_y - other->world_y });
+            }
         auto& made = camp ? game.town : *level;
         const auto base = camp ? std::size_t(0) : made.npcs.size();
         out << "level " << lid << '\n';

@@ -810,7 +810,10 @@ the quests, the thinks.
    (FUN_0067f190 walls, inner presets and scatter; FUN_0067f3b0);
    `diff_drlg.py 79..83 tiles` 20/20 each, units 5/5, monsters 5/5.
    Travincal's compelling orb (InitFn 60) made as game.exe's (monsters.md
-   "Kurast and Travincal"); all five build in play.
+   "Kurast and Travincal"); all five build in play. The whole act as one
+   game: `LEVELS=75,..,83 diff_drlg.py 1-20 75 game` 20/20 (floor lists and
+   areas follow the rooms' order; water packs search the room they stand
+   in; tiles shared with the level next door).
 5. The dungeons, sewers, temples and the Durance (84–102).
 
 ## Checkpoint 2026-10-13: Act 3's docks and jungle done

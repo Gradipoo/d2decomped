@@ -32,7 +32,7 @@ import drops as drops_oracle
 import monsters
 
 LEVELS = "2,8,4,9"                                          # game: Blood Moor, Den of Evil, Stony Field, Cave 1 (none touching)
-TOWNS = {1, 40, 75, 103, 109}                               # a camp room's line leaves out its seeds (d2d doesn't keep them)
+TOWNS = set(drlg.TOWNS)                                       # a camp room's line leaves out its seeds (d2d doesn't keep them)
 CONTAINERS = {1, 3, 4, 5, 14, 26}                           # OperateFn: casket, urn, chest, barrel, corpse / crate, bookshelf
 
 

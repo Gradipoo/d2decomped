@@ -248,6 +248,46 @@ struct World {
     std::array<bool, 15> closed_at_join{};  // Acts 1 and 2's quests the first join closed (the game's flag 15, FUN_00546270)
     // The quest flags of the difficulty played.
     d2d::rules::QuestBits& quests();
+    // Each act's quests at the World's quest hooks (world_quests_actN.cpp),
+    // called act by act; a new act adds its file and a call at each hook.
+    // The quest log's states (World::view).
+    void act1_log(std::array<std::uint8_t, 15>& log, const d2d::rules::QuestBits& bits) const;
+    void act2_log(std::array<std::uint8_t, 15>& log, const d2d::rules::QuestBits& bits) const;
+    void act3_log(std::array<std::uint8_t, 15>& log, const d2d::rules::QuestBits& bits) const;
+    // A new game's join (FUN_00546270): each record's join, the chains.
+    void act1_join();
+    void act2_join();
+    void act3_join();
+    // The player changed level, from `from`.
+    void act1_enter(const Level& from);
+    void act2_enter(const Level& from);
+    void act3_enter(const Level& from);
+    // The NPC's quest messages, in talk order.
+    void act1_talk(std::vector<d2d::rules::QuestMsg>& out, int hc_idx);
+    void act2_talk(std::vector<d2d::rules::QuestMsg>& out, int hc_idx, bool fresh);
+    void act3_talk(std::vector<d2d::rules::QuestMsg>& out, int hc_idx);
+    // The NPC's talk window closed.
+    void act1_talk_closed(int hc_idx);
+    void act2_talk_closed(int hc_idx);
+    void act3_talk_closed(int hc_idx);
+    // A message heard from the NPC: its rewards.
+    void act1_said(int hc_idx, int message_string);
+    void act2_said(int hc_idx, int message_string);
+    void act3_said(int hc_idx, int message_string);
+    // A frame of the day clock (40 ms).
+    void act1_tick();
+    void act2_tick();
+    // The NPC's "!" over its head.
+    bool act1_alert(int hc_idx);
+    bool act2_alert(int hc_idx);
+    bool act3_alert(int hc_idx);
+    // A monster's death (its quest death hooks).
+    void act1_kill(const Fight::Kill& kill, std::uint32_t now_ms);
+    void act2_kill(const Fight::Kill& kill, std::uint32_t now_ms);
+    void act3_kill(const Fight::Kill& kill, std::uint32_t now_ms);
+    // A World tick, after the kills.
+    void act2_update();
+    void act3_update(std::uint32_t now_ms);
     // Every item of the character has a unit id (new ones get theirs).
     void item_ids();
 

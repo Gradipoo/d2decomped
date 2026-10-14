@@ -1001,3 +1001,14 @@ stats and level monster pools come from the tables. Still gated:
 outdoor dispatch in `build_outdoor` (Act 3's jungle its own generator).
 Act 4 work: its layout (not traced yet), its levels in `kBuiltLevels`, the town,
 its quests and Diablo.
+
+Each act's quests now sit in their own file, `world_quests_actN.cpp`, at
+ten World hooks (`actN_log`, `_join`, `_enter`, `_talk`, `_talk_closed`,
+`_said`, `_tick`, `_alert`, `_kill`, `_update`; world.hpp lists them). An
+act needs only the hooks it uses; Act 4 adds `world_quests_act4.cpp` and a
+call at each. Within an act the order is as before; across acts it now
+runs act by act (each quest reads and writes its own records). Still in
+world.cpp: the quest objects' operate hooks (the `operate_fn` cases) and
+a few level-arrival bits (Tyrael gone, camp Cain, the cairn stones).
+The tools take every act too: `ACT=1..5 tools/emu/sweep.sh` (ranges
+from `drlg.TOWNS`).

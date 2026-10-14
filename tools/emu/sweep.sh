@@ -1,6 +1,6 @@
 #!/bin/sh
 # SPDX-License-Identifier: GPL-3.0-or-later
-# Every level of an act ($ACT: 1, the default, 2 or 3; towns left out) against
+# Every level of an act ($ACT: 1, the default, to 5; towns left out) against
 # game.exe, a job per core but two ($JOBS): sweep.sh [seeds] [kind...]
 # e.g. ACT=2 sweep.sh 1-50 monsters objgroups   (kinds: monsters, units, tiles, seeds, objgroups, drops, collision)
 # Our side runs from a Release build (build-release, configured and brought
@@ -14,7 +14,9 @@ cmake --build "$root/build-release" --target drlg-dump mpq-cat >/dev/null || { e
 export D2_BUILD=build-release
 uv sync -q || exit 1   # once, before the jobs: parallel first-time syncs race
 seeds=${1:-1-50}; shift; kinds=${*:-monsters objgroups}
-case ${ACT:-1} in 1) last=39 first=2 ;; 2) last=74 first=41 ;; 3) last=102 first=76 ;; *) echo "ACT is 1, 2 or 3" >&2; exit 1 ;; esac
+act=${ACT:-1}; case $act in [1-5]) ;; *) echo "ACT is 1 to 5" >&2; exit 1 ;; esac
+towns="1 40 75 103 109 137"   # each act's town (drlg.TOWNS), then one past Act 5's last level
+first=$(( $(echo $towns | cut -d' ' -f"$act") + 1 )); last=$(( $(echo $towns | cut -d' ' -f$((act + 1))) - 1 ))
 total=$(( $(echo $kinds | wc -w) * (last - first + 1) )); count=$(echo "$seeds" | awk -F- '{print $2 - $1 + 1}')
 start=$(date +%s)
 # A job per level, all kinds in it: game.exe loads once per level; the

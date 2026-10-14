@@ -1062,11 +1062,21 @@ void relevel(Level& level, const std::vector<std::size_t>& came_up, const GameDa
     if (outside.empty() && up_count == level.laid_up && (order == level.laid || (level.laid.empty() && std::ranges::is_sorted(order) && order.size() == count))) return;
     const auto start_ms = d2d::log::ms();
     std::vector<std::string> notes;
-    for (const auto& room : lay_tiles(level, level.rooms, order, notes, std::move(outside), up_count))
+    const auto built = lay_tiles(level, level.rooms, order, notes, std::move(outside), up_count);
+    for (const auto& room : built)
         if (room.seed) {
             level.room1_seeds[std::size_t(room.seed - level.rooms.data())] = room.room1_seed;
             level.room_floors[std::size_t(room.seed - level.rooms.data())] = floors_of(room);   // FUN_005b2700's water spots
             level.room_areas[std::size_t(room.seed - level.rooms.data())] = areas_of(room);     // a Logicals room's walls take the near rooms up
+        }
+    // The units again: a door on a shared edge (FUN_0066d9e0) is the room's
+    // that came up to it first, and its rand(3) that room's seed.
+    level.units.clear();
+    level.unit_rooms.clear();
+    for (const auto& room : built)
+        for (const auto& unit : room.units) {
+            level.units.push_back({ unit.type, unit.id, unit.mode, unit.x + room.x * 5, unit.y + room.y * 5, unit.flags, unit.path, unit.actions });
+            level.unit_rooms.push_back(room.seed ? int(room.seed - level.rooms.data()) : -1);
         }
     finish_level(level);
     level.laid = std::move(order);

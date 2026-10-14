@@ -442,7 +442,8 @@ bool missile_fly(const Level& level, Missile& missile, Reach&& reach) {
 // frame (FUN_005ae1f0 -> FUN_00641cb0).
 inline bool missile_struck(const Level& level, const Missile& missile, float x, float y, int size) {
     const int foe_x = level.world_x * 5 + int(std::floor(x * 5)), foe_y = level.world_y * 5 + int(std::floor(y * 5));
-    return std::ranges::any_of(missile.flight.crossed, [&](const auto& spot) { return d2d::rules::missile_touches(spot.first, spot.second, foe_x, foe_y, size); });
+    const int missile_size = missile.info ? missile.info->size : 1;
+    return std::ranges::any_of(missile.flight.crossed, [&](const auto& spot) { return d2d::rules::missile_touches(spot.first, spot.second, foe_x, foe_y, size, missile_size); });
 }
 
 // Direction 0..31 in D2's DCC order for a world step, like direction16:
@@ -572,7 +573,7 @@ bool monster_step(const Level& level, Monster& monster, float target_x, float ta
 // aidel ticks between attacks;
 // otherwise wander near home (Levels.txt MonWndr): stand 2-5 s, walk to a
 // random spot within 3 cells.
-// ponytail: later acts only (every Act 1 MonStats AI is traced): an AI
+// ponytail: acts 4-5 and Coldworm (SandMaggotQueen) only, every other acts 1-3 MonStats AI is traced: an AI
 // whose think isn't traced (rules::traced_ai) gets one melee think (MonStats aip1..8 unread); distances and timings by eye;
 // chasing goes straight at the player, sliding to a stop at walls.
 // A unique's attack starting (the mode-change hook, event 0): Spectral Hit

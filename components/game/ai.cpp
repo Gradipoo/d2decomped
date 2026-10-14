@@ -512,7 +512,7 @@ void charge_swing(const GameData& game_data, Monster& monster, const Foe& foe, i
 // subtiles to the side of the target; a back-off sets off when its end
 // and first step are open; no teleporting mod.
 bool think(const GameData& game_data, const Level& level, Monster& monster, std::span<Foe> foes, d2d::rules::Rng& rng, std::uint32_t now_ms,
-           float walk, float run, const Crowd& crowd, std::span<Monster> pack, AreaSeen* seen, const OpenDoor* open_door) {
+           float walk, float run, const Crowd& crowd, std::span<Monster> pack, AreaSeen* seen, const OpenDoor* open_door, std::vector<Monster>* born) {
     auto& unit = monster.unit;
     const auto& type_info = game_data.monsters.types[std::size_t(monster.type)];
     const auto& per_difficulty = type_info.diff[std::size_t(monster.difficulty)];
@@ -562,8 +562,12 @@ bool think(const GameData& game_data, const Level& level, Monster& monster, std:
     // ponytail: the word read now, not a moving path's cached +0x54.
     if (type_info.open_doors && on_door(level, unit) && open_door && *open_door && (*open_door)(monster, now_ms)) { idle(5); return true; }
     const int x = subtile(unit.x), y = subtile(unit.y);
-    const auto [target, best, nearest] = search_target(game_data, level, monster, foes, seen);
+    auto [target, best, nearest] = search_target(game_data, level, monster, foes, seen);
     monster.aware = target != nullptr;
+    // Search type 0 with a think (Coldworm's, MonAI 66): no target looked for,
+    // the think runs anyway; it reads none, so any live foe stands in.
+    if (!target && type_info.ai_name == "SandMaggotQueen")
+        for (auto& foe : foes) if (foe.alive) { target = &foe; break; }
     auto walk_to = [&](int off_x, int off_y, bool running) {       // to a spot, subtiles off
         unit.goal_x = (float(x + off_x) + 0.5f) / 5; unit.goal_y = (float(y + off_y) + 0.5f) / 5;
         set_off(running, nullptr);
@@ -910,6 +914,25 @@ bool think(const GameData& game_data, const Level& level, Monster& monster, std:
             return true;
         case MonAct::move_to: walk_to(act.x - x, act.y - y, false); return true;   // FUN_005de490: to the point
         case MonAct::gone: monster.gone = true; return true;       // FUN_005ddfc0: Mephisto's hydras at their end
+        case MonAct::spawn:                                        // Coldworm's (FUN_005f9cf0)
+            if (act.n == 0) { set_mode(game_data, monster, "S1", now_ms); return true; }   // FUN_005de440: mode 8 where she stands
+            // FUN_0063efa0 (BaseId 0x11c): her MonStats spawn 8 subtiles east, in
+            // S1; FUN_005b2f20 within 2 of it (flags 0x42), flag 0x4000000; counted if made.
+            // ponytail: the nearest free spot, given up past 2 subtiles, for FUN_005b2f20's
+            // own search; the young's flag unread.
+            if (const auto young = game_data.monsters.by_id.find(type_info.spawn); born && young != game_data.monsters.by_id.end()) {
+                const float want_x = (float(x + 8) + 0.5f) / 5, want_y = (float(y) + 0.5f) / 5;
+                const auto [free_x, free_y] = level.nearest_free(want_x, want_y);
+                if (std::hypot(free_x - want_x, free_y - want_y) <= 0.4f) {
+                    auto laid = make_monster(game_data, young->second, free_x, free_y, rng, monster.difficulty);
+                    laid.aware = true;
+                    laid.seed = d2d::rules::Rng{ rng.next() };
+                    set_mode(game_data, laid, "S1", now_ms);
+                    born->push_back(std::move(laid));
+                    ++monster.ai_state;
+                }
+            }
+            return true;
         case MonAct::walk: case MonAct::approach: case MonAct::run:  // FUN_005deb60 at the target
             if (at_unit) { walk_to(subtile(at_unit->unit.x) - x, subtile(at_unit->unit.y) - y, act.act == MonAct::run); return true; }
             if (set_off(act.act == MonAct::run, target)) {
@@ -1470,7 +1493,7 @@ bool monster_update(const GameData& game_data, const Level& level, Monster& mons
     const int pace = monster.move_pct - (now_ms < monster.laid_until ? 100 : 0);
     const float walk = cells_per_sec(float(type_info.velocity)) * elapsed * chill * float(std::max(100 + monster.speed_pct + monster.boss_speed + pace, 10)) / 100;
     const float run = cells_per_sec(float(type_info.run)) * elapsed * chill * float(std::max(100 + monster.speed_pct + monster.boss_speed + pace, 10)) / 100;
-    if (think(game_data, level, monster, foes, rng, now_ms, walk, run, crowd, pack, seen, open_door)) return false;
+    if (think(game_data, level, monster, foes, rng, now_ms, walk, run, crowd, pack, seen, open_door, born)) return false;
     // AI Idle (MonAI row 1: the cow, chickens, rats, birds, the doors and
     // barricades; search type 0, no target looked for): FUN_005b0cd0 stands
     // 200 frames when it's in a room (FUN_00620bb0), and that's all.
@@ -1485,7 +1508,7 @@ bool monster_update(const GameData& game_data, const Level& level, Monster& mons
     // at its thinks: when next_act is due and no chase is under way (a chase
     // runs as think()'s does, move_frame). With none it thinks again aidel
     // on (FUN_005a73e0).
-    // ponytail: later acts only (every Act 1 fighting AI is traced): the
+    // ponytail: acts 4-5 and Coldworm (SandMaggotQueen) only, every other acts 1-3 AI is traced: the
     // foe it found is the frame's foe from the next frame on.
     const bool chasing = monster.mode == "WL" && !monster.steps.empty() && monster.aware;
     if (now_ms >= monster.next_act && !chasing) {
@@ -1531,8 +1554,8 @@ bool monster_update(const GameData& game_data, const Level& level, Monster& mons
         }
         // Shooters (MissA2) shoot from up to 7 cells: each think (aidel)
         // the aip2 chance to fire, else close in.
-        // ponytail: aip2 read as the shoot chance; for AIs not traced (later
-        // acts only).
+        // ponytail: aip2 read as the shoot chance; for AIs not traced (acts 4-5,
+        // Coldworm).
         if (miss != game_data.missiles.end() && dist < 7 && now_ms >= monster.next_act) {
             monster.next_act = now_ms + std::uint32_t(type_info.diff[std::size_t(monster.difficulty)].aidel) * 40;
             if (rng(100) < std::max(type_info.diff[std::size_t(monster.difficulty)].aip[1], 1)) {

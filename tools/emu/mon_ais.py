@@ -49,13 +49,15 @@ AIS = {
     "FrogDemon": 0x5f8260, "Tentacle": 0x5f8f80, "TentacleHead": 0x5f9270, "FetishShaman": 0x5f9a80, "HighPriest": 0x5e0490,
     "Hydra": 0x5e9e60, "FetishBlowgun": 0x5e1250, "Mephisto": 0x5f78b0,
     "FrogDemonOther": 0x5f81d0, "FetishShamanOther": 0x5f9950,
+    # Coldworm's (MonAI 66), last: the Act 3 scene's fields it ignores.
+    "SandMaggotQueen": 0x5f9cf0,
 }
 CURSE_AIS = ("DimVision", "Terror", "BatDemonOther", "SandMaggotOther")
 ACT3_AIS = tuple(list(AIS)[list(AIS).index("Mosquito"):])
 ORDER = list(AIS)
 # Think acts (rules::MonAct) by name; units (rules::ThinkUnit).
 ACTS = ["idle", "a1", "a2", "s2", "skill", "walk", "run", "approach", "keep", "circle", "wander", "none", "die", "around",
-        "home", "point", "untraced", "s3", "s4", "seq", "fly", "gone", "s1", "sc", "mode_at", "move_to"]
+        "home", "point", "untraced", "s3", "s4", "seq", "fly", "gone", "s1", "sc", "mode_at", "move_to", "spawn"]
 UNIT = {"foe": 0, None: 1, "foe2": 2, "kin": 3, "aid": 4, "mon": 5}
 MODE_ACT = {4: "a1", 5: "a2", 7: "sc", 8: "s1", 9: "s2", 10: "s3", 11: "s4"}
 
@@ -375,7 +377,16 @@ def install(e):
         if cur["s"]["ai"] == "ZakarumZealot" and e.mu.reg_read(UC_X86_REG_EDX) == 0:
             return cur["units"]["foe2"] if cur["s"]["foe_kind"] == "pet" and cur["s"]["owner"] else 0   # id -1 (no owner) finds none
         return cur["units"]["kin"] if cur["s"].get("cmd_unit") else 0
-    e.hook(0x552f60, by_id, 1)                          # it dies (the egg hatched)                                   # Radament's: FUN_00599420 (the quest's)
+    e.hook(0x552f60, by_id, 1)
+    # Coldworm's young (FUN_005f9cf0): FUN_0063efa0(unit, &class, &x, &y, &mode, 0, fn) its spawn's
+    # class, spot and mode; FUN_00463740 a room there; FUN_005b2f20 makes it (here: not made,
+    # so the count the made one adds, ai.cpp's, stays out of the comparison).
+    def spawn_spot(e):
+        for k, v in enumerate((68, 108, 100, 8)): e.w32(e.arg(1 + k), v)
+        return 0
+    e.hook(0x63efa0, spawn_spot, 7)
+    e.hook(0x463740, lambda e: 1, 0)
+    e.hook(0x5b2f20, lambda e: out("spawn"), 6)                          # it dies (the egg hatched)                                   # Radament's: FUN_00599420 (the quest's)
 
 
 def run_game(e, s, addr, rng_moves):
@@ -453,7 +464,9 @@ def outcome(s, out):
         elif k == "move_to": to("move_to", item[3], item[1], item[2], None)
         elif k == "word": effects.append(("set_word", item[1] * 4 + item[2], item[3]))
         elif k == "keep": to("keep", item[3], item[4], item[2], item[1])
+        elif k == "fly" and s["ai"] == "SandMaggotQueen": to("spawn", 0)   # mode 8 where she stands
         elif k == "fly": to("fly", item[3], item[1], item[2], None)
+        elif k == "spawn": to("spawn", 1)
         elif k == "aura": effects.append(("aura", s["skills"].index(item[1])))
         else: effects.append(item)
     if any(item[0] == "die" for item in out): act[:] = ["die", 0, 0, 0, 0, 0, 0]   # dead: the stand after it is moot

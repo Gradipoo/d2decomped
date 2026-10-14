@@ -151,7 +151,12 @@ once (FUN_00555230 → FUN_00552df0): the loop's start moves with them.
 4. FUN_0054df80 → FUN_0054dc40: up to 20 random spots in the room rect
    shrunk one subtile at the top left (room seed), skipping any within
    WarpDist² (Levels.txt, 2025) of the level's entrances (FUN_0054db50),
-   testing placement (FUN_005b2a00 with flag 1 = test only).
+   testing placement (FUN_005b2a00 with flag 1 = test only). The entrances
+   (FUN_00642480): rooms with flags & 0x30000 or a warp slot that placed a
+   warp, then the level's type 0xb tile: the waypoint's, or a Levels
+   Position level's own tile (the Canyon of the Magi, WarpDist 3800; not
+   its waypoint's too). d2d stands the waypoint's room in for the 0x30000
+   rooms; every acts 1–3 level matches (`sweep.sh ... monsters`).
 5. The leader at that spot; FUN_005b2830 adds PartyMin..PartyMax minions
    (minion1/minion2 alternating, radius 4) — how Fallen come in packs;
    then `rand(max-min+1) + min - 1` more of the type (radius 3).
@@ -175,6 +180,8 @@ spawnCol → mask 0x3c01 / 0x1c0 / 0x3f11 / 0) is clear.
   type picked again (FUN_005bde80 unique flag: nightmare / hell from the
   region's rarity list; normal from Levels.txt umon1..), placed like a
   group's leader (FUN_005a09e0 → FUN_0054dc40), counted (FUN_005a0320).
+  FUN_005a0320 counts a unit as it first sets flag 8, so a superunique that
+  is also an act boss (FUN_005b1cf0: the Smith, Coldworm) counts once.
 - **Champion or unique** (FUN_005a0760, the monster's own seed at unit
   +0x20): `rand(100) <` MonUMod row 0's `constants` (20) → champion (flags
   |= 4) with one champion mod (FUN_005a0500: MonUMod rows with `champion`

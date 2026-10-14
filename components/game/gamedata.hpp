@@ -626,6 +626,7 @@ struct GameData {
                          bool next_hit = false; int next_delay = 0;   // NextHit: it strikes a unit again NextDelay frames on
                          std::string sub, hit_sub;
                          int light = 0;   // Light: its light radius, subtiles
+                         int size = 0;    // Size: its unit collision shape (rules::missile_touches; 0 strikes none)
                          int trans = 0;   // Trans (record +0x18d): 1 additive, 2 multiply (FUN_004720xx: draw modes 3 / 4)
                        };
     std::unordered_map<std::string, MissileInfo> missiles;
@@ -826,6 +827,7 @@ struct Spawning {
     std::vector<d2d::rules::Region> regions;               // by Levels.txt Id
     std::unordered_map<const Level*, LevelState> levels;
     std::bitset<128> superuniques;                         // spawned this game (game +0x1d30)
+    int tomb_symbols = 0;                                  // the Summoner's symbols handed out (FUN_0059d720: record 13 +0x3a)
     // The game's quest words (World::game_bits, a d2d::rules::QuestBits), as
     // the town markers' inits read them (FUN_00544760).
     std::array<std::uint8_t, 96> game_quests{};

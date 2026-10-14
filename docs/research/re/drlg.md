@@ -885,7 +885,8 @@ warp's seq, sequence < 4) on it; a visible warp wall (FUN_0066e260) puts
 itself on it. Either cuts the chain it was on, so a later room's
 FUN_0066e4c0 misses the tiles past it and adds its own copies (L23).
 
-**Doors** (FUN_0066d9e0): an orientation 8 / 9 wall makes a door unit —
+**Doors** (FUN_0066d9e0; d2d's `relevel` makes the units again in the
+rooms' order, so a shared edge's door is the first room's): an orientation 8 / 9 wall makes a door unit —
 hidden (FUN_0066e9b0, no tile), newly added (FUN_0066dc50 ->
 FUN_0066db20), or shared with a neighbour after the merge (FUN_0066e740,
 also when the neighbour's tile has flags & 1). FUN_0066d960 finds the

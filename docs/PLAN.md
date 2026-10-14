@@ -858,18 +858,38 @@ Fast checks, one act at a time or all three side by side:
 - `ACT=1|2|3 tools/emu/sweep.sh <seeds> <kinds>`: every level of the act
   against game.exe (tiles, units, monsters: ~15 s for 2 seeds).
 
-What they found, none blocking play:
+Planned: a play bot (`tests/play_d2d.py`), a headless player that plays
+by clicks alone (`cmd move` / `cmd skill` / `cmd interact`, routes on
+`debug grid 5`, no `debug goto` / `kill`): spends stat and skill points,
+buys potions, goes back to town to heal, and plays an act's quests in
+order. First a gap finder (what breaks in real play), later speed runs
+(how fast an act goes, run against run). A scratch probe (2026-10-14) got
+from the camp through the Blood Moor and over the whole Den of Evil, then
+died at level 3 to Corpsefire with no points spent: no d2d bug on the way.
 
-- Act 2's monster population was never diffed (only rooms, tiles,
-  units): 31 of 34 levels match on 10 seeds; the Canyon of the Magi (46,
-  2/10), Maggot Lair 3 (64, 0/10: the packs' spots) and Duriel's Lair (73,
-  0/10: game.exe populates Tyrael, d2d Duriel) don't.
-- Coldworm the Burrower (SandMaggotQueen) is the one acts 1–3 MonStats AI
-  not traced (Andariel's has its own path).
-- Size 2 missiles hit as size 1 (the unravelers', Sand Leapers', Zakarum
-  priests', the wisps'; missiles.hpp).
-- Travincal's `objgroups` diff crashed in the emulator (a quest flag read);
-  now quest-stubbed as `monsters` was: 3/3.
+What they found, all fixed on the same branch:
+
+- Act 2's monster population had never been diffed (only rooms, tiles,
+  units). The Canyon of the Magi (46): a Position level's entrances take
+  its own type 0xb tile, not its waypoint's too. Maggot Lair 3 (64):
+  Coldworm, a superunique and an act boss, was counted as two uniques.
+  Duriel's Lair (73): the oracle left out Flavie only, d2d every MonStats
+  npc (Tyrael); now both do.
+- The whole-game diff (`diff_drlg.py game`) on every level: the tombs
+  (55–60, 66–72) took their doors from the first list-order build;
+  `relevel` makes the units again in the rooms' order. The Arcane
+  Sanctuary's six tomb symbols (DS1 582, FUN_0059d720) all came out 307;
+  now the six that aren't the true tomb's. The Jail's bookshelves: the
+  oracle read the book's code off its own stand-in, not the unit.
+- Coldworm the Burrower (SandMaggotQueen, MonAI 66, search type 0) is
+  traced: S1 where she stands, a sand maggot rising 8 subtiles east, a
+  rest, up to aip1 (`mon_ais.py`, 50 000 runs). Every acts 1–3 MonStats
+  AI is now game.exe's.
+- Missiles of Size 2 and 3 strike by FUN_00641cb0's full table (the
+  unravelers', Sand Leapers', Zakarum priests', the wisps'); a blank Size
+  strikes no unit.
+- Travincal's `objgroups` diff crashed in the emulator (a quest flag
+  read); now quest-stubbed as `monsters` was.
 
 ## Checkpoint 2026-10-14: Act 3 done, what's still open
 

@@ -8,7 +8,9 @@
 // against game.exe: tools/emu objgroups.py, drlg-dump <seed> <level>
 // objgroups; levels in turn in one game: drlg-dump ... game.
 #include "gamedata.hpp"
+#include <drlg.hpp>
 #include <level_ids.hpp>
+#include <outdoor_data.hpp>
 #include <quests.hpp>
 #include <units.hpp>
 #include <monsters.hpp>
@@ -63,6 +65,7 @@ struct ObjectRooms {
     std::array<std::uint8_t, 96> game_quests{};         // Spawning's
     bool orb_smashed = false;                            // Spawning's
     std::bitset<128> superuniques;                      // made (game +0x1d30)
+    int tomb_symbols = 0;                               // Spawning's
     d2d::rules::Region region;                          // the level's monster region: their looks
     Level::GroupRoom* out = nullptr;
     // FUN_0054db50: where players come in (as populate()'s near_way), within Levels WarpDist.
@@ -477,9 +480,9 @@ struct ObjectRooms {
         stamp_shape(at_x, at_y, shape, 0x100);
         stamp_shape(at_x, at_y, shape - 1, 0x1000);
         // FUN_005b1cf0: a boss's mods, each FUN_005a4850(mod, 1); FUN_005a0320
-        // counts a unique only as it first sets flag 8, so one a boss.
-        // The Smith's a superunique, counted as one already.
-        if (info) pop.uniques += info->base != 0x192 && d2d::rules::act_boss(type, info->base) ? 1 : 0;
+        // counts a unique only as it first sets flag 8, so one a boss (a
+        // superunique one too: the Smith, Coldworm; monster() leaves those).
+        if (info) pop.uniques += d2d::rules::act_boss(type, info->base) ? 1 : 0;
         const auto value = game.next();
         d2d::rules::Rng own{ value };
         const std::vector<d2d::rules::Components>* sets = nullptr;
@@ -574,7 +577,7 @@ struct ObjectRooms {
         auto own = made(row, spot_x, spot_y);
         if (sup) {
             superuniques.set(std::size_t(superunique));
-            ++pop.uniques;                                              // FUN_005a0320 as a boss
+            if (!d2d::rules::act_boss(row, types[std::size_t(row)].base)) ++pop.uniques;   // FUN_005a0320 as a boss, unless made() did
             std::vector<int> mods;
             for (const int id : sup->mods) if (id != 24) mods.push_back(id);
             mods.push_back(22);                                         // questcomplete
@@ -697,12 +700,22 @@ struct ObjectRooms {
 
     // A preset past objects.txt (FUN_0054f490's table at 0x731d28): 574-579 a
     // shrine (136), 580 / 581 a random chest (FUN_0054f370 a sparkling one,
-    // FUN_0054f180), 582 a quest's (FUN_0059d830).
+    // FUN_0054f180), 582 a quest's (FUN_0059d830): the Summoner's six tomb
+    // symbols (FUN_0059d720), the table at 0x738fac less the true tomb's, in
+    // turn, round again after six.
     // ponytail: 574-579's kind (their range, on the unit's own seed) and
     // 582's quest check aren't taken.
     int special(int id) {
         if (id < 580) return 136;
-        if (id == 582) return 0x133;
+        if (id == 582) {
+            static constexpr std::array<int, 7> kSymbols{ 313, 312, 308, 310, 311, 309, 307 };   // 0x738fac, by tomb 66..72
+            auto act = d2d::drlg::act_seed(game_data.map_seed);                                // FUN_0061aeb0: act +0x94
+            const int true_tomb = d2d::drlg::roll_act2_tombs(act).boss - d2d::rules::level_ids::kFirstTalRashasTomb;
+            std::vector<int> shown;
+            for (int tomb = 0; tomb < 7; ++tomb) if (tomb != true_tomb) shown.push_back(kSymbols[std::size_t(tomb)]);
+            if (shown.size() != 6) return 0x133;                                                 // no true tomb: FUN_0059d720's fallback
+            return shown[std::size_t(tomb_symbols++ % 6)];
+        }
         const int act = level.id < d2d::rules::level_ids::kLutGholein ? 0 : level.id < d2d::rules::level_ids::kKurastDocks ? 1 : level.id < d2d::rules::level_ids::kPandemoniumFortress ? 2 : 3;   // FUN_006427f0
         const auto low = rgn.next();
         int pick;
@@ -909,7 +922,7 @@ ObjectRooms& rooms_of(const GameData& game_data, Spawning& spawning, const Level
     for (const auto& unit : level.units)
         if (unit.type == d2d::rules::unit_type::kObject && (pop.obj(unit.id, "SubClass") & d2d::rules::object_ids::kSubclassWaypoint)) {                            // a waypoint: its room and its tile
             centre(unit.x / 5, unit.y / 5);
-            pop.ways.push_back({ unit.x / 5 * 5, unit.y / 5 * 5 });
+            if (!position) pop.ways.push_back({ unit.x / 5 * 5, unit.y / 5 * 5 });   // the type 0xb tile FUN_0054db50 tests: a Position level's is its own, below
         }
     // FUN_0066b2b0 (type 0xb): with neither a waypoint room nor a warp room,
     // the start spot is the centre of the room holding the level's middle less 2.
@@ -936,6 +949,7 @@ void ObjectRooms::load(Spawning& spawning, std::size_t room_index) {
     rgn = spawning.objects;
     game = spawning.game;
     superuniques = spawning.superuniques;
+    tomb_symbols = spawning.tomb_symbols;
     game_quests = spawning.game_quests;
     orb_smashed = spawning.orb_smashed;
     region = std::size_t(level.id) < spawning.regions.size() ? spawning.regions[std::size_t(level.id)] : d2d::rules::Region{};
@@ -971,6 +985,7 @@ void ObjectRooms::save(Spawning& spawning) const {
     spawning.objects = rgn;
     spawning.game = game;
     spawning.superuniques = superuniques;
+    spawning.tomb_symbols = tomb_symbols;
     if (std::size_t(level.id) < spawning.regions.size()) spawning.regions[std::size_t(level.id)] = region;
 }
 

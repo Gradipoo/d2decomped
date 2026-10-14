@@ -1076,7 +1076,7 @@ inline std::pair<int, int> andariel_spray_aim(int dir64, int frame) {
 // A think's rand(100)s are one step each of the monster's seed (+0x20),
 // drawn here in game.exe's order; a skill test with no skill (-1) draws
 // nothing.
-enum class MonAct : std::uint8_t { idle, a1, a2, s2, skill, walk, run, approach, keep, circle, wander, none, die, around, home, point, untraced, s3, s4, seq, fly, gone, s1, sc, mode_at, move_to };
+enum class MonAct : std::uint8_t { idle, a1, a2, s2, skill, walk, run, approach, keep, circle, wander, none, die, around, home, point, untraced, s3, s4, seq, fly, gone, s1, sc, mode_at, move_to, spawn };
 // Whom an act is at: the think's target, no unit, the second target
 // (FUN_005ddc30), the search's find (FUN_005dd0b0: kin, a corpse), the hurt
 // one it heals, itself.
@@ -1201,12 +1201,12 @@ inline int monster_skill_level(int sk_lvl, int difficulty) {
 }
 
 inline bool traced_ai(std::string_view ai_name) {
-    static constexpr std::array<std::string_view, 55> kTraced{ "Skeleton", "Zombie", "Bighead", "BloodHawk", "Brute", "Wraith", "Goatman",
+    static constexpr std::array<std::string_view, 56> kTraced{ "Skeleton", "Zombie", "Bighead", "BloodHawk", "Brute", "Wraith", "Goatman",
                                                                "CorruptRogue", "QuillRat", "CorruptArcher", "CorruptLancer", "SkeletonBow", "Fallen", "FallenShaman", "FoulCrowNest",
                                                                "BloodRaven", "SkeletonMage", "GargoyleTrap", "Arach", "Vampire", "Fetish", "Griswold", "Smith",
                                                                "Duriel", "Swarm", "PinHead", "Mummy", "SandLeaper", "ClawViper", "PantherWoman", "PantherJavelin",
                                                                "Scarab", "BatDemon", "Baboon", "SandRaider", "GreaterMummy", "SandMaggot", "Summoner", "Vulture",
-                                                               "MaggotEgg", "MaggotLarva", "DarkWanderer",
+                                                               "MaggotEgg", "MaggotLarva", "DarkWanderer", "SandMaggotQueen",
                                                                "Mosquito", "ThornHulk", "ZakarumZealot", "ZakarumPriest", "FrogDemon", "Tentacle", "TentacleHead",
                                                                "FetishShaman", "HighPriest", "Hydra", "FetishBlowgun", "Mephisto", "WillOWisp" };
     return std::ranges::contains(kTraced, ai_name);
@@ -2055,6 +2055,21 @@ Think mon_think(std::string_view ai_name, const ThinkIn& input, Rng& rng, Away&&
         const Think out = rng(100) < aip[3] ? think_circle(rng, 6) : keep(ThinkUnit::target, 2, 9, 0);
         aloft = 0;
         return wait(out, 12);
+    }
+    // SandMaggotQueen (66, FUN_005f9cf0; Coldworm): rested (state3) she
+    // stands aip2 x 25; under aip1 young made (state) she plays S1 where she
+    // stands (FUN_005de440, mode 8 at her own spot; state2 1), then her young
+    // comes up (spawn 1: ai.cpp, counted there), each a wait of aip2 and a
+    // rest after. Done, she does nothing.
+    if (ai_name == "SandMaggotQueen") {
+        if (*input.state3) { *input.state3 = 0; return { MonAct::idle, aip[1] * 25 }; }
+        if (*input.state2 == 0 && *input.state >= aip[0]) return { MonAct::none };
+        const int phase = *input.state2 != 0;
+        Think out{ MonAct::spawn, phase };
+        out.wait = aip[1];
+        *input.state3 = phase;
+        *input.state2 = 1 - phase;
+        return out;
     }
     // MaggotEgg (40, FUN_005f6530): unhatched, aip2 % it hatches (Skill1,
     // wait aip1; state 1); hatched it dies; else stands aip1.

@@ -81,6 +81,14 @@ static void missile_flights() {
             std::abort();
         }
     }
+    // FUN_00641cb0's shapes by missile size / unit size: the farthest offset
+    // each strikes, and the nearest it misses. A blank Size strikes none.
+    assert(missile_touches(0, 0, 0, 0, 1, 1) && !missile_touches(1, 0, 0, 0, 1, 1));
+    assert(missile_touches(1, 0, 0, 0, 1, 2) && !missile_touches(1, 1, 0, 0, 2, 1));
+    assert(missile_touches(1, 1, 0, 0, 3, 1) && missile_touches(1, 1, 0, 0, 1, 3) && !missile_touches(2, 0, 0, 0, 1, 3));
+    assert(missile_touches(2, 0, 0, 0, 2, 2) && missile_touches(1, 1, 0, 0, 2, 2) && !missile_touches(2, 1, 0, 0, 2, 2));
+    assert(missile_touches(2, 1, 0, 0, 3, 2) && missile_touches(1, 2, 0, 0, 2, 3) && !missile_touches(2, 2, 0, 0, 3, 2));
+    assert(missile_touches(2, 2, 0, 0, 3, 3) && !missile_touches(3, 0, 0, 0, 3, 3) && !missile_touches(0, 0, 0, 0, 1, 0));
     // A wall: the step that reaches it ends the flight at the centre of the
     // last free point (FUN_00650150), not of the step's end.
     auto flight = MissileFlight::launch(100, 100, 120, 100, missile_velocity(24, 0, 1), 24 << 8, 0);
@@ -644,16 +652,17 @@ int main() {
                 static const std::string_view kCases[] = {   // not constexpr: their lengths pass the step limit
 #include "mon_ais_cases.inc"
 #include "mon_ais3_cases.inc"
+#include "mon_ais_coldworm_cases.inc"
                 };
                 // Then the curse thinks (special AI 10 / 11) and the other thinks.
-                // Then Act 3's (mon_ais.py ACT3_AIS), their other thinks last.
-                static constexpr std::array<std::string_view, 37> kAis{ "Duriel", "Swarm", "PinHead", "Mummy", "SandLeaper", "ClawViper", "PantherWoman", "PantherJavelin",
+                // Then Act 3's (mon_ais.py ACT3_AIS), their other thinks, then Coldworm's.
+                static constexpr std::array<std::string_view, 38> kAis{ "Duriel", "Swarm", "PinHead", "Mummy", "SandLeaper", "ClawViper", "PantherWoman", "PantherJavelin",
                                                                        "Scarab", "BatDemon", "Baboon", "SandRaider", "GreaterMummy", "SandMaggot", "Summoner", "Vulture",
                                                                        "MaggotEgg", "MaggotLarva", "DimVision", "Terror", "BatDemon", "SandMaggot",
                                                                        "Mosquito", "ThornHulk", "WillOWisp", "ZakarumZealot", "ZakarumPriest", "FrogDemon", "Tentacle",
-                                                                       "TentacleHead", "FetishShaman", "HighPriest", "Hydra", "FetishBlowgun", "Mephisto", "FrogDemon", "FetishShaman" };
+                                                                       "TentacleHead", "FetishShaman", "HighPriest", "Hydra", "FetishBlowgun", "Mephisto", "FrogDemon", "FetishShaman", "SandMaggotQueen" };
                 constexpr int kAct3 = 22;
-                auto other = [](int which) { return which == 20 || which == 21 || which >= 35; };
+                auto other = [](int which) { return which == 20 || which == 21 || which == 35 || which == 36; };
                 using d2d::rules::ThinkEffect;
                 int checked = 0;
                 for (const std::string_view case_line : kCases) {

@@ -442,7 +442,8 @@ bool missile_fly(const Level& level, Missile& missile, Reach&& reach) {
 // frame (FUN_005ae1f0 -> FUN_00641cb0).
 inline bool missile_struck(const Level& level, const Missile& missile, float x, float y, int size) {
     const int foe_x = level.world_x * 5 + int(std::floor(x * 5)), foe_y = level.world_y * 5 + int(std::floor(y * 5));
-    return std::ranges::any_of(missile.flight.crossed, [&](const auto& spot) { return d2d::rules::missile_touches(spot.first, spot.second, foe_x, foe_y, size); });
+    const int missile_size = missile.info ? missile.info->size : 1;
+    return std::ranges::any_of(missile.flight.crossed, [&](const auto& spot) { return d2d::rules::missile_touches(spot.first, spot.second, foe_x, foe_y, size, missile_size); });
 }
 
 // Direction 0..31 in D2's DCC order for a world step, like direction16:

@@ -830,9 +830,9 @@ the quests, the thinks.
 as game.exe's (monster-ai.md "Act 3's thinks"; `mon_ais.py`, 5000 runs
 each): Mosquito, ThornHulk, FrogDemon, the tentacles, FetishShaman,
 FetishBlowgun, the zealots and priests, the Council, Mephisto, his hydras;
-in play through `ai.cpp`, Submerge / Emerge as the maggots' burrow. Left:
-WillOWisp (it paths in its think), plain S1 casts (ZakarumHeal / Lightning,
-MonTeleport, Hydra) and MonFrenzy, which stand.
+in play through `ai.cpp`, Submerge / Emerge as the maggots' burrow. Later
+the same day: WillOWisp, the plain S1 casts (ZakarumHeal / Lightning,
+MonTeleport, Hydra), MonFrenzy's state and Inferno's breath.
 
 **Step 3 — Mephisto (2026-10-13):** a3q6's death hook (quests-act3.md):
 word 0x16, progression to Act 4, the soulstone, the hellgate open (its DC6
@@ -847,6 +847,21 @@ lever, the Cube), the Blackened Temple (the Council, the orb) and the
 Guardian's report. `tests/quests_d2d.py` plays them all. The plain casts
 (S1 / A1 / A2: heals, lightning, teleport, Hydra) and the will-o-wisps'
 dance are in too (monster-ai.md). Act 3 is done; next: Act 4.
+
+## Checkpoint 2026-10-14: Act 3 done, what's still open
+
+PR #23 (`act3-kurast`): Kurast, Travincal and the mazes down to the
+Durance (75–102) are game.exe's (`diff_drlg.py` rooms, tiles, units,
+monsters; the whole act as one game), all six quests play
+(`tests/quests_d2d.py`), and Act 3's MonAI thinks match `mon_ais.py`.
+Known gaps, none blocking:
+
+- Act 4: the hellgate opens and says it isn't built.
+- The Council's S1 shot fires MissS1 with S1's damage and to-hit; the
+  mode's event isn't traced in game.exe (the A1 / A2 shots' pattern).
+- Waiting on a live host: the joined game's checklist, now Act 3 too.
+
+Next: Act 4, the same road (levels diffed, the town, the quests, the thinks).
 
 ## Checkpoint 2026-10-13: Act 3's docks and jungle done
 

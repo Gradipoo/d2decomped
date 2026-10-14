@@ -231,14 +231,14 @@ int main() {
         assert(bar_name_colour(Boss::none, "duriel") == kNameGold && bar_name_colour(Boss::none, "andariel") == kNameWhite && bar_name_colour(Boss::minion, "fallen1") == kNameWhite);
         // Act bosses (FUN_005b1cf0, by BaseId): Andariel mod 22, Blood Raven
         // 12, 22 and half freeze, the Smith 22, all flag 8 (gold, as a unique);
-        // the uber Andariel (0x2c3) and a plain monster aren't.
+        // a plain monster isn't; the ubers have their own (0x2c3, 0x2c0).
         const auto andariel = act_boss(0x9c, 0x9c), blood_raven = act_boss(0x10b, 0x10b);
         assert(andariel && andariel->mods == std::vector<int>{ 22 } && !andariel->half_freeze);
         assert(blood_raven && (blood_raven->mods == std::vector<int>{ 12, 22 }) && blood_raven->half_freeze);
         assert(act_boss(0x192, 0x192) && act_boss(0x192, 0x192)->mods == std::vector<int>{ 22 });
         assert(act_boss(0x11c, 0x11c) && (act_boss(0x11c, 0x11c)->mods == std::vector<int>{ 23, 22 }));   // the Maggot Queen: poison hit
         assert(act_boss(0x2c3, 0x9c) && (act_boss(0x2c3, 0x9c)->mods == std::vector<int>{ 23, 6, 29 }));   // uber Andariel (FUN_005b1cf0)
-        assert(act_boss(0xf2, 0xf2) && (act_boss(0x2c0, 0xf2)->mods == std::vector<int>{ 22, 30, 17, 8, 6 }) && !act_boss(0xd3, 0xd3));   // Mephisto, uber; Duriel none
+        assert(act_boss(0xf2, 0xf2) && act_boss(0x2c0, 0xf2) && (act_boss(0x2c0, 0xf2)->mods == std::vector<int>{ 22, 30, 17, 8, 6 }) && !act_boss(0xd3, 0xd3));   // Mephisto, uber; Duriel none
         assert(!act_boss(5, 5) && bar_name_colour(Boss::unique, "andariel") == kNameGold);
         // A monster's sound set (FUN_004ca410): the Countess's own; a boss
         // or minion zombie's UMonSound; a plain one's MonSound.

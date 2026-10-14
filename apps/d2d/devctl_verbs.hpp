@@ -171,6 +171,17 @@ void register_game_verbs(d2d::devctl::Channel& channel, Window& win, Screen& scr
             return std::format("ok {}\n", int(town.level->unit_blocked(std::strtof(args[2].c_str(), nullptr),
                                                                    std::strtof(args[3].c_str(), nullptr))));
         }
+        if (args.size() >= 2 && args[1] == "grid" && town.level) {   // the level, n spots a cell (subtiles: 5): '#' where a unit can't stand, a row a line
+            const int per_cell = args.size() >= 3 ? std::clamp(std::atoi(args[2].c_str()), 1, 5) : 1;
+            const float step = 1.f / float(per_cell);
+            std::string out;
+            for (int y = 0; y < town.level->ds1.height() * per_cell; ++y) {
+                for (int x = 0; x < town.level->ds1.width() * per_cell; ++x)
+                    out += town.level->unit_blocked((float(x) + 0.5f) * step, (float(y) + 0.5f) * step) ? '#' : '.';
+                out += '\n';
+            }
+            return out + "ok\n";
+        }
         if (args.size() >= 3 && args[1] == "wp") {         // activate waypoint index n
             town.world.set_waypoint(std::atoi(args[2].c_str()));
             return std::string("ok\n");

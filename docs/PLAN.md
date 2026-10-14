@@ -848,6 +848,29 @@ Guardian's report. `tests/quests_d2d.py` plays them all. The plain casts
 (S1 / A1 / A2: heals, lightning, teleport, Hydra) and the will-o-wisps'
 dance are in too (monster-ai.md). Act 3 is done; next: Act 4.
 
+## Checkpoint 2026-10-14 (later): housekeeping, fast act checks
+
+Fast checks, one act at a time or all three side by side:
+
+- `ctest --test-dir build -R quests_act -j3`: `tests/quests_d2d.py <d2d>
+  <act>` plays each act's quests from a new character (Act 2's six are new:
+  Jerhyn to Meshif's boat, ~70 s; all three acts ~1:45).
+- `ACT=1|2|3 tools/emu/sweep.sh <seeds> <kinds>`: every level of the act
+  against game.exe (tiles, units, monsters: ~15 s for 2 seeds).
+
+What they found, none blocking play:
+
+- Act 2's monster population was never diffed (only rooms, tiles,
+  units): 31 of 34 levels match on 10 seeds; the Canyon of the Magi (46,
+  2/10), Maggot Lair 3 (64, 0/10: the packs' spots) and Duriel's Lair (73,
+  0/10: game.exe populates Tyrael, d2d Duriel) don't.
+- Coldworm the Burrower (SandMaggotQueen) is the one acts 1–3 MonStats AI
+  not traced (Andariel's has its own path).
+- Size 2 missiles hit as size 1 (the unravelers', Sand Leapers', Zakarum
+  priests', the wisps'; missiles.hpp).
+- Travincal's `objgroups` diff crashed in the emulator (a quest flag read);
+  now quest-stubbed as `monsters` was: 3/3.
+
 ## Checkpoint 2026-10-14: Act 3 done, what's still open
 
 PR #23 (`act3-kurast`): Kurast, Travincal and the mazes down to the

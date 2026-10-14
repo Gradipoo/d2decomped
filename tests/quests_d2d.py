@@ -1,8 +1,11 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Act 1 quests end to end: drive a headless d2d over devctl.
+"""Acts 1-3's quests end to end: drive a headless d2d over devctl.
 
-Usage: quests_d2d.py <path-to-d2d>
+Usage: quests_d2d.py <path-to-d2d> [acts]
+
+`acts` picks the acts to play, "123" by default; each one starts on its
+own from a new character (ctest runs quests_act1..3 side by side).
 
 A new Amazon (made sturdy: 400 Vitality) plays Act 1's six quests
 through the World: the NPC talks, the quest objects (Tree of Inifuss,
@@ -23,6 +26,7 @@ import tempfile
 import time
 
 d2d = sys.argv[1]
+acts = sys.argv[2] if len(sys.argv) > 2 else "123"
 data = os.environ.get("D2_MPQ_DIR") or os.path.expanduser("~/Workspace/private/diablo2")
 patch = os.environ.get("D2_PATCH_INSTALLER")
 if not os.path.exists(os.path.join(data, "d2data.mpq")) or not patch or not os.path.exists(patch):
@@ -118,10 +122,21 @@ def object_index(object_id):
     return found[0][0]
 
 
+def find_npc(name):
+    """`npcs` lists the ones by the player: walk the level (Lut Gholein's wide) till `name` is."""
+    width, height = map(float, cmd("debug level").split()[4:6])
+    for spot in [None] + [(x, y) for y in range(4, int(height), 10) for x in range(4, int(width), 10)]:
+        if spot:
+            cmd(f"debug warp {spot[0]} {spot[1]}")
+            time.sleep(0.2)
+        npc = [l.split("\t") for l in cmd("npcs").splitlines() if l.split("\t")[0].endswith(name)]
+        if npc: return npc
+    raise AssertionError(f"{name} not on level {level()}")
+
+
 def talk(name):
     """Walk up to a camp NPC, talk, close the talk (a quest given counts as it closes)."""
-    npc = [l.split("\t") for l in cmd("npcs").splitlines() if l.split("\t")[0].endswith(name)]
-    assert npc, f"{name} not in camp: {cmd('npcs')!r} level {level()}"
+    npc = find_npc(name)
     cmd(f"debug warp {float(npc[0][5]) + 0.9} {float(npc[0][6]) + 0.7}")
     cmd(f"cmd interact {npc[0][4]}")
     until(f"{name} speaks", lambda: state()["speech"] != "0")
@@ -154,7 +169,7 @@ def menu_pick(text):
 
 
 def open_menu(name):
-    npc = [l.split("\t") for l in cmd("npcs").splitlines() if l.split("\t")[0].endswith(name)]
+    npc = find_npc(name)
     cmd(f"debug warp {float(npc[0][5]) + 0.9} {float(npc[0][6]) + 0.7}")
     cmd(f"cmd interact {npc[0][4]}")
     until(f"{name}'s menu", lambda: state()["menu"] != "0" or state()["speech"] != "0")
@@ -184,10 +199,11 @@ def topic(name):
 
 def pick_up(code, seconds=20):
     """Walk onto a ground item and take it into the inventory."""
-    found = [l.split("\t") for l in cmd("ground").splitlines() if l.startswith(code + "\t")]
-    assert found, f"no {code} on the ground: {cmd('ground')!r}"
-    cmd(f"debug warp {found[0][5]} {found[0][6]}")
-    cmd(f"cmd pickup {found[0][4].lstrip('#')}")
+    ground = cmd("ground")
+    found = re.search(rf"^{code}\t.*?\t#(\d+)\t(\S+)\t(\S+)$", ground, re.M | re.S)   # a label can run over lines
+    assert found, f"no {code} on the ground: {ground!r}"
+    cmd(f"debug warp {found[2]} {found[3]}")
+    cmd(f"cmd pickup {found[1]}")
     until(f"{code} carried", lambda: f"[{code} " in cmd("items"), seconds)
 
 
@@ -196,12 +212,7 @@ def operate(index, seconds=4):
     time.sleep(seconds)
 
 
-try:
-    until("d2d starts", lambda: os.path.exists(sock_path), 60)
-    cmd("debug statpts 400")
-    cmd("cmd stat 3 400")
-    until("the vitality", lambda: int(state()["life"].split("/")[1]) > 1000)
-
+def act1():
     # The Den of Evil (quest 1).
     talk("Akara")
     assert bits(1) & 0x4, f"Akara didn't give the Den: {bits(1):#x}"
@@ -344,6 +355,145 @@ try:
     assert not alive(), f"the Blood Moor came back after the trip east: {len(alive())} alive"
     print("OK: an act left stays as it was (the Blood Moor still clear)")
 
+
+def act2():
+    # Act 2's quests (docs/research/re/quests-act2.md), from a new character's
+    # first steps in Lut Gholein. Quest rooms are found by their LvlPrest
+    # (the W / E / S / N four of each), not by a sweep.
+    def show(quest, key):
+        return int(cmd(f"debug quest {quest} show").split(key + "=")[1].split()[0])
+
+    def quest_room(first):
+        room = [r for r in presets()[1] if first <= r[0] <= first + 3]
+        assert room, f"no LvlPrest {first}..{first + 3} room on level {level()}"
+        warp_to_room(room[0][0])
+
+    def chest(object_id, code):
+        """The quest chest in the room the player's in: open it, take its part."""
+        found = [o for o in presets()[0] if o[1] == object_id]
+        assert found, f"no object {object_id} on level {level()}"
+        cmd(f"debug warp {found[0][2]} {found[0][3] + 1}")
+        cmd("debug kill")
+        operate(found[0][0])
+        pick_up(code)
+
+    def item_id(code):
+        return re.search(rf"^\[{code} .*?id=(\d+)", cmd("items"), re.M)[1]
+
+    def take_portal(slot, to):
+        portal = [l.split("\t") for l in cmd("debug portals").splitlines() if l.startswith(f"{slot}\t")]
+        assert portal, f"no portal {slot}: {cmd('debug portals')!r}"
+        cmd(f"debug warp {portal[0][2]} {portal[0][3]}")
+        cmd(f"cmd interact {-2000 - slot}")
+        until(f"through portal {slot} to level {to}", lambda: level() == to, 30)
+
+    go(40)
+    # Act 2's opening: Jerhyn's greeting (quest 8 bit 0) moves him into the palace.
+    talk("Jerhyn")
+    assert bits(8) & 1, f"Jerhyn's greeting not heard: {bits(8):#x}"
+    print("OK: Jerhyn's greeting (act 2's opening)")
+
+    # a2q1: Radament's Lair. Atma tells (bit 2); Radament in Sewers 3 (49)
+    # drops the Book of Skill (+1 skill point); Atma's thanks: done. The
+    # chest in his room (object 355) gives the Horadric Scroll.
+    talk("Atma")
+    assert bits(9) & 4, f"Atma didn't tell of Radament: {bits(9):#x}"
+    go(47)
+    go(49)
+    quest_room(341)
+    until("Radament's death counts", lambda: bits(9) & 0x2002 == 0x2002)
+    pick_up("ass")
+    points = int(state()["skillpts"])
+    cmd(f"cmd use {item_id('ass')}")
+    until("the book's skill point", lambda: int(state()["skillpts"]) == points + 1)
+    chest(355, "tr1")                                   # in Radament's room
+    go(40)
+    talk_until("Atma", lambda: bits(9) & 1, "Atma didn't close Radament's Lair")
+    print("OK: Radament's Lair, the Book of Skill (a2q1)")
+
+    # a2q2 starts: Cain reads the scroll (bit 3, the scroll gone).
+    talk_until("Cain", lambda: bits(10) & 8, "Cain didn't read the scroll")
+    assert "[tr1 " not in cmd("items"), "the scroll stayed"
+
+    # a2q3: The Tainted Sun. The Lost City's dark; the altar in the Claw
+    # Viper Temple (61) brings the sun back and gives the Viper Amulet.
+    go(44)
+    until("the sun goes dark", lambda: "dark=true" in cmd("debug quest 11 show"), 10)
+    go(61)
+    altar = [o for o in presets()[0] if o[1] == 149]
+    assert altar, "no Tainted Sun altar"
+    cmd(f"debug warp {altar[0][2] + 1} {altar[0][3] + 1}")
+    cmd("debug kill")
+    operate(altar[0][0])
+    assert bits(11) & 0x2002 == 0x2002 and "dark=false" in cmd("debug quest 11 show"), f"the altar: {bits(11):#x}"
+    pick_up("vip")
+    print("OK: the Tainted Sun's dark and its altar (a2q3)")
+
+    # a2q2: The Horadric Staff. The shaft in the Maggot Lair (64), the Cube
+    # in the Halls of the Dead (60); Cain sees them (bits 4..6); the Cube
+    # makes the staff, which opens the Arcane Sanctuary (quest 12, state 1).
+    go(64)
+    quest_room(505)
+    chest(356, "msf")
+    go(60)
+    quest_room(456)
+    chest(354, "box")
+    go(40)
+    talk_until("Cain", lambda: bits(10) & 0x70 == 0x70, "Cain didn't see the parts")
+    for code, col in (("vip", 0), ("msf", 1)):
+        cmd(f"cmd hand {item_id(code)}")
+        until(f"{code} in hand", lambda: state()["held"] == code)
+        cmd(f"cmd grid {col} 0 cube")
+        until(f"{code} in the Cube", lambda: state()["held"] == "-")
+    cmd("cmd transmute")
+    until("the Horadric Staff", lambda: "[hst " in cmd("items"))
+    assert show(12, "arcane") == 1, "the staff didn't open the Arcane Sanctuary"
+    print("OK: the Horadric Staff made (a2q2)")
+
+    # a2q3 done by Drognan's thanks; a2q4: Drognan (state 2), Jerhyn (3),
+    # the Sanctuary (4); a2q5: the Summoner dies; Horazon's Journal (object
+    # 357): done, and the portal to the Canyon of the Magi.
+    talk_until("Drognan", lambda: show(12, "arcane") == 2 and bits(11) & 1, "Drognan")
+    talk_until("Jerhyn", lambda: show(12, "arcane") == 3, "Jerhyn didn't open the palace")
+    go(74)
+    assert show(12, "arcane") == 4, "the Sanctuary didn't mark quest 12"
+    quest_room(525)
+    until("the Summoner's death counts", lambda: show(13, "summoner") == 2, 10)
+    journal = [o for o in presets()[0] if o[1] == 357]
+    cmd(f"debug warp {journal[0][2] + 1} {journal[0][3] + 1}")
+    operate(journal[0][0])
+    assert bits(12) & 1 and show(12, "arcane") == 5, f"the journal: {bits(12):#x}"
+    print("OK: Tainted Sun closed, the Arcane Sanctuary, the Summoner (a2q3, a2q4, a2q5)")
+
+    # a2q6: The Seven Tombs. The Canyon (state 1); the staff in the true
+    # tomb's orifice (quest 10 done), its way down to Duriel; his death (3),
+    # Tyrael (bit 3, his portal home), Jerhyn (bit 4), Meshif: done, and
+    # Meshif sails east.
+    take_portal(4, 46)
+    go(show(14, "true"))
+    quest_room(460)
+    chest_room = [o for o in presets()[0] if o[1] == 152]
+    assert chest_room, "no orifice"
+    cmd(f"debug warp {chest_room[0][2] + 1} {chest_room[0][3] + 1}")
+    cmd("debug kill")
+    operate(chest_room[0][0])
+    assert bits(10) & 1 and "[hst " not in cmd("items"), f"the orifice didn't take the staff: {bits(10):#x}"
+    take_portal(6, 73)
+    cmd("debug kill")
+    until("Duriel's death counts", lambda: show(14, "tombs") == 3, 10)
+    talk_until("Tyrael", lambda: bits(14) & 8, "Tyrael")
+    take_portal(0, 40)
+    talk_until("Atma", lambda: bits(13) & 1, "no thanks for the Summoner")   # the town's 419..429
+    talk_until("Jerhyn", lambda: bits(14) & 0x10, "Jerhyn's reward")
+    talk_until("Meshif", lambda: bits(14) & 1, "Meshif didn't close the Seven Tombs")
+    print("OK: the orifice, Duriel, Tyrael, the Seven Tombs (a2q2, a2q6)")
+    open_menu("Meshif")
+    menu_pick("sail east")
+    until("Meshif's boat lands in the Kurast Docks", lambda: level() == 75, 30)
+    print("OK: Meshif sails east")
+
+
+def act3():
     # a3q7: the Dark Wanderer (MonAI 91) stands by the Spider Forest's head
     # till the player's within 20 subtiles, walks 20 north, and is gone once
     # the player's near at his next think; every player in act 3 gets quest
@@ -496,7 +646,16 @@ try:
     go(75)
     talk_until("Ormus", lambda: not bits(0x16) & 0x800, "the report not taken")
     print("OK: Mephisto dead, the hellgate open, the bridge up, the report (a3q6)")
-    cmd("quit")
+
+
+try:
+    until("d2d starts", lambda: os.path.exists(sock_path), 60)
+    cmd("debug statpts 400")
+    cmd("cmd stat 3 400")
+    until("the vitality", lambda: int(state()["life"].split("/")[1]) > 1000)
+
+    for act in acts:
+        globals()[f"act{act}"]()
 finally:
     if proc.poll() is None:
         try:

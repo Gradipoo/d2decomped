@@ -855,8 +855,9 @@ Fast checks, one act at a time or all three side by side:
 - `ctest --test-dir build -R quests_act -j3`: `tests/quests_d2d.py <d2d>
   <act>` plays each act's quests from a new character (Act 2's six are new:
   Jerhyn to Meshif's boat, ~70 s; all three acts ~1:45).
-- `ACT=1|2|3 tools/emu/sweep.sh <seeds> <kinds>`: every level of the act
-  against game.exe (tiles, units, monsters: ~15 s for 2 seeds).
+- `ACT=2 tools/emu/sweep.sh <seeds> <kinds>` (ACT is 1, 2 or 3): every
+  level of the act against game.exe (tiles, units, monsters: ~15 s for 2
+  seeds).
 
 Planned: a play bot (`tests/play_d2d.py`), a headless player that plays
 by clicks alone (`cmd move` / `cmd skill` / `cmd interact`, routes on

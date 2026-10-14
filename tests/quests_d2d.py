@@ -27,6 +27,8 @@ import time
 
 d2d = sys.argv[1]
 acts = sys.argv[2] if len(sys.argv) > 2 else "123"
+if not acts or set(acts) - set("123"):
+    sys.exit(f"acts must be digits from 1-3, got {acts!r}")
 data = os.environ.get("D2_MPQ_DIR") or os.path.expanduser("~/Workspace/private/diablo2")
 patch = os.environ.get("D2_PATCH_INSTALLER")
 if not os.path.exists(os.path.join(data, "d2data.mpq")) or not patch or not os.path.exists(patch):
@@ -460,6 +462,7 @@ def act2():
     quest_room(525)
     until("the Summoner's death counts", lambda: show(13, "summoner") == 2, 10)
     journal = [o for o in presets()[0] if o[1] == 357]
+    assert journal, f"no Horazon's Journal on level {level()}"
     cmd(f"debug warp {journal[0][2] + 1} {journal[0][3] + 1}")
     operate(journal[0][0])
     assert bits(12) & 1 and show(12, "arcane") == 5, f"the journal: {bits(12):#x}"

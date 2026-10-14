@@ -1893,7 +1893,7 @@ auto World::deal(const Command& command) -> bool {
             set_waypoint(waypoint_index(*game_data, d2d::rules::level_ids::kLutGholein));
             // The arrival's level change runs the quests' enter hooks: Andariel's
             // (the Rogues get Cain if he's still caged, FUN_00596de0 / FUN_00597310).
-            // ponytail: game.exe swaps the whole act (the old act's DRLG freed); Act 1's levels stay built.
+            // Act 1's levels stay built: game.exe's server keeps every act till the game ends (FUN_0052c7f0).
             arrive(lut_gholein, lut_gholein->start.first, lut_gholein->start.second, "Warriv's caravan");
             return true;
         }

@@ -1485,7 +1485,7 @@ bool monster_update(const GameData& game_data, const Level& level, Monster& mons
     // at its thinks: when next_act is due and no chase is under way (a chase
     // runs as think()'s does, move_frame). With none it thinks again aidel
     // on (FUN_005a73e0).
-    // ponytail: later acts only (every Act 1 fighting AI is traced): the
+    // ponytail: acts 4-5 and Coldworm (SandMaggotQueen) only, every other acts 1-3 AI is traced: the
     // foe it found is the frame's foe from the next frame on.
     const bool chasing = monster.mode == "WL" && !monster.steps.empty() && monster.aware;
     if (now_ms >= monster.next_act && !chasing) {
@@ -1531,8 +1531,8 @@ bool monster_update(const GameData& game_data, const Level& level, Monster& mons
         }
         // Shooters (MissA2) shoot from up to 7 cells: each think (aidel)
         // the aip2 chance to fire, else close in.
-        // ponytail: aip2 read as the shoot chance; for AIs not traced (later
-        // acts only).
+        // ponytail: aip2 read as the shoot chance; for AIs not traced (acts 4-5,
+        // Coldworm).
         if (miss != game_data.missiles.end() && dist < 7 && now_ms >= monster.next_act) {
             monster.next_act = now_ms + std::uint32_t(type_info.diff[std::size_t(monster.difficulty)].aidel) * 40;
             if (rng(100) < std::max(type_info.diff[std::size_t(monster.difficulty)].aip[1], 1)) {

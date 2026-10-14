@@ -379,7 +379,6 @@ struct ObjectRooms {
     }
     // FUN_005b2a00's test (FUN_0064d9b0): the type's shape (MonStats2 SizeX:
     // 1 a subtile, 2 a plus, 3 a box, more never fits) against its spawnCol's mask.
-    // ponytail: spawnCol 1 takes FUN_005b2700 (no ring walk) in game.exe; act 1 has none.
     [[nodiscard]] bool fits(int type, int x, int y) const {
         static constexpr int kMask[4] = { 0x3c01, 0x1c0, 0x3f11, 0 };
         const auto* info = type_at(type);
@@ -498,7 +497,7 @@ struct ObjectRooms {
         if (type_at(type)) (void)d2d::rules::monster_look(sets, types[std::size_t(type)].choices, own);
         own.next();
         // FUN_005d6b60: an oninit MonEquip row rolls its slot and makes its item (2 game steps).
-        // ponytail: act 1's only oninit row is Blood Raven's bow; read MonEquip.txt for more.
+        // ponytail: acts 1-3's only oninit row is Blood Raven's bow (MonEquip.txt's other, flyingscimitar, is later); read MonEquip.txt for more.
         if (type_at(type) && types[std::size_t(type)].id == "bloodraven") { own(1); game.next(); game.next(); }
         const bool npc = type_at(type) && std::size_t(type) < game_data.mon_is_npc.size() && game_data.mon_is_npc[std::size_t(type)];
         if (spawns && !npc) spawns->push_back({ type, at_x, at_y, leader, -1, d2d::rules::Boss::none, {}, 0, value });
@@ -679,7 +678,7 @@ struct ObjectRooms {
     // FUN_0054ec40), sparsePopulate on the game seed, a random spot of the
     // area, the leader and its party, then rand(max - min + 1) + min - 1
     // more of its type at radius 3 in the area, each with its party.
-    // ponytail: the extra object for a leader of class 0x210 isn't made; act 1 has none.
+    // ponytail: the extra object for a leader of class 0x210 (evilhut, act 5) isn't made.
     void group(int row) {
         const auto* type = type_at(row);
         if (!type) return;

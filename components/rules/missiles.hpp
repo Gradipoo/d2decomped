@@ -103,7 +103,9 @@ inline std::vector<std::pair<int, int>> wiggle_points(int x, int y, int to_x, in
 // A size-1 missile at subtile (x, y) strikes a unit of `size` at (unit_x,
 // unit_y) (FUN_00641cb0): its own subtile at size 1, the plus at 2, the
 // 3x3 at 3.
-// ponytail: missiles of Size 2 and 3 (none in Act 1) test wider shapes.
+// ponytail: missiles of Size 2 and 3 test wider shapes, and acts 2-3 have them
+// (Size 2: the unravelers' mummy1..4, Sand Leapers' leapknockback, the
+// Zakarum priests' monsterlight, the wisps' bolts): not traced.
 inline bool missile_touches(int x, int y, int unit_x, int unit_y, int size) {
     const int across = std::abs(x - unit_x), down = std::abs(y - unit_y);
     if (size <= 1) return across == 0 && down == 0;

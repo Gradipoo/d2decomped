@@ -984,3 +984,20 @@ Then:
 Town leftovers (Warriv's "go east", waypoint travel, merc resurrect, the
 hire list widget, Cain's spot, trade leftovers, charge recharging) are
 in the checkpoint above.
+
+## Act 4 prep (2026-10-14, branch `act4-prep`)
+
+Preparation only: Act 4 isn't built or playable. The act boundaries now
+come from one table, `level_ids::kActTowns` (the five towns; each act's
+levels follow its town's Id). `act_of`, `is_town`, `GameData::town_of`,
+`layout_of`, the save's start town (`World`), the act in objgroups
+(FUN_006427f0) and its town-room flag (FUN_006426a0) read it. Before, the
+last two chains and `town_of` gave Kurast for any level past 74.
+
+Already generic, nothing to do: DS1 units map through MonPreset.txt for
+all five acts (`drlg::ds1_units`, Act 5's monster objects too); monster
+stats and level monster pools come from the tables. Still gated:
+`kBuiltLevels` (Act 4 isn't in it), `layout_of` (no Act 4 layout), the
+outdoor dispatch in `build_outdoor` (Act 3's jungle its own generator).
+Act 4 work: its layout (not traced yet), its levels in `kBuiltLevels`, the town,
+its quests and Diablo.

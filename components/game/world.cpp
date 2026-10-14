@@ -398,8 +398,7 @@ auto World::operate(int npc_index, std::uint32_t now_ms, int force ) -> void {  
             if (!use.used) return;
             operated.try_emplace({ level, npc_index }, now_ms);
             to_mode(1);
-            static constexpr const char* kClass[7] = { "amazon", "sorceress", "necromancer", "paladin", "barbarian", "druid", "assassin" };
-            if (use.took_part && character.header.cls < 7) cues.cue(std::format("{}_act2_complete_tainted", kClass[character.header.cls]), now_ms, player.x, player.y);
+            if (use.took_part) class_cue("act2_complete_tainted", now_ms);
             for (int amulet = 0; amulet < use.amulets; ++amulet) {
                 loot.put({ .code = "vip" }, object.x, object.y, here, fight.spawning.game, now_ms);
                 loot.ground.back().item.identified = true;
@@ -1004,7 +1003,7 @@ auto World::quest_talk(int hc_idx, bool fresh) -> std::vector<d2d::rules::QuestM
     }
 
 auto World::holding_malus() const -> bool {
-        return (held && held->code == "hdm") || std::ranges::contains(character.items, std::string("hdm"), &d2d::d2s::Item::code);
+        return carries("hdm");
     }
 
 // The malus stand (OperateFn 21, FUN_00591ac0): at clvl 8 the malus drops
@@ -1031,8 +1030,7 @@ auto World::malus_stand(int npc_index, std::uint32_t now_ms) -> void {
 // agent A's.
 auto World::andariel_died(const Fight::Kill& kill, std::uint32_t now_ms) -> void {
         if (!andy.killed(quests(), level->id == d2d::rules::level_ids::kCatacombsLevel4)) return;
-        const int diff = character.header.active_difficulty();
-        character.header.progression = std::uint8_t(std::max<int>(character.header.progression, diff * (character.header.expansion() ? 5 : 4) + 1));
+        open_act(1);
         for (const auto* codes : { d2d::rules::AndyQuest::kChipped, d2d::rules::AndyQuest::kChipped, d2d::rules::AndyQuest::kStandard })
             loot.put({ codes[loot.rng.next() % 7] }, kill.x, kill.y, kill.level, fight.spawning.game, now_ms);
         d2d::log::info("Sisters to the Slaughter: Andariel is dead, return to Warriv");
@@ -1054,8 +1052,7 @@ auto World::mephisto_died(const Fight::Kill& kill, std::uint32_t now_ms) -> void
         if (!d2d::rules::qbit(bits, 0x16, 0)) {
             const bool had_stone = d2d::rules::qbit(bits, 0x16, 0xb);
             for (const int bit : { 0xd, 0, 0xb }) d2d::rules::qset(bits, 0x16, bit);
-            const int diff = character.header.active_difficulty();
-            character.header.progression = std::uint8_t(std::max<int>(character.header.progression, diff * (character.header.expansion() ? 5 : 4) + 3));
+            open_act(3);
             if (!had_stone) loot.put({ .code = "mss" }, kill.x, kill.y, kill.level, fight.spawning.game, now_ms);
         }
         if (const Level* durance = game_data->level(d2d::rules::level_ids::kDuranceOfHateLevel3)) {
@@ -1099,8 +1096,7 @@ auto World::mephisto_bridge(std::uint32_t now_ms) -> void {
 // room or its neighbours (FUN_00590c40); quests: agent A's.
 auto World::blood_raven_died(std::uint32_t now_ms) -> void {
         if (!burial.killed(quests(), level->id == d2d::rules::BurialQuest::kBurial)) return;
-        static constexpr const char* kClass[7] = { "amazon", "sorceress", "necromancer", "paladin", "barbarian", "druid", "assassin" };
-        if (character.header.cls < 7) cues.cue(std::format("{}_act1_complete_burial", kClass[character.header.cls]), now_ms, player.x, player.y);
+        class_cue("act1_complete_burial", now_ms);
         d2d::log::info("Sisters' Burial Grounds: Blood Raven is dead, return to Kashya");
     }
 
@@ -1180,8 +1176,7 @@ auto World::canyon_portal(std::uint32_t now_ms) -> void {
 auto World::radament_died(const Fight::Kill& kill, std::uint32_t now_ms) -> void {
         const auto [books, took_part] = radament.killed(quests(), game_bits, level->id == d2d::rules::RadamentQuest::kLair, carries("ass"));
         for (int i = 0; i < books; ++i) loot.put({ .code = "ass" }, kill.x, kill.y, kill.level, fight.spawning.game, now_ms);
-        static constexpr const char* kClass[7] = { "amazon", "sorceress", "necromancer", "paladin", "barbarian", "druid", "assassin" };
-        if (took_part && character.header.cls < 7) cues.cue(std::format("{}_act2_complete_radament", kClass[character.header.cls]), now_ms, player.x, player.y);
+        if (took_part) class_cue("act2_complete_radament", now_ms);
         if (radament.state == 4) d2d::log::info("Radament's Lair: Radament is dead, return to Atma");
     }
 
@@ -1240,8 +1235,7 @@ auto World::countess_died(std::uint32_t now_ms) -> void {
                 if (level->npcs[i].root == "objects" && level->npcs[i].object_id == d2d::rules::object_ids::kLargeChestR) treasure.push_back({ level, int(i), d2d::rules::TowerQuest::kTreasureFrames });
         }
         if (!quest_kill) return;
-        static constexpr const char* kClass[7] = { "amazon", "sorceress", "necromancer", "paladin", "barbarian", "druid", "assassin" };
-        if (character.header.cls < 7) cues.cue(std::format("{}_act1_complete_tower", kClass[character.header.cls]), now_ms, player.x, player.y);
+        class_cue("act1_complete_tower", now_ms);
         d2d::log::info("The Forgotten Tower: the Countess is dead");
     }
 
@@ -1357,6 +1351,20 @@ auto World::khalim_parts() const -> d2d::rules::KhalimQuest::Parts {
         return { carries(K::kEyeCode), carries(K::kBrainCode), carries(K::kHeartCode), carries(K::kFlailCode), carries(K::kWillCode) };
     }
 // FUN_00544160: a quest item taken from the player, the cursor's first.
+// FUN_00538680: act `act` (0-based) open, the save's progression at
+// least difficulty x 4 (5 in LoD) + act.
+auto World::open_act(int act) -> void {
+        const int diff = character.header.active_difficulty();
+        character.header.progression = std::uint8_t(std::max<int>(character.header.progression, diff * (character.header.expansion() ? 5 : 4) + act));
+    }
+
+// The player's class says `line` ("act1_complete_den": the sound
+// <class>_act1_complete_den).
+auto World::class_cue(std::string_view line, std::uint32_t at_ms) -> void {
+        static constexpr std::array<const char*, 7> kClass{ "amazon", "sorceress", "necromancer", "paladin", "barbarian", "druid", "assassin" };
+        if (character.header.cls < kClass.size()) cues.cue(std::format("{}_{}", kClass[character.header.cls], line), at_ms, player.x, player.y);
+    }
+
 auto World::take_carried(std::string_view code) -> void {
         if (held && held->code == code) { held.reset(); return; }
         if (const auto found = std::ranges::find(character.items, code, &d2d::d2s::Item::code); found != character.items.end()) character.items.erase(found);
@@ -1418,9 +1426,8 @@ auto World::den_count(std::uint32_t now_ms) -> void {
             if (kill == d2d::rules::DenQuest::Kill::cleared) {
                 d2d::log::info("Den of Evil: cleared");
                 den_log_at = now_ms + 8 * kTickMs;     // the log's "Return to Akara" 8 ticks on (LAB_00590230)
-                static constexpr const char* kClass[7] = { "amazon", "sorceress", "necromancer", "paladin", "barbarian", "druid", "assassin" };
-                if (d2d::rules::qbit(quests(), 1, 13) && character.header.cls < 7)
-                    cues.cue(std::format("{}_act1_complete_den", kClass[character.header.cls]), now_ms, player.x, player.y);
+                if (d2d::rules::qbit(quests(), 1, 13))
+                    class_cue("act1_complete_den", now_ms);
             }
         }
         den_left = left;
@@ -1776,9 +1783,7 @@ auto World::deal(const Command& command) -> bool {
                 if (!qbit(quests(), 15, 0)) {
                     if (!qbit(quests(), 10, 0)) {
                         d2d::rules::qset(quests(), 10, 0); d2d::rules::qset(quests(), 10, 13);
-                        for (const char* code : { "msf", "vip" })                    // FUN_00544160 each
-                            if (held && held->code == code) held.reset();   // FUN_00558110: the cursor item first
-                            else if (const auto part = std::ranges::find(character.items, std::string(code), &d2d::d2s::Item::code); part != character.items.end()) character.items.erase(part);
+                        for (const char* code : { "msf", "vip" }) take_carried(code);
                     }
                     d2d::rules::qset(quests(), 15, 0); d2d::rules::qset(quests(), 15, 13);
                 }

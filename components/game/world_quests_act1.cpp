@@ -76,8 +76,7 @@ auto World::act1_said(int hc_idx, int message_string) -> void {
         if (tools.said(quests(), hc_idx, message_string, holding_malus())) {   // FUN_00544160: the malus goes
             if (tools_was == 4 && tools.state == 5) chain(3);   // FUN_00591490: its own +0xf0
             else if (tools.active && tools.carried_in) andy.chain();   // data+0xa1: quest 6's +0xf0
-            if (held && held->code == "hdm") held.reset();
-            else if (const auto malus = std::ranges::find(character.items, std::string("hdm"), &d2d::d2s::Item::code); malus != character.items.end()) character.items.erase(malus);
+            take_carried("hdm");
             d2d::log::info("Tools of the Trade: the malus is back, Charsi's imbue is due");
         }
         using Said = d2d::rules::CainQuest::Said;

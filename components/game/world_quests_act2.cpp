@@ -19,7 +19,6 @@
 #include <cstdint>
 #include <format>
 #include <iterator>
-#include <string>
 #include <vector>
 
 namespace d2d::game {
@@ -96,21 +95,13 @@ auto World::act2_said(int hc_idx, int message_string) -> void {
         summoner.said(quests(), game_bits, message_string);
         if (const auto heard = tombs.said(quests(), game_bits, hc_idx, message_string, level->id == d2d::rules::SevenTombsQuest::kLair); heard.town_portal) {
             open_portal_at(player.x, player.y + 0.6f, now);              // Tyrael's (FUN_0056d130: object 59 to level 40)
-            if (heard.act3) {                                             // FUN_00538680: Act 3 open
-                const int diff = character.header.active_difficulty();
-                character.header.progression = std::uint8_t(std::max<int>(character.header.progression, diff * (character.header.expansion() ? 5 : 4) + 2));
-            }
+            if (heard.act3) open_act(2);                                  // Act 3 open
             d2d::log::info("The Seven Tombs: Tyrael's portal");
         } else if (heard.take_staff) {
-            for (const char* code : { "hst", "vip", "msf" })              // FUN_00544160 each
-                if (held && held->code == code) held.reset();   // FUN_00558110: the cursor item first
-                else if (const auto part = std::ranges::find(character.items, std::string(code), &d2d::d2s::Item::code); part != character.items.end()) character.items.erase(part);
+            for (const char* code : { "hst", "vip", "msf" }) take_carried(code);
         }
         if (hc_idx == d2d::rules::ArcaneQuest::kDrognan || hc_idx == d2d::rules::ArcaneQuest::kJerhyn) show_palace();   // the guard steps aside
-        if (staff.said(quests(), hc_idx, message_string)) {     // the scroll read: it goes
-            if (held && held->code == "tr1") held.reset();
-            else if (const auto horadric_scroll = std::ranges::find(character.items, std::string("tr1"), &d2d::d2s::Item::code); horadric_scroll != character.items.end()) character.items.erase(horadric_scroll);
-        }
+        if (staff.said(quests(), hc_idx, message_string)) take_carried("tr1");   // the scroll read: it goes
     }
 
 auto World::act2_tick() -> void {
@@ -130,11 +121,8 @@ auto World::act2_tick() -> void {
                     tombs.tyrael_gone = true;
                     d2d::log::info("The Seven Tombs: Tyrael leaves");
                 }
-        if (summoner.tick() && d2d::rules::qbit(quests(), d2d::rules::SummonerQuest::kQuest, 13) && level->id == d2d::rules::SummonerQuest::kSanctuary
-            && character.header.cls < 7) {
-            static constexpr const char* kClass[7] = { "amazon", "sorceress", "necromancer", "paladin", "barbarian", "druid", "assassin" };
-            cues.cue(std::format("{}_act2_complete_summoner", kClass[character.header.cls]), day_at, player.x, player.y);   // voice 0x33
-        }
+        if (summoner.tick() && d2d::rules::qbit(quests(), d2d::rules::SummonerQuest::kQuest, 13) && level->id == d2d::rules::SummonerQuest::kSanctuary)
+            class_cue("act2_complete_summoner", day_at);   // voice 0x33
         // The act's sky (S->C 0x53, FUN_0059a100 / FUN_0059a170): dark
         // while the Tainted Sun has it out and the player's in Act 2; a
         // joined game's comes from the host.

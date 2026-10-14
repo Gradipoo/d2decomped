@@ -487,6 +487,8 @@ struct World {
     // Whether the player carries an item of `code`.
     [[nodiscard]] bool carries(std::string_view code) const;
     void take_carried(std::string_view code);
+    void open_act(int act);                                    // FUN_00538680: the save's progression
+    void class_cue(std::string_view line, std::uint32_t at_ms);   // the class's voice: <class>_<line>
     void give_item(std::string_view code, std::uint32_t now_ms, int ilvl = 1, int quality = 2);
     void set_waypoint(int index) { if (index >= 0 && index < 40) character.header.waypoints[std::size_t(character.header.active_difficulty())][std::size_t(index >> 3)] |= std::uint8_t(1 << (index & 7)); }
 

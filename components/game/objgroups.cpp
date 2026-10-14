@@ -716,7 +716,7 @@ struct ObjectRooms {
             if (shown.size() != 6) return 0x133;                                                 // no true tomb: FUN_0059d720's fallback
             return shown[std::size_t(tomb_symbols++ % 6)];
         }
-        const int act = level.id < d2d::rules::level_ids::kLutGholein ? 0 : level.id < d2d::rules::level_ids::kKurastDocks ? 1 : level.id < d2d::rules::level_ids::kPandemoniumFortress ? 2 : 3;   // FUN_006427f0
+        const int act = d2d::rules::level_ids::act_of(level.id);   // FUN_006427f0
         const auto low = rgn.next();
         int pick;
         if (act == 1) pick = level.id == d2d::rules::level_ids::kArcaneSanctuary ? std::array{ 0x183, 0x185, 0x186, 0x187 }[low & 3] : std::array{ 0x57, 0x58 }[low & 1];
@@ -1011,7 +1011,7 @@ void place_objects(const GameData& game_data, GameData::LevelBuilder& builder, L
             town = { game_data.town.world_x, game_data.town.world_y, game_data.town.ds1.width(), game_data.town.ds1.height() };
             has_town = true;
         }
-    } else if (const int town_id = level.id < d2d::rules::level_ids::kKurastDocks ? d2d::rules::level_ids::kLutGholein : d2d::rules::level_ids::kKurastDocks; level.id != town_id)
+    } else if (const int town_id = d2d::rules::level_ids::kActTowns[std::size_t(d2d::rules::level_ids::act_of(level.id))]; level.id != town_id)
         for (const auto& placed : game_data.layout_of(level.id))
             if (placed.level == town_id) { town = { placed.x, placed.y, placed.width, placed.height }; has_town = true; }
     if (has_town) {

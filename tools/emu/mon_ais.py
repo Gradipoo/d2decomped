@@ -24,6 +24,7 @@ unit it's at, wait, event), the pace, the effects, the AI control and seed
 after. --dump writes them as tests/mon_ais_cases.inc lines for
 tests/test_monsters.cpp, which runs rules::mon_think on each. Prints `ok`.
 """
+import os
 import random
 import struct
 import sys
@@ -55,6 +56,16 @@ AIS = {
 CURSE_AIS = ("DimVision", "Terror", "BatDemonOther", "SandMaggotOther")
 ACT3_AIS = tuple(list(AIS)[list(AIS).index("Mosquito"):])
 ORDER = list(AIS)
+
+
+def write_names(path):
+    """tests/mon_ais_names.inc: the AIs a case line's first number indexes (ORDER),
+    each with whether it's an other think and whether its scene has Act 3's fields."""
+    with open(path, "w") as f:
+        f.write("// tools/emu/mon_ais.py --dump (write_names): the AIs the cases number, ORDER.\n")
+        for ai in ORDER:
+            other = ai.endswith("Other")
+            f.write(f'{{ "{ai.removesuffix("Other")}", {str(other).lower()}, {str(ai in ACT3_AIS).lower()} }},\n')
 # Think acts (rules::MonAct) by name; units (rules::ThinkUnit).
 ACTS = ["idle", "a1", "a2", "s2", "skill", "walk", "run", "approach", "keep", "circle", "wander", "none", "die", "around",
         "home", "point", "untraced", "s3", "s4", "seq", "fly", "gone", "s1", "sc", "mode_at", "move_to", "spawn"]
@@ -534,6 +545,7 @@ def main():
             f.write("// tools/emu/mon_ais.py --dump: game.exe's own monster thinks (see the script), a line each.\n")
             for rows in dumped.values():
                 for lines in rows.values(): f.write("".join(f'"{line}",\n' for line in lines[:6]))
+        write_names(os.path.join(os.path.dirname(sys.argv[sys.argv.index("--dump") + 1]), "mon_ais_names.inc"))
     return 0
 
 

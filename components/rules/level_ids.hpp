@@ -4,6 +4,9 @@
 // ones in use; the rest come from the table at run time.
 #pragma once
 
+#include <algorithm>
+#include <array>
+
 namespace d2d::rules::level_ids {
 
 // The towns, each its act's first level.
@@ -13,13 +16,15 @@ inline constexpr int kKurastDocks = 75;
 inline constexpr int kPandemoniumFortress = 103;
 inline constexpr int kHarrogath = 109;
 
-// The act (0..4) a level is in: each act's levels follow its town's Id.
+// The towns by act: each act's levels follow its town's Id.
+inline constexpr std::array kActTowns{ kRogueEncampment, kLutGholein, kKurastDocks, kPandemoniumFortress, kHarrogath };
+
+// The act (0..4) a level is in.
 constexpr int act_of(int level_id) {
-    return level_id >= kHarrogath ? 4 : level_id >= kPandemoniumFortress ? 3 : level_id >= kKurastDocks ? 2 : level_id >= kLutGholein ? 1 : 0;
+    return std::max(0, int(std::ranges::upper_bound(kActTowns, level_id) - kActTowns.begin()) - 1);
 }
-constexpr bool is_town(int level_id) {
-    return level_id == kRogueEncampment || level_id == kLutGholein || level_id == kKurastDocks || level_id == kPandemoniumFortress || level_id == kHarrogath;
-}
+constexpr bool is_town(int level_id) { return std::ranges::contains(kActTowns, level_id); }
+static_assert(act_of(0) == 0 && act_of(39) == 0 && act_of(40) == 1 && act_of(74) == 1 && act_of(75) == 2 && act_of(102) == 2 && act_of(103) == 3 && act_of(108) == 3 && act_of(109) == 4 && act_of(136) == 4);
 
 // Act 1.
 inline constexpr int kBloodMoor = 2;

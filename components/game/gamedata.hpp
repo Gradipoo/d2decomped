@@ -535,11 +535,9 @@ struct GameData {
     // builds and links outdoor neighbours (Level::nearby). load.hpp.
     mutable std::map<int, std::unique_ptr<Level>> levels;
     const Level* level(int id) const;
-    // The town of level `id`'s act: the camp, or Lut Gholein (built on
-    // demand like any level).
-    [[nodiscard]] const Level* town_of(int id) const {
-        return id < d2d::rules::level_ids::kLutGholein ? &town : level(id < d2d::rules::level_ids::kKurastDocks ? d2d::rules::level_ids::kLutGholein : d2d::rules::level_ids::kKurastDocks);
-    }
+    // The town of level `id`'s act: the camp, or a later act's town (built
+    // on demand like any level; null while its act isn't built).
+    [[nodiscard]] const Level* town_of(int id) const { return level(d2d::rules::level_ids::kActTowns[std::size_t(d2d::rules::level_ids::act_of(id))]); }
     void want_level(int id) const;
     void poll_levels() const;
     // SuperUniques.txt (without its Expansion row): name, MonStats row of
@@ -565,8 +563,12 @@ struct GameData {
     // The layout level `id`'s act placed it in (empty for acts not laid out).
     [[nodiscard]] const std::vector<d2d::drlg::Placed>& layout_of(int id) const {
         static const std::vector<d2d::drlg::Placed> kNone;
-        return id < d2d::rules::level_ids::kLutGholein ? act1_layout : id < d2d::rules::level_ids::kKurastDocks ? act2_layout
-             : id < d2d::rules::level_ids::kPandemoniumFortress ? act3_layout.levels : kNone;
+        switch (d2d::rules::level_ids::act_of(id)) {
+            case 0: return act1_layout;
+            case 1: return act2_layout;
+            case 2: return act3_layout.levels;
+            default: return kNone;
+        }
     }
     // Mercenary units by hireling.txt Id (the save's merc type): the
     // monster, and the first name key (merc01, merca201, MercX101, ...).

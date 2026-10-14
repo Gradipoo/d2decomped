@@ -25,6 +25,7 @@
 #include <light.hpp>
 #include <object_ids.hpp>
 #include <quests.hpp>
+#include <quests_act3.hpp>
 #include <rules.hpp>
 #include <sequences.hpp>
 
@@ -89,7 +90,7 @@ struct View {
     std::vector<Shot> missiles;
     int attack = -1, attack_skill = 0;     // the monster the player's attacking (unit id), with what
     std::vector<Loot::GroundItem> ground;  // the level's floor
-    struct Fire { float x, y; const Npc* npc; };
+    struct Fire { float x, y; const Npc* npc; std::uint32_t born = 0; };   // born: its mode's start (0: from the clock)
     std::vector<Fire> fires;
     // The player's town portal where they stand (which 0: where it was cast,
     // 1: its twin in town), leading to level `to`.
@@ -166,8 +167,12 @@ struct World {
     std::map<std::pair<const Level*, int>, std::uint32_t> operated;   // shrines / chests used: when
     struct Door { int mode = 0; std::uint32_t when = 0; };
     std::map<std::pair<const Level*, int>, Door> doors;   // doors used: their mode (0..7), when it changed
-    struct Fire { const Level* level; const Npc* npc; float x, y; };
-    std::vector<Fire> fires;               // chest traps 5 / 7 left these burning
+    struct Fire { const Level* level; const Npc* npc; float x, y; std::uint32_t born = 0, gone = 0; };
+    std::vector<Fire> fires;               // chest traps 5 / 7 left these burning; the afterglow till `gone`
+    bool afterglow_made = false;           // a3q7's record +0xc: the Dark Wanderer's afterglow, once a game
+    // a3q6's record (0x14, a3q6.cpp): +0xc 2 once Mephisto's dead; the
+    // bridge's event 7 (FUN_005bcac0) every 24 frames from then.
+    std::uint32_t bridge_check = 0;
     // The player's town portal: [0] where it was cast, [1] its twin in town
     // (FUN_0056d130 / FUN_0056cf40); a new one closes the old pair. [2]:
     // the Cairn Stones' portal to Tristram (object 60, FUN_005a9930), [3]
@@ -216,6 +221,17 @@ struct World {
     d2d::rules::ToolsQuest tools;          // and Tools of the Trade
     d2d::rules::CainQuest cain;            // and The Search for Cain
     d2d::rules::RadamentQuest radament;    // and Radament's Lair
+    d2d::rules::LamEsenQuest lam_esen;     // Act 3's (quests_act3.hpp)
+    d2d::rules::GoldenBirdQuest golden_bird;
+    d2d::rules::BladeQuest blade;
+    d2d::rules::KhalimQuest khalim;
+    d2d::rules::BlackenedTempleQuest temple;
+    d2d::rules::GuardianQuest guardian;    // its +0xc 2: Mephisto dead (the hellgate, the bridge)
+    [[nodiscard]] d2d::rules::KhalimQuest::Parts khalim_parts() const;
+    bool had_gidbinn = false;
+    std::uint32_t gidbinn_timer = 0;       // a3q3's 7 ticks from the altar's use (FUN_00543f10 -> FUN_005b9a30)
+    int gidbinn_altar = -1;                // the altar's Level::npcs index
+    bool had_figurine = false, had_bird = false;   // the Golden Bird's items, last tick (its pickups)
     d2d::rules::TaintedSunQuest tainted;   // and the Tainted Sun
     d2d::rules::HoradricStaffQuest staff;  // and the Horadric Staff
     d2d::rules::ArcaneQuest arcane;        // and the Arcane Sanctuary
@@ -301,7 +317,8 @@ struct World {
     static bool operable(int operate_fn) {
         using namespace d2d::rules::operate_fn;
         return std::ranges::contains(std::array{ kCasket, kShrine, kUrn, kChest, kBarrel, kExplodingBarrel, kCorpse, kArmorStand, kWeaponRack, kWell, kBookshelf, kTrapObject,
-                                                 kCubeChest, kScrollChest, kShaftChest, kTeleportPad }, operate_fn)
+                                                 kCubeChest, kScrollChest, kShaftChest, kTeleportPad, kLamTome, kHellgate, kGidbinnAltar, kKhalimHeart, kKhalimEye, kKhalimBrain,
+                                                 kSewerLever, kSewerStairs, kCompellingOrb }, operate_fn)
             || is_door(operate_fn);
     }
     static bool is_door(int operate_fn) {
@@ -395,6 +412,8 @@ struct World {
     void arrive(const Level* destination, float arrive_x, float arrive_y, const char* how);
     std::vector<d2d::rules::QuestMsg> quest_talk(int hc_idx, bool fresh = true);   // every quest's messages from that NPC (fresh: rolls the guard's line)
     void andariel_died(const Fight::Kill& kill, std::uint32_t now_ms);
+    void mephisto_died(const Fight::Kill& kill, std::uint32_t now_ms);
+    void mephisto_bridge(std::uint32_t now_ms);
     void blood_raven_died(std::uint32_t now_ms);
     void radament_died(const Fight::Kill& kill, std::uint32_t now_ms);
     void transmute(std::uint32_t now_ms);
@@ -427,6 +446,8 @@ struct World {
     void cain_step(std::uint32_t now_ms, float elapsed);
     // Whether the player carries an item of `code`.
     [[nodiscard]] bool carries(std::string_view code) const;
+    void take_carried(std::string_view code);
+    void give_item(std::string_view code, std::uint32_t now_ms, int ilvl = 1, int quality = 2);
     void set_waypoint(int index) { if (index >= 0 && index < 40) character.header.waypoints[std::size_t(character.header.active_difficulty())][std::size_t(index >> 3)] |= std::uint8_t(1 << (index & 7)); }
 
     // Dying (FUN_00580ec0 → FUN_00535ab0), killed by a monster:

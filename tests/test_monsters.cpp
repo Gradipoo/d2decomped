@@ -231,13 +231,15 @@ int main() {
         assert(bar_name_colour(Boss::none, "duriel") == kNameGold && bar_name_colour(Boss::none, "andariel") == kNameWhite && bar_name_colour(Boss::minion, "fallen1") == kNameWhite);
         // Act bosses (FUN_005b1cf0, by BaseId): Andariel mod 22, Blood Raven
         // 12, 22 and half freeze, the Smith 22, all flag 8 (gold, as a unique);
-        // the uber Andariel (0x2c3) and a plain monster aren't.
+        // a plain monster isn't; the ubers have their own (0x2c3, 0x2c0).
         const auto andariel = act_boss(0x9c, 0x9c), blood_raven = act_boss(0x10b, 0x10b);
         assert(andariel && andariel->mods == std::vector<int>{ 22 } && !andariel->half_freeze);
         assert(blood_raven && (blood_raven->mods == std::vector<int>{ 12, 22 }) && blood_raven->half_freeze);
         assert(act_boss(0x192, 0x192) && act_boss(0x192, 0x192)->mods == std::vector<int>{ 22 });
         assert(act_boss(0x11c, 0x11c) && (act_boss(0x11c, 0x11c)->mods == std::vector<int>{ 23, 22 }));   // the Maggot Queen: poison hit
-        assert(!act_boss(0x2c3, 0x9c) && !act_boss(5, 5) && bar_name_colour(Boss::unique, "andariel") == kNameGold);
+        assert(act_boss(0x2c3, 0x9c) && (act_boss(0x2c3, 0x9c)->mods == std::vector<int>{ 23, 6, 29 }));   // uber Andariel (FUN_005b1cf0)
+        assert(act_boss(0xf2, 0xf2) && act_boss(0x2c0, 0xf2) && (act_boss(0x2c0, 0xf2)->mods == std::vector<int>{ 22, 30, 17, 8, 6 }) && !act_boss(0xd3, 0xd3));   // Mephisto, uber; Duriel none
+        assert(!act_boss(5, 5) && bar_name_colour(Boss::unique, "andariel") == kNameGold);
         // A monster's sound set (FUN_004ca410): the Countess's own; a boss
         // or minion zombie's UMonSound; a plain one's MonSound.
         MonType zombie_sounds;
@@ -422,7 +424,7 @@ int main() {
                 d2d::rules::Rng seed;
                 seed.low = entry.low; seed.high = entry.high;
                 std::size_t next = 0;
-                const auto act = d2d::rules::hireable_think(view, seed, [&](int x, int) { return x - 5000 >= entry.split ? 2 : 1; },
+                const auto act = d2d::rules::hireable_think(view, seed, [&](int, int, int x, int) { return x - 5000 >= entry.split ? 2 : 1; },
                     [&](const d2d::rules::MercMove& move) {
                         assert(next < entry.tried.size());
                         const auto& want = entry.tried[next++];
@@ -500,7 +502,7 @@ int main() {
                     d2d::rules::Rng seed;
                     seed.low = entry.low; seed.high = entry.high;
                     std::size_t next = 0;
-                    const auto act = d2d::rules::necropet_think(view, seed, [&](int x, int) { return x - 5000 >= entry.split ? 2 : 1; },
+                    const auto act = d2d::rules::necropet_think(view, seed, [&](int, int, int x, int) { return x - 5000 >= entry.split ? 2 : 1; },
                         [&](const d2d::rules::MercMove& move) {
                             assert(next < entry.tried.size());
                             const auto& want = entry.tried[next++];
@@ -639,13 +641,19 @@ int main() {
             // game.exe's own runs, the back-offs' answers replayed): the scene,
             // what it comes to, its effects, the AI control and seed after.
             {
-                static constexpr std::string_view kCases[] = {
+                static const std::string_view kCases[] = {   // not constexpr: their lengths pass the step limit
 #include "mon_ais_cases.inc"
+#include "mon_ais3_cases.inc"
                 };
                 // Then the curse thinks (special AI 10 / 11) and the other thinks.
-                static constexpr std::array<std::string_view, 22> kAis{ "Duriel", "Swarm", "PinHead", "Mummy", "SandLeaper", "ClawViper", "PantherWoman", "PantherJavelin",
+                // Then Act 3's (mon_ais.py ACT3_AIS), their other thinks last.
+                static constexpr std::array<std::string_view, 37> kAis{ "Duriel", "Swarm", "PinHead", "Mummy", "SandLeaper", "ClawViper", "PantherWoman", "PantherJavelin",
                                                                        "Scarab", "BatDemon", "Baboon", "SandRaider", "GreaterMummy", "SandMaggot", "Summoner", "Vulture",
-                                                                       "MaggotEgg", "MaggotLarva", "DimVision", "Terror", "BatDemon", "SandMaggot" };
+                                                                       "MaggotEgg", "MaggotLarva", "DimVision", "Terror", "BatDemon", "SandMaggot",
+                                                                       "Mosquito", "ThornHulk", "WillOWisp", "ZakarumZealot", "ZakarumPriest", "FrogDemon", "Tentacle",
+                                                                       "TentacleHead", "FetishShaman", "HighPriest", "Hydra", "FetishBlowgun", "Mephisto", "FrogDemon", "FetishShaman" };
+                constexpr int kAct3 = 22;
+                auto other = [](int which) { return which == 20 || which == 21 || which >= 35; };
                 using d2d::rules::ThinkEffect;
                 int checked = 0;
                 for (const std::string_view case_line : kCases) {
@@ -659,7 +667,7 @@ int main() {
                     bool rally = false;
                     std::vector<ThinkEffect> effects;
                     d2d::rules::ThinkIn input;
-                    input.difficulty = read(); input.frame = read(); (void)read();
+                    input.difficulty = read(); input.frame = read(); input.target = read() != 0;
                     input.dist = read(); input.in_melee = read() != 0; input.got_hit = read() != 0; input.life_pct = read();
                     for (auto& value : ctrl) value = read();
                     for (auto& value : input.aip) value = read();
@@ -681,6 +689,10 @@ int main() {
                     int cast_word = 0;
                     input.swings = read() != 0; input.runs = read() != 0; input.afraid = read() != 0; input.in_s4 = read() != 0; cast_word = read();
                     input.cast_word = &cast_word;
+                    if (which >= kAct3) { input.next_event = read(); input.leader_mode = read(); input.command_unit = read() != 0; input.skill_level = read(); input.state_c = read() != 0; input.spot_clear = read() != 0; input.spared = read() != 0; input.line_clear = read() != 0; input.s1_range = read();
+                                         for (auto& value : input.skill678) value = read() != 0;
+                                         input.weak = read() != 0; input.near_player = read() != 0;
+                                         input.wisps = read(); input.bless_ok = read() != 0; }
                     d2d::rules::Rng seed;
                     seed.low = std::uint32_t(std::stoll([&] { std::string text; fields >> text; return text; }()));
                     seed.high = std::uint32_t(std::stoll([&] { std::string text; fields >> text; return text; }()));
@@ -701,7 +713,7 @@ int main() {
                     const auto ai_name = kAis[std::size_t(which)];
                     const auto act = which == 18 ? d2d::rules::dim_vision_think(input, seed)
                                    : which == 19 ? d2d::rules::terror_think(input, seed, away)
-                                   : which >= 20 ? d2d::rules::other_think(ai_name, input)
+                                   : other(which) ? d2d::rules::other_think(ai_name, input)
                                                  : d2d::rules::mon_think(ai_name, input, seed, away);
                     assert(asked == asks.size());
                     for (const auto& effect : effects)                     // the toggle back clears the scratch words (FUN_005b0e00)

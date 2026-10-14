@@ -848,6 +848,40 @@ Guardian's report. `tests/quests_d2d.py` plays them all. The plain casts
 (S1 / A1 / A2: heals, lightning, teleport, Hydra) and the will-o-wisps'
 dance are in too (monster-ai.md). Act 3 is done; next: Act 4.
 
+## Road to Act 4 (from 2026-10-14, branch `act4`)
+
+Traced first, all of it, before any port (2026-10-14). Same road as Acts 2
+and 3: the levels diffed against game.exe, the town, the monsters, the quests.
+
+**Step 1 — the levels** (drlg.md "Act 4's layout", "Act 4's outdoors",
+"Act 4's River of Flame"; the oracle already builds 103..108):
+1. The layout (FUN_00678a20): two chains as act 2's; the Outer Steppes'
+   own placer (FUN_00676c00) and its 0x400000 / 0x800000 flag.
+2. Pandemonium Fortress (103): one preset (797 Fortress.ds1); d2d just
+   doesn't load act 4's presets yet.
+3. The Mesa (104..106, LevelType 27): borders in column 3 (799..), the
+   FortMesa entry, border LvlSub base 799, FUN_0067e6a0's anywhere list.
+4. The Chaos Sanctuary (108): a fixed 5x5 of 24x24 presets.
+5. The River of Flame (107, maze type 28): grow, then FUN_00673320 (Warp
+   Mesa below, BridgeLava above, two bridges, the forge swap, the LavaX fill
+   on eight sides, the shift under the sanctuary).
+6. Then population (`diff_drlg.py monsters`, `game`), act 4's NPC thinks
+   (`npcs.py` level 103), `ACT=4 sweep.sh`.
+
+**Step 2 — the monsters** (monster-ai.md "Act 4's MonAIs", skills.md "Act
+4's monster skills"): VileMother, VileDog, FingerMage, Regurgitator, the
+three knights, Megademon, Izual, Diablo (his 17-way chooser). Seven already
+run in `mon_ais.py`'s harness; VileMother (search type 0xc, the lay),
+Regurgitator and OblivionKnight (their search callbacks) and Diablo (his
+target / action choosers) need hooks. Skills: srvst 49 / 53 / 54, srvdo 91,
+100..104, 108, 112, 148, 152.
+
+**Step 3 — the quests** (quests-act4.md): the opening, Izual (his ghost),
+the Hellforge (Hephasto's hammer, the soulstone, the gems and rune), the
+seals and their three bosses, Diablo's release (the sanctuary cleared) and
+death; the end: classic 90 s on, the game ends; LoD Tyrael's portal (Act 5
+isn't built: it stops there). The hellgate opens the fortress.
+
 ## Checkpoint 2026-10-14 (later): housekeeping, fast act checks
 
 Fast checks, one act at a time or all three side by side:

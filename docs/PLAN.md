@@ -1012,3 +1012,7 @@ world.cpp: the quest objects' operate hooks (the `operate_fn` cases) and
 a few level-arrival bits (Tyrael gone, camp Cain, the cairn stones).
 The tools take every act too: `ACT=1..5 tools/emu/sweep.sh` (ranges
 from `drlg.TOWNS`).
+A new act's monster AIs: append them to `AIS` in `tools/emu/mon_ais.py`
+and re-run its `--dump`; it writes the cases and `tests/mon_ais_names.inc`
+(the table test_monsters reads). Its quest playthrough: the act's number
+in `tests/CMakeLists.txt` and an `actN()` in `tests/quests_d2d.py`.

@@ -58,10 +58,12 @@ if (Python3_Interpreter_FOUND)
     add_test(NAME smoke_d2d
              COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/smoke_d2d.py $<TARGET_FILE:d2d>)
     # One per act, each from a new character: `ctest -R quests_act -j3` checks
-    # all three acts' quests in about the time of one.
+    # every act's quests in about the time of one. A new act: its number here.
+    set(d2d_quest_tests "")
     foreach (act 1 2 3)
         add_test(NAME quests_act${act}
                  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/quests_d2d.py $<TARGET_FILE:d2d> ${act})
+        list(APPEND d2d_quest_tests quests_act${act})
     endforeach()
 endif()
 
@@ -84,6 +86,6 @@ endif()
 if (d2d_test_env)
     set_tests_properties(test_d2s test_outdoor test_game test_exe_tables PROPERTIES ENVIRONMENT "${d2d_test_env}")
     if (TARGET d2d AND Python3_Interpreter_FOUND)
-        set_tests_properties(smoke_d2d quests_act1 quests_act2 quests_act3 PROPERTIES ENVIRONMENT "${d2d_test_env}")
+        set_tests_properties(smoke_d2d ${d2d_quest_tests} PROPERTIES ENVIRONMENT "${d2d_test_env}")
     endif()
 endif()

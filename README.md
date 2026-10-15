@@ -65,6 +65,22 @@ walking over it, and roofs turn see-through around your character.
 **Planned:** continue through the rest of the campaign; let d2d host multiplayer
 games and run a dedicated server; and support controllers, high-DPI displays, and remappable controls. These features are not implemented yet.
 
+## Steam Deck
+
+Steam Deck support is experimental: there is no Flathub listing or controller
+support yet. Download and extract the `d2decomped-x86_64` artifact from a
+successful [CI workflow run](https://github.com/psi29a/d2decomped/actions/workflows/ci.yml),
+switch to Desktop Mode, then run:
+
+```sh
+cd ~/Downloads
+unzip -o d2decomped-x86_64.zip
+flatpak install --user --bundle ./d2decomped-x86_64.flatpak
+```
+
+To launch from Gaming Mode, add D2Decomp to Steam as a non-Steam game in
+Desktop Mode. You must provide your own Diablo II + Lord of Destruction data.
+
 ## Build and run
 
 You'll need a C++26 compiler, CMake 3.28+, Ninja, SDL3, OpenAL, FFmpeg, zlib,

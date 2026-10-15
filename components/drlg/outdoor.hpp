@@ -134,6 +134,14 @@ inline int corner_row(int edge) {
     const auto found = rows.find(edge);
     return found == rows.end() ? 0 : found->second;
 }
+// Chaos Sanctuary's 25 presets of 24x24 (FUN_0067e840, 0x6f22c0).
+inline constexpr std::array<int, 25> kChaosPresets = {
+    836, 836, 836, 836, 836,
+    836, 836, 861, 836, 836,
+    836, 858, 862, 859, 836,
+    836, 836, 860, 836, 836,
+    836, 836, 857, 836, 836
+};
 // River Upper / Lower file by the border def already in the cell (0x6f2680).
 inline constexpr std::array<std::array<int, 2>, 16> kRiver = { {
     { 0, 0 }, { 0, 6 }, { 0x182, 0 }, { 0, 8 }, { 2, 2 }, { 0, 3 }, { 1, 1 }, { 3, 0 },
@@ -436,7 +444,7 @@ struct Gen {
             std::uint32_t bits = first.style ? 3 : 1;
             // Edge: kind left 0, up 1, right 2, down 3 (0x6f0fd0).
             const int kind = dx1 == -1 ? 0 : dy1 == -1 ? 1 : dx1 == 1 ? 2 : 3;
-            const int edge = is_desert() ? 0x16c + kind : kBorder[std::size_t(kind + 1)][first.style == 0 ? 1 : 0];   // the desert's column 2 (364..375)
+            const int edge = is_desert() ? 0x16c + kind : is_mesa() ? 799 + kind : kBorder[std::size_t(kind + 1)][first.style == 0 ? 1 : 0];   // desert col 2 (364..375), mesa col 3 (799..810)
             if (!(first.flags & 2)) {
                 int x = first.x, y = first.y;
                 while (x != second.x || y != second.y) {
@@ -466,7 +474,7 @@ struct Gen {
             else edge_index = !(second.flags & 2) ? sx2(dx1) + 9 * (sx2(2 * dx2) + 2 * dy2) + dy1
                                     : sx2(dx1) + 9 * (sx2(dx2) + dy2) + dy1;
             if (const int row = corner_row(edge_index)) {
-                int def = is_desert() ? 0x16b + row : kBorder[std::size_t(row)][style == 0 ? 1 : 0];
+                int def = is_desert() ? 0x16b + row : is_mesa() ? 798 + row : kBorder[std::size_t(row)][style == 0 ? 1 : 0];
                 if (def == 19) def = first.style == 1 ? 19 + (second.style != 1) : 21;
                 if (def) {
                     place(second.x, second.y, def, -1, false);
@@ -985,7 +993,9 @@ struct Gen {
 
     // ---- act 2's desert (FUN_0067f980): LevelType 16, levels 41-46.
     [[nodiscard]] bool is_desert() const { return level.rect.level >= level_ids::kRockyWaste && level.rect.level <= level_ids::kCanyonOfTheMagi; }
-    [[nodiscard]] int border_base() const { return is_desert() ? 0x16c : 4; }   // the border defs FUN_006752a0 is handed
+    [[nodiscard]] bool is_mesa() const { return level.rect.level >= level_ids::kOuterSteppes && level.rect.level <= level_ids::kCityOfTheDamned; }
+    [[nodiscard]] bool is_chaos() const { return level.rect.level == level_ids::kChaosSanctuary; }
+    [[nodiscard]] int border_base() const { return is_desert() ? 0x16c : is_mesa() ? 799 : 4; }   // the border defs FUN_006752a0 is handed
     // FUN_0067f470: from a rolled start, each def in turn anywhere; with
     // `every_file` each of its files.
     void desert_list(std::initializer_list<int> defs, bool every_file) {
@@ -1046,6 +1056,43 @@ struct Gen {
             break;
         default: break;
         }
+    }
+    // ---- act 4's Mesa (FUN_0067e890, LevelType 27): levels 104-106.
+    void lay_mesa() {
+        const int lid = level.rect.level;
+        // 1. FUN_0067e660: 104's flags 0x400000 -> FortMesa (798, 8x24) at cell (0, 1); 0x800000 -> at (0, 4)
+        if (lid == level_ids::kOuterSteppes) {
+            if (level.rect.flags & 0x400000) place(0, 1, 798, -1, false);
+            else if (level.rect.flags & 0x800000) place(0, 4, 798, -1, false);
+        }
+        // 2. Border LvlSub FUN_006752a0 types 1, 2, 3, base 799
+        border_subs(1);
+        border_subs(2);
+        border_subs(3);
+        // 3. FUN_0067e6a0: anywhere(def, -1, 0, 0xf) in order
+        const int m_base = lid == level_ids::kOuterSteppes ? 812 : lid == level_ids::kPlainsOfDespair ? 817 : 823;
+        const int p_base = lid == level_ids::kOuterSteppes ? 828 : 832;
+        if (lid == level_ids::kCityOfTheDamned) anywhere(811, -1, 0, 0xf); // 0x32b, WarpLava
+        anywhere(m_base, -1, 0, 0xf);
+        anywhere(m_base + 1, -1, 0, 0xf);
+        anywhere(m_base + 1, -1, 0, 0xf);
+        anywhere(m_base + 2, -1, 0, 0xf);
+        anywhere(m_base + 2, -1, 0, 0xf);
+        anywhere(m_base + 3, -1, 0, 0xf);
+        anywhere(m_base + 3, -1, 0, 0xf);
+        if (lid == level_ids::kPlainsOfDespair) anywhere(822, -1, 0, 0xf); // 0x336, Izual's 8x8
+        for (int i = 0; i < 4; ++i) anywhere(m_base + 4, -1, 0, 0xf);
+        anywhere(p_base, -1, 0, 0xf);
+        anywhere(p_base + 1, -1, 0, 0xf);
+        anywhere(p_base + 1, -1, 0, 0xf);
+        anywhere(p_base + 2, -1, 0, 0xf);
+        anywhere(p_base + 2, -1, 0, 0xf);
+        for (int i = 0; i < 4; ++i) anywhere(p_base + 3, -1, 0, 0xf);
+    }
+    // ---- act 4's Chaos Sanctuary (FUN_0067e840): LevelType 27, level 108.
+    void lay_chaos() {
+        for (int i = 0; i < 25; ++i)
+            place((i % 5) * 3, (i / 5) * 3, kChaosPresets[std::size_t(i)], -1, false);
     }
     void fills() {
         auto any = [&](int def) { anywhere(def, -1, 0, 0xf); };

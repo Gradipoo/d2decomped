@@ -144,7 +144,8 @@ static std::string dump(const OutdoorAssets& assets, std::uint32_t seed, int id,
         return out.str();
     }
     const auto act3 = act3_layout(level_defs(assets.levels), act_seed(seed));
-    const auto layout = id >= level_ids::kKurastDocks ? act3.levels
+    const auto layout = id >= level_ids::kPandemoniumFortress ? act4_layout(level_defs(assets.levels), act_seed(seed))
+                      : id >= level_ids::kKurastDocks ? act3.levels
                       : id >= level_ids::kLutGholein ? act2_layout(level_defs(assets.levels), act_seed(seed)) : act1_from_map_seed(level_defs(assets.levels), seed);
     if (std::getenv("DRLG_LAYOUT"))
         for (const auto& placement : layout) std::fprintf(stderr, "layout %d at %d,%d %dx%d dir %d flip %d flags %x\n", placement.level, placement.x, placement.y, placement.width, placement.height, placement.dir, placement.flip, placement.flags);
@@ -445,6 +446,16 @@ int main(int argc, char** argv) {
         const auto last = dash == std::string::npos ? first : std::uint32_t(std::stoul(range.substr(dash + 1), nullptr, 0));
         for (auto seed = first;; ++seed) {
             std::ostringstream out;
+            if (id >= level_ids::kPandemoniumFortress) {     // act 4, as drlg.act4_layout_dump
+                auto layout = act4_layout(defs, act_seed(seed));
+                std::ranges::sort(layout, {}, &Placed::level);
+                for (const auto& placement : layout)
+                    out << "level " << placement.level << " at " << placement.x << ',' << placement.y << " size " << placement.width << 'x' << placement.height << '\n';
+                if (argc > 5) std::ofstream(fs::path(argv[4]) / (std::to_string(seed) + ".txt")) << out.str();
+                else std::fputs(out.str().c_str(), stdout);
+                if (seed == last) break;
+                continue;
+            }
             if (id >= level_ids::kKurastDocks) {     // act 3, as drlg.act3_layout_dump
                 const auto act3 = act3_layout(defs, act_seed(seed));
                 for (const auto& placement : act3.levels) {

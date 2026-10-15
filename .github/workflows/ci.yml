@@ -315,9 +315,12 @@ jobs:
       - name: Create release if needed and upload assets
         env:
           GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
           TAG: ${{ github.ref_name }}
         run: |
-          if ! gh release view "$TAG" >/dev/null 2>&1; then
-            gh release create "$TAG" --title "D2: Decomped - $TAG" --generate-notes
+          if ! gh release view "$TAG" --repo "$REPOSITORY" >/dev/null 2>&1; then
+            gh release create "$TAG" --repo "$REPOSITORY" \
+              --title "D2: Decomped - $TAG" --generate-notes
           fi
-          gh release upload "$TAG" release-assets/* --clobber
+          gh release upload "$TAG" --repo "$REPOSITORY" \
+            release-assets/* --clobber

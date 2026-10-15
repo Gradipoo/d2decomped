@@ -62,7 +62,7 @@ if(D2D_BUNDLED_FFMPEG)
     endif()
     set(ffmpeg_archives "")
     foreach(lib avformat avcodec swscale swresample avutil)   # link order
-        list(APPEND ffmpeg_archives "${ffmpeg_build_dir}/lib${lib}/lib${lib}.a")
+        list(APPEND ffmpeg_archives "${ffmpeg_prefix}/lib/lib${lib}.a")
     endforeach()
     add_library(ffmpeg INTERFACE)
     if(NOT EXISTS "${ffmpeg_prefix}/built")
@@ -71,14 +71,14 @@ if(D2D_BUNDLED_FFMPEG)
         ExternalProject_Add(ffmpeg_build
             ${ffmpeg_source_args}
             BINARY_DIR "${ffmpeg_build_dir}"
-            CONFIGURE_COMMAND <SOURCE_DIR>/configure ${ffmpeg_options}
-            BUILD_COMMAND make -j${cores} COMMAND ${CMAKE_COMMAND} -E touch "${ffmpeg_prefix}/built"
-            INSTALL_COMMAND ""
+            CONFIGURE_COMMAND <SOURCE_DIR>/configure --prefix=${ffmpeg_prefix} ${ffmpeg_options}
+            BUILD_COMMAND make -j${cores}
+            INSTALL_COMMAND make install COMMAND ${CMAKE_COMMAND} -E touch "${ffmpeg_prefix}/built"
             BUILD_BYPRODUCTS ${ffmpeg_archives})
         add_dependencies(ffmpeg ffmpeg_build)
+        file(MAKE_DIRECTORY "${ffmpeg_prefix}/include")   # exists before the build fills it
     endif()
-    target_include_directories(ffmpeg SYSTEM INTERFACE
-        "${ffmpeg_source_dir}/include" "${ffmpeg_build_dir}")
+    target_include_directories(ffmpeg SYSTEM INTERFACE "${ffmpeg_prefix}/include")
     target_link_libraries(ffmpeg INTERFACE ${ffmpeg_archives} $<$<PLATFORM_ID:Linux>:m>)
     set(ffmpeg_target ffmpeg)
 else()

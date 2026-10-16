@@ -24,6 +24,7 @@
 #include <format>
 #include <initializer_list>
 #include <limits>
+#include <numbers>
 #include <span>
 #include <string>
 #include <string_view>
@@ -348,7 +349,8 @@ using SeqRows = std::vector<GameData::MonSeqFrame>;
 bool castable(const d2d::rules::Skill& skill) {
     using enum d2d::rules::ServerDoFunction;
     return !skill.srvmissile.empty() || std::ranges::contains(std::array{ kNova, kMissileWall, kCurse, kScatteredBolts, kMissileAtTarget, kMonsterBreath, kBestow,
-                                                                          kMonTeleport, kMonPoisonNova, kHydra }, skill.srvdofunc);
+                                                                          kMonTeleport, kMonPoisonNova, kHydra, kDiabLight, kDiabCold, kFingerMageSpider, kDoomKnightMissile,
+                                                                          kGuidedMissile, kSelfState, kRegurgitatorEat, kMonCurseCast }, skill.srvdofunc);
 }
 // Its skill `id`'s level (Sk*lvl + the difficulty's bonus), 1 when not its own.
 int skill_level(const GameData& game_data, const Monster& monster, int id) {
@@ -810,6 +812,81 @@ bool think(const GameData& game_data, const Level& level, Monster& monster, std:
             input.bless_ok = !target->pet && !target->of;
         }
     }
+    // Act 4's (monster-ai.md "Act 4's MonAIs"): the vile mother's young within
+    // 25 (its MonStats spawn's class) and a spot to lay one; the
+    // Regurgitator's corpse (a dead monster, DD, not raised) within aip6, its
+    // id the one it's after (state2); the Oblivion Knight's knight (class
+    // 0x136) within 50; Diablo's kept point and his chooser's inputs.
+    // ponytail: the states its skills name on a unit (the knights' armor and
+    // curse, the finger mage's 0x54) as d2d keeps them: armor since its cast,
+    // the rest off; Diablo's target pick (FUN_005e8f20) is the search's, its
+    // score 0 and the players one; the target's left / right skills unknown
+    // (-1); Bone Prison always usable (FUN_005fd470 for 199 isn't traced).
+    int lay_x = 0, lay_y = 0;
+    {
+        const auto& name = type_info.ai_name;
+        auto nearest = [&](auto&& wanted, int limit_squared) {
+            int found = -1, found_squared = std::numeric_limits<int>::max();
+            for (std::size_t i = 0; i < pack.size(); ++i) {
+                const auto& other = pack[i];
+                if (&other == &monster || !wanted(other)) continue;
+                const int off_x = subtile(other.unit.x) - x, off_y = subtile(other.unit.y) - y, squared = off_x * off_x + off_y * off_y;
+                if (squared <= limit_squared && squared < found_squared) { found = int(i); found_squared = squared; }
+            }
+            return std::pair{ found, found_squared };
+        };
+        auto take = [&](int found, int found_squared) {
+            if (found < 0) return;
+            const auto& other = pack[std::size_t(found)];
+            input.kin_x = subtile(other.unit.x); input.kin_y = subtile(other.unit.y); input.kin_id = other.id; input.kin_dist = found_squared;
+        };
+        if (name == "VileMother") {
+            const auto young = game_data.monsters.by_id.find(type_info.spawn);
+            for (const auto& other : pack)
+                if (young != game_data.monsters.by_id.end() && other.alive() && other.type == young->second
+                    && d2d::rules::ai_distance(subtile(other.unit.x) - x, subtile(other.unit.y) - y) <= 25) ++input.young;
+            // FUN_005f9e30: eight tries round it 3 subtiles out from the side the target's on.
+            // ponytail: the turn order is by d2d's eight directions, not 0x6e.. (FUN_0063e7a0 / FUN_0063e7e0).
+            static constexpr std::array<std::pair<int, int>, 8> kAround{ { { 1, 0 }, { 1, 1 }, { 0, 1 }, { -1, 1 }, { -1, 0 }, { -1, -1 }, { 0, -1 }, { 1, -1 } } };
+            const int facing = int(std::lround(std::atan2(dy, dx) / (std::numbers::pi_v<float> / 4) + 8)) % 8;
+            for (int turn = 0; turn < 8 && !input.lay_ok; ++turn) {
+                const auto [step_x, step_y] = kAround[std::size_t((facing + turn) % 8)];
+                lay_x = x + step_x * 3; lay_y = y + step_y * 3;
+                input.lay_ok = !level.unit_blocked((float(lay_x) + 0.5f) / 5, (float(lay_y) + 0.5f) / 5);
+            }
+        }
+        if (name == "Regurgitator") {
+            const auto [found, found_squared] = nearest([](const Monster& other) { return !other.alive() && other.mode == "DD" && !other.corpse_used; }, input.aip[5] * input.aip[5]);
+            corpse = found;
+            input.corpse = found >= 0;
+            take(found, found_squared);
+            const auto after = std::ranges::find(pack, monster.ai_state2, &Monster::id);   // FUN_00552f60(state2)
+            input.command_unit = after != pack.end() && !after->corpse_used;
+            input.leader_mode = after != pack.end() && after->mode == "DD" ? 12 : 0;
+            if (after != pack.end()) { input.kin_x = subtile(after->unit.x); input.kin_y = subtile(after->unit.y); }
+        }
+        if (name == "OblivionKnight") {
+            const auto [found, found_squared] = nearest([&](const Monster& other) { return other.alive() && other.type == 0x136; }, 2500);
+            kin = found;
+            input.kin = found >= 0;
+            take(found, found_squared);
+        }
+        if (name == "AbyssKnight") input.skill_state = monster.armored;
+        if (name == "Diablo") {
+            input.has_word = monster.has_point; input.word_x = monster.point_x; input.word_y = monster.point_y;
+            input.target = true;
+            input.players_looked = 1;
+            input.stuck = level.blocked(unit.x, unit.y, 0x40);
+            input.reach = input.in_melee;
+            input.players_about = 1;
+            input.in_chaos = level.id == d2d::rules::level_ids::kChaosSanctuary;
+            input.target_light_res = target->fighter.res[1];
+            input.target_player = !target->pet;
+            input.command_unit = input.target_player;               // FUN_005353f0 -> FUN_00552f60: the player himself
+            input.kin_x = target_x; input.kin_y = target_y;
+            input.self_size = type_info.size; input.target_size = target->size;
+        }
+    }
     auto use = [&](std::string_view mode, int skill) {             // FUN_005dead0 / FUN_005ddf90: against the target (mode ctx +8)
         monster.chase = int(target - foes.data());
         unit.dir = direction16(dx, dy);
@@ -856,6 +933,7 @@ bool think(const GameData& game_data, const Level& level, Monster& monster, std:
         act = d2d::rules::mon_think(type_info.ai_name, input, monster.seed, away);
     }
     monster.move_pct = pace;                                       // the next mode takes it (FUN_005a63f0)
+    if (type_info.ai_name == "AbyssKnight" && act.act == MonAct::skill && act.n == 1) monster.armored = true;   // its Bone Armor up
     // Its effects: the leader's command done; Duriel's aura (Skill4) on.
     // ponytail: states 0x5a / 0x5b and the overlays (looks) and stat 0x4a
     // (regen) left out; the Summoner's quest reads his first think (ai_state).
@@ -886,6 +964,8 @@ bool think(const GameData& game_data, const Level& level, Monster& monster, std:
             (effect.id % 4 == 1 ? wisp.ai_state : effect.id % 4 == 2 ? wisp.ai_state2 : wisp.ai_state3) = effect.value;
         }
         if (effect.kind == d2d::rules::ThinkEffect::bless) target->blessed = effect.value;
+        if (effect.kind == d2d::rules::ThinkEffect::mark) { monster.has_point = true; monster.point_x = effect.id; monster.point_y = effect.value; }
+        // ponytail: Izual's greeting (ThinkEffect::greet, a4q1's log, FUN_005b4390) waits for a4q1 (step 3).
         if (effect.kind == d2d::rules::ThinkEffect::aura) { monster.aura = skill_id(game_data, type_info.skill[std::size_t(effect.id)]); monster.aura_lvl = std::max(input.aip[0], 1); }
     }
     // The unit it's at: its kin (a walk to it), the hurt one or corpse it
@@ -915,7 +995,18 @@ bool think(const GameData& game_data, const Level& level, Monster& monster, std:
             return true;
         case MonAct::move_to: walk_to(act.x - x, act.y - y, false); return true;   // FUN_005de490: to the point
         case MonAct::gone: monster.gone = true; return true;       // FUN_005ddfc0: Mephisto's hydras at their end
-        case MonAct::spawn:                                        // Coldworm's (FUN_005f9cf0)
+        case MonAct::spawn:                                        // Coldworm's (FUN_005f9cf0); 2: the vile mother's lay
+            if (act.n == 2) {                                      // FUN_005f9e30: Skill1 (Nest) at the spot: its young there
+                // ponytail: the young made at once, not by Nest's sequence (srvst 49 / srvdo 91).
+                if (const auto young = game_data.monsters.by_id.find(type_info.spawn); born && young != game_data.monsters.by_id.end()) {
+                    auto laid = make_monster(game_data, young->second, (float(lay_x) + 0.5f) / 5, (float(lay_y) + 0.5f) / 5, rng, monster.difficulty);
+                    laid.aware = true;
+                    laid.seed = d2d::rules::Rng{ rng.next() };
+                    born->push_back(std::move(laid));
+                }
+                set_mode(game_data, monster, type_info.sk_mode[0], now_ms);
+                return true;
+            }
             if (act.n == 0) { set_mode(game_data, monster, "S1", now_ms); return true; }   // FUN_005de440: mode 8 where she stands
             // FUN_0063efa0 (BaseId 0x11c): her MonStats spawn 8 subtiles east, in
             // S1; FUN_005b2f20 within 2 of it (flags 0x42), flag 0x4000000; counted if made.
@@ -1349,7 +1440,46 @@ bool monster_update(const GameData& game_data, const Level& level, Monster& mons
                         const float turn = (float(int(rng.next() % 101) - 50) / 100.f) * 1.5707963f;
                         andariel_missile(game_data, monster, cast->srvmissilea, dx * std::cos(turn) - dy * std::sin(turn), dx * std::sin(turn) + dy * std::cos(turn), now_ms, missiles, lvl, cast);
                     }
-                } else if (cast->srvdofunc == ServerDoFunction::kMonsterBreath) {
+                } else if (cast->srvdofunc == ServerDoFunction::kMonCurseCast) {
+                    // FUN_005ce2b0: rand(5) on its seed picks 0x6e3228's curse (Amplify
+                    // Damage, Weaken, Life Tap, Decrepify, Lower Resist), cast at its level
+                    // round the target as do 30.
+                    // ponytail: the curse's own stat list (by the pick) is the curse skill's.
+                    static constexpr std::array<int, 5> kCurses{ 66, 72, 82, 87, 91 };
+                    const int curse = kCurses[std::size_t(monster.seed(5))];
+                    const auto* cursed = game_data.skills.get(curse);
+                    const int radius = cursed ? d2d::rules::eval_calc(game_data.skills, cursed->aurarange, {}, curse, lvl) : 0;
+                    for (auto& near_foe : foes)
+                        if (near_foe.alive && !near_foe.of && !foe.of && std::hypot(near_foe.x - foe.x, near_foe.y - foe.y) * 5 <= float(radius))
+                            near_foe.cursed = { curse, lvl };
+                } else if (cast->srvdofunc == ServerDoFunction::kDiabCold) {
+                    // FUN_005cce80: one sure hit (hit flags | 1) of the skill's own damage at the unit.
+                    auto stats = monster.stats;
+                    stats.a1_min = stats.a1_max = 0;
+                    stats.to_hit = 1 << 20;
+                    for (auto& element : stats.elements) element = {};
+                    const auto added = d2d::rules::row_damage(cast->etype, cast->emin, cast->emax, cast->emin_lev, cast->emax_lev, cast->hitshift, cast->elen, cast->elen_lev, lvl);
+                    if (added.etype >= 0) stats.elements[0] = { added.etype, 100, added.elo >> 8, added.ehi >> 8, added.elen, "A1" };
+                    foe.take(d2d::rules::monster_blow(foe.fighter, foe.level, foe.motion(), stats, false, rng));
+                } else if (cast->srvdofunc == ServerDoFunction::kFingerMageSpider || cast->srvdofunc == ServerDoFunction::kDoomKnightMissile
+                           || cast->srvdofunc == ServerDoFunction::kGuidedMissile) {
+                    // FUN_005ccfa0 / FUN_005cdfb0 / do 10: one srvmissilea at the target.
+                    // ponytail: the knights' variant row (srvmissilea + monster data +0xe) and Bone Spirit's homing left out.
+                    andariel_missile(game_data, monster, cast->srvmissilea, dx, dy, now_ms, missiles, lvl, cast);
+                } else if (cast->srvdofunc == ServerDoFunction::kSelfState) {
+                    // MonBoneArmor (do 18): its state on itself (Monster::armored, set as it's cast).
+                    // ponytail: the armor's damage absorb isn't kept.
+                } else if (cast->srvdofunc == ServerDoFunction::kRegurgitatorEat) {
+                    // FUN_005cdc10: a corpse (DD) it's at eaten (gone), its life back by the corpse's.
+                    // ponytail: calc1 % of the corpse's life (FUN_00483360's args are register-passed, not read).
+                    if (monster.skill_unit >= 0 && std::size_t(monster.skill_unit) < pack.size())
+                        if (auto& eaten = pack[std::size_t(monster.skill_unit)]; !eaten.alive() && eaten.mode == "DD" && !eaten.corpse_used) {
+                            eaten.corpse_used = true;
+                            const int pct = d2d::rules::eval_calc(game_data.skills, cast->calc[0], {}, monster.skill, lvl);
+                            monster.hit_points = std::min(monster.hit_points + std::max(eaten.stats.hit_points * pct / 100, 1), monster.stats.hit_points);
+                        }
+                } else if (cast->srvdofunc == ServerDoFunction::kMonsterBreath || cast->srvdofunc == ServerDoFunction::kDiabLight) {
+                    // DiabLight: the same start (srvst 53) and its bolts while state 0xc's on (FUN_005cc690).
                     // FUN_005cc240 / FUN_005cc4e0: state 0xc, its end calc2 frames on; a
                     // flame now and every calc3 frames after (the breath below).
                     monster.breath = monster.skill;

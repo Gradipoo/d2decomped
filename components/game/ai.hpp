@@ -268,6 +268,10 @@ struct Monster {
     int breath = -1;
     std::uint32_t breath_until = 0, breath_next = 0;
     bool breath_state = false;
+    // Act 4's: Diablo's kept point (his leader word, kind 10: his own spot at
+    // his first think, FUN_0058ef40); a knight's Bone Armor up since its cast.
+    bool has_point = false, armored = false;
+    int point_x = 0, point_y = 0;
     std::uint32_t laid_until = 0;
     // Its unit seed (+0x20) as its look left it: what its thinks draw. A
     // special AI (AI control [0], FUN_005b0e00: the Countess's 0xd, Dim

@@ -298,12 +298,23 @@ the same casting nudges (13 = 15, 13+1 = 25, 9 ≥ 20); 105+ off 14 = 60;
 leader 15 = 20. Then a usable Prison (FUN_005fd470 skill 199: `FUN_005b34c0`
 on the target in test mode, flag 1, each of 0x73d4f0's four spots able to take
 its bone, `FUN_005b2a00`: request +0x24 bit 0 a dry run, radius −1 the
-exact subtile, which must lie in the room's rect, pass `FUN_005fd350` and
-`FUN_0064d9b0` (the class's MonStats2 size and kind mask); the cast places
+exact subtile, which must lie in the target's room's rect (both callers,
+FUN_005fd470 and the cast FUN_005cd5d0, pass FUN_00620bb0(target) as
+FUN_005b3270's EDX: the param block's [1], PtInRect on FUN_00619730's
+rect), pass `FUN_005fd350` (it only refuses BaseIds 0xce, 0xe4, 0x12a, 0x14e
+and 0x210, so never a bone) and `FUN_0064d9b0` (the class's MonStats2 size
+and kind mask); each try draws three times on the room's seed; the cast places
 them the same way, (1, 1) first or none) zeroes 9. So he picks Prison only
 when the target can't be fully caged (d2d: `fits_on`, 2026-10-16); the
 leader's Prison not usable zeroes 15. Pick: `rand(sum)` on the unit seed
 (power of two: mask), the first index whose running sum passes it; none → 11.
+His MonAI row is `{1, 0, FUN_005e9170, FUN_005e8480}`: search type 1
+(FUN_005de890), so with nothing within 0x23 (aidist is blank) the think
+doesn't run and he stands; FUN_005e8f20's whole-act player pick (filter
+FUN_005e8eb0: same act, under 0x3fc) only runs once that search found
+someone. Run (act 10) is in reach only inside that 0x23, with a clear line
+and the target not far from his point (2026-10-16: at 6 cells d2d picks it and
+sets off; at 15 cells neither thinks).
 The port (`rules::mon_think` "Diablo") holds the exact index map, proven
 on the dumped runs. Its distances: the target to his point
 (FUN_005dc480, less the target's size / 2 + 1: "far" past 0x55, "very

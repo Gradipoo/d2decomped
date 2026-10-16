@@ -254,12 +254,16 @@ int subtile(float cells) { return int(std::floor(cells * 5)); }
 // Diablo's Bone Prison round (0x73d4f0): boneprison1..4 at the target's
 // diagonals, (1, 1) first.
 constexpr std::array<std::pair<int, int>, 4> kPrison{ { { 1, 1 }, { 1, -1 }, { -1, -1 }, { -1, 1 } } };
-// FUN_005b2a00 at radius -1: a monster of `type` fits exactly on the subtile
-// (FUN_0064d9b0: its shape on the grid and among the units).
-// ponytail: the room rect (PtInRect) and FUN_005fd350 aren't checked.
-bool fits_on(const GameData& game_data, const Level& level, const Crowd& crowd, int type, int at_x, int at_y) {
+int room_at(const Level& level, float x, float y);
+// FUN_005b2a00 at radius -1: a monster of `type` fits exactly on the subtile,
+// inside `room` (PtInRect on its rect; the prison's callers pass the
+// target's room, FUN_00620bb0; none: no fit), and FUN_0064d9b0 (its shape
+// on the grid and among the units). FUN_005fd350 only refuses the nest
+// BaseIds (0xce, 0xe4, 0x12a, 0x14e, 0x210), never a bone.
+// ponytail: the three draws on the room's seed per try aren't taken.
+bool fits_on(const GameData& game_data, const Level& level, const Crowd& crowd, int type, int at_x, int at_y, int room) {
     const UnitState probe{ .x = (float(at_x) + 0.5f) / 5, .y = (float(at_y) + 0.5f) / 5, .shape = game_data.mon_npc[std::size_t(type)].shape };
-    return !level.unit_blocked(probe.x, probe.y, probe.shape) && !crowd.at(probe.x, probe.y, &probe);
+    return room >= 0 && room_at(level, probe.x, probe.y) == room && !level.unit_blocked(probe.x, probe.y, probe.shape) && !crowd.at(probe.x, probe.y, &probe);
 }
 
 // A move's path to subtile (to_x, to_y) (FUN_00649970): rules::monster_path,
@@ -898,8 +902,9 @@ bool think(const GameData& game_data, const Level& level, Monster& monster, std:
             input.self_size = type_info.size; input.target_size = target->size;
             // FUN_005fd470(199): FUN_005b34c0's dry run (flag 1), every bone of
             // the round fits on its spot; usable zeroes his Prison (act 9).
+            const int target_room = room_at(level, target->x, target->y);
             input.usable = !d2d::rules::level_ids::is_town(level.id) && std::ranges::all_of(std::views::iota(0, 4), [&](int bone) {
-                return fits_on(game_data, level, crowd, 0x154 + bone, target_x + kPrison[std::size_t(bone)].first, target_y + kPrison[std::size_t(bone)].second); });
+                return fits_on(game_data, level, crowd, 0x154 + bone, target_x + kPrison[std::size_t(bone)].first, target_y + kPrison[std::size_t(bone)].second, target_room); });
         }
     }
     auto use = [&](std::string_view mode, int skill) {             // FUN_005dead0 / FUN_005ddf90: against the target (mode ctx +8)
@@ -1501,10 +1506,11 @@ bool monster_update(const GameData& game_data, const Level& level, Monster& mons
                     // class steps): boneprison1..4 (0x154..0x157) at the target's diagonals,
                     // (1, 1) first, the other three only once it stood; each on its spot
                     // exactly (FUN_005b3130 / FUN_005b31b0 at radius -1), none where it won't fit.
+                    const int foe_room = room_at(level, foe.x, foe.y);
                     if (born && !d2d::rules::level_ids::is_town(level.id))
                         for (std::size_t k = 0; k < kPrison.size(); ++k) {
                             const int at_x = subtile(foe.x) + kPrison[k].first, at_y = subtile(foe.y) + kPrison[k].second;
-                            if (!fits_on(game_data, level, crowd, 0x154 + int(k), at_x, at_y)) { if (k == 0) break; continue; }
+                            if (!fits_on(game_data, level, crowd, 0x154 + int(k), at_x, at_y, foe_room)) { if (k == 0) break; continue; }
                             auto bone = make_monster(game_data, 0x154 + int(k), (float(at_x) + 0.5f) / 5, (float(at_y) + 0.5f) / 5, rng, monster.difficulty);
                             bone.seed = d2d::rules::Rng{ rng.next() };
                             born->push_back(std::move(bone));

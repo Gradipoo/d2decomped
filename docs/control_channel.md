@@ -126,8 +126,9 @@ SENTRY_DSN='https://<public-key>@<sentry-host>/<project-id>' \
   d2d --send-crash-reports --enable-crash-test --devctl /tmp/d2d-crash-test.sock
 ```
 
-Crash dumps may contain sensitive in-memory data. This test sends a report to
-the configured Sentry project; run it only if you accept that upload.
+Crash dumps may contain sensitive in-memory data, and crash reports include
+the most recently captured game frame. This test sends a report to the
+configured Sentry project; run it only if you accept that upload.
 
 Then, from another terminal, send the exact confirmation:
 

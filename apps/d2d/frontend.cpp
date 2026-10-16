@@ -350,21 +350,21 @@ void handle_charcreate_click(CharCreateUI& create_ui,
                              const Mouse& mouse,
                              std::uint32_t elapsed_ms) {
     if (!mouse.release_this_frame) return;
-    // Hardcore checkbox toggle — the click zone is the RE'd hitbox at
-    // 0x70b080 (339, 581, 100, 32) unioned with the box chrome itself, so
-    // clicking either the box OR its label toggles.
-    const int hcRx = kHardcoreX, hcRw = kHardcoreW + 5 + 100;   // box + gap + label
-    const int hcRy = rec_top(581, 32), hcRh = 32;              // 0x70b080's rows
-    // Expansion Character (FUN_00433bf0 shows it with a class picked; only
-    // the five classic classes can clear it, Druid and Assassin get the
-    // locked box): box 0xD4 or its label's hitbox 0xD3 (339, 561, 200, 32).
-    if (create_ui.selected >= 0 && kUiToSaveClass[std::size_t(create_ui.selected)] < 5 && mouse.x >= kHardcoreX && mouse.x < 339 + 200
-        && mouse.y >= kExpansionY && mouse.y < 561) {
+    // The checkboxes toggle on their own 15 x 16 boxes only (FUN_00501090,
+    // the type 6 control's mouse-down): the labels beside them, 0xBD
+    // (339, 581, 100 x 32) and 0xD3 (339, 561, 200 x 32), are text controls
+    // with no callback (record +0x20 = 0), so FUN_004fc2f0 passes the click
+    // on. Hardcore 0xBE at (319, 560); Expansion Character 0xD4 at (319, 540),
+    // shown with a class picked and clearable only for the five classic
+    // classes (FUN_00433bf0; Druid and Assassin get the locked 0xD5).
+    const auto in_box = [&](int top) {
+        return mouse.x >= kHardcoreX && mouse.x < kHardcoreX + kHardcoreW && mouse.y >= top && mouse.y < top + kHardcoreH;
+    };
+    if (create_ui.selected >= 0 && kUiToSaveClass[std::size_t(create_ui.selected)] < 5 && in_box(kExpansionY)) {
         create_ui.expansion = !create_ui.expansion;
         return;
     }
-    if (mouse.x >= hcRx && mouse.x < hcRx + hcRw &&
-        mouse.y >= hcRy && mouse.y < hcRy + hcRh) {
+    if (in_box(kHardcoreY)) {
         create_ui.hardcore = !create_ui.hardcore;
         return;
     }

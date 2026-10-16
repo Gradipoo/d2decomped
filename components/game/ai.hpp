@@ -271,6 +271,7 @@ struct Monster {
     // Act 4's: Diablo's kept point (his leader word, kind 10: his own spot at
     // his first think, FUN_0058ef40); a knight's Bone Armor up since its cast.
     bool has_point = false, armored = false;
+    bool greeted = false;                     // Izual's first think (ThinkEffect::greet): a4q1's FUN_005b4390, the World's to take
     int point_x = 0, point_y = 0;
     std::uint32_t laid_until = 0;
     // Its unit seed (+0x20) as its look left it: what its thinks draw. A

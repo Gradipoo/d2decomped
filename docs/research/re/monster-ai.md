@@ -295,7 +295,9 @@ skill: `local_c`) and the target 85+ off (`local_8`): 1 = 0, 12 = 10, 10 =
 0, 13 = 15, 9 ≥ 10; 105+ off: 9 = 20, 14 = 60; leader 15 = 15. Neither:
 {0,0,0,0,5,0,25,0,25,40,0,0,25,…}, under 2 players 8 −5, 6 = 0, 1 = 25, 9 = 0;
 the same casting nudges (13 = 15, 13+1 = 25, 9 ≥ 20); 105+ off 14 = 60;
-leader 15 = 20. Then a usable Prison (FUN_005fd470 skill 199) zeroes 9; the
+leader 15 = 20. Then a usable Prison (FUN_005fd470 skill 199: `FUN_005b34c0`
+on the target in test mode, flag 1, each of 0x73d4f0's four spots able to take
+its bone, `FUN_005b2a00`; d2d: always usable) zeroes 9; the
 leader's Prison not usable zeroes 15. Pick: `rand(sum)` on the unit seed
 (power of two: mask), the first index whose running sum passes it; none → 11.
 The port (`rules::mon_think` "Diablo") holds the exact index map, proven

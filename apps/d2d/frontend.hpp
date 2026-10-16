@@ -143,6 +143,27 @@ constexpr std::array<const char*, 7> kCinematicVideo = {
     R"(data\local\video\ENG\Act04end640x292.bik)",   R"(data\local\video\ENG\D2x_Intro_640x292.bik)",
     R"(data\local\video\ENG\D2x_Out_640x292.bik)" };
 
+// The classic endgame screen (FUN_0044e770), after ACT04END on leaving the
+// game Diablo died in: ui\menu\endgame on its own palette, two 320x480
+// halves bottom-anchored at (0, 256) (0, H-1) / (W/2, 256) (W/2, H); in
+// font42 gold, centred: 0x13ea at baseline 62, 0x13eb at 107, the name at
+// 187, 0x13ec at 232, the title just earned and the name at 277
+// (FUN_0044d3e0, FUN_0044e5a0); endgameok at (W/2-48, H-80) with 0x13ee in
+// font16 (pressed: 2 left, 2 down). Its click (FUN_0044e4f0) goes on to the
+// main menu.
+// ponytail: classic only; LoD's endgame2 layout is never reached (its end is Tyrael's portal).
+struct EndgameUI {
+    d2d::dc6::Sprite background, ok;
+    d2d::palette::Palette pal;
+    std::array<std::string, 3> lines;
+    std::string name, titled, ok_label;
+    bool pressed = false;
+};
+EndgameUI endgame_ui(const Scene& scene, const d2d::d2s::Header& header);
+// Whether the point is on its OK (FUN_0044e460 / FUN_0044e4f0).
+bool endgame_on_ok(int x, int y);
+void render_endgame(std::vector<std::uint8_t>& framebuffer, const Scene& scene, const EndgameUI& endgame);
+
 // Other Multiplayer (FUN_00430c50, docs/research/re/tcpip-menu.md): the
 // title's background and logo (FUN_0043c4f0) under records 0xff OPEN
 // BATTLE.NET, 0x100 TCP/IP GAME and 0x101 CANCEL. Drawn by render_title.

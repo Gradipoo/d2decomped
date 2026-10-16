@@ -82,6 +82,7 @@ static int         g_master_volume = 100, g_music_volume = 50;   // d2d.cfg mast
 static int         g_start_class = 0;
 static std::string g_start_name;
 static bool        g_start_hardcore = false;
+static bool        g_start_classic = false;
 static bool        g_no_save = false;         // --no-save: nothing is written (scripted tests)
 static int         g_start_cam_x = -1;   // -1 = "use map center"
 static int         g_start_cam_y = -1;
@@ -130,6 +131,7 @@ static Screen parse_screen(std::string_view text) {
     if (text == "cinematics") return Screen::Cinematics;
     if (text == "othermultiplayer") return Screen::OtherMultiplayer;
     if (text == "tcpip")      return Screen::TcpIp;
+    if (text == "endgame")    return Screen::Endgame;
     return Screen::Title;
 }
 
@@ -235,6 +237,7 @@ int run_windowed(std::vector<std::uint8_t>& framebuffer,
     bool video_playing = false;
     std::uint32_t video_start = 0;
     Screen video_return = Screen::Title;        // where the video screen goes when done
+    EndgameUI endgame;
     auto read_seen = [&] {
         std::string seen;
         if (std::ifstream file(g_user_dir / "cinematics_seen"); file) std::getline(file, seen, '\0');
@@ -274,6 +277,7 @@ int run_windowed(std::vector<std::uint8_t>& framebuffer,
         if (g_start_class >= 0 && g_start_class < 7) { character.selected = g_start_class; character.character_class = kUiToSaveClass[g_start_class]; }
         if (!g_start_name.empty()) character.name = g_start_name;
         character.hardcore = g_start_hardcore;
+        if (g_start_classic) character.expansion = false;
     }
 
     // Char-select UI, from the LoD init (FUN_0043ae30): records 0xa4..0xa6
@@ -506,11 +510,24 @@ int run_windowed(std::vector<std::uint8_t>& framebuffer,
                 render_cinematics(framebuffer, *scene, cin_ui);
                 break;
             }
+            case Screen::Endgame:
+                // FUN_0044e770: OK pressed and released on it (FUN_0044e460 /
+                // FUN_0044e4f0) -> the main menu.
+                if (prev_screen != Screen::Endgame || !endgame.background.frames_per_direction()) endgame = endgame_ui(*scene, town.world.character.header);
+                if (mouse.press_this_frame && endgame_on_ok(mouse.x, mouse.y)) endgame.pressed = true;
+                if (mouse.release_this_frame) {
+                    if (endgame.pressed && endgame_on_ok(mouse.x, mouse.y)) screen = Screen::Title;
+                    endgame.pressed = false;
+                }
+                render_endgame(framebuffer, *scene, endgame);
+                break;
             case Screen::Title:
                 if (prev_screen == Screen::Video) {                 // Esc skipped the videos
                     audio.video_stop();
                     video_playing = false;
                     video_queue.clear();
+                    // ACT04END skipped: the endgame screen still comes.
+                    if (std::exchange(video_return, Screen::Title) == Screen::Endgame) { screen = Screen::Endgame; break; }
                 }
                 for (auto& button : title.buttons) update_button(button, mouse, screen, quit);
                 if (screen == Screen::CharSelect) g_join_host = g_cli_join;   // SINGLE PLAYER
@@ -697,6 +714,13 @@ int run_windowed(std::vector<std::uint8_t>& framebuffer,
                     load_act_palettes(*scene, scene->mpqs, act);
                 town.update(framebuffer, mouse, keys_this_frame, screen, audio, now_ms, last_ms);
                 write_save_back();
+                // Classic, Diablo dead with bit 13 (DAT_007a0604): leaving plays
+                // ACT04END, then the endgame screen (FUN_0044f360 -> FUN_00482ef0).
+                if (screen != Screen::InGame && std::exchange(town.world.end_movie, false)) {
+                    video_queue = { kCinematicVideo[4] };
+                    video_return = Screen::Endgame;
+                    screen = Screen::Video;
+                }
                 if (screen == Screen::CharSelect && town.net_game) {   // a joined game: leave the host, saving on again
                     town.net_game->leave();
                     write_save_back();
@@ -924,6 +948,7 @@ int main(int argc, char** argv) {
     int         start_class = 0;
     std::string start_name;
     bool        start_hardcore = false;
+    bool        start_classic = false;
     bool        no_save = false;
     std::uint32_t map_seed = std::random_device{}();   // --seed fixes it (3 puts the Blood Moor east, townE1)
 
@@ -941,7 +966,7 @@ int main(int argc, char** argv) {
                    "Run without opening a window");
     app.add_option("--start-screen", start_screen,
                    "Jump directly to a screen at startup")
-        ->check(CLI::IsMember({"title", "credits", "charselect", "charcreate", "ingame", "video", "othermultiplayer", "tcpip"}));
+        ->check(CLI::IsMember({"title", "credits", "charselect", "charcreate", "ingame", "video", "othermultiplayer", "tcpip", "endgame"}));
     app.add_option("--start-class", start_class,
                    "Preselect a class index (0..6)")
         ->check(CLI::Range(0, 6));
@@ -949,6 +974,8 @@ int main(int argc, char** argv) {
                    "Preload character name");
     app.add_flag  ("--start-hardcore", start_hardcore,
                    "Preload the Hardcore checkbox");
+    app.add_flag  ("--start-classic", start_classic,
+                   "Preload a classic (not Expansion) character");
     app.add_flag  ("--no-save", no_save,
                    "Never write character saves (scripted tests)");
     bool no_video = false;
@@ -1057,6 +1084,7 @@ int main(int argc, char** argv) {
     g_start_class    = start_class;
     g_start_name     = start_name;
     g_start_hardcore = start_hardcore;
+    g_start_classic  = start_classic;
     g_no_save        = no_save;
     g_start_cam_x    = start_cam_x;
     g_start_cam_y    = start_cam_y;

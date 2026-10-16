@@ -69,8 +69,12 @@ ghost spoke, +0x14 the killer.
   `LAB_005b3cd0`: not done → bit 14, message 0). Once: the 3-tick timer
   `FUN_005b3e60`: log 4 to everyone; the ghost (0x196) at his spot, mode 8,
   within −1, then 3, then 5 (`FUN_005b2f20`).
-- **Izual's first think** (`FUN_005b4390`, from his AI): every player's
-  log (`FUN_005b3940`) when +9 and state < 2.
+- **Izual's first think** (`FUN_005b4390`, from his AI `FUN_005f89b0`'s
+  first call): with +9 and the log (+0xb) under 2, data +0x14 cleared and
+  every player not done (bit 0 or 15 without 13 / 14, `FUN_005b3940`) sent
+  the record's log again (`FUN_00544190` → S→C 0x5d, no flags): the
+  client's Quest Log button. No speech, no sound. d2d: `IzualQuest::greeted`,
+  `ev::QuestNews`.
 - **Join** (`LAB_005b4220`): not done or closed: bit 4 → state 3, log 2,
   data +0xc; bit 3 → 3 / 1; bit 2 → 2 / 1.
 
@@ -223,3 +227,21 @@ set, ACT04END plays, then the endgame screen (`FUN_0044e770`:
 ui\menu\endgame, or endgame2 in LoD, with its endgameok button), then the
 main menu. No credits roll; they stay a menu item. LoD: cinematic 5
 with `DAT_007bc9d8` set plays ACT04END and then D2X_INTRO.
+
+The endgame screen (`FUN_0044e770`, classic `endgame`): its palette
+`palette\endgame\pal.dat`; the 8 frames are two 320 × 480 halves
+(256 + 64 wide, 256 + 224 tall) at FUN_004f6480 bottoms (0, 256),
+(256, 256), (0, H−1), (256, H−1) and (W/2, 256), (W/2+256, 256), (W/2, H),
+(W/2+256, H), so at 800 × 600 they leave black bands. Font42 (font 3),
+colour 4, centred: 0x13ea at baseline 62, 0x13eb 107 (classic only), the
+name 187 (`FUN_0044e5a0`), 0x13ec 232, then the title for the game's
+difficulty (`FUN_005068a0`) and the name at 277 (LoD 100 / 272 / 357).
+OK: `endgameok` at (W/2−48, H−80), pressed frame 1; 0x13ee in font16
+colour 0 at baseline H−88 (pressed: 2 left, 2 down); its box W/2±48,
+H−112..H−80; down then up on it (`FUN_0044e460` / `FUN_0044e4f0`) ends it.
+
+d2d (2026-10-16): `World::act4_update` keeps the 90 / 95 s timer
+(`diablo_dead_at`; the 75 s step isn't sent), `end_movie` is the client's
+DAT_007a0604; any leave with it set plays ACT04END (skippable) and then
+`Screen::Endgame` (`render_endgame`), OK to the title. Classic only: LoD's
+end (Tyrael's portal, cinematic 5) waits for Act 5.

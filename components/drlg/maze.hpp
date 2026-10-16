@@ -222,9 +222,9 @@ inline std::vector<Outdoor::RoomSeed> generate_maze(const OutdoorData& data, con
         auto& room = rooms[std::size_t(index)];
         const auto& neighbour = rooms[std::size_t(next_to)];
         const bool left = side == 0 || side == 4 || side == 7, right = side == 2 || side == 5 || side == 6;
-        const bool up = side == 1 || side == 4 || side == 5, down = side == 3 || side == 6 || side == 7;
+        const bool above = side == 1 || side == 4 || side == 5, down = side == 3 || side == 6 || side == 7;
         room.x = left ? neighbour.x - neighbour.width : right ? neighbour.x + neighbour.width : neighbour.x;
-        room.y = up ? neighbour.y - neighbour.height : down ? neighbour.y + neighbour.height : neighbour.y;
+        room.y = above ? neighbour.y - neighbour.height : down ? neighbour.y + neighbour.height : neighbour.y;
         for (const int other_index : list) {
             if (other_index == next_to) continue;
             const auto [gap_x, gap_y] = gap(room, rooms[std::size_t(other_index)]);

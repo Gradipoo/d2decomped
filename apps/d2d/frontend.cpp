@@ -11,6 +11,7 @@
 #include <font.hpp>
 
 #include <algorithm>
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <span>
@@ -525,7 +526,7 @@ void render_charcreate(std::vector<std::uint8_t>& framebuffer,
         const auto& box = locked && scene.clickbox_grey.frames_per_direction() > 0 ? scene.clickbox_grey.frame(0, 0) : scene.clickbox.frame(0, create_ui.expansion ? 1 : 0);
         blit_sprite(framebuffer, box, pal, kHardcoreX, kExpansionY);
         const int label_y = kExpansionY + (kHardcoreH - scene.font.line_height()) / 2;
-        const auto shade = create_ui.expansion ? std::array{ 255, 208, 80 } : std::array{ 180, 180, 180 };
+        const auto shade = create_ui.expansion ? std::array<std::uint8_t, 3>{ 255, 208, 80 } : std::array<std::uint8_t, 3>{ 180, 180, 180 };
         scene.font.draw_tinted(framebuffer, kScreenWidth, kScreenHeight, pal, kHardcoreX + kHardcoreW + 5, label_y, create_ui.expansion_label, shade[0], shade[1], shade[2]);
     }
 
@@ -610,6 +611,58 @@ void render_cinematics(std::vector<std::uint8_t>& framebuffer, const Scene& scen
     };
     for (int i = 0; i < 7; ++i) draw(cinematics.entry[std::size_t(i)], cinematics.labels[std::size_t(i)], i < cinematics.unlocked);
     draw(cinematics.cancel, cinematics.cancel_label, true);
+}
+
+EndgameUI endgame_ui(const Scene& scene, const d2d::d2s::Header& header) {
+    EndgameUI endgame;
+    endgame.background = d2d::dc6::Sprite(scene.mpqs.read(R"(data\global\ui\menu\endgame.dc6)"));
+    endgame.ok = d2d::dc6::Sprite(scene.mpqs.read(R"(data\global\ui\menu\endgameok.dc6)"));
+    endgame.pal = d2d::palette::Palette(scene.mpqs.read(R"(data\global\palette\endgame\pal.dat)"));
+    auto str = [&](std::uint16_t id) {
+        const auto found = lookup_string(scene, id);
+        return found ? u16_to_latin1(*found) : std::string{};
+    };
+    endgame.lines = { str(0x13ea), str(0x13eb), str(0x13ec) };
+    endgame.ok_label = str(0x13ee);
+    endgame.name = header.name;
+    // FUN_005068a0 on the game's difficulty: the title that difficulty earns.
+    auto earned = header;
+    earned.progression = std::uint8_t((header.active_difficulty() + 1) * (header.expansion() ? 5 : 4));
+    endgame.titled = char_title(earned) + header.name;
+    return endgame;
+}
+
+bool endgame_on_ok(int x, int y) {
+    return x >= int(kScreenWidth) / 2 - 0x30 && x <= int(kScreenWidth) / 2 + 0x30 && y >= int(kScreenHeight) - 0x70 && y <= int(kScreenHeight) - 0x50;
+}
+
+void render_endgame(std::vector<std::uint8_t>& framebuffer, const Scene& scene, const EndgameUI& endgame) {
+    constexpr int kWidth = int(kScreenWidth), kHeight = int(kScreenHeight);
+    std::fill(framebuffer.begin(), framebuffer.end(), std::uint8_t{0});
+    for (std::size_t i = 3; i < framebuffer.size(); i += 4) framebuffer[i] = 0xFF;
+    // FUN_004f6480's y is the row under the frame.
+    static constexpr std::array<std::pair<int, int>, 8> kCells{ { { 0, 256 }, { 256, 256 }, { 0, kHeight - 1 }, { 256, kHeight - 1 },
+        { kWidth / 2, 256 }, { kWidth / 2 + 256, 256 }, { kWidth / 2, kHeight }, { kWidth / 2 + 256, kHeight } } };
+    for (int i = 0; i < std::min(8, int(endgame.background.frames_per_direction())); ++i) {
+        const auto& frame = endgame.background.frame(0, i);
+        blit_sprite(framebuffer, frame, endgame.pal, kCells[std::size_t(i)].first, kCells[std::size_t(i)].second - int(frame.height));
+    }
+    auto centred = [&](const d2d::font::Font& font, const std::string& text, int baseline, const std::uint8_t* tint, int shift = 0) {
+        font.draw_tinted(framebuffer, kScreenWidth, kScreenHeight, endgame.pal, kWidth / 2 - font.measure(text) / 2 - shift,
+                         baseline - font.line_height() + 1, text, tint[0], tint[1], tint[2]);
+    };
+    centred(scene.font42, endgame.lines[0], 0x3e, kTextGold);
+    centred(scene.font42, endgame.lines[1], 0x6b, kTextGold);
+    centred(scene.font42, endgame.name, 0xbb, kTextGold);
+    centred(scene.font42, endgame.lines[2], 0xe8, kTextGold);
+    centred(scene.font42, endgame.titled, 0x115, kTextGold);
+    if (endgame.ok.frames_per_direction() >= 2) {
+        const auto& button = endgame.ok.frame(0, endgame.pressed ? 1 : 0);
+        blit_sprite(framebuffer, button, endgame.pal, kWidth / 2 - 0x30, kHeight - 0x50 - int(button.height));
+    }
+    static constexpr std::uint8_t kWhite[3] = { 255, 255, 255 };
+    const int press = endgame.pressed ? 2 : 0;
+    centred(scene.font, endgame.ok_label, kHeight - 0x58 + press, kWhite, press);
 }
 
 TitleUI other_multiplayer_ui(const Scene& scene) {

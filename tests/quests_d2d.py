@@ -685,6 +685,8 @@ def act4():
     until("Izual made", lambda: any(l.startswith("izual\t") for l in cmd("monsters").splitlines()), 30)
     izual = [l.split("\t") for l in cmd("monsters").splitlines() if l.startswith("izual\t")][0]
     cmd(f"debug warp {int(float(izual[1]))} {int(float(izual[2])) + 3}"); time.sleep(1)
+    # His first think (FUN_005b4390): the Fallen Angel's log sent again (the Quest Log button).
+    until("Izual's first think", lambda: "Izual's first think" in log_text(), 10)
     kill_until("Izual dead", lambda: "The Fallen Angel: Izual is dead" in log_text())
     assert bits(0x19) & 0x2002 == 0x2002, f"word 0x19: {bits(0x19):#x}"
     until("his ghost", lambda: "Izual's ghost" in log_text(), 10)

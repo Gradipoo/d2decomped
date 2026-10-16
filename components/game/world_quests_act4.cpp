@@ -20,6 +20,7 @@
 #include <cstdint>
 #include <format>
 #include <iterator>
+#include <tuple>
 #include <utility>
 #include <vector>
 
@@ -47,7 +48,8 @@ auto World::act4_join() -> void {
         hellforge.join(quests(), carries(d2d::rules::HellforgeQuest::kStone));
         terror = {};
         terror.join(quests());
-        izual_ghost_at = diablo_at = 0;
+        izual_ghost_at = diablo_at = diablo_dead_at = 0;
+        fortress_warp_done = end_movie = game_closed = false;
         had_soulstone = carries(d2d::rules::HellforgeQuest::kStone);
         act4_chain();
     }
@@ -120,10 +122,14 @@ auto World::act4_kill(const Fight::Kill& kill, std::uint32_t now_ms) -> void {
         if (kill.type == d2d::rules::TerrorQuest::kDiablo && !terror.dead) {   // FUN_005b52e0 -> FUN_005b4d20
             const bool expansion = character.header.expansion();
             terror.diablo_died(quests(), expansion);
-            // Classic: the next difficulty opens (FUN_00538680); 90 s on the game
-            // ends (FUN_005b4be0 -> FUN_00530590).
-            // ponytail: the classic end (the credits, the game closing) isn't played; LoD's goes on to Tyrael's portal.
-            if (!expansion) open_act(4);
+            // Classic: the next difficulty opens (FUN_00538680); with bit 13 the
+            // client plays the end on leaving (S->C 0x5d -> FUN_004a2cb0: DAT_007a0604);
+            // the 90 / 95 s timer runs (act4_update). LoD goes on to Tyrael's portal.
+            if (!expansion) {
+                open_act(4);
+                diablo_dead_at = std::max(now_ms, 1u);
+                end_movie = d2d::rules::quest::bit(quests(), d2d::rules::TerrorQuest::kQuest, 13);
+            }
             d2d::log::info("Terror's End: Diablo is dead{}", expansion ? "" : " (classic: the next difficulty is open)");
         }
     }
@@ -147,6 +153,12 @@ auto World::diablo_release(std::uint32_t now_ms) -> void {
 
 auto World::act4_update(std::uint32_t now_ms) -> void {
         if (hosted_quests) return;
+        // Izual's first think (FUN_005b4390): the Fallen Angel's log sent again.
+        for (auto& monster : fight.monsters)
+            if (std::exchange(monster.greeted, false) && izual.greeted(quests())) {
+                events.push_back(ev::QuestNews{ d2d::rules::IzualQuest::kQuest });
+                d2d::log::info("The Fallen Angel: Izual's first think, the log sent");
+            }
         // a4q1's timer (FUN_005b3e60): Izual's ghost (0x196) where he fell, an NPC.
         if (izual_ghost_at && now_ms >= izual_ghost_at && izual.ghost_due) {
             izual_ghost_at = 0; izual.ghost_due = false;
@@ -175,6 +187,23 @@ auto World::act4_update(std::uint32_t now_ms) -> void {
                 terror.diablo_made = true; diablo_at = 0;
                 d2d::log::info("Terror's End: Diablo");
             }
+        }
+        // a4q2's timer after Diablo, classic (FUN_005b4be0, wall-clock ms): 90 s
+        // each player (FUN_005b4a80): with bit 13 to the fortress (FUN_0053aec0
+        // level 103), without it the client leaves (S->C 0x50 -> C->S 0x69);
+        // 95 s the game closes (FUN_00530590).
+        // ponytail: the 75 s step (FUN_0052e2a0 over the clients) isn't sent.
+        if (diablo_dead_at && now_ms - diablo_dead_at >= 90000 && !fortress_warp_done) {
+            fortress_warp_done = true;
+            const Level* fortress = game_data->level(d2d::rules::level_ids::kPandemoniumFortress);
+            if (d2d::rules::quest::bit(quests(), d2d::rules::TerrorQuest::kQuest, 13) && fortress && fortress->start.first >= 0)
+                arrive(fortress, fortress->start.first, fortress->start.second, "the end of Terror's End");
+            else game_closed = true;
+        }
+        if (diablo_dead_at && now_ms - diablo_dead_at >= 95000) {
+            diablo_dead_at = 0;
+            game_closed = true;
+            d2d::log::info("Terror's End: the game closes");
         }
         // The soulstone picked up (LAB_005b5a90): the Hellforge open.
         // ponytail: polled from what's carried, not the item event.

@@ -30,9 +30,11 @@ function(d2d_allow_vendor_warnings directory)
         get_target_property(target_type ${target} TYPE)
         if(NOT target_type STREQUAL "INTERFACE_LIBRARY")
             if(MSVC)
-                target_compile_options(${target} PRIVATE /WX-)
+                target_compile_options(${target} PRIVATE
+                    "$<$<COMPILE_LANGUAGE:C,CXX>:/WX->")
             else()
-                target_compile_options(${target} PRIVATE -Wno-error)
+                target_compile_options(${target} PRIVATE
+                    "$<$<COMPILE_LANGUAGE:C,CXX>:-Wno-error>")
             endif()
         endif()
     endforeach()

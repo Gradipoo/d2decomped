@@ -329,10 +329,9 @@ int run_windowed(std::vector<std::uint8_t>& framebuffer,
         auto graphics = sentry_value_new_object();
         sentry_value_set_by_key(graphics, "renderer",
                                 sentry_value_new_string(SDL_GetRendererName(win.renderer)));
-        if (auto* gpu = SDL_CreateGPUDevice(
-                SDL_GPU_SHADERFORMAT_SPIRV | SDL_GPU_SHADERFORMAT_DXIL |
-                    SDL_GPU_SHADERFORMAT_DXBC | SDL_GPU_SHADERFORMAT_MSL,
-                false, nullptr)) {
+        const auto properties = SDL_GetRendererProperties(win.renderer);
+        if (auto* gpu = static_cast<SDL_GPUDevice*>(
+                SDL_GetPointerProperty(properties, SDL_PROP_RENDERER_GPU_DEVICE_POINTER, nullptr))) {
             if (const char* driver = SDL_GetGPUDeviceDriver(gpu))
                 sentry_value_set_by_key(graphics, "gpu_driver",
                                         sentry_value_new_string(driver));
@@ -344,7 +343,6 @@ int run_windowed(std::vector<std::uint8_t>& framebuffer,
                 sentry_value_set_by_key(graphics, "gpu_model",
                                         sentry_value_new_string(name));
 #endif
-            SDL_DestroyGPUDevice(gpu);
         }
         sentry_set_context("graphics", graphics);
     }

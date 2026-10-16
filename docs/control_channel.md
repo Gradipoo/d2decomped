@@ -126,6 +126,9 @@ SENTRY_DSN='https://<public-key>@<sentry-host>/<project-id>' \
   d2d --send-crash-reports --enable-crash-test --devctl /tmp/d2d-crash-test.sock
 ```
 
+Crash dumps may contain sensitive in-memory data. This test sends a report to
+the configured Sentry project; run it only if you accept that upload.
+
 Then, from another terminal, send the exact confirmation:
 
 ```
@@ -135,7 +138,7 @@ printf 'crash-test CONFIRM_CRASH\n' | nc -U /tmp/d2d-crash-test.sock
 This deliberately terminates d2d; only use it when losing the current game
 session is acceptable. The verb is disabled unless both opt-in flags are
 provided, requires successful Sentry initialization, and requires the
-confirmation token. A report will be sent to the configured Sentry project.
+confirmation token.
 The event is tagged `crash_test=true` so it can be filtered from real crashes.
 
 ## Prior art

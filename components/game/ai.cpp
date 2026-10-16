@@ -6,6 +6,7 @@
 #include "gamedata.hpp"
 
 #include <combat.hpp>
+#include <d2s_items.hpp>
 #include <level_ids.hpp>
 #include <monster_ids.hpp>
 #include <monsters.hpp>
@@ -586,6 +587,13 @@ bool think(const GameData& game_data, const Level& level, Monster& monster, std:
     // the think runs anyway; it reads none, so any live foe stands in.
     if (!target && type_info.ai_name == "SandMaggotQueen")
         for (auto& foe : foes) if (foe.alive) { target = &foe; break; }
+    // Diablo's (FUN_005e8f20, once his search found someone): the best
+    // scored player of his act (FUN_005e8eb0: under 0x3fc, FUN_005dc530).
+    // ponytail: d2d's one player; the second list's fallback (a pathless
+    // best) isn't kept, and with no player in range the search's stays.
+    if (target && type_info.ai_name == "Diablo")
+        for (auto& foe : foes)
+            if (foe.alive && !foe.pet && !foe.of && d2d::rules::ai_distance(subtile(foe.x) - x, subtile(foe.y) - y) < 0x3fc) { target = &foe; break; }
     auto walk_to = [&](int off_x, int off_y, bool running) {       // to a spot, subtiles off
         unit.goal_x = (float(x + off_x) + 0.5f) / 5; unit.goal_y = (float(y + off_y) + 0.5f) / 5;
         set_off(running, nullptr);
@@ -834,9 +842,7 @@ bool think(const GameData& game_data, const Level& level, Monster& monster, std:
     // 0x136) within 50; Diablo's kept point and his chooser's inputs.
     // ponytail: the states its skills name on a unit (the knights' armor and
     // curse, the finger mage's 0x54) as d2d keeps them: armor since its cast,
-    // the rest off; Diablo's target pick (FUN_005e8f20) is the search's, its
-    // score 0 and the players one; the target's left / right skills unknown
-    // (-1).
+    // the rest off.
     int lay_x = 0, lay_y = 0;
     {
         const auto& name = type_info.ai_name;
@@ -890,7 +896,15 @@ bool think(const GameData& game_data, const Level& level, Monster& monster, std:
         if (name == "Diablo") {
             input.has_word = monster.has_point; input.word_x = monster.point_x; input.word_y = monster.point_y;
             input.target = true;
-            input.players_looked = 1;
+            input.players_looked = target->pet || target->of ? 0 : 1;
+            const auto& pick = target->pick;
+            input.left_skill = pick.left_skill; input.left_level = pick.left_level;
+            input.right_skill = pick.right_skill; input.right_level = pick.right_level;
+            input.target_state_b = pick.state_b;
+            const int point_x = monster.has_point ? monster.point_x : x, point_y = monster.has_point ? monster.point_y : y;
+            const bool point_bonus = d2d::rules::point_apart(x - point_x, y - point_y, (type_info.size >> 1) + 1) > 0x55
+                                  && d2d::rules::point_apart(target_x - point_x, target_y - point_y, (target->size >> 1) + 1) < 0x55;
+            if (input.players_looked > 0) input.score = d2d::rules::diablo_score(pick, target->life_pct, input.in_melee, input.line_clear, point_bonus);
             input.stuck = level.blocked(unit.x, unit.y, 0x40);
             input.reach = input.in_melee;
             input.players_about = 1;
@@ -1102,17 +1116,15 @@ bool think(const GameData& game_data, const Level& level, Monster& monster, std:
             // else it runs at the target (MonStats Run), swinging at the end.
             // ponytail: its charge path (type 0x14) and state 0x12 are the
             // run's; a sequence that walks first and isn't Charge stands.
-            // DiabRun (srvst 54 / do 103, FUN_005cd2c0 / FUN_005cd380): a run at
-            // the target's spot, one hit of the skill's damage on contact.
-            // It always starts (FUN_005cd2c0: the path to the target's spot): no
-            // path right by the target is its contact hit, played as the swing.
-            // ponytail: played as Charge (its run, its swing), not its sequence's frames;
-            // "right by" is within 2 cells.
+            // DiabRun (srvst 54 / do 103, FUN_005cd2c0 / FUN_005cd380): his
+            // sequence at the target's spot as it is now (monster_update plays it).
             if (const auto* run_skill = game_data.skills.get(id); run_skill && run_skill->srvdofunc == d2d::rules::ServerDoFunction::kDiabRun) {
-                if (input.in_melee) { charge_swing(game_data, monster, *target, id, now_ms, rng); return true; }
-                if (set_off(true, target)) { monster.chase = int(target - foes.data()); monster.charging = id; return true; }
-                if (std::hypot(target->x - unit.x, target->y - unit.y) <= 2.f) { charge_swing(game_data, monster, *target, id, now_ms, rng); return true; }
-                idle(0);
+                monster.chase = int(target - foes.data());
+                unit.dir = direction16(dx, dy);
+                set_mode(game_data, monster, "RN", now_ms);
+                monster.skill = id; monster.skill_x = target_x; monster.skill_y = target_y; monster.wandering = false;
+                monster.diab_run = 1; monster.diab_run_ms = now_ms; monster.run_hit = true;
+                monster.seq_mode = "RN"; monster.seq_frame = 0;
                 return true;
             }
             if (seq && seq->front().mode == "WL") {
@@ -1255,6 +1267,64 @@ bool monster_update(const GameData& game_data, const Level& level, Monster& mons
         monster.leaping = false;                                       // struck mid-leap: it stays where it is
         if (now_ms < monster.mode_until) return false;
         set_mode(game_data, monster, "NU", now_ms);
+    }
+    // DiabRun's sequence (seq_diablorun, RN rows; FUN_005cd380 on its event
+    // rows): rows 0..Param3 - 1 wind up; at Param3 (5) he runs at the spot
+    // (path type 1) at calc1's velocity, the rows looping Param6..Param4
+    // (6..13) on the way; the run over (record flag 2: there, or blocked),
+    // rows Param2.. (14..21) play out. Its one hit (unit +0x4e) lands when
+    // the target is in reach (FUN_00622c40) on a run's frame or the stop's
+    // event row (18): the skill's damage (FUN_0056e680, flags 0x20).
+    // ponytail: calc1 taken as a MonStats velocity, the hit rolled as a
+    // swing; who sets +0x4e isn't traced (set at the start).
+    if (monster.diab_run > 0) {
+        const auto* run_skill = game_data.skills.get(monster.skill);
+        const SeqRows* seq = skill_seq(game_data, type_info, monster.skill);
+        if (!run_skill || !seq || monster.mode != "RN") {                      // struck out of it (GH): over
+            monster.diab_run = 0; monster.seq_frame = -1;
+            if (monster.mode == "RN") set_mode(game_data, monster, "NU", now_ms);
+            return false;
+        }
+        const auto& par = run_skill->par;
+        const int lvl = skill_level(game_data, monster, monster.skill);
+        const std::uint32_t frame_ms = std::max<std::uint32_t>(game_data.npc_timing(monster.npc, "RN").ms_per_frame() * 100 / std::uint32_t(100 + monster.anim_pct), 1);
+        const int frames = int((now_ms - monster.diab_run_ms) / frame_ms);
+        const auto contact = [&] {
+            if (!monster.run_hit || !foe.alive || d2d::rules::unit_distance(subtile(foe.x) - subtile(unit.x), subtile(foe.y) - subtile(unit.y), type_info.size, foe.size) > type_info.melee_rng + 1) return;
+            monster.run_hit = false;
+            auto stats = monster.stats;
+            stats.a1_min = d2d::rules::skill_phys(game_data.skills, *run_skill, {}, lvl, false) >> 8;
+            stats.a1_max = std::max(d2d::rules::skill_phys(game_data.skills, *run_skill, {}, lvl, true) >> 8, stats.a1_min);
+            for (auto& element : stats.elements) element.mode = "";
+            foe.take(d2d::rules::monster_blow(foe.fighter, foe.level, foe.motion(), stats, false, rng));
+        };
+        if (monster.diab_run == 1) {
+            monster.seq_frame = std::min(frames, par[2]);
+            if (frames >= par[2]) {
+                monster.diab_run = path_to(level, monster, monster.skill_x, monster.skill_y, false, crowd) ? 2 : 3;
+                monster.diab_run_ms = now_ms;
+            }
+            return false;
+        }
+        if (monster.diab_run == 2) {
+            const int loop = std::max(par[3] - par[5] + 1, 1);
+            monster.seq_frame = par[2] + frames <= par[3] ? par[2] + frames : par[5] + (par[2] + frames - par[5]) % loop;
+            const float chill = now_ms < monster.chill_until ? float(100 + type_info.diff[std::size_t(monster.difficulty)].cold_effect) / 100.f : 1.f;
+            const float step = cells_per_sec(float(d2d::rules::eval_calc(game_data.skills, run_skill->calc[0], {}, monster.skill, lvl))) * elapsed * chill;
+            contact();
+            if (!move_frame(level, monster, nullptr, true, type_info.size, step, crowd)) { monster.diab_run = 3; monster.diab_run_ms = now_ms; }
+            return false;
+        }
+        const int row = par[1] + frames;
+        for (int k = std::max(monster.seq_frame + 1, par[1]); k <= row && k < int(seq->size()); ++k)
+            if ((*seq)[std::size_t(k)].event != 0) contact();                     // the stop's event row (18)
+        monster.seq_frame = row;
+        if (row < int(seq->size())) return false;
+        monster.diab_run = 0; monster.seq_frame = -1;
+        set_mode(game_data, monster, "NU", now_ms);
+        monster.skill = -1;
+        monster.next_act = now_ms + std::uint32_t(type_info.diff[std::size_t(monster.difficulty)].aidel) * 40;
+        return false;
     }
     const float dx = foe.x - unit.x, dy = foe.y - unit.y, dist = std::hypot(dx, dy);
     const auto miss = type_info.miss_a2.empty() ? game_data.missiles.end() : game_data.missiles.find(type_info.miss_a2);
@@ -1516,16 +1586,24 @@ bool monster_update(const GameData& game_data, const Level& level, Monster& mons
                             born->push_back(std::move(bone));
                         }
                 } else if (cast->srvdofunc == ServerDoFunction::kDiabWall) {
-                    // FUN_005cd1c0: calc1 diabwallmakers (srvmissilea) out from him.
-                    // ponytail: spread evenly across a quarter turn toward the target, not FUN_0056d2c0 / FUN_005cd110's spots.
-                    const int count = std::max(d2d::rules::eval_calc(game_data.skills, cast->calc[0], {}, monster.skill, lvl), 1);
+                    // FUN_005cd1c0: calc1 diabwallmakers (srvmissilea, flags 0x21) from him at the
+                    // target's spot (FUN_0056d2c0); each (FUN_005cd110, its index) 77 frames at
+                    // most, seeded {target x + index, 666}, and on a draw of 20+ of 100 Charged
+                    // Bolt's wiggle (path type 10), else straight.
+                    const int count = d2d::rules::eval_calc(game_data.skills, cast->calc[0], {}, monster.skill, lvl);
                     for (int k = 0; k < count; ++k) {
-                        const float turn = count > 1 ? (float(k) / float(count - 1) - 0.5f) * 1.5707963f : 0.f;
-                        andariel_missile(game_data, monster, cast->srvmissilea, dx * std::cos(turn) - dy * std::sin(turn), dx * std::sin(turn) + dy * std::cos(turn), now_ms, missiles, lvl, cast);
+                        const auto made = missiles.size();
+                        andariel_missile(game_data, monster, cast->srvmissilea, dx, dy, now_ms, missiles, lvl, cast);
+                        if (missiles.size() > made) { missiles.back().bolt = k; missiles.back().wall_maker = true; }
                     }
                 } else if (cast->srvdofunc == ServerDoFunction::kSelfState) {
-                    // MonBoneArmor (do 18): its state on itself (Monster::armored, set as it's cast).
-                    // ponytail: the armor's damage absorb isn't kept.
+                    // MonBoneArmor (do 18, FUN_005c9480): its state on itself (Monster::armored,
+                    // set as it's thought) and the absorb pool from its aurastat calc.
+                    for (std::size_t k = 0; k < cast->aurastat.size(); ++k)
+                        if (cast->aurastat[k] == d2d::d2s::kBoneArmor) {
+                            monster.armor_pool = d2d::rules::eval_calc(game_data.skills, cast->aura_calc[k], {}, monster.skill, lvl) >> 8;
+                            monster.armored = monster.armor_pool > 0;
+                        }
                 } else if (cast->srvdofunc == ServerDoFunction::kRegurgitatorEat) {
                     // FUN_005cdc10: a corpse (DD) it's at eaten (gone), its life back by the corpse's.
                     // ponytail: calc1 % of the corpse's life (FUN_00483360's args are register-passed, not read).
@@ -1921,6 +1999,14 @@ void make_boss(const GameData& game_data, Monster& monster, d2d::rules::Boss kin
             if (const auto found = format.find(placeholder); found != std::string::npos) format.replace(found, placeholder.size(), value);
         monster.npc.name = format;
     }
+}
+
+int soak(Monster& monster, int physical, int damage) {
+    if (monster.armor_pool <= 0 || physical <= 0 || damage <= 0) return damage;
+    const int absorbed = std::min({ monster.armor_pool, physical, damage });
+    monster.armor_pool -= absorbed;
+    if (monster.armor_pool <= 0) monster.armored = false;
+    return damage - absorbed;
 }
 
 bool hurt(const GameData& game_data, Monster& monster, int damage, std::uint32_t now_ms) {

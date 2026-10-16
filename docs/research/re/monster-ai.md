@@ -323,6 +323,26 @@ the target's leader to his point (FUN_006417f0: under 0x55 with the leader
 in the Chaos Sanctuary), each (max · 2 + min) / 2. FUN_00573930 (two stack
 words) answers the players about him at +8.
 
+His target (FUN_005e8f20, 2026-10-16): the best scored (FUN_005e8530) of
+the game's players passing FUN_005e8eb0 (same act byte +0x18, FUN_005dc530
+under 0x3fc); it returns how many it looked at (the chooser's
+players_looked) and the best score. A second list (units of his act) can
+stand in for the best player when that one is out of reach and has no path
+(not kept in d2d). The score of a player, C division throughout:
+`(300 if life % (FUN_00621f20) < 20) + ((damageresist 0x24 + magicresist
+0x25 x 2) x 4 + lightning 0x29 + fire 0x27 + cold 0x2b only in reach) / 15
++ (reach 100 (FUN_00622c40), else a clear line 75 (FUN_005dd290:
+FUN_00622aa0 mask 4)) + 100 when he is past 0x55 from his point and the
+player inside it (FUN_005dc480)) x 5 + ((left level x attackrank + right
+level x attackrank) / 4 + 200 with state 0xb + (maxdamage 0x16 + fire /
+lightning / magic / cold max 0x31 / 0x33 / 0x35 / 0x37 + poison max 0x3a
+>> 8) / 2) x 2`, all / 22, 0 → 1; a monster whose MonStats +0x4e is under 2
+scores 0. attackrank is Skills.txt's (bin +0x18e, matched on every row).
+The levels are each hand's own (FUN_006442a0(unit, skill, 1)), as the
+chooser's casting test (Fire Wall over 3, 0x1b over 7) reads them.
+`rules::diablo_score`, proven on 400 cases (tools/emu/diablo_score.py,
+tests/diablo_score_cases.inc).
+
 ## Doors — FUN_005b0f50
 
 Driver step 1. With MonStats flags byte +0xc & 8 (opendoors, DAT_006ce274):

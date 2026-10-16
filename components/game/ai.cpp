@@ -346,6 +346,7 @@ void andariel_missile(const GameData& game_data, const Monster& monster, const s
     missiles.push_back({ &missile_info, monster.unit.x, monster.unit.y, dx / distance * speed, dy / distance * speed, direction32(dx, dy), now_ms,
                          now_ms + std::uint32_t(std::max(missile_info.range, 1)) * 40, stats });
     missiles.back().level = lvl; missiles.back().to = { monster.unit.x + dx, monster.unit.y + dy }; missiles.back().owner = monster.id;
+    if (carried) missiles.back().skill = carried->id;
 }
 
 // A Skills.txt row by name, -1 none.
@@ -840,9 +841,8 @@ bool think(const GameData& game_data, const Level& level, Monster& monster, std:
     // Regurgitator's corpse (a dead monster, DD, not raised) within aip6, its
     // id the one it's after (state2); the Oblivion Knight's knight (class
     // 0x136) within 50; Diablo's kept point and his chooser's inputs.
-    // ponytail: the states its skills name on a unit (the knights' armor and
-    // curse, the finger mage's 0x54) as d2d keeps them: armor since its cast,
-    // the rest off.
+    // The states its skills name on a unit (the knights' armor and curse,
+    // the finger mage's 0x54): armor since its cast, the others the foe's.
     int lay_x = 0, lay_y = 0;
     {
         const auto& name = type_info.ai_name;
@@ -893,6 +893,11 @@ bool think(const GameData& game_data, const Level& level, Monster& monster, std:
             take(found, found_squared);
         }
         if (name == "AbyssKnight") input.skill_state = monster.armored;
+        // The knight's curse (Skill4) and the finger mage's spider (Skill1):
+        // their auratargetstate (skill +0x82) on the target (FUN_006256b0).
+        if (const std::size_t slot = name == "OblivionKnight" ? 3 : 0; name == "OblivionKnight" || name == "FingerMage")
+            if (const auto* own = game_data.skills.get(skill_id(game_data, type_info.skill[slot])))
+                input.skill_state = !own->auratarget.empty() && std::ranges::contains(target->states, own->auratarget);
         if (name == "Diablo") {
             input.has_word = monster.has_point; input.word_x = monster.point_x; input.word_y = monster.point_y;
             input.target = true;

@@ -53,6 +53,7 @@
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
+#include <exception>
 #include <filesystem>
 #include <format>
 #include <fstream>
@@ -232,6 +233,86 @@ private:
     bool active_;
 };
 
+class SentryFrameAttachment {
+public:
+    explicit SentryFrameAttachment(fs::path directory) : directory_(std::move(directory)) {}
+
+    ~SentryFrameAttachment() {
+        if (!sentry_uuid_is_nil(&attachment_))
+            sentry_remove_attachment(attachment_);
+        std::error_code error;
+        if (!path_.empty() && !fs::remove(path_, error) && error)
+            d2d::log::warn("Could not remove crash-frame attachment {}: {}",
+                           path_.string(), error.message());
+    }
+
+    void update(std::span<const std::uint8_t> framebuffer) {
+        if (!sentry_is_enabled())
+            return;
+        const auto now = std::chrono::steady_clock::now();
+        if (last_attempt_ != std::chrono::steady_clock::time_point{} &&
+            now - last_attempt_ < std::chrono::seconds(1))
+            return;
+        last_attempt_ = now;
+
+        std::error_code error;
+        fs::create_directories(directory_, error);
+        if (error) {
+            d2d::log::warn("Could not create crash-frame directory {}: {}",
+                           directory_.string(), error.message());
+            return;
+        }
+
+        const auto filename = std::format("frame-{}.png", now.time_since_epoch().count());
+        const auto new_path = directory_ / filename;
+        try {
+            d2d::screenshot::save_png(new_path, framebuffer, kScreenWidth, kScreenHeight);
+        } catch (const std::exception& exception) {
+            d2d::log::warn("Could not save crash-frame attachment: {}", exception.what());
+            return;
+        }
+
+#ifdef _WIN32
+        const auto native_path = new_path.wstring();
+        auto attachment = sentry_attachment_from_filew(native_path.c_str());
+#else
+        const auto native_path = new_path.string();
+        auto attachment = sentry_attachment_from_file(native_path.c_str());
+#endif
+        if (sentry_value_is_null(attachment)) {
+            if (!fs::remove(new_path, error) && error)
+                d2d::log::warn("Could not remove unattached crash frame {}: {}",
+                               new_path.string(), error.message());
+            d2d::log::warn("Could not prepare the latest game frame for Sentry.");
+            return;
+        }
+        sentry_attachment_set_filename(attachment, "last-game-frame.png");
+        sentry_attachment_set_content_type(attachment, "image/png");
+        const auto new_attachment = sentry_add_attachment(attachment);
+        if (sentry_uuid_is_nil(&new_attachment)) {
+            if (!fs::remove(new_path, error) && error)
+                d2d::log::warn("Could not remove unattached crash frame {}: {}",
+                               new_path.string(), error.message());
+            d2d::log::warn("Could not attach the latest game frame to Sentry.");
+            return;
+        }
+
+        if (!sentry_uuid_is_nil(&attachment_))
+            sentry_remove_attachment(attachment_);
+        if (!path_.empty() && !fs::remove(path_, error) && error)
+            d2d::log::warn("Could not remove previous crash-frame attachment {}: {}",
+                           path_.string(), error.message());
+        attachment_ = new_attachment;
+        path_ = new_path;
+    }
+
+private:
+    fs::path directory_;
+    fs::path path_;
+    sentry_uuid_t attachment_{};
+    std::chrono::steady_clock::time_point last_attempt_{};
+};
+
 // Set by main() before entering the loop — a lazy way to plumb --start-*
 // through without threading extra parameters everywhere.
 static std::string g_start_screen;
@@ -325,6 +406,7 @@ int run_windowed(std::vector<std::uint8_t>& framebuffer,
                    SDL_VERSIONNUM_MINOR(sdl_v), SDL_VERSIONNUM_MICRO(sdl_v), SDL_GetCurrentVideoDriver());
     Window win;
     if (!win.open(int(kScreenWidth), int(kScreenHeight), g_scale, g_fullscreen)) { SDL_Quit(); return 1; }
+    SentryFrameAttachment crash_frame(g_user_dir / "sentry-frames");
     if (sentry_is_enabled()) {
         auto graphics = sentry_value_new_object();
         sentry_value_set_by_key(graphics, "renderer",
@@ -362,6 +444,7 @@ int run_windowed(std::vector<std::uint8_t>& framebuffer,
         SDL_RenderClear(win.renderer);
         SDL_RenderTexture(win.renderer, win.texture, nullptr, nullptr);
         SDL_RenderPresent(win.renderer);
+        crash_frame.update(framebuffer);
         if (++frame_count == 1) d2d::log::info("First frame presented at {} ms after launch.", d2d::log::ms());
         SDL_Delay(10);
     }
@@ -987,6 +1070,7 @@ int run_windowed(std::vector<std::uint8_t>& framebuffer,
             current_phase.store(std::uint32_t(MainPhase::Present),
                                 std::memory_order_relaxed);
             SDL_RenderPresent(win.renderer);
+            crash_frame.update(framebuffer);
         }
         const std::uint32_t t_after_present = std::uint32_t(SDL_GetTicks());
         if (++frame_count == 1) d2d::log::info("First frame presented at {} ms after launch.", d2d::log::ms());

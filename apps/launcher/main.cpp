@@ -528,13 +528,16 @@ public:
                 QMessageBox::warning(this, tr("Settings"), tr("Could not write %1").arg(from_path(cfg)));
         });
 
-        crashReports_ = new QCheckBox(tr("Automatically send crash reports to Sentry"), this);
+        crashReports_ = new QCheckBox(
+            tr("Automatically send crash reports and the last game frame to Sentry"), this);
         crashReports_->setEnabled(*d2::kSentryDsn != '\0');
         crashReports_->setToolTip(tr(
-            "When enabled, crash dumps, hardware/OS details, the GPU model when reported by its driver, graphics "
-            "backend, recent warnings/errors, and optional notes are sent to Sentry if the game crashes. "
-            "Logs are included only with a crash report. "
-            "Crash dumps may contain sensitive data from the game's memory. You can turn this off at any time."));
+            "When enabled, a crash report may include a crash dump, hardware and OS details, the GPU model when "
+            "reported by its driver, graphics backend, recent warning/error messages, optional notes, and the "
+            "latest 800x600 game frame captured about once per second. The image shows only the game framebuffer, "
+            "not your desktop, and may include names or other visible game information. Crash dumps may contain "
+            "sensitive data from the game's memory. These items are sent to Sentry only if the game crashes. "
+            "You can turn this off at any time."));
         connect(crashReports_, &QCheckBox::toggled, this, [this](bool enabled) {
             QSettings settings;
             settings.setValue("privacy/sendCrashReports", enabled);

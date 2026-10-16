@@ -1573,9 +1573,13 @@ bool monster_update(const GameData& game_data, const Level& level, Monster& mons
                     foe.take(d2d::rules::monster_blow(foe.fighter, foe.level, foe.motion(), stats, false, rng));
                 } else if (cast->srvdofunc == ServerDoFunction::kFingerMageSpider || cast->srvdofunc == ServerDoFunction::kDoomKnightMissile
                            || cast->srvdofunc == ServerDoFunction::kGuidedMissile) {
-                    // FUN_005ccfa0 / FUN_005cdfb0 / do 10: one srvmissilea at the target.
-                    // ponytail: the knights' variant row (srvmissilea + monster data +0xe) and Bone Spirit's homing left out.
-                    andariel_missile(game_data, monster, cast->srvmissilea, dx, dy, now_ms, missiles, lvl, cast);
+                    // FUN_005ccfa0 / FUN_005cdfb0 / do 10: one srvmissilea at the target;
+                    // the knights' the row on by their variant (monster data +0xe: undeadmissile1..4).
+                    std::string name = cast->srvmissilea;
+                    if (cast->srvdofunc == ServerDoFunction::kDoomKnightMissile && monster.variant > 0 && !name.empty() && name.back() == '1') name.back() = char('1' + std::min(monster.variant, 3));
+                    const std::size_t sent = missiles.size();
+                    andariel_missile(game_data, monster, name, dx, dy, now_ms, missiles, lvl, cast);
+                    if (cast->srvdofunc == ServerDoFunction::kGuidedMissile && missiles.size() > sent) missiles.back().target = int(&foe - foes.data());   // its unit (flags 0x20)
                 } else if (cast->srvdofunc == ServerDoFunction::kDiabPrison) {
                     // FUN_005cd5d0 -> FUN_005b34c0 -> FUN_005b3270 (0x73d4f0, flag 1: the
                     // class steps): boneprison1..4 (0x154..0x157) at the target's diagonals,

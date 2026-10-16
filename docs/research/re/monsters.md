@@ -621,7 +621,7 @@ tile as each room populates.
   roll): MonStats rows 0x137 (doomknight2, Abyss Knight) and 0x138
   (doomknight3, Oblivion Knight) roll `rand(4)` on the unit seed into
   monster data +0xe (0x138 also +0xf): the row DoomKnightMissile adds to its
-  missile. One more unit-seed step, so their groups' counts come after it.
+  missile (FUN_005cdfb0: EDX = srvmissilea + that byte, undeadmissile1..4). One more unit-seed step, so their groups' counts come after it.
   d2d: `rules::monster_variant`, `Monster::variant`.
 - **Trapped souls** (InitFn 46, FUN_005506d0, object 369 "trapped soul
   placeholder", from ObjGrp 46's scatter): on the object seed,

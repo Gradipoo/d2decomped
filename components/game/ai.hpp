@@ -495,6 +495,20 @@ void missiles_update(const Level& level, std::vector<Missile>& ms_, std::span<Fo
         if (now_ms >= missile.dies || (!moving && level.blocked(missile.x, missile.y, 0x04))) return true;
         if (missile.visual_only || (missile.info && int(now_ms - missile.born) < missile.info->activate * 40)) return false;
         if (missile.friendly) return hits_monster(missile);
+        // A monster's guided one (missile do 7, FUN_005ae780: Bone Spirit)
+        // turns to its foe every Param1 frames (0: 5) while that's 4..24 off
+        // (FUN_006416d0: each axis less half the sizes, (short + 2 long) / 2).
+        // ponytail: its owner's death doesn't end it (FUN_005541b0).
+        if (missile.info && missile.info->srv_do == 7 && missile.target >= 0 && std::size_t(missile.target) < foes.size()
+            && (int(now_ms - missile.born) / 40) % (missile.info->param1 < 1 ? 5 : missile.info->param1) == 0) {
+            const auto& foe = foes[std::size_t(missile.target)];
+            const float dx = foe.x - missile.x, dy = foe.y - missile.y;
+            const int across = std::max(int(std::abs(dx) * 5) - foe.size / 2, 0), down = std::max(int(std::abs(dy) * 5) - foe.size / 2, 0);
+            if (const int apart = (std::min(across, down) + 2 * std::max(across, down)) / 2; foe.alive && apart >= 4 && apart <= 24) {
+                const float speed = std::hypot(missile.velocity_x, missile.velocity_y), length = std::max(std::hypot(dx, dy), 0.01f);
+                missile.velocity_x = dx / length * speed; missile.velocity_y = dy / length * speed; missile.dir = direction32(dx, dy);
+            }
+        }
         // A monster's fire wall: the maker (do 6) lays SubMissile1 where it
         // is each frame; the fire (do 5) burns a foe within half a cell each
         // frame, once a frame for the cast (they share `struck`), its row's

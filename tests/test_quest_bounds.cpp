@@ -1,10 +1,13 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Act III quest IDs must fit every quest-state representation.
+#include <gamedata.hpp>
+#include <level_ids.hpp>
+#include <quests.hpp>
+#include <quests_act3.hpp>
 #include <world.hpp>
 
-#include <array>
 #include <cassert>
-#include <cstdint>
+#include <cstddef>
 
 using namespace d2d::game;
 using namespace d2d::rules;

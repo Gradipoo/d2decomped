@@ -653,13 +653,15 @@ int main() {
 #include "mon_ais_cases.inc"
 #include "mon_ais3_cases.inc"
 #include "mon_ais_coldworm_cases.inc"
+#include "mon_ais4_cases.inc"
                 };
                 // The AIs a case's first number indexes (mon_ais.py ORDER): its name,
-                // whether it's an other think, whether its scene has Act 3's fields.
-                struct AiCase { std::string_view name; bool other, act3_scene; };
+                // whether it's an other think, whether its scene has Act 3's / Act 4's fields.
+                struct AiCase { std::string_view name; bool other, act3_scene, act4_scene; };
                 static constexpr AiCase kAis[] = {
 #include "mon_ais_names.inc"
                 };
+                auto ai_of = [&](int index) { return kAis[std::size_t(index)].name; };
                 using d2d::rules::ThinkEffect;
                 int checked = 0;
                 for (const std::string_view case_line : kCases) {
@@ -700,6 +702,15 @@ int main() {
                                          for (auto& value : input.skill678) value = read() != 0;
                                          input.weak = read() != 0; input.near_player = read() != 0;
                                          input.wisps = read(); input.bless_ok = read() != 0; }
+                    if (kAis[std::size_t(which)].act4_scene) { input.skill_state = read() != 0; input.young = read(); input.lay_ok = read() != 0; input.kin_x = read(); input.kin_y = read();
+                                                               input.kin_id = 4;     // the harness's kin (units +0xc)
+                                                               if (ai_of(which) == "Diablo") {
+                                                                   input.target = read() != 0; input.score = read(); input.players_looked = read(); input.has_word = read() != 0;
+                                                                   input.word_x = read(); input.word_y = read(); input.stuck = read() != 0; input.reach = read() != 0;
+                                                                   input.left_skill = read(); input.right_skill = read(); input.target_state_b = read() != 0; input.players_about = read();
+                                                                   input.in_chaos = read() != 0; input.target_light_res = read(); input.target_player = read() != 0;
+                                                                   input.target_life_pct = input.life_pct;   // FUN_00621f20 answers one life for any unit
+                                                               } }
                     d2d::rules::Rng seed;
                     seed.low = std::uint32_t(std::stoll([&] { std::string text; fields >> text; return text; }()));
                     seed.high = std::uint32_t(std::stoll([&] { std::string text; fields >> text; return text; }()));
@@ -723,6 +734,7 @@ int main() {
                                    : ai_name == "Terror" ? d2d::rules::terror_think(input, seed, away)
                                    : think.other ? d2d::rules::other_think(ai_name, input)
                                                  : d2d::rules::mon_think(ai_name, input, seed, away);
+                    if (asked != asks.size()) std::fprintf(stderr, "mon_ais %s: %s\n  asked %zu of %zu\n", std::string(ai_name).c_str(), line.c_str(), asked, asks.size());
                     assert(asked == asks.size());
                     for (const auto& effect : effects)                     // the toggle back clears the scratch words (FUN_005b0e00)
                         if (effect.kind == ThinkEffect::toggle) { ctrl[0] = ctrl[1] = 0; if (!effect.value) ctrl[2] = 0; }

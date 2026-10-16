@@ -266,11 +266,11 @@ public:
         const auto now = std::chrono::steady_clock::now();
         if (now - last_capture_ < std::chrono::seconds(1))
             return;
-        last_capture_ = now;
 
         std::lock_guard lock(mutex_);
         if (stopping_ || !frame_available_)
             return;
+        last_capture_ = now;
         std::copy(framebuffer.begin(), framebuffer.end(), available_frame_.begin());
         frame_available_ = false;
         frame_pending_ = true;

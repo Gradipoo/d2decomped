@@ -420,6 +420,41 @@ inline int ai_distance(int dx, int dy) {
     return dy < dx ? (dy + dx * 2) / 2 : (dx + dy * 2) / 2;
 }
 
+// A unit's distance to a point less `less` on each axis
+// (FUN_005dc480 / FUN_005dc380 / FUN_006417f0): (max x 2 + min) / 2.
+inline int point_apart(int dx, int dy, int less) {
+    dx = std::max(std::abs(dx) - less, 0); dy = std::max(std::abs(dy) - less, 0);
+    return (dx <= dy ? dx + dy * 2 : dy + dx * 2) / 2;
+}
+
+// What Diablo's target score reads off a player (FUN_005e8530, stats by
+// FUN_00625480): damageresist 0x24, magicresist 0x25, fire / lightning /
+// cold resist 0x27 / 0x29 / 0x2b; maxdamage 0x16 and the fire / lightning /
+// magic / cold max 0x31 / 0x33 / 0x35 / 0x37 plus poison max 0x3a >> 8; its
+// left and right skills (FUN_00620190 / FUN_006201d0, -1 none) at their
+// levels (FUN_006442a0) and Skills.txt attackrank; state 0xb on it.
+struct DiabloPick {
+    int damage_resist = 0, magic_resist = 0, fire_resist = 0, light_resist = 0, cold_resist = 0;
+    int max_damage = 0;                             // the six max damages summed (poison's >> 8)
+    int left_skill = -1, left_level = 0, left_rank = 0, right_skill = -1, right_level = 0, right_rank = 0;
+    bool state_b = false;
+};
+
+// Diablo's score of a player (FUN_005e8530, C division throughout): the
+// resists ((dr + mr x 2) x 4 + fire + lightning + cold in reach) / 15; the
+// reach (FUN_00622c40) 100 else a clear line (FUN_005dd290: FUN_00622aa0
+// mask 4) 75, plus 100 when Diablo is past 0x55 from his point and the
+// player inside it (FUN_005dc480), both x 5; (the hands' level x attackrank
+// / 4, state 0xb 200, the max damages / 2) x 2; 300 under 20 % life; all
+// / 22, at least 1.
+inline int diablo_score(const DiabloPick& pick, int life_pct, bool reach, bool line_clear, bool point_bonus) {
+    const int resists = ((pick.damage_resist + pick.magic_resist * 2) * 4 + (reach ? pick.cold_resist : 0) + pick.light_resist + pick.fire_resist) / 15;
+    const int closeness = (reach ? 100 : line_clear ? 75 : 0) + (point_bonus ? 100 : 0);
+    const int ranked = (pick.left_level * pick.left_rank + pick.right_level * pick.right_rank) / 4;
+    const int score = ((life_pct < 20 ? 100 : 0) * 3 + resists + closeness * 5 + (ranked + (pick.state_b ? 200 : 0) + pick.max_damage / 2) * 2) / 22;
+    return score == 0 ? 1 : score;
+}
+
 inline constexpr std::array<std::array<int, 8>, 8> kNear{ {
     { -1, -1, -1, 0, 2, 4, 6, 8 }, { -1, -1, 0, 1, 2, 4, 6, 8 }, { -1, 0, 0, 2, 3, 5, 7, 8 }, { 0, 1, 2, 2, 4, 5, 7, 8 },
     { 2, 2, 3, 4, 5, 6, 7, 9 }, { 4, 4, 5, 5, 6, 7, 8, 9 }, { 6, 6, 7, 7, 7, 8, 10, 10 }, { 8, 8, 8, 8, 9, 9, 10, 11 } } };
@@ -1213,10 +1248,11 @@ struct ThinkIn {
     // set to his own spot the first time), stuck where he stands
     // (FUN_0064d910 mask 0x40), the target in reach (FUN_00622c40), its left
     // and right skills (-1 none; FUN_00620190 / FUN_006201d0, at
-    // skill_level) and its state 0xb, a player; the players about him
+    // left_level / right_level) and its state 0xb, a player; the players about him
     // (FUN_00573930); in the Chaos Sanctuary (FUN_0061a1b0: 108; the kin is
     // the target's leader found by FUN_005353f0); its lightning resist (0x29).
     int score = 0, players_looked = 0, word_x = 0, word_y = 0, left_skill = -1, right_skill = -1, players_about = 0, target_light_res = 0;
+    int left_level = 0, right_level = 0;            // the hands' levels (FUN_006442a0, each its own)
     bool has_word = false, stuck = false, reach = false, target_state_b = false, target_player = false, in_chaos = false;
     int self_size = 2, target_size = 2;             // FUN_00620510: the units' sizes (the distances take them off)
 };
@@ -2827,18 +2863,15 @@ Think mon_think(std::string_view ai_name, const ThinkIn& input, Rng& rng, Away&&
     if (ai_name == "Diablo") {
         int word_x = input.word_x, word_y = input.word_y;
         if (!input.has_word) { word_x = input.self_x; word_y = input.self_y; effect(ThinkEffect::mark, word_x, word_y); }
-        auto apart = [](int dx, int dy, int less) {      // FUN_005dc480 / FUN_005dc380 / FUN_006417f0
-            dx = std::max(std::abs(dx) - less, 0); dy = std::max(std::abs(dy) - less, 0);
-            return (dx <= dy ? dx + dy * 2 : dy + dx * 2) / 2;
-        };
+        const auto apart = point_apart;
         int act = *input.state;
         if (act == 0 && !input.target) act = input.stuck ? 16 : int(rng.next() % 1000) > 0 ? 11 : 4;
         else if (act == 0) {
             const bool leader = input.target_player && input.command_unit;            // FUN_005353f0 -> FUN_00552f60
             const bool leader_near = leader && input.in_chaos && apart(input.kin_x - word_x, input.kin_y - word_y, 0) < 0x55;
             bool casting = false;
-            for (const int id : { input.left_skill, input.right_skill })
-                casting = casting || id == 0x3b || id == 0x38 || (id == 0x33 && input.skill_level > 3) || (id == 0x1b && input.skill_level > 7);
+            for (const auto& [id, level] : { std::pair{ input.left_skill, input.left_level }, std::pair{ input.right_skill, input.right_level } })
+                casting = casting || id == 0x3b || id == 0x38 || (id == 0x33 && level > 3) || (id == 0x1b && level > 7);
             const int off = apart(input.target_x - word_x, input.target_y - word_y, (input.target_size >> 1) + 1);
             const bool point_far = off > 0x55, point_very_far = off > 0x69;
             std::array<int, 17> weight{};

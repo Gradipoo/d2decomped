@@ -99,8 +99,26 @@ static void missile_flights() {
     assert(missile_velocity(10, 8, 4) == (14 << 8) * 75 / 100 && missile_range(40, 5, 3) == 55);
 }
 
+// Diablo's target score against game.exe's own (FUN_005e8530, tools/emu/diablo_score.py).
+void diablo_scores() {
+    static constexpr std::string_view kCases[] = {
+#include "diablo_score_cases.inc"
+    };
+    for (const auto line : kCases) {
+        std::istringstream fields{ std::string(line) };
+        d2d::rules::DiabloPick pick;
+        int damage = 0, state = 0, life = 0, reach = 0, line_clear = 0, bonus = 0, want = 0;
+        fields >> pick.damage_resist >> pick.magic_resist >> pick.fire_resist >> pick.light_resist >> pick.cold_resist >> damage
+               >> pick.left_skill >> pick.left_level >> pick.left_rank >> pick.right_skill >> pick.right_level >> pick.right_rank
+               >> state >> life >> reach >> line_clear >> bonus >> want;
+        pick.max_damage = damage; pick.state_b = state != 0;
+        assert(d2d::rules::diablo_score(pick, life, reach != 0, line_clear != 0, bonus != 0) == want);
+    }
+}
+
 int main() {
     missile_flights();
+    diablo_scores();
     Monsters monsters;
     MonType zombie;
     zombie.id = "zombie1"; zombie.spawnable = true; zombie.base = 5;

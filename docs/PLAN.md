@@ -887,6 +887,15 @@ Regurgitator and OblivionKnight (their search callbacks) and Diablo (his
 target / action choosers) need hooks. Skills: srvst 49 / 53 / 54, srvdo 91,
 100..104, 108, 112, 148, 152.
 
+*Done (2026-10-16):* all twelve thinks (TrappedSoul too: the souls InitFn
+46 makes) as game.exe's, `mon_ais.py` → `tests/mon_ais4_cases.inc`, wired
+in `ai.cpp`; a live run walks, swings and casts on 104..108. Skills cast:
+MonCurseCast, DiabCold, DiabLight (as the breath), the spider / knight /
+bone spirit missiles, RegurgitatorEat, Bone Armor, Nest (the lay), and
+roughly: DiabRun (as Charge), DiabWall (a fan), DiabPrison (four
+boneprison1). Left as notes: armor absorb, the knights' missile variant,
+Diablo's target score, the target's skills / states.
+
 **Step 3 — the quests** (quests-act4.md): the opening, Izual (his ghost),
 the Hellforge (Hephasto's hammer, the soulstone, the gems and rune), the
 seals and their three bosses, Diablo's release (the sanctuary cleared) and

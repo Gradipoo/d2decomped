@@ -902,6 +902,16 @@ seals and their three bosses, Diablo's release (the sanctuary cleared) and
 death; the end: classic 90 s on, the game ends; LoD Tyrael's portal (Act 5
 isn't built: it stops there). The hellgate opens the fortress.
 
+*Done (2026-10-16):* `rules/quests_act4.hpp` (Act4Opening, IzualQuest,
+HellforgeQuest, TerrorQuest), `world_quests_act4.cpp` at the World's hooks
+and the quest objects (the forge, the five seals and their three
+superuniques, Diablo's release and spawn at object 255, Tyrael's last
+portal 566). `tests/quests_d2d.py ... 4` plays all four from a new
+character. Left as notes: the quest log's +0xb values (inferred), the
+classic ending (90 s, the credits), the seal flash's event (the boss comes
+at once), the gems at once on loot's rng, the burning souls' chest drop,
+Act 5 past the portal.
+
 ## Checkpoint 2026-10-14 (later): housekeeping, fast act checks
 
 Fast checks, one act at a time or all three side by side:

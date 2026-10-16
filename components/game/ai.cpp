@@ -350,7 +350,7 @@ bool castable(const d2d::rules::Skill& skill) {
     using enum d2d::rules::ServerDoFunction;
     return !skill.srvmissile.empty() || std::ranges::contains(std::array{ kNova, kMissileWall, kCurse, kScatteredBolts, kMissileAtTarget, kMonsterBreath, kBestow,
                                                                           kMonTeleport, kMonPoisonNova, kHydra, kDiabLight, kDiabCold, kFingerMageSpider, kDoomKnightMissile,
-                                                                          kGuidedMissile, kSelfState, kRegurgitatorEat, kMonCurseCast }, skill.srvdofunc);
+                                                                          kGuidedMissile, kSelfState, kRegurgitatorEat, kMonCurseCast, kDiabPrison, kDiabWall }, skill.srvdofunc);
 }
 // Its skill `id`'s level (Sk*lvl + the difficulty's bonus), 1 when not its own.
 int skill_level(const GameData& game_data, const Monster& monster, int id) {
@@ -1082,6 +1082,15 @@ bool think(const GameData& game_data, const Level& level, Monster& monster, std:
             // else it runs at the target (MonStats Run), swinging at the end.
             // ponytail: its charge path (type 0x14) and state 0x12 are the
             // run's; a sequence that walks first and isn't Charge stands.
+            // DiabRun (srvst 54 / do 103, FUN_005cd2c0 / FUN_005cd380): a run at
+            // the target's spot, one hit of the skill's damage on contact.
+            // ponytail: played as Charge (its run, its swing), not its sequence's frames.
+            if (const auto* run = game_data.skills.get(id); run && run->srvdofunc == d2d::rules::ServerDoFunction::kDiabRun) {
+                if (input.in_melee) { charge_swing(game_data, monster, *target, id, now_ms, rng); return true; }
+                if (set_off(true, target)) { monster.chase = int(target - foes.data()); monster.charging = id; return true; }
+                idle(0);
+                return true;
+            }
             if (seq && seq->front().mode == "WL") {
                 const auto* start = game_data.skills.get(id);
                 if (start && start->srvstfunc == d2d::rules::ServerStartFunction::kCharge) {
@@ -1466,6 +1475,28 @@ bool monster_update(const GameData& game_data, const Level& level, Monster& mons
                     // FUN_005ccfa0 / FUN_005cdfb0 / do 10: one srvmissilea at the target.
                     // ponytail: the knights' variant row (srvmissilea + monster data +0xe) and Bone Spirit's homing left out.
                     andariel_missile(game_data, monster, cast->srvmissilea, dx, dy, now_ms, missiles, lvl, cast);
+                } else if (cast->srvdofunc == ServerDoFunction::kDiabPrison) {
+                    // FUN_005cd5d0 -> FUN_005b34c0 -> FUN_005b3270 (0x73d4f0): four
+                    // boneprison1 (class 0x154) at the target's diagonals, (1, 1) first,
+                    // the other three only once it stood; each the free spot nearest.
+                    // ponytail: d2d's nearest free spot for FUN_005b3130 / FUN_005b31b0's searches (radius 8); not in a town.
+                    static constexpr std::array<std::pair<int, int>, 4> kPrison{ { { 1, 1 }, { 1, -1 }, { -1, -1 }, { -1, 1 } } };
+                    if (born && !d2d::rules::level_ids::is_town(level.id))
+                        for (std::size_t k = 0; k < kPrison.size(); ++k) {
+                            const auto [want_x, want_y] = level.nearest_free(foe.x + float(kPrison[k].first) / 5, foe.y + float(kPrison[k].second) / 5);
+                            if (k == 0 && std::hypot(want_x - foe.x, want_y - foe.y) > 8.f / 5) break;
+                            auto bone = make_monster(game_data, 0x154, want_x, want_y, rng, monster.difficulty);
+                            bone.seed = d2d::rules::Rng{ rng.next() };
+                            born->push_back(std::move(bone));
+                        }
+                } else if (cast->srvdofunc == ServerDoFunction::kDiabWall) {
+                    // FUN_005cd1c0: calc1 diabwallmakers (srvmissilea) out from him.
+                    // ponytail: spread evenly across a quarter turn toward the target, not FUN_0056d2c0 / FUN_005cd110's spots.
+                    const int count = std::max(d2d::rules::eval_calc(game_data.skills, cast->calc[0], {}, monster.skill, lvl), 1);
+                    for (int k = 0; k < count; ++k) {
+                        const float turn = count > 1 ? (float(k) / float(count - 1) - 0.5f) * 1.5707963f : 0.f;
+                        andariel_missile(game_data, monster, cast->srvmissilea, dx * std::cos(turn) - dy * std::sin(turn), dx * std::sin(turn) + dy * std::cos(turn), now_ms, missiles, lvl, cast);
+                    }
                 } else if (cast->srvdofunc == ServerDoFunction::kSelfState) {
                     // MonBoneArmor (do 18): its state on itself (Monster::armored, set as it's cast).
                     // ponytail: the armor's damage absorb isn't kept.

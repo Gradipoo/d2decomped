@@ -38,6 +38,7 @@
 #include <log.hpp>
 #include <mpq.hpp>
 #include <screenshot.hpp>
+#include <sentry.h>
 #include <tcp.hpp>
 #include <userdir.hpp>
 
@@ -69,9 +70,167 @@
 #include <utility>
 #include <vector>
 
+#if defined(_WIN32) && (defined(_M_IX86) || defined(_M_X64))
+#include <intrin.h>
+#elif defined(__APPLE__)
+#include <sys/types.h>
+#include <sys/sysctl.h>
+#endif
+#ifdef _WIN32
+#include <windows.h>
+#endif
+
 using namespace d2d::client;
 
 namespace {
+
+std::string cpu_model() {
+#if defined(_WIN32) && (defined(_M_IX86) || defined(_M_X64))
+    int registers[4]{};
+    __cpuid(registers, 0x80000000);
+    if (static_cast<unsigned>(registers[0]) < 0x80000004) return {};
+    std::array<int, 12> brand{};
+    for (int i = 0; i < 3; ++i) __cpuid(brand.data() + i * 4, 0x80000002 + i);
+    std::string model(reinterpret_cast<const char*>(brand.data()), sizeof(brand));
+    if (const auto nul = model.find('\0'); nul != std::string::npos) model.resize(nul);
+    while (!model.empty() && model.back() == ' ') model.pop_back();
+    return model;
+#elif defined(__linux__)
+    std::ifstream cpuinfo("/proc/cpuinfo");
+    std::string line;
+    while (std::getline(cpuinfo, line)) {
+        const auto split = line.find(':');
+        if (split == std::string::npos) continue;
+        const auto key = line.substr(0, split);
+        if (key != "model name" && key != "Hardware") continue;
+        const auto first = line.find_first_not_of(" \t", split + 1);
+        return first == std::string::npos ? std::string{} : line.substr(first);
+    }
+    return {};
+#elif defined(__APPLE__)
+    std::size_t size = 0;
+    if (sysctlbyname("machdep.cpu.brand_string", nullptr, &size, nullptr, 0) == 0 && size > 1) {
+        std::string model(size, '\0');
+        if (sysctlbyname("machdep.cpu.brand_string", model.data(), &size, nullptr, 0) == 0) {
+            model.resize(std::strlen(model.c_str()));
+            return model;
+        }
+    }
+    return {};
+#else
+    return {};
+#endif
+}
+
+constexpr const char* cpu_architecture() {
+#if defined(_M_X64) || defined(__x86_64__)
+    return "x86_64";
+#elif defined(_M_IX86) || defined(__i386__)
+    return "x86";
+#elif defined(_M_ARM64) || defined(__aarch64__)
+    return "aarch64";
+#elif defined(_M_ARM) || defined(__arm__)
+    return "arm";
+#else
+    return "unknown";
+#endif
+}
+
+std::string crash_notes_from_environment() {
+#ifdef _WIN32
+    const wchar_t* notes = _wgetenv(L"D2D_CRASH_NOTES");
+    if (!notes || !*notes) return {};
+    const int length = WideCharToMultiByte(CP_UTF8, 0, notes, -1, nullptr, 0, nullptr, nullptr);
+    if (length <= 1) return {};
+    std::vector<char> buffer(static_cast<std::size_t>(length));
+    if (WideCharToMultiByte(CP_UTF8, 0, notes, -1, buffer.data(), length, nullptr, nullptr) != length)
+        return {};
+    return std::string(buffer.data(), static_cast<std::size_t>(length - 1));
+#else
+    const char* notes = std::getenv("D2D_CRASH_NOTES");
+    return notes ? notes : "";
+#endif
+}
+
+void sentry_log_sink(d2d::log::Level level, std::string_view line) {
+    const std::string message(line);
+    auto breadcrumb = sentry_value_new_breadcrumb("default", message.c_str());
+    sentry_value_set_by_key(
+        breadcrumb, "level",
+        sentry_value_new_string(level == d2d::log::Level::error ? "error" : "warning"));
+    sentry_add_breadcrumb(breadcrumb);
+}
+
+bool start_sentry(const fs::path& user_dir, std::string_view release,
+                  std::string_view notes) {
+    const char* dsn = std::getenv("SENTRY_DSN");
+    if (!dsn || !*dsn) {
+        d2d::log::warn("Crash reporting was requested, but SENTRY_DSN is not configured.");
+        return false;
+    }
+    auto* options = sentry_options_new();
+    if (!options) {
+        d2d::log::warn("Could not allocate Sentry options; crash reporting is unavailable.");
+        return false;
+    }
+    sentry_options_set_dsn(options, dsn);
+    sentry_options_set_release(options, std::string(release).c_str());
+    sentry_options_set_auto_session_tracking(options, 0);
+    const auto database = user_dir / "sentry";
+    const char* raw_base_path = SDL_GetBasePath();
+    const fs::path base_path = raw_base_path ? fs::path(raw_base_path) : fs::path{};
+    SDL_free(const_cast<char*>(raw_base_path));
+#ifdef _WIN32
+    const auto database_path = database.wstring();
+    sentry_options_set_database_pathw(options, database_path.c_str());
+    const auto handler_path = (base_path / "crashpad_handler.exe").wstring();
+    sentry_options_set_handler_pathw(options, handler_path.c_str());
+#else
+    const auto database_path = database.string();
+    sentry_options_set_database_path(options, database_path.c_str());
+    const auto handler_path = (base_path / "crashpad_handler").string();
+    sentry_options_set_handler_path(options, handler_path.c_str());
+#endif
+    sentry_options_set_debug(options, 0);
+    if (sentry_init(options) != 0) {
+        d2d::log::warn("Sentry initialization failed; crash reporting is unavailable.");
+        return false;
+    }
+
+    auto device = sentry_value_new_object();
+    const auto model = cpu_model();
+    if (!model.empty())
+        sentry_value_set_by_key(device, "cpu_model", sentry_value_new_string(model.c_str()));
+    sentry_value_set_by_key(device, "cpu_architecture", sentry_value_new_string(cpu_architecture()));
+    sentry_value_set_by_key(device, "logical_cpu_count", sentry_value_new_int32(SDL_GetNumLogicalCPUCores()));
+    sentry_value_set_by_key(device, "memory_mb", sentry_value_new_int32(SDL_GetSystemRAM()));
+    sentry_value_set_by_key(device, "operating_system", sentry_value_new_string(SDL_GetPlatform()));
+    sentry_set_context("machine", device);
+    if (!notes.empty())
+        sentry_set_extra("user_notes", sentry_value_new_string_n(notes.data(), notes.size()));
+    d2d::log::set_sink(sentry_log_sink);
+    d2d::log::info("Crash reporting enabled.");
+    return true;
+}
+
+class SentrySession {
+public:
+    SentrySession(bool requested, const fs::path& user_dir, std::string_view release,
+                  std::string_view notes)
+        : active_(requested && start_sentry(user_dir, release, notes)) {}
+
+    ~SentrySession() {
+        if (active_) {
+            d2d::log::set_sink(nullptr);
+            sentry_close();
+        }
+    }
+
+    [[nodiscard]] bool enabled() const { return active_; }
+
+private:
+    bool active_;
+};
 
 // Set by main() before entering the loop — a lazy way to plumb --start-*
 // through without threading extra parameters everywhere.
@@ -166,6 +325,29 @@ int run_windowed(std::vector<std::uint8_t>& framebuffer,
                    SDL_VERSIONNUM_MINOR(sdl_v), SDL_VERSIONNUM_MICRO(sdl_v), SDL_GetCurrentVideoDriver());
     Window win;
     if (!win.open(int(kScreenWidth), int(kScreenHeight), g_scale, g_fullscreen)) { SDL_Quit(); return 1; }
+    if (sentry_is_enabled()) {
+        auto graphics = sentry_value_new_object();
+        sentry_value_set_by_key(graphics, "renderer",
+                                sentry_value_new_string(SDL_GetRendererName(win.renderer)));
+        if (auto* gpu = SDL_CreateGPUDevice(
+                SDL_GPU_SHADERFORMAT_SPIRV | SDL_GPU_SHADERFORMAT_DXIL |
+                    SDL_GPU_SHADERFORMAT_DXBC | SDL_GPU_SHADERFORMAT_MSL,
+                false, nullptr)) {
+            if (const char* driver = SDL_GetGPUDeviceDriver(gpu))
+                sentry_value_set_by_key(graphics, "gpu_driver",
+                                        sentry_value_new_string(driver));
+#if SDL_VERSION_ATLEAST(3, 4, 0)
+            const auto properties = SDL_GetGPUDeviceProperties(gpu);
+            if (const char* name = SDL_GetStringProperty(
+                    properties, SDL_PROP_GPU_DEVICE_NAME_STRING, nullptr);
+                name && *name)
+                sentry_value_set_by_key(graphics, "gpu_model",
+                                        sentry_value_new_string(name));
+#endif
+            SDL_DestroyGPUDevice(gpu);
+        }
+        sentry_set_context("graphics", graphics);
+    }
     d2d::log::info("  Window: {}x{} (scale {}), renderer {}", kScreenWidth * g_scale, kScreenHeight * g_scale, g_scale,
                    SDL_GetRendererName(win.renderer));
     // The title shows while finish_scene loads the rest (only the menus'
@@ -919,6 +1101,8 @@ int main(int argc, char** argv) {
     std::string devctl_path;
     fs::path    data_dir;
     bool        headless = false;
+    bool        send_crash_reports = false;
+    bool        enable_crash_test = false;
     std::string start_screen;   // "title" | "credits" | "charcreate" | "ingame"
     int         start_class = 0;
     std::string start_name;
@@ -938,6 +1122,10 @@ int main(int argc, char** argv) {
                    "D2 MPQ directory (else $D2_MPQ_DIR, d2data.mpq beside d2d or in ./, d2d.cfg data =)");
     app.add_flag  ("--headless", headless,
                    "Run without opening a window");
+    app.add_flag  ("--send-crash-reports", send_crash_reports,
+                   "Enable crash reporting (launcher opt-in)");
+    app.add_flag  ("--enable-crash-test", enable_crash_test,
+                   "Enable the devctl crash-test command (requires crash reporting)");
     app.add_option("--start-screen", start_screen,
                    "Jump directly to a screen at startup")
         ->check(CLI::IsMember({"title", "credits", "charselect", "charcreate", "ingame", "video", "othermultiplayer", "tcpip"}));
@@ -970,8 +1158,18 @@ int main(int argc, char** argv) {
     } catch (const CLI::ParseError& error) {
         return app.exit(error);
     }
+    if (enable_crash_test && (!send_crash_reports || devctl_path.empty())) {
+        d2d::log::error("--enable-crash-test requires --send-crash-reports and --devctl <path>");
+        return 2;
+    }
     if (const auto level = d2d::log::parse_level(log_level)) d2d::log::set_level(*level);
     else { d2d::log::error("--log-level {}: one of error, warning, info, debug, trace", log_level); return 2; }
+    const auto crash_notes = crash_notes_from_environment();
+    SentrySession sentry(send_crash_reports, user_dir, D2D_APP_VERSION, crash_notes);
+    if (enable_crash_test && !sentry.enabled()) {
+        d2d::log::error("--enable-crash-test requires a successful Sentry initialization");
+        return 2;
+    }
     g_seed_fixed = app.count("--seed") > 0;
     g_map_seed = map_seed;
     // The MPQs: first hit wins, each a hard stop (install-detect.md,
@@ -1020,6 +1218,16 @@ int main(int argc, char** argv) {
     channel.on("quit", [&](const std::vector<std::string>&) {
         quit = true;
         return std::string("ok\n");
+    });
+    channel.on("crash-test", [&](const std::vector<std::string>& args) {
+        if (!enable_crash_test || !sentry.enabled())
+            return std::string("err crash testing is disabled; start with --send-crash-reports and --enable-crash-test\n");
+        if (args.size() != 2 || args[1] != "CONFIRM_CRASH")
+            return std::string("err usage: crash-test CONFIRM_CRASH\n");
+        d2d::log::warn("Triggering the explicitly requested Sentry crash test.");
+        sentry_set_tag("crash_test", "true");
+        sentry_crash();
+        return std::string("err Sentry crash test unexpectedly returned\n");
     });
     channel.listen(devctl_path);
 

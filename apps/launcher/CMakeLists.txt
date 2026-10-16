@@ -32,6 +32,9 @@ set(D2LAUNCHER_UPDATE_URL "" CACHE STRING
     "Optional URL returning JSON with 'tag_name' for update check")
 set(D2_PATCH_URL "" CACHE STRING
     "Optional URL to fetch a Blizzard patch installer from")
+set(D2D_SENTRY_DSN
+    "https://f1260fbca28bc7dbe3d72401699586dc@o4512265415098368.ingest.de.sentry.io/4512265453240400"
+    CACHE STRING "Public Sentry client DSN")
 
 configure_file(config.hpp.in ${CMAKE_CURRENT_BINARY_DIR}/config.hpp @ONLY)
 

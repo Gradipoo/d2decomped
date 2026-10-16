@@ -642,7 +642,7 @@ int run_windowed(std::vector<std::uint8_t>& framebuffer,
         character.stats = made.stats;
         character.items = std::move(made.items);
         character.panel = panel_stats(*scene, character.header, character.items, character.stats);
-        set_map_seed(*scene, game_seed(character.header));
+        set_map_seed(*scene, game_seed(character.header), character.header.active_difficulty());
         town.enter();
     }
     std::array<bool, 8> frontend_played{};   // title-screen ambience picks
@@ -944,7 +944,7 @@ int run_windowed(std::vector<std::uint8_t>& framebuffer,
                     character.expansion = header.expansion();
                     character.header = header;
                     if (g_join_host.empty()) {
-                        set_map_seed(*scene, game_seed(character.header));
+                        set_map_seed(*scene, game_seed(character.header), character.header.active_difficulty());
                         town.enter();                            // the World takes the character
                     } else {
                         // --join: the host's game, at its map seed. d2d's World saves
@@ -968,7 +968,7 @@ int run_windowed(std::vector<std::uint8_t>& framebuffer,
                         } else {
                             auto& net = **joined;
                             d2d::log::info("  in {}'s game: act {}, map seed {:#x}, difficulty {}", g_join_host, net.act + 1, net.map_seed, net.difficulty);
-                            set_map_seed(*scene, net.map_seed);
+                            set_map_seed(*scene, net.map_seed, net.difficulty);
                             character.header.difficulty = {};              // the host's game's difficulty, Act 1
                             character.header.difficulty[std::size_t(std::clamp(net.difficulty, 0, 2))] = 0x80;
                             town.world.characters = nullptr;
@@ -1062,7 +1062,7 @@ int run_windowed(std::vector<std::uint8_t>& framebuffer,
                         character.corpse.clear();
                         character.appearance.reset();
                         character.panel = panel_stats(*scene, character.header, character.items, character.stats);
-                        set_map_seed(*scene, game_seed(character.header));
+                        set_map_seed(*scene, game_seed(character.header), character.header.active_difficulty());
                         town.enter();
                         town.save();
                         load_saves(*scene, save_dir);

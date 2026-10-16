@@ -361,6 +361,7 @@ void register_game_verbs(d2d::devctl::Channel& channel, Window& win, Screen& scr
             const int difficulty = std::clamp(std::atoi(args[2].c_str()), 0, 2);
             for (int i = 0; i < 3; ++i) town.world.character.header.difficulty[std::size_t(i)] &= 0x7f;   // the World's character
             town.world.character.header.difficulty[std::size_t(difficulty)] |= 0x80;
+            // ponytail: the levels already built keep their difficulty's mazes (set_map_seed rebuilds them for a real game).
             town.new_game();
             return std::string("ok\n");
         }

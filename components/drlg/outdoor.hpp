@@ -32,6 +32,8 @@ struct Preset {
     std::array<const d2d::ds1::Map*, 6> maps{};
     int populate = 1;                                   // LvlPrest Populate (0: its rooms flagged 0x800000, FUN_00666680)
     int logicals = 0;                                   // LvlPrest Logicals (1: areas by walls, FUN_0066d110)
+    int animate = 0;                                    // LvlPrest Animate (1: its animated tiles keep every frame, FUN_0066d440)
+    int fill_blanks = 1;                                // LvlPrest FillBlanks (preset +0x1c: blank floors filled, FUN_00666ac0)
 };
 // LvlSub.txt, one row: the stamp sheet and its odds per theme.
 struct Sub {
@@ -1291,13 +1293,21 @@ inline Outdoor generate_outdoor(const OutdoorData& data, const OutdoorLevel& lev
     const int id = level.rect.level;                    // FUN_006807f0
     const bool wild = id >= level_ids::kBloodMoor && id <= level_ids::kTamoeHighland;
     const bool desert = gen.is_desert(), act3 = id >= level_ids::kSpiderForest && id <= level_ids::kTravincal;
-    if (!wild && !desert && !act3 && id != level_ids::kBurialGrounds && id != level_ids::kMooMooFarm) gen.note("drlg: outdoor level " + std::to_string(id) + " not implemented");
+    const bool act4 = gen.is_mesa() || gen.is_chaos();
+    if (!wild && !desert && !act3 && !act4 && id != level_ids::kBurialGrounds && id != level_ids::kMooMooFarm) gen.note("drlg: outdoor level " + std::to_string(id) + " not implemented");
     gen.neighbours();
     gen.outline();
     if (act3) {                                                                           // FUN_0067f450: no borders
         gen.contacts();
         if (gen.is_jungle()) gen.lay_jungle();
         gen.lay_kurast();
+    } else if (act4) {                                                                    // FUN_0067e890: the sanctuary has no borders
+        gen.contacts();
+        if (gen.is_chaos()) gen.lay_chaos();
+        else {
+            gen.borders();
+            gen.lay_mesa();
+        }
     } else if (desert) {                                                                  // FUN_0067f980
         gen.contacts();
         gen.borders();
@@ -1362,7 +1372,10 @@ inline Outdoor generate_outdoor(const OutdoorData& data, const OutdoorLevel& lev
                 }
                 for (int tile_y = 0; tile_y < preset->height; tile_y += 8)
                     for (int tile_x = 0; tile_x < preset->width; tile_x += 8)
-                        out.rooms.push_back({ cell_x * 8 + tile_x, cell_y * 8 + tile_y, alloc().low, 8, 8, 2, def, file, cell_x * 8, cell_y * 8, rolled, units });
+                    {
+                        const auto room_seed = alloc();
+                        out.rooms.push_back({ cell_x * 8 + tile_x, cell_y * 8 + tile_y, room_seed.low, 8, 8, 2, def, file, cell_x * 8, cell_y * 8, rolled, units, room_seed.high });
+                    }
                 if (!map) { gen.note("drlg: preset " + std::to_string(def) + " file " + std::to_string(file) + " not loaded"); continue; }
                 const int origin_x = cell_x * 8, origin_y = cell_y * 8;
                 for (int y = 0; y < preset->height && y < map->height() && origin_y + y < height; ++y)

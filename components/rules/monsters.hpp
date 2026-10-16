@@ -72,6 +72,12 @@ inline Components monster_look(const std::vector<Components>* sets, const Compon
     return look;
 }
 
+// FUN_00573cb0, after the look: the Abyss and Oblivion Knights (MonStats
+// rows 0x137 / 0x138) roll rand(4) on the unit seed, their variant
+// (monster data +0xe, the Oblivion Knight's +0xf too), the row
+// DoomKnightMissile adds to its missile (FUN_005cdfb0). -1: none rolled.
+inline int monster_variant(int row, Rng& unit_seed) { return row == 0x137 || row == 0x138 ? unit_seed(4) : -1; }
+
 // The level's monster region (FUN_005475e0): up to NumMon (at most 13)
 // types drawn without replacement from the difficulty's list, each kept
 // with its rarity and component sets when MonStats isSpawn. With
@@ -343,6 +349,7 @@ void populate_room(const Monsters& monsters, const Region& reg, int density, Spa
         for (std::size_t i = 0; i < reg.types.size() && i < reg.components.size(); ++i)
             if (reg.types[i].first == type) sets = &reg.components[i];
         (void)monster_look(sets, type_info.choices, unit_seed);
+        (void)monster_variant(type, unit_seed);
         unit_seed.next();
         if (type_info.minion[0] >= 0) {                         // FUN_005b2830
             const int count = unit_seed.range(type_info.party_min, type_info.party_max);

@@ -24,7 +24,7 @@ namespace d2d::client {
 
 // --- Screen state machine + mouse routing ---------------------------------
 
-enum class Screen { Title, Credits, CharSelect, CharCreate, InGame, Video, Cinematics, OtherMultiplayer, TcpIp };
+enum class Screen { Title, Credits, CharSelect, CharCreate, InGame, Video, Cinematics, OtherMultiplayer, TcpIp, Endgame };
 
 // Per-class animation state on the char-create screen. Matches D2's flow:
 // classes idle in place (nu1); on click the "just clicked" class walks

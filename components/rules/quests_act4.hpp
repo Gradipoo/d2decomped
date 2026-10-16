@@ -61,6 +61,13 @@ struct IzualQuest {
         else if (quest::bit(quest_bits, kQuest, 3)) { state = 3; log = 1; }
         else if (quest::bit(quest_bits, kQuest, 2)) { state = 2; log = 1; }
     }
+    // Izual's first think (FUN_005b4390, from his AI): open with the log
+    // under 2, each player's log sent again (FUN_005b3940 -> FUN_00544190:
+    // S->C 0x5d, the Quest Log button) unless done (bit 0 or 15) without 13 / 14.
+    [[nodiscard]] bool greeted(const QuestBits& quest_bits) const {
+        if (!open || log >= 2) return false;
+        return !(quest::bit(quest_bits, kQuest, 0) || quest::bit(quest_bits, kQuest, 15)) || quest::bit(quest_bits, kQuest, 13) || quest::bit(quest_bits, kQuest, 14);
+    }
     // A player's bits for the state (LAB_005b3860).
     void mark(QuestBits& quest_bits) const {
         if (quest::bit(quest_bits, kQuest, 0)) return;

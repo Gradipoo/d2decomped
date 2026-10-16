@@ -821,11 +821,12 @@ bool think(const GameData& game_data, const Level& level, Monster& monster, std:
     // curse, the finger mage's 0x54) as d2d keeps them: armor since its cast,
     // the rest off; Diablo's target pick (FUN_005e8f20) is the search's, its
     // score 0 and the players one; the target's left / right skills unknown
-    // (-1); Bone Prison always usable (FUN_005fd470 for 199 isn't traced).
+    // (-1); Bone Prison always usable (FUN_005fd470 for 199: FUN_005b34c0's test of
+    // its four spots, FUN_005b2a00's test mode not traced).
     int lay_x = 0, lay_y = 0;
     {
         const auto& name = type_info.ai_name;
-        auto nearest = [&](auto&& wanted, int limit_squared) {
+        auto nearest_kin = [&](auto&& wanted, int limit_squared) {
             int found = -1, found_squared = std::numeric_limits<int>::max();
             for (std::size_t i = 0; i < pack.size(); ++i) {
                 const auto& other = pack[i];
@@ -856,7 +857,7 @@ bool think(const GameData& game_data, const Level& level, Monster& monster, std:
             }
         }
         if (name == "Regurgitator") {
-            const auto [found, found_squared] = nearest([](const Monster& other) { return !other.alive() && other.mode == "DD" && !other.corpse_used; }, input.aip[5] * input.aip[5]);
+            const auto [found, found_squared] = nearest_kin([](const Monster& other) { return !other.alive() && other.mode == "DD" && !other.corpse_used; }, input.aip[5] * input.aip[5]);
             corpse = found;
             input.corpse = found >= 0;
             take(found, found_squared);
@@ -866,7 +867,7 @@ bool think(const GameData& game_data, const Level& level, Monster& monster, std:
             if (after != pack.end()) { input.kin_x = subtile(after->unit.x); input.kin_y = subtile(after->unit.y); }
         }
         if (name == "OblivionKnight") {
-            const auto [found, found_squared] = nearest([&](const Monster& other) { return other.alive() && other.type == 0x136; }, 2500);
+            const auto [found, found_squared] = nearest_kin([&](const Monster& other) { return other.alive() && other.type == 0x136; }, 2500);
             kin = found;
             input.kin = found >= 0;
             take(found, found_squared);
@@ -965,7 +966,7 @@ bool think(const GameData& game_data, const Level& level, Monster& monster, std:
         }
         if (effect.kind == d2d::rules::ThinkEffect::bless) target->blessed = effect.value;
         if (effect.kind == d2d::rules::ThinkEffect::mark) { monster.has_point = true; monster.point_x = effect.id; monster.point_y = effect.value; }
-        // ponytail: Izual's greeting (ThinkEffect::greet, a4q1's log, FUN_005b4390) waits for a4q1 (step 3).
+        if (effect.kind == d2d::rules::ThinkEffect::greet) monster.greeted = true;   // a4q1's FUN_005b4390 (World::act4_update)
         if (effect.kind == d2d::rules::ThinkEffect::aura) { monster.aura = skill_id(game_data, type_info.skill[std::size_t(effect.id)]); monster.aura_lvl = std::max(input.aip[0], 1); }
     }
     // The unit it's at: its kin (a walk to it), the hurt one or corpse it
@@ -1085,7 +1086,7 @@ bool think(const GameData& game_data, const Level& level, Monster& monster, std:
             // DiabRun (srvst 54 / do 103, FUN_005cd2c0 / FUN_005cd380): a run at
             // the target's spot, one hit of the skill's damage on contact.
             // ponytail: played as Charge (its run, its swing), not its sequence's frames.
-            if (const auto* run = game_data.skills.get(id); run && run->srvdofunc == d2d::rules::ServerDoFunction::kDiabRun) {
+            if (const auto* run_skill = game_data.skills.get(id); run_skill && run_skill->srvdofunc == d2d::rules::ServerDoFunction::kDiabRun) {
                 if (input.in_melee) { charge_swing(game_data, monster, *target, id, now_ms, rng); return true; }
                 if (set_off(true, target)) { monster.chase = int(target - foes.data()); monster.charging = id; return true; }
                 idle(0);
@@ -1252,9 +1253,11 @@ bool monster_update(const GameData& game_data, const Level& level, Monster& mons
         monster.next_act = now_ms + std::uint32_t(type_info.diff[std::size_t(monster.difficulty)].aidel) * 40;
     }
     // An attack, a taunt (the Fallen's S2), a skill's sequence (MonSeq: its
-    // event rows), a young one coming out (spawnmode S1).
+    // event rows), a young one coming out (spawnmode S1), a skill cast in S3
+    // (Diablo's Wall, Prison and Prime Firewall: Sk*mode S3).
     const bool attack = monster.mode == "A1" || monster.mode == "A2";
-    if (attack || monster.mode == "S1" || monster.mode == "S2" || monster.mode == "SC" || (monster.mode == "DT" && monster.skill >= 0)) {   // DT alive: a sequence (the egg's hatch)
+    if (attack || monster.mode == "S1" || monster.mode == "S2" || monster.mode == "SC" || (monster.mode == "S3" && monster.skill >= 0)
+        || (monster.mode == "DT" && monster.skill >= 0)) {   // DT alive: a sequence (the egg's hatch)
         const auto& timing = game_data.npc_timing(monster.npc, monster.mode);
         const SeqRows* seq = skill_seq(game_data, type_info, monster.skill);
         if (seq && seq->front().mode == "WL") seq = nullptr;               // a charge's swing: one hit (its flag 0x40 after the first)
@@ -1476,16 +1479,16 @@ bool monster_update(const GameData& game_data, const Level& level, Monster& mons
                     // ponytail: the knights' variant row (srvmissilea + monster data +0xe) and Bone Spirit's homing left out.
                     andariel_missile(game_data, monster, cast->srvmissilea, dx, dy, now_ms, missiles, lvl, cast);
                 } else if (cast->srvdofunc == ServerDoFunction::kDiabPrison) {
-                    // FUN_005cd5d0 -> FUN_005b34c0 -> FUN_005b3270 (0x73d4f0): four
-                    // boneprison1 (class 0x154) at the target's diagonals, (1, 1) first,
-                    // the other three only once it stood; each the free spot nearest.
+                    // FUN_005cd5d0 -> FUN_005b34c0 -> FUN_005b3270 (0x73d4f0, flag 1: the
+                    // class steps): boneprison1..4 (0x154..0x157) at the target's diagonals,
+                    // (1, 1) first, the other three only once it stood; each the free spot nearest.
                     // ponytail: d2d's nearest free spot for FUN_005b3130 / FUN_005b31b0's searches (radius 8); not in a town.
                     static constexpr std::array<std::pair<int, int>, 4> kPrison{ { { 1, 1 }, { 1, -1 }, { -1, -1 }, { -1, 1 } } };
                     if (born && !d2d::rules::level_ids::is_town(level.id))
                         for (std::size_t k = 0; k < kPrison.size(); ++k) {
                             const auto [want_x, want_y] = level.nearest_free(foe.x + float(kPrison[k].first) / 5, foe.y + float(kPrison[k].second) / 5);
                             if (k == 0 && std::hypot(want_x - foe.x, want_y - foe.y) > 8.f / 5) break;
-                            auto bone = make_monster(game_data, 0x154, want_x, want_y, rng, monster.difficulty);
+                            auto bone = make_monster(game_data, 0x154 + int(k), want_x, want_y, rng, monster.difficulty);
                             bone.seed = d2d::rules::Rng{ rng.next() };
                             born->push_back(std::move(bone));
                         }

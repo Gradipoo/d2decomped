@@ -2637,7 +2637,7 @@ Think mon_think(std::string_view ai_name, const ThinkIn& input, Rng& rng, Away&&
         return { MonAct::idle, 10 };
     }
     // ---- Act 4's (monster-ai.md "Act 4's MonAIs"; tools/emu/mon_ais.py).
-    auto squared = [](int ax, int ay, int bx, int by) { return (ax - bx) * (ax - bx) + (ay - by) * (ay - by); };   // FUN_005b0bd0
+    auto squared = [](int from_x, int from_y, int to_x, int to_y) { return (from_x - to_x) * (from_x - to_x) + (from_y - to_y) * (from_y - to_y); };   // FUN_005b0bd0
     bool set_off_unused = false;                        // FUN_005df7d0's answer: Act 4's thinks return either way
     // VileMother (68, FUN_005fa010): under aip1 laid (state), aip3 %, with
     // under aip2 young within 25, it lays one toward the target (FUN_005f9e30:
@@ -2934,9 +2934,9 @@ Think mon_think(std::string_view ai_name, const ThinkIn& input, Rng& rng, Away&&
         if (!input.target || input.dist > 4) return *input.state != 0 ? Think{ MonAct::s1 } : Think{ MonAct::idle, 15 };
         if (*input.state == 0) { *input.state = 1; *input.state2 = input.frame; return { MonAct::s2 }; }
         if (!input.in_melee || input.frame <= *input.state2) return { MonAct::s1 };
-        const unsigned sx = unsigned(input.self_x), sy = unsigned(input.self_y), tx = unsigned(input.target_x), ty = unsigned(input.target_y);
-        if (tx <= sx && sy <= ty) { *input.state2 = input.frame + 35; return { MonAct::a1 }; }
-        if (!(tx < sx) && ty <= sy) { *input.state2 = input.frame + 35; return { MonAct::a2 }; }
+        const unsigned self_x = unsigned(input.self_x), self_y = unsigned(input.self_y), target_x = unsigned(input.target_x), target_y = unsigned(input.target_y);
+        if (target_x <= self_x && self_y <= target_y) { *input.state2 = input.frame + 35; return { MonAct::a1 }; }
+        if (!(target_x < self_x) && target_y <= self_y) { *input.state2 = input.frame + 35; return { MonAct::a2 }; }
         *input.state2 = input.frame + 5;
         return { MonAct::s1 };
     }

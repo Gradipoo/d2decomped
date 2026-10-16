@@ -58,8 +58,10 @@ struct OpenUI { enum Kind { stash, waypoint, talk, trade, hire } kind = stash; i
 // An object's message for the player (S->C 0x27 mode 2: the Moldy Tome's
 // 127): the speech box plays it, and the client answers it heard.
 struct Speech { int npc = -1; int string = 0; };
+// A quest's log state sent again (S->C 0x5d, no flags): the Quest Log button.
+struct QuestNews { int quest = 0; };
 }  // namespace ev
-using Event = std::variant<ev::LevelChanged, ev::OpenUI, ev::Speech>;
+using Event = std::variant<ev::LevelChanged, ev::OpenUI, ev::Speech, ev::QuestNews>;
 
 // What a client is told after each tick (the S -> C side, network.md):
 // everything it draws and clicks on. In-process these are copies; a TCP
@@ -233,6 +235,10 @@ struct World {
     d2d::rules::TerrorQuest terror;
     std::uint32_t izual_ghost_at = 0;      // a4q1's 3-tick timer (FUN_005b3e60): his ghost
     std::uint32_t diablo_at = 0;           // a4q2's release (FUN_005b4be0): Diablo 10 ticks on
+    std::uint32_t diablo_dead_at = 0;      // a4q2's +0x18, classic: the 90 / 95 s end (FUN_005b4be0)
+    bool fortress_warp_done = false;       // a4q2's +5: the 90 s step
+    bool end_movie = false;                // the client's DAT_007a0604: ACT04END and the endgame screen on leaving
+    bool game_closed = false;              // classic, 95 s on (FUN_00530590), or 90 s without bit 13 (C->S 0x69)
     bool had_soulstone = false;            // the Hellforge's item event (LAB_005b5a90): the soulstone picked up
     [[nodiscard]] d2d::rules::KhalimQuest::Parts khalim_parts() const;
     bool had_gidbinn = false;

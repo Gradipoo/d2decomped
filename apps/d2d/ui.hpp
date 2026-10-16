@@ -266,6 +266,7 @@ struct CharCreateUI : Character {
     std::string ok_label;
     std::string cancel_label;
     std::string hardcore_label;
+    std::string expansion_label;   // 0x58cb "Expansion Character"
     // Selected-class name from string.tbl (u16 → Latin-1). Empty when
     // no class is picked yet.
     std::string selected_name;

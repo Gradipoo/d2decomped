@@ -97,6 +97,9 @@ void advance_char_states(CharCreateUI& create_ui,
 // Hardcore-checkbox rect — RE'd char-create master table 0x70b0b0.
 constexpr int kHardcoreX = 319, kHardcoreW = 15, kHardcoreH = 16;
 constexpr int kHardcoreY = rec_top(560, kHardcoreH);
+// The Expansion Character box (record 0xD4, (319, 540), FUN_00430770: status
+// bit 0x20) and its label's hitbox 0xD3 (339, 561, 200 x 32, string 0x58cb).
+constexpr int kExpansionY = rec_top(540, kHardcoreH);
 
 void handle_charcreate_click(CharCreateUI& create_ui,
                              const Scene& scene,

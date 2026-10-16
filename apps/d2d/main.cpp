@@ -544,6 +544,7 @@ int run_windowed(std::vector<std::uint8_t>& framebuffer,
         character.cancel_label   = tbl_label(0x13ed, "EXIT");
         character.ok_label       = tbl_label(0x13ee, "OK");
         character.hardcore_label = tbl_label(0x1406, "Hardcore");
+        character.expansion_label = tbl_label(0x58cb, "Expansion Character");
         character.cancel_btn = Button{ 33, rec_top(572, 35), 128, 35, character.cancel_label.c_str(),
                                 &scene->medium_sel_button,
                                 Screen::CharSelect, /*do_switch=*/true };

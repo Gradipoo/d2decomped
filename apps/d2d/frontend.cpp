@@ -350,10 +350,18 @@ void handle_charcreate_click(CharCreateUI& create_ui,
                              std::uint32_t elapsed_ms) {
     if (!mouse.release_this_frame) return;
     // Hardcore checkbox toggle — the click zone is the RE'd hitbox at
-    // 0x70b080 (339, 561, 100, 32) unioned with the box chrome itself, so
+    // 0x70b080 (339, 581, 100, 32) unioned with the box chrome itself, so
     // clicking either the box OR its label toggles.
     const int hcRx = kHardcoreX, hcRw = kHardcoreW + 5 + 100;   // box + gap + label
-    const int hcRy = rec_top(561, 32), hcRh = 32;              // 0x70b080's rows
+    const int hcRy = rec_top(581, 32), hcRh = 32;              // 0x70b080's rows
+    // Expansion Character (FUN_00433bf0 shows it with a class picked; only
+    // the five classic classes can clear it, Druid and Assassin get the
+    // locked box): box 0xD4 or its label's hitbox 0xD3 (339, 561, 200, 32).
+    if (create_ui.selected >= 0 && kUiToSaveClass[std::size_t(create_ui.selected)] < 5 && mouse.x >= kHardcoreX && mouse.x < 339 + 200
+        && mouse.y >= kExpansionY && mouse.y < 561) {
+        create_ui.expansion = !create_ui.expansion;
+        return;
+    }
     if (mouse.x >= hcRx && mouse.x < hcRx + hcRw &&
         mouse.y >= hcRy && mouse.y < hcRy + hcRh) {
         create_ui.hardcore = !create_ui.hardcore;
@@ -380,6 +388,7 @@ void handle_charcreate_click(CharCreateUI& create_ui,
             cur.state = ClassState::Selecting;
             cur.state_start_ms = elapsed_ms;
             create_ui.selected = i;
+            create_ui.expansion = true;   // each pick ticks it again (status |= 0x20)
             return;
         }
     }
@@ -507,6 +516,17 @@ void render_charcreate(std::vector<std::uint8_t>& framebuffer,
         else
             scene.font.draw_tinted(framebuffer, kScreenWidth, kScreenHeight, pal, label_x, label_y,
                                create_ui.hardcore_label, 180, 180, 180);
+    }
+
+    // Expansion Character, with a class picked: clickbox for a classic
+    // class, the grey locked box for Druid / Assassin; its label as Hardcore's.
+    if (create_ui.selected >= 0 && scene.clickbox.frames_per_direction() >= 2) {
+        const bool locked = kUiToSaveClass[std::size_t(create_ui.selected)] >= 5;
+        const auto& box = locked && scene.clickbox_grey.frames_per_direction() > 0 ? scene.clickbox_grey.frame(0, 0) : scene.clickbox.frame(0, create_ui.expansion ? 1 : 0);
+        blit_sprite(framebuffer, box, pal, kHardcoreX, kExpansionY);
+        const int label_y = kExpansionY + (kHardcoreH - scene.font.line_height()) / 2;
+        const auto shade = create_ui.expansion ? std::array{ 255, 208, 80 } : std::array{ 180, 180, 180 };
+        scene.font.draw_tinted(framebuffer, kScreenWidth, kScreenHeight, pal, kHardcoreX + kHardcoreW + 5, label_y, create_ui.expansion_label, shade[0], shade[1], shade[2]);
     }
 
     // OK / EXIT buttons at the bottom — MediumSelButtonBlank chrome.

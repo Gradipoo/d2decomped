@@ -6,6 +6,22 @@ End-user binaries.
   writes `d2d.cfg` and launches d2d. Target: `d2d-launcher`.
 - `d2d/` — the game itself. Target: `d2d`.
 
+The launcher has an opt-in setting for automatically sending crash reports
+through Sentry. It is off by default. When enabled, Sentry Native and its
+Crashpad handler collect and send minidumps with CPU model, architecture,
+logical CPU count, memory, OS, GPU model when reported by the driver, graphics
+backend, recent warning and error breadcrumbs, and optional notes entered in
+the launcher. Log breadcrumbs are sent only with crash events. Notes are not
+saved by the launcher.
+The handler is packaged beside `d2d`; the SDK's public DSN is embedded in the
+launcher. Minidumps may contain sensitive data from the game's memory.
+Release builds use `RelWithDebInfo`. Tag builds upload native symbols to Sentry
+when the repository Actions secret `SENTRY_AUTH_TOKEN` is configured; without
+it, reports can arrive without symbolicated stack traces.
+To intentionally test the Sentry path, use the gated `crash-test` devctl verb
+documented in [the control-channel guide](../docs/control_channel.md). It
+deliberately terminates the running game.
+
 `cmake --build build --target package` makes the shipping package: the
 launcher with d2d beside it and every library both need (macOS: one
 `D2D.app` in a `.dmg`, d2d inside it; Linux: `.tar.gz`; Windows: `.zip`).

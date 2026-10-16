@@ -328,6 +328,8 @@ struct Foe {
     int mana_burn = 0;                        // mana it lost to Mana Burn this frame
     struct Cast { int skill = -1, level = 0; };
     Cast cursed;                              // a curse cast on it this frame (a Cursed boss's Amplify Damage, the Summoner's Weaken)
+    Cast marked;                              // a missile's hit 19 state put on it this frame (the finger mage's spider)
+    std::vector<std::string_view> states;     // the states on it a think reads (its curse's, its mark's: auratargetstate names)
     bool pet = false;                         // the merc, a summon: in the player's list
     int size = 2;                             // FUN_00620510: a player's 2, a monster's MonStats2 SizeX
     int threat = 14;                          // FUN_005dc920: a player's 14, a monster's MonStats threat
@@ -528,6 +530,7 @@ void missiles_update(const Level& level, std::vector<Missile>& ms_, std::span<Fo
             if (std::ranges::contains(*missile.struck, key)) continue;
             missile.struck->push_back(key);
             foe.take(d2d::rules::monster_blow(foe.fighter, foe.level, foe.motion(), missile.src, true, rng, true));
+            if (missile.info->hit_func == 19 && missile.skill >= 0) foe.marked = { missile.skill, missile.level };   // FUN_005ab110
             if (missile.info->return_fire && missile.owner >= 0) foe.fired_by.push_back(missile.owner);
             return true;
         }

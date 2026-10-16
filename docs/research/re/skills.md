@@ -839,6 +839,11 @@ lines (missile names aren't passed in). What it does:
   Molten Boulder): the damage within sHitPar1 (else aurarange), fire at
   0x6e2550's offsets; it rolls on. **48** (FUN_005ac6d0): HitSubMissile1
   on toward the target.
+- **19** (FUN_005ab110, FingerMageSpider): the missile's skill's
+  auratargetstate (+0x82) on the unit struck for auralen (+0x60) frames,
+  at least 5, with its aurastats (FUN_005c6cc0); a new hit renews the
+  length. Returns 3 (damage, end). d2d: `Fight::marks`, read by the knight's
+  and finger mage's thinks through `Foe::states`.
 - Missile do **15** (FUN_005af030, Frozen Orb): every Param1 frames
   SubMissile1 toward direction n of 64 (0x6e2b78 / 0x6e2a78), n += Param2.
   **23** (FUN_005af790, Firestorm): SubMissile1 where it is. **27**

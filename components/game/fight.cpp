@@ -147,7 +147,7 @@ auto Fight::revive(std::uint32_t now_ms) -> void {
         regen.clear();
         charges.clear();
         self_states.clear();
-        curses[0] = {};
+        curses[0] = {}; marks[0] = {};
         stunned = 0;
         pmode = -1; player.mode_ms = now_ms; attack_mon = -1;
         if (merc) { merc->unit.x = player.x + 1; merc->unit.y = player.y + 1; merc->unit.path.clear(); merc->mode = "NU"; merc_target = -1; }
@@ -393,6 +393,7 @@ auto Fight::update_fighters(std::uint32_t now_ms) -> void {
                 && std::hypot(pet.monster.unit.x - player.x, pet.monster.unit.y - player.y) * 5 <= float(calc(*skill, skill->aurarange, pet.aura_level)))
                 states.push_back({ pet.aura, pet.aura_level, ~0u });
         if (now_ms < curses[0].until) states.push_back({ curses[0].skill, curses[0].level, curses[0].until });   // a monster's curse on the player
+        if (now_ms < marks[0].until) states.push_back({ marks[0].skill, marks[0].level, marks[0].until });
         for (const auto& state : states) {
             const auto* skill = game_data->skills.get(state.skill);
             for (std::size_t i = 0; skill && i < skill->aurastat.size(); ++i)
@@ -2370,7 +2371,7 @@ auto Fight::missile_tick(std::uint32_t now_ms) -> void {
         }
         for (std::size_t k = 0; k < missiles.size(); ++k) {
             auto& missile = missiles[k];
-            if (missile.skill < 0 || !missile.info) continue;
+            if (!missile.friendly || missile.skill < 0 || !missile.info) continue;   // the player's side's (a monster's carries its skill too)
             const auto* skill = game_data->skills.get(missile.skill);
             if (!skill) continue;
             const int age = int(now_ms - missile.born) / 40;
@@ -4012,6 +4013,9 @@ auto Fight::world(bool in_moor, std::uint32_t now_ms, float elapsed, const Crowd
             if (const auto* skill = now_ms < curses[1].until ? game_data->skills.get(curses[1].skill) : nullptr)
                 for (std::size_t i = 0; i < skill->aurastat.size(); ++i)
                     if (skill->aurastat[i] == d2d::d2s::kDamageResist) foes[1].fighter.dr_pct += calc(*skill, skill->aura_calc[i], curses[1].level);
+            for (std::size_t k = 0; k < 2; ++k)                  // the states on them the AIs read (their skills' +0x82)
+                for (const auto* held : { &curses[k], &marks[k] })
+                    if (const auto* skill = now_ms < held->until ? game_data->skills.get(held->skill) : nullptr) foes[k].states.push_back(skill->auratarget);
             monster_auras(foes, now_ms);
             for (const auto& pet : pets) foes.push_back(pet_foe(pet));
             // FUN_0065c310(pcdata +0x10 + diff * 4, 0x15, 0): the zealots' spare (a pet's owner's, FUN_0058f090).
@@ -4158,6 +4162,11 @@ auto Fight::world(bool in_moor, std::uint32_t now_ms, float elapsed, const Crowd
                         length /= divisor;
                     curses[k] = { skill->id, foes[k].cursed.level, now_ms + std::uint32_t(std::max(length, 25)) * 40 };
                     d2d::log::info("{} cursed: {} level {}", k ? "the merc" : "the player", skill->name, foes[k].cursed.level);
+                }
+            for (std::size_t k = 0; k < 2; ++k)
+                if (const auto* skill = game_data->skills.get(foes[k].marked.skill)) {
+                    if (now_ms >= marks[k].until) d2d::log::info("{} marked: {}", k ? "the merc" : "the player", skill->auratarget);
+                    marks[k] = { skill->id, foes[k].marked.level, now_ms + std::uint32_t(std::max(calc(*skill, skill->auralen, foes[k].marked.level), 5)) * 40 };
                 }
             if (foe.mana_burn > 0) {                             // Mana Burn
                 character.stats.values[d2d::d2s::kMana] = std::max<std::int64_t>(character.stats.values[d2d::d2s::kMana] - (std::int64_t(foe.mana_burn) << 8), 0);

@@ -1534,8 +1534,10 @@ std::optional<GameData> load_game_data(const fs::path& data_dir, const fs::path&
     return game_data;
 }
 
-void set_map_seed(GameData& game_data, std::uint32_t seed) {
-    if (seed == game_data.map_seed || !game_data.builder || !game_data.builder->act1) return;
+// A new game's seed and difficulty (the mazes' room counts, LvlMaze Rooms(N) / Rooms(H)).
+void set_map_seed(GameData& game_data, std::uint32_t seed, int difficulty) {
+    if ((seed == game_data.map_seed && difficulty == game_data.difficulty) || !game_data.builder || !game_data.builder->act1) return;
+    game_data.difficulty = difficulty;
     for (auto& [id, job] : game_data.builder->jobs) job.wait();
     game_data.builder->jobs.clear();
     game_data.levels.clear();

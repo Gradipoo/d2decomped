@@ -557,6 +557,7 @@ struct GameData {
     std::vector<std::uint8_t> obj_subclass;            // objects.txt SubClass by Id (+0x167: 552610's throttle, 0x40 a waypoint)
     std::vector<std::uint8_t> field;                   // expfield.d2: 256 x 256 directions (0-7, 8 the centre) toward (128, 128)
     std::uint32_t map_seed = 3;                        // act layout + levels (3: townE1)
+    int difficulty = 0;                                // the levels' (a maze's rooms: LvlMaze Rooms by difficulty)
     std::vector<d2d::drlg::Placed> act1_layout;        // where act 1's levels sit (act tiles)
     std::vector<d2d::drlg::Placed> act2_layout;        // act 2's (its own act tiles: the acts overlap)
     d2d::drlg::Act3Layout act3_layout;                 // act 3's, and its jungle's cells
@@ -805,7 +806,6 @@ Npc monster_npc(const GameData& game_data, const d2d::txt::Table& monstats, cons
 struct ObjectRooms;                                     // objgroups.cpp
 struct Spawning {
     struct LevelState {
-        d2d::rules::Population pop;
         std::vector<d2d::rules::Spawn> spawns;             // every spawn so far, level-relative subtiles
         std::vector<bool> up;                              // by Level::rooms index: its room1 made (and populated)
         std::vector<std::size_t> order;                    // Level::rooms indices as they came up
@@ -945,12 +945,10 @@ std::unique_ptr<Level> build_level(const GameData& game_data, GameData::LevelBui
 void place_objects(const GameData& game_data, GameData::LevelBuilder& builder, Level& level);
 // Room `index` of `level` coming into play (FUN_0052d0f0, objgroups.cpp):
 // its seed step (FUN_0054f060), its preset objects (FUN_005559a0) on the
-// game's object seed, then in normal (`all`) its preset monsters, object
-// groups (FUN_00552610) and population (FUN_0054ec90) into the level's
-// spawns. Returns the room seed as it stands; NM / hell populate() makes
-// the preset monsters, then room_groups.
-d2d::rules::Rng room_objects(const GameData& game_data, Spawning& spawning, const Level& level, std::size_t index, bool all);
-void room_groups(const GameData& game_data, Spawning& spawning, const Level& level, std::size_t index, d2d::rules::Rng& seed);
+// game's object seed, its preset monsters, object groups (FUN_00552610)
+// and population (FUN_0054ec90) into the level's spawns. Returns the room
+// seed as it stands.
+d2d::rules::Rng room_objects(const GameData& game_data, Spawning& spawning, const Level& level, std::size_t index);
 // The level's collision as room_objects sees it (FUN_0064ca50's words, 0x27
 // off the rooms up), level subtiles row-major: drlg-dump drops.
 std::vector<std::uint16_t> object_collision(const Spawning& spawning, const Level& level);

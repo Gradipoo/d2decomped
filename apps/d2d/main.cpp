@@ -714,13 +714,6 @@ int run_windowed(std::vector<std::uint8_t>& framebuffer,
                     load_act_palettes(*scene, scene->mpqs, act);
                 town.update(framebuffer, mouse, keys_this_frame, screen, audio, now_ms, last_ms);
                 write_save_back();
-                // Classic, Diablo dead with bit 13 (DAT_007a0604): leaving plays
-                // ACT04END, then the endgame screen (FUN_0044f360 -> FUN_00482ef0).
-                if (screen != Screen::InGame && std::exchange(town.world.end_movie, false)) {
-                    video_queue = { kCinematicVideo[4] };
-                    video_return = Screen::Endgame;
-                    screen = Screen::Video;
-                }
                 if (screen == Screen::CharSelect && town.net_game) {   // a joined game: leave the host, saving on again
                     town.net_game->leave();
                     write_save_back();
@@ -734,6 +727,14 @@ int run_windowed(std::vector<std::uint8_t>& framebuffer,
                     load_saves(*scene, save_dir);                      // the character just played first
                     csu.selected = scene->saves.empty() ? -1 : 0;
                     csu.scroll = 0;
+                }
+                // Classic, Diablo dead with bit 13 (DAT_007a0604): leaving plays
+                // ACT04END, then the endgame screen (FUN_0044f360 -> FUN_00482ef0);
+                // after the leave and the roster reload above, so neither is skipped.
+                if (screen != Screen::InGame && std::exchange(town.world.end_movie, false)) {
+                    video_queue = { kCinematicVideo[4] };
+                    video_return = Screen::Endgame;
+                    screen = Screen::Video;
                 }
                 break;
             }

@@ -339,6 +339,31 @@ jobs:
           bundle: d2decomped-${{ matrix.arch }}.flatpak
           artifact-name: d2decomped-${{ matrix.arch }}
           arch: ${{ matrix.arch }}
+          build-dir: flatpak_app-${{ matrix.arch }}
+          keep-build-dirs: true
+
+      - name: Upload Flatpak Sentry debug information
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          SENTRY_ORG: mindwerks
+          SENTRY_PROJECT: d2d
+        shell: bash
+        run: |
+          if [ -z "$SENTRY_AUTH_TOKEN" ]; then
+            echo "::notice::SENTRY_AUTH_TOKEN is not configured; Flatpak crash reports will lack symbolicated stack traces."
+            exit 0
+          fi
+          build_dir="flatpak_app-${{ matrix.arch }}"
+          d2d_binary=$(find "$build_dir" -type f -name d2d -print -quit)
+          crashpad_handler=$(find "$build_dir" -type f -name crashpad_handler -print -quit)
+          if [ -z "$d2d_binary" ] || [ -z "$crashpad_handler" ]; then
+            echo "::error::Could not find both d2d and crashpad_handler in the Flatpak build directory."
+            exit 1
+          fi
+          npx --yes @sentry/cli@3.8.0 debug-files upload --include-sources --wait-for 60 \
+            --org "$SENTRY_ORG" --project "$SENTRY_PROJECT" \
+            "$d2d_binary" "$crashpad_handler"
 
   release:
     name: Publish release assets

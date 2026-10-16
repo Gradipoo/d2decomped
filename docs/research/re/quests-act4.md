@@ -186,3 +186,40 @@ hammers about, +0x14 gems per round, +0x1c the soulstone given.
 | 131 the flash | 59 | in level 108 its event 7 makes the seal's boss |
 | 369 trapped soul placeholder | 46 `FUN_005506d0` | the trapped souls (monsters.md "Act 4's population") |
 | 399 fissure | 58 `FUN_0054fdb0` | an **objrgn** step: its first eruption (event 8) at that % 250 + 25 frames |
+
+## The ending (traced 2026-10-16)
+
+Classic and LoD part at Diablo's death; the server's game +0x70 is the
+expansion flag, the client's `DAT_007a04f4` (S→C 0x01 byte +6).
+
+Diablo dies (`FUN_005b52e0`, class 0xf3): classic only, `FUN_00545760`
+sends every player its quest bits. a4q2's data: +1, +3, +4, +5 set, +0x15
+clear, +0x18 = GetTickCount. Each player with word 0x1a bit 13 gets
+`FUN_005b4d20` (bits 13, 0; classic: bits 6, 7 and the progression,
+`FUN_00538680`) and, off Diablo's unit (`FUN_005b49c0`), S→C 0x5d {0x17,
+flags 2} plus sound event 0x4b. The client (`FUN_004a2cb0`): classic sets
+`DAT_007a0604` (play the end on leaving) and bumps its own progression
+(`FUN_0044ec80`), and `DAT_007bc9d4`; LoD sets `DAT_007bc9d8` instead.
+
+The timer (`FUN_005b4be0`, real milliseconds, not frames):
+- 75 s: `FUN_0052e2a0` over the clients, once (+0x15).
+- 90 s, classic: each player (`FUN_005b4a80`). With bit 13: warped to the
+  Pandemonium Fortress (`FUN_0053aec0` level 103) and S→C 0x5d {0x17,
+  flags 1}, which sets the client's leave flag (`DAT_007a0620`). Without:
+  S→C 0x50 subtype 0x17; the client sends C→S 0x69 (leave) itself
+  (`FUN_00477ee0`).
+- 95 s, classic: the game closes (`FUN_00530590`).
+
+LoD never runs the 90 / 95 s steps. The game goes on; Tyrael's portal
+(OperateFn 73, `FUN_005b5880`, LoD only, act 4 only) sets word 0x1c bits 0
+and 13 the first time and sends S→C 0x5d {0x17, flags 2} and S→C 0x61 {5}
+(`FUN_0053d940`: play cinematic 5), then warps to Harrogath (109). The
+hellgate sends 0x61 {4} the same way.
+
+The client's cinematics (`FUN_00482ef0`, table 0x721d9c, 12 bytes each):
+0 d2_promo, 1 d2intro, 2..4 ACT0{2,3,4}START, 5 ACT04END, 6 D2X_INTRO, 7
+D2X_OUT. Classic: on leaving the game (`FUN_0044f360`) with `DAT_007a0604`
+set, ACT04END plays, then the endgame screen (`FUN_0044e770`:
+ui\menu\endgame, or endgame2 in LoD, with its endgameok button), then the
+main menu. No credits roll; they stay a menu item. LoD: cinematic 5
+with `DAT_007bc9d8` set plays ACT04END and then D2X_INTRO.

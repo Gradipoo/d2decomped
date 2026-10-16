@@ -53,6 +53,7 @@
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
+#include <condition_variable>
 #include <exception>
 #include <filesystem>
 #include <format>
@@ -61,6 +62,7 @@
 #include <functional>
 #include <ios>
 #include <iterator>
+#include <mutex>
 #include <optional>
 #include <random>
 #include <span>
@@ -235,82 +237,100 @@ private:
 
 class SentryFrameAttachment {
 public:
-    explicit SentryFrameAttachment(fs::path directory) : directory_(std::move(directory)) {}
+    SentryFrameAttachment()
+        : active_(sentry_is_enabled()),
+          available_frame_(active_ ? std::size_t(kScreenWidth) * kScreenHeight * 4 : 0) {
+        if (active_)
+            worker_ = std::thread([this] { process_frames(); });
+    }
 
     ~SentryFrameAttachment() {
+        {
+            std::lock_guard lock(mutex_);
+            stopping_ = true;
+        }
+        ready_.notify_one();
+        if (worker_.joinable())
+            worker_.join();
         if (!sentry_uuid_is_nil(&attachment_))
             sentry_remove_attachment(attachment_);
-        std::error_code error;
-        if (!path_.empty() && !fs::remove(path_, error) && error)
-            d2d::log::warn("Could not remove crash-frame attachment {}: {}",
-                           path_.string(), error.message());
     }
 
     void update(std::span<const std::uint8_t> framebuffer) {
-        if (!sentry_is_enabled())
+        if (!active_)
             return;
+        if (framebuffer.size() != std::size_t(kScreenWidth) * kScreenHeight * 4) {
+            d2d::log::warn("Skipping crash-frame capture due to unexpected framebuffer size.");
+            return;
+        }
         const auto now = std::chrono::steady_clock::now();
-        if (last_attempt_ != std::chrono::steady_clock::time_point{} &&
-            now - last_attempt_ < std::chrono::seconds(1))
+        if (now - last_capture_ < std::chrono::seconds(1))
             return;
-        last_attempt_ = now;
+        last_capture_ = now;
 
-        std::error_code error;
-        fs::create_directories(directory_, error);
-        if (error) {
-            d2d::log::warn("Could not create crash-frame directory {}: {}",
-                           directory_.string(), error.message());
+        std::lock_guard lock(mutex_);
+        if (stopping_ || !frame_available_)
             return;
-        }
-
-        const auto filename = std::format("frame-{}.png", now.time_since_epoch().count());
-        const auto new_path = directory_ / filename;
-        try {
-            d2d::screenshot::save_png(new_path, framebuffer, kScreenWidth, kScreenHeight);
-        } catch (const std::exception& exception) {
-            d2d::log::warn("Could not save crash-frame attachment: {}", exception.what());
-            return;
-        }
-
-#ifdef _WIN32
-        const auto native_path = new_path.wstring();
-        auto attachment = sentry_attachment_from_filew(native_path.c_str());
-#else
-        const auto native_path = new_path.string();
-        auto attachment = sentry_attachment_from_file(native_path.c_str());
-#endif
-        if (sentry_value_is_null(attachment)) {
-            if (!fs::remove(new_path, error) && error)
-                d2d::log::warn("Could not remove unattached crash frame {}: {}",
-                               new_path.string(), error.message());
-            d2d::log::warn("Could not prepare the latest game frame for Sentry.");
-            return;
-        }
-        sentry_attachment_set_filename(attachment, "last-game-frame.png");
-        sentry_attachment_set_content_type(attachment, "image/png");
-        const auto new_attachment = sentry_add_attachment(attachment);
-        if (sentry_uuid_is_nil(&new_attachment)) {
-            if (!fs::remove(new_path, error) && error)
-                d2d::log::warn("Could not remove unattached crash frame {}: {}",
-                               new_path.string(), error.message());
-            d2d::log::warn("Could not attach the latest game frame to Sentry.");
-            return;
-        }
-
-        if (!sentry_uuid_is_nil(&attachment_))
-            sentry_remove_attachment(attachment_);
-        if (!path_.empty() && !fs::remove(path_, error) && error)
-            d2d::log::warn("Could not remove previous crash-frame attachment {}: {}",
-                           path_.string(), error.message());
-        attachment_ = new_attachment;
-        path_ = new_path;
+        std::copy(framebuffer.begin(), framebuffer.end(), available_frame_.begin());
+        frame_available_ = false;
+        frame_pending_ = true;
+        ready_.notify_one();
     }
 
 private:
-    fs::path directory_;
-    fs::path path_;
+    void process_frames() {
+        for (;;) {
+            std::vector<std::uint8_t> frame;
+            {
+                std::unique_lock lock(mutex_);
+                ready_.wait(lock, [this] { return stopping_ || frame_pending_; });
+                if (stopping_ && !frame_pending_)
+                    return;
+                frame.swap(available_frame_);
+                frame_pending_ = false;
+            }
+
+            try {
+                const auto png = d2d::screenshot::encode_png(
+                    frame, kScreenWidth, kScreenHeight);
+                auto attachment = sentry_attachment_from_bytes(
+                    reinterpret_cast<const char*>(png.data()), png.size(),
+                    "last-game-frame.png");
+                if (sentry_value_is_null(attachment)) {
+                    d2d::log::warn("Could not prepare the latest game frame for Sentry.");
+                } else {
+                    sentry_attachment_set_content_type(attachment, "image/png");
+                    const auto new_attachment = sentry_add_attachment(attachment);
+                    if (sentry_uuid_is_nil(&new_attachment)) {
+                        d2d::log::warn("Could not attach the latest game frame to Sentry.");
+                    } else {
+                        if (!sentry_uuid_is_nil(&attachment_))
+                            sentry_remove_attachment(attachment_);
+                        attachment_ = new_attachment;
+                    }
+                }
+            } catch (const std::exception& exception) {
+                d2d::log::warn("Could not encode crash-frame attachment: {}", exception.what());
+            }
+
+            {
+                std::lock_guard lock(mutex_);
+                available_frame_.swap(frame);
+                frame_available_ = true;
+            }
+        }
+    }
+
+    bool active_{};
+    std::vector<std::uint8_t> available_frame_;
+    std::mutex mutex_;
+    std::condition_variable ready_;
+    bool frame_available_{true};
+    bool frame_pending_{};
+    bool stopping_{};
+    std::chrono::steady_clock::time_point last_capture_{};
     sentry_uuid_t attachment_{};
-    std::chrono::steady_clock::time_point last_attempt_{};
+    std::thread worker_;
 };
 
 // Set by main() before entering the loop — a lazy way to plumb --start-*
@@ -406,7 +426,7 @@ int run_windowed(std::vector<std::uint8_t>& framebuffer,
                    SDL_VERSIONNUM_MINOR(sdl_v), SDL_VERSIONNUM_MICRO(sdl_v), SDL_GetCurrentVideoDriver());
     Window win;
     if (!win.open(int(kScreenWidth), int(kScreenHeight), g_scale, g_fullscreen)) { SDL_Quit(); return 1; }
-    SentryFrameAttachment crash_frame(g_user_dir / "sentry-frames");
+    SentryFrameAttachment crash_frame;
     if (sentry_is_enabled()) {
         auto graphics = sentry_value_new_object();
         sentry_value_set_by_key(graphics, "renderer",
@@ -418,9 +438,9 @@ int run_windowed(std::vector<std::uint8_t>& framebuffer,
                 sentry_value_set_by_key(graphics, "gpu_driver",
                                         sentry_value_new_string(driver));
 #if SDL_VERSION_ATLEAST(3, 4, 0)
-            const auto properties = SDL_GetGPUDeviceProperties(gpu);
+            const auto gpu_properties = SDL_GetGPUDeviceProperties(gpu);
             if (const char* name = SDL_GetStringProperty(
-                    properties, SDL_PROP_GPU_DEVICE_NAME_STRING, nullptr);
+                    gpu_properties, SDL_PROP_GPU_DEVICE_NAME_STRING, nullptr);
                 name && *name)
                 sentry_value_set_by_key(graphics, "gpu_model",
                                         sentry_value_new_string(name));

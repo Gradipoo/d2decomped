@@ -2269,6 +2269,10 @@ auto World::tick(const std::vector<Command>& cmds, std::uint32_t now_ms, std::ui
                                  && (player.x != before_x || player.y != before_y);
             }
         }
+        }
+        // The world goes on with the player dead (game.exe runs the rooms
+        // around the corpse till the respawn): monsters see the dead player
+        // as not alive (Fight::world) and think on.
         npc_patrol(*game_data, *level, npc_states, talking, now_ms, elapsed, crowd, &player, arcane.guard_state == 2);
         cain_step(now_ms, elapsed);
         for (const auto& neighbour : level->nearby) {           // over the edge, still in play
@@ -2282,6 +2286,7 @@ auto World::tick(const std::vector<Command>& cmds, std::uint32_t now_ms, std::ui
         // The player's mode as the merc's think reads it: 2 walk, 3 run, 6 walk in town.
         fight.owner_mode = !player.walking ? 1 : running && character.stats.values[d2d::d2s::kStamina] > 0 ? 3 : in_moor ? 2 : 6;
         fight.world(in_moor, now_ms, elapsed, crowd);
+        if (!fight.dead()) {
         den_count(now_ms);
         if (den_log_at && now_ms >= den_log_at) { den.log = 5; den_log_at = 0; }
         use_warp();

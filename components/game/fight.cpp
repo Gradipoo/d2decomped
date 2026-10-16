@@ -3985,7 +3985,7 @@ auto Fight::world(bool in_moor, std::uint32_t now_ms, float elapsed, const Crowd
         // around each player); what they hit comes off the player's life,
         // and a hit of a twelfth of max life or more makes them flinch (GH).
         if (in_moor) {
-            std::vector<Foe> foes{ Foe{ player.x, player.y, int(character.stats.get(d2d::d2s::kLevel)), true, player.walking, player_combat },
+            std::vector<Foe> foes{ Foe{ player.x, player.y, int(character.stats.get(d2d::d2s::kLevel)), !dead(), player.walking, player_combat },
                                    Foe{ merc ? merc->unit.x : 0, merc ? merc->unit.y : 0, merc_st.level, merc && merc->mode != "DT",
                                         merc && merc->unit.walking, merc_fighter() } };
             foes[0].running = owner_mode == 3;                   // RN (World: walking with run on and stamina)

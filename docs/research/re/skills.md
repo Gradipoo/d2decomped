@@ -731,7 +731,9 @@ lines (missile names aren't passed in). What it does:
 - **Do 10** (FUN_005db6d0: Guided Arrow, Bone Spirit): srvmissilea at the
   target unit (flags 0x20; 0x420 with none); calc1 through the callback
   **0x5db6a0**, which adds it to the missile's stat 25 (damage %). Missile
-  do **7** (FUN_005ae780) re-aims at the target every Param1 frames; hit
+  do **7** (FUN_005ae780) re-aims at the target every Param1 (0: 5) frames
+  while it's 4..24 off (FUN_006416d0), a live hostile unit, the owner alive
+  (else the missile ends) and its room not a town's; hit
   **10** (FUN_005aa650) lets a guided one pass all but its target.
 - **St 8** (FUN_005dacd0, Strafe): n = the monsters within aurarange,
   clamped to [min(calc3, calc1), calc1]; **do 12** (FUN_005dba40) shoots one

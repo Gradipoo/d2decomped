@@ -264,7 +264,9 @@ void load_monsters(GameData& game_data, const d2d::mpq::Stack& mpqs) {
     for (std::size_t row_index = 0; row_index < skills_table.size(); ++row_index) {
         skill_missiles.emplace(skills_table.get(row_index, "srvmissile"));
         for (const char* column : { "srvmissilea", "srvmissileb", "srvmissilec" }) skill_missiles.emplace(skills_table.get(row_index, column));
-        if (const std::string missile_name(skills_table.get(row_index, "srvmissilea")); d2d::rules::ServerDoFunction(num(skills_table.get(row_index, "srvdofunc"))) == d2d::rules::ServerDoFunction::kVariantMissile && !missile_name.empty())   // necromage1..4
+        const auto srvdofunc = d2d::rules::ServerDoFunction(num(skills_table.get(row_index, "srvdofunc")));
+        if (const std::string missile_name(skills_table.get(row_index, "srvmissilea"));
+            (srvdofunc == d2d::rules::ServerDoFunction::kVariantMissile || srvdofunc == d2d::rules::ServerDoFunction::kDoomKnightMissile) && !missile_name.empty())   // necromage1..4, undeadmissile1..4
             for (char digit = '2'; digit <= '4'; ++digit) skill_missiles.emplace(missile_name.substr(0, missile_name.size() - 1) + digit);
     }
     // Thrown weapons' rows (weapons.txt missiletype: Missiles.txt Id), for

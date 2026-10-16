@@ -168,6 +168,7 @@ auto World::view() const -> View {
             act1_log(view.quest_log, quest_bits);
             act2_log(view.quest_log, quest_bits);
             act3_log(view.quest_log, quest_bits);
+            act4_log(view.quest_log, quest_bits);
             for (int quest = 1; quest < int(view.quest_log.size()); ++quest) {
                 const bool bit0 = d2d::rules::quest::bit(quest_bits, quest, 0) || d2d::rules::quest::bit(quest_bits, quest, 15);
                 if (bit0 && !d2d::rules::quest::bit(quest_bits, quest, 13) && !d2d::rules::quest::bit(quest_bits, quest, 14)) view.quest_log[std::size_t(quest)] = 0;
@@ -493,6 +494,7 @@ auto World::operate(int npc_index, std::uint32_t now_ms, int force ) -> void {  
         // his eye, heart, brain and the flails taken) and word 0x17 bits 0, 13.
         // Then the fortress's waypoint and its start (FUN_0053aec0(0x67)).
         // ponytail: its sounds (0xca7, 0xb56) and FUN_0053d670(6)'s packet aren't sent.
+        if (act4_operate(npc_index, now_ms)) return;
         if (object.operate_fn == d2d::rules::operate_fn::kHellgate) {
             auto& bits = quests();
             if (!d2d::rules::quest::bit(bits, 0x16, 13) && !d2d::rules::quest::bit(bits, 0x16, 0)) return;
@@ -867,6 +869,7 @@ auto World::new_game() -> void {
         act1_join();
         act2_join();
         act3_join();
+        act4_join();
         den_left = -1;
         den_log_at = 0;
         operated.clear();
@@ -915,7 +918,7 @@ auto World::spawn_merc() -> void {
 
 auto World::swap_npcs(const Level* from) -> void {
         arrived_at = now;
-        if (from && from != level) { act1_enter(*from); act2_enter(*from); act3_enter(*from); }
+        if (from && from != level) { act1_enter(*from); act2_enter(*from); act3_enter(*from); act4_enter(*from); }
         if (from) other_npcs[from] = std::move(npc_states);
         if (const auto found = other_npcs.find(level); found != other_npcs.end()) {
             npc_states = std::move(found->second);
@@ -1018,6 +1021,7 @@ auto World::quest_talk(int hc_idx, bool fresh) -> std::vector<d2d::rules::QuestM
         act1_talk(out, hc_idx);
         act2_talk(out, hc_idx, fresh);
         act3_talk(out, hc_idx);
+        act4_talk(out, hc_idx);
         return out;
     }
 
@@ -1889,6 +1893,7 @@ auto World::deal(const Command& command) -> bool {
             act1_said(hc_idx, message->string);
             act2_said(hc_idx, message->string);
             act3_said(hc_idx, message->string);
+            act4_said(hc_idx, message->string);
             return true;
         }
         return false;
@@ -2273,7 +2278,7 @@ auto World::tick(const std::vector<Command>& cmds, std::uint32_t now_ms, std::ui
             npc_patrol(*game_data, *neighbour.level, states, { -1, -1, -1 }, now_ms, elapsed, Crowd{});
         }
         for (std::size_t i = 0; i < npc_states.size() && i < level->npcs.size(); ++i)
-            npc_states[i].alert = act1_alert(level->npcs[i].hc_idx) || act2_alert(level->npcs[i].hc_idx) || act3_alert(level->npcs[i].hc_idx);
+            npc_states[i].alert = act1_alert(level->npcs[i].hc_idx) || act2_alert(level->npcs[i].hc_idx) || act3_alert(level->npcs[i].hc_idx) || act4_alert(level->npcs[i].hc_idx);
         // The player's mode as the merc's think reads it: 2 walk, 3 run, 6 walk in town.
         fight.owner_mode = !player.walking ? 1 : running && character.stats.values[d2d::d2s::kStamina] > 0 ? 3 : in_moor ? 2 : 6;
         fight.world(in_moor, now_ms, elapsed, crowd);
@@ -2292,11 +2297,13 @@ auto World::tick(const std::vector<Command>& cmds, std::uint32_t now_ms, std::ui
             act1_kill(kill, now_ms);
             act2_kill(kill, now_ms);
             act3_kill(kill, now_ms);
+            act4_kill(kill, now_ms);
         }
         fight.kills.clear();
         loot.blessed_find = fight.wisp_blessing.find; loot.blessed_until = fight.wisp_blessing.until;
         act2_update();
         act3_update(now_ms);
+        act4_update(now_ms);
         cross_level();
         fight.rooms_up(*level, player.x, player.y, false);
         grow_states(npc_states, *level);

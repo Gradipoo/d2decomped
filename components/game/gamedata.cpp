@@ -763,7 +763,10 @@ void add_object(const GameData& game_data, const d2d::txt::Table& objects, const
                  && npc.operate_fn != d2d::rules::operate_fn::kCubeChest && npc.operate_fn != d2d::rules::operate_fn::kScrollChest
                  && npc.operate_fn != d2d::rules::operate_fn::kShaftChest   // the Horadric Staff's chests: shut till opened (InitFns 31..33 do nothing)
                  && (npc.operate_fn != d2d::rules::operate_fn::kWaypoint || d2d::rules::level_ids::is_town(into.id))   // waypoints: on in towns (InitFn 17)
-                 && oid != d2d::rules::object_ids::kHellgate);   // the hellgate: a3q6's mode, 0 till Mephisto's dead (InitFn 44)
+                 && oid != d2d::rules::object_ids::kHellgate   // the hellgate: a3q6's mode, 0 till Mephisto's dead (InitFn 44)
+                 && npc.operate_fn != d2d::rules::operate_fn::kHellforge   // the Hellforge: a4q3's mode, 0 till the soulstone's set (InitFn 48)
+                 && npc.operate_fn != d2d::rules::operate_fn::kSeal && npc.operate_fn != d2d::rules::operate_fn::kSealInfector   // the seals: shut (InitFn 56)
+                 && npc.operate_fn != d2d::rules::operate_fn::kSealDeSeis && npc.operate_fn != d2d::rules::operate_fn::kSealVizier);
     npc.mode   = init_mode && !npc.preoperated ? init_mode : lit_mode ? "ON" : "NU";
     // Hover name when selectable in its start mode (Selectable0 = NU,
     // 2 = ON): objects.txt Name through the string tables.

@@ -4,8 +4,15 @@ Conventions, flag helpers and the record layout are in `quests.md` /
 `quests-act1.md` (callbacks: +0xa0 messages, +0xa8 talk closes, +0xac level
 change, +0xb0 item event, +0xc0 a bound unit dies, +0xc4 quest item on
 leave, +0xc8 leaves, +0xcc heard, +0xd4 joins, +0xd8, +0xec "!", +0xf0
-open / chain). Traced 2026-10-14 from the decompile; not yet ported or
-emulated.
+open / chain). Traced 2026-10-14 from the decompile; ported 2026-10-16:
+`rules/quests_act4.hpp`, `game/world_quests_act4.cpp`, played by
+`tests/quests_d2d.py ... 4`. States from FUN_00544350's EDX: a4q1 1 open, 2
+told (0xd3), 3 the fortress after (0x23b), 4 Izual dead (0x201), 5 rewarded
+(0xde); a4q2 1 open (0x91), 2 told (0xe1), 3 the fortress / the sanctuary
+(0x2af / 0x2bf); a4q3 1 open (0x155, 0x87, 0xf1), 2 told (0x1ce, 0x201), 3
+the fortress after (0x1b1), 4 struck (0x125), 5 rewarded (0x212). Message
+blocks (quest_msgs.py) and the state → block maps 0x73dba0 {-1, 0, 1, 2, 3,
+4}, 0x73d56c {-1, 0, 1, -1, -1}.
 
 ## The records
 

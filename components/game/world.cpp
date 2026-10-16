@@ -169,12 +169,12 @@ auto World::view() const -> View {
             act2_log(view.quest_log, quest_bits);
             act3_log(view.quest_log, quest_bits);
             for (int quest = 1; quest < int(view.quest_log.size()); ++quest) {
-                const bool bit0 = d2d::rules::qbit(quest_bits, quest, 0) || d2d::rules::qbit(quest_bits, quest, 15);
-                if (bit0 && !d2d::rules::qbit(quest_bits, quest, 13) && !d2d::rules::qbit(quest_bits, quest, 14)) view.quest_log[std::size_t(quest)] = 0;
+                const bool bit0 = d2d::rules::quest::bit(quest_bits, quest, 0) || d2d::rules::quest::bit(quest_bits, quest, 15);
+                if (bit0 && !d2d::rules::quest::bit(quest_bits, quest, 13) && !d2d::rules::quest::bit(quest_bits, quest, 14)) view.quest_log[std::size_t(quest)] = 0;
             }
             const bool done[7] = { false, den.state >= 4, burial.state >= 4, tools.game_returned, cain.rescued_flag, tower.dead, andy.log == 0xd };
             for (std::size_t quest = 1; quest < view.game_quests.size(); ++quest)
-                view.game_quests[quest] = std::uint16_t(((quest < 7 ? done[quest] : d2d::rules::qbit(game_bits, int(quest), 13)) ? 1 << 13 : 0)
+                view.game_quests[quest] = std::uint16_t(((quest < 7 ? done[quest] : d2d::rules::quest::bit(game_bits, int(quest), 13)) ? 1 << 13 : 0)
                                                         | (closed_at_join[quest] ? 1 << 15 : 0));
         }
         view.den_left = std::max(den_left, 0);
@@ -435,7 +435,7 @@ auto World::operate(int npc_index, std::uint32_t now_ms, int force ) -> void {  
             std::vector<d2d::rules::Drop> drops;
             for (std::uint32_t gold = fight.spawning.quests.next() % 5 + 5; gold > 0; --gold) drops.push_back({ .code = "gld" });
             const char* part = operate_id == d2d::rules::operate_fn::kKhalimHeart ? K::kHeartCode : operate_id == d2d::rules::operate_fn::kKhalimEye ? K::kEyeCode : K::kBrainCode;
-            if (!d2d::rules::qbit(quests(), K::kQuest, 0) && !carries(part) && !carries(K::kWillCode)) drops.push_back({ .code = part });
+            if (!d2d::rules::quest::bit(quests(), K::kQuest, 0) && !carries(part) && !carries(K::kWillCode)) drops.push_back({ .code = part });
             const auto [low, high] = d2d::rules::kChestLevels[std::size_t(std::clamp(act(), 0, 2))];
             d2d::rules::chest_round(game_data->rules, d2d::rules::chest_tc(act(), diff, here, alvl(low), alvl(high)), object.seed, drops, 4);
             for (const auto& dropped : drops) loot.put(dropped, object.x, object.y, here, fight.spawning.game, now_ms);
@@ -495,15 +495,15 @@ auto World::operate(int npc_index, std::uint32_t now_ms, int force ) -> void {  
         // ponytail: its sounds (0xca7, 0xb56) and FUN_0053d670(6)'s packet aren't sent.
         if (object.operate_fn == d2d::rules::operate_fn::kHellgate) {
             auto& bits = quests();
-            if (!d2d::rules::qbit(bits, 0x16, 13) && !d2d::rules::qbit(bits, 0x16, 0)) return;
+            if (!d2d::rules::quest::bit(bits, 0x16, 13) && !d2d::rules::quest::bit(bits, 0x16, 0)) return;
             const Level* fortress = game_data->level(d2d::rules::level_ids::kPandemoniumFortress);
             if (!fortress || fortress->start.first < 0) { d2d::log::warn("The Pandemonium Fortress didn't build; the hellgate stays shut"); return; }
-            if (level->id == d2d::rules::level_ids::kDuranceOfHateLevel3 && !d2d::rules::qbit(bits, 0x17, 0)) {
-                if (!d2d::rules::qbit(bits, 0x12, 0)) {
-                    d2d::rules::qset(bits, 0x12, 0); d2d::rules::qset(bits, 0x12, 13);
+            if (level->id == d2d::rules::level_ids::kDuranceOfHateLevel3 && !d2d::rules::quest::bit(bits, 0x17, 0)) {
+                if (!d2d::rules::quest::bit(bits, 0x12, 0)) {
+                    d2d::rules::quest::set(bits, 0x12, 0); d2d::rules::quest::set(bits, 0x12, 13);
                     for (const char* code : { "qey", "qhr", "qbr", "qf1", "qf2" }) take_carried(code);
                 }
-                d2d::rules::qset(bits, 0x17, 0); d2d::rules::qset(bits, 0x17, 13);
+                d2d::rules::quest::set(bits, 0x17, 0); d2d::rules::quest::set(bits, 0x17, 13);
             }
             set_waypoint(waypoint_index(*game_data, d2d::rules::level_ids::kPandemoniumFortress));
             arrive(fortress, fortress->start.first, fortress->start.second, "the hellgate");
@@ -862,7 +862,7 @@ auto World::new_game() -> void {
         // are shut for the game (FUN_00544410, game flag 15), every quest's
         // join runs, then the chain from quest 1.
         for (int quest = 1; quest < int(closed_at_join.size()); ++quest)
-            closed_at_join[std::size_t(quest)] = d2d::rules::qbit(quests(), quest, 0) || d2d::rules::qbit(quests(), quest, 15);
+            closed_at_join[std::size_t(quest)] = d2d::rules::quest::bit(quests(), quest, 0) || d2d::rules::quest::bit(quests(), quest, 15);
         game_bits = {};
         act1_join();
         act2_join();
@@ -1068,9 +1068,9 @@ auto World::mephisto_died(const Fight::Kill& kill, std::uint32_t now_ms) -> void
         guardian.killed();
         bridge_check = now_ms + 24 * kTickMs;
         auto& bits = quests();
-        if (!d2d::rules::qbit(bits, 0x16, 0)) {
-            const bool had_stone = d2d::rules::qbit(bits, 0x16, 0xb);
-            for (const int bit : { 0xd, 0, 0xb }) d2d::rules::qset(bits, 0x16, bit);
+        if (!d2d::rules::quest::bit(bits, 0x16, 0)) {
+            const bool had_stone = d2d::rules::quest::bit(bits, 0x16, 0xb);
+            for (const int bit : { 0xd, 0, 0xb }) d2d::rules::quest::set(bits, 0x16, bit);
             open_act(3);
             if (!had_stone) loot.put({ .code = "mss" }, kill.x, kill.y, kill.level, fight.spawning.game, now_ms);
         }
@@ -1143,7 +1143,7 @@ auto World::transmute(std::uint32_t now_ms) -> void {
         const auto& layout = game_data->cube_layout;
         for (auto& item : made.items) {
             if (item.code == "hst") {             // FUN_0059e5c0 -> FUN_0059b660
-                d2d::rules::qset(quests(), d2d::rules::HoradricStaffQuest::kQuest, 11);
+                d2d::rules::quest::set(quests(), d2d::rules::HoradricStaffQuest::kQuest, 11);
                 staff.staff_made = true;
                 arcane.staff_made(quests());
             }
@@ -1445,7 +1445,7 @@ auto World::den_count(std::uint32_t now_ms) -> void {
             if (kill == d2d::rules::DenQuest::Kill::cleared) {
                 d2d::log::info("Den of Evil: cleared");
                 den_log_at = now_ms + 8 * kTickMs;     // the log's "Return to Akara" 8 ticks on (LAB_00590230)
-                if (d2d::rules::qbit(quests(), 1, 13))
+                if (d2d::rules::quest::bit(quests(), 1, 13))
                     class_cue("act1_complete_den", now_ms);
             }
         }
@@ -1716,7 +1716,7 @@ auto World::deal(const Command& command) -> bool {
         // quest 4's done or its reward's due; paid purse first, then the stash
         // (FUN_00576d90).
         if (std::holds_alternative<cmd::Identify>(command)) {
-            const int fee = d2d::rules::qbit(quests(), 4, 0) || d2d::rules::qbit(quests(), 4, 1) ? 0 : d2d::rules::unidentified(character.items) * 100;
+            const int fee = d2d::rules::quest::bit(quests(), 4, 0) || d2d::rules::quest::bit(quests(), 4, 1) ? 0 : d2d::rules::unidentified(character.items) * 100;
             if (!d2d::rules::pay(character.stats, fee)) return true;
             d2d::rules::identify_all(character.items);
             return true;
@@ -1766,14 +1766,14 @@ auto World::deal(const Command& command) -> bool {
         // 41 (the Den of Evil's reward) is open, stats and skills go back,
         // then it's used (FUN_0058fd50: bit 0 on, 1 off).
         if (const auto* respec = std::get_if<cmd::Respec>(&command)) {
-            using d2d::rules::qbit;
+            namespace quest = d2d::rules::quest;
             if (std::size_t(respec->npc) >= level->npcs.size() || level->npcs[std::size_t(respec->npc)].hc_idx != d2d::rules::monster_ids::kAkara
-                || !qbit(quests(), d2d::rules::kRespecQuest, 1)) return true;
+                || !quest::bit(quests(), d2d::rules::kRespecQuest, 1)) return true;
             const auto cls = std::size_t(std::clamp<int>(character.header.cls, 0, 6));
             const auto& start = game_data->class_start[cls];
             d2d::rules::respec(character.stats, { start.str, start.ene, start.dex, start.vit }, game_data->class_gains[cls]);
-            d2d::rules::qset(quests(), d2d::rules::kRespecQuest, 0);
-            d2d::rules::qset(quests(), d2d::rules::kRespecQuest, 1, false);
+            d2d::rules::quest::set(quests(), d2d::rules::kRespecQuest, 0);
+            d2d::rules::quest::set(quests(), d2d::rules::kRespecQuest, 1, false);
             d2d::log::info("Akara reset the stat and skill points");
             return true;
         }
@@ -1782,7 +1782,7 @@ auto World::deal(const Command& command) -> bool {
         // quest 7 bits 0 and 13) and its town's waypoint is active. hcIdx 0xaf
         // back to the camp (FUN_0054b830(1, 5): spawn index 5, DS1 special 31).
         if (const auto* caravan = std::get_if<cmd::Caravan>(&command)) {
-            using d2d::rules::qbit;
+            namespace quest = d2d::rules::quest;
             if (std::size_t(caravan->npc) >= level->npcs.size()) return true;
             const int hc_idx = level->npcs[std::size_t(caravan->npc)].hc_idx;
             // Meshif (FUN_00579d60 hcIdx 0xd2): once quest 14 is done, to Kurast
@@ -1796,15 +1796,15 @@ auto World::deal(const Command& command) -> bool {
                 return true;
             }
             if (hc_idx == d2d::rules::monster_ids::kMeshif) {
-                if (!qbit(quests(), d2d::rules::SevenTombsQuest::kQuest, 0)) return true;
+                if (!quest::bit(quests(), d2d::rules::SevenTombsQuest::kQuest, 0)) return true;
                 const Level* docks = game_data->level(d2d::rules::level_ids::kKurastDocks);
                 if (!docks || docks->start.first < 0) { d2d::log::warn("Kurast Docks didn't build; the boat stays"); return true; }
-                if (!qbit(quests(), 15, 0)) {
-                    if (!qbit(quests(), 10, 0)) {
-                        d2d::rules::qset(quests(), 10, 0); d2d::rules::qset(quests(), 10, 13);
+                if (!quest::bit(quests(), 15, 0)) {
+                    if (!quest::bit(quests(), 10, 0)) {
+                        d2d::rules::quest::set(quests(), 10, 0); d2d::rules::quest::set(quests(), 10, 13);
                         for (const char* code : { "msf", "vip" }) take_carried(code);
                     }
-                    d2d::rules::qset(quests(), 15, 0); d2d::rules::qset(quests(), 15, 13);
+                    d2d::rules::quest::set(quests(), 15, 0); d2d::rules::quest::set(quests(), 15, 13);
                 }
                 set_waypoint(waypoint_index(*game_data, d2d::rules::level_ids::kKurastDocks));
                 arrive(docks, docks->start.first, docks->start.second, "Meshif's boat");
@@ -1816,10 +1816,10 @@ auto World::deal(const Command& command) -> bool {
                 arrive(&camp, spot.first, spot.second, "Warriv's caravan");
                 return true;
             }
-            if (hc_idx != d2d::rules::monster_ids::kWarriv || !qbit(quests(), d2d::rules::AndyQuest::kQuest, 0)) return true;
+            if (hc_idx != d2d::rules::monster_ids::kWarriv || !quest::bit(quests(), d2d::rules::AndyQuest::kQuest, 0)) return true;
             const Level* lut_gholein = game_data->level(d2d::rules::level_ids::kLutGholein);
             if (!lut_gholein || lut_gholein->start.first < 0) { d2d::log::warn("Lut Gholein didn't build; the caravan stays"); return true; }
-            if (!qbit(quests(), 7, 0)) { d2d::rules::qset(quests(), 7, 0); d2d::rules::qset(quests(), 7, 13); }
+            if (!quest::bit(quests(), 7, 0)) { d2d::rules::quest::set(quests(), 7, 0); d2d::rules::quest::set(quests(), 7, 13); }
             set_waypoint(waypoint_index(*game_data, d2d::rules::level_ids::kLutGholein));
             // The arrival's level change runs the quests' enter hooks: Andariel's
             // (the Rogues get Cain if he's still caged, FUN_00596de0 / FUN_00597310).
@@ -1833,7 +1833,7 @@ auto World::deal(const Command& command) -> bool {
         // ponytail: no S->C 0x58 result (waits for networking); the new item stays in hand.
         if (const auto* imbue = std::get_if<cmd::Imbue>(&command)) {
             if (std::size_t(imbue->npc) >= level->npcs.size() || level->npcs[std::size_t(imbue->npc)].hc_idx != d2d::rules::monster_ids::kCharsi
-                || !d2d::rules::qbit(quests(), d2d::rules::ToolsQuest::kQuest, 1) || !held || !d2d::rules::imbuable(game_data->rules, *held)) return true;
+                || !d2d::rules::quest::bit(quests(), d2d::rules::ToolsQuest::kQuest, 1) || !held || !d2d::rules::imbuable(game_data->rules, *held)) return true;
             auto made = d2d::rules::imbue_item(game_data->rules, *held, int(character.stats.get(d2d::d2s::kLevel)), rng);
             made.location = held->location; made.panel = held->panel; made.column = held->column; made.row = held->row;
             held = std::move(made);
@@ -2089,9 +2089,9 @@ auto World::tick(const std::vector<Command>& cmds, std::uint32_t now_ms, std::ui
         game_data->poll_levels();
         fight.spawning.game_quests = game_bits;          // the town markers' inits read them as rooms come up
         // a3q7: the Dark Wanderer gone (ai.cpp) marks every player in act 3 (FUN_005bd260: word 0x20 bit 0, if missing).
-        if (d2d::rules::level_act(level->id) == 2 && !d2d::rules::qbit(quests(), 0x20, 0)
+        if (d2d::rules::level_act(level->id) == 2 && !d2d::rules::quest::bit(quests(), 0x20, 0)
             && std::ranges::any_of(fight.monsters, [](const Monster& monster) { return monster.gone && monster.type == d2d::rules::monster_ids::kDarkWanderer; }))
-            d2d::rules::qset(quests(), 0x20, 0);
+            d2d::rules::quest::set(quests(), 0x20, 0);
         // FUN_005bd390, once a game: round where he went (0x741538's
         // (dx, dy), from index `quest seed & 1`: 7 or 8; index 7 repeats
         // index 2, bugs.md #20) object 131 at a free spot near each, mode 1,
@@ -2198,9 +2198,9 @@ auto World::tick(const std::vector<Command>& cmds, std::uint32_t now_ms, std::ui
                     // 13 and 1).
                     if (npc.hc_idx == d2d::rules::monster_ids::kAkara && character.header.active_difficulty() == 2) {
                         auto& quest_bits = quests();
-                        using d2d::rules::qbit;
+                        namespace quest = d2d::rules::quest;
                         constexpr int kRespec = d2d::rules::kRespecQuest;
-                        if (qbit(quest_bits, d2d::rules::DenQuest::kQuest, 0) && !qbit(quest_bits, kRespec, 1) && !qbit(quest_bits, kRespec, 0)) { d2d::rules::qset(quest_bits, kRespec, 13); d2d::rules::qset(quest_bits, kRespec, 1); }
+                        if (quest::bit(quest_bits, d2d::rules::DenQuest::kQuest, 0) && !quest::bit(quest_bits, kRespec, 1) && !quest::bit(quest_bits, kRespec, 0)) { d2d::rules::quest::set(quest_bits, kRespec, 13); d2d::rules::quest::set(quest_bits, kRespec, 1); }
                     }
                     events.push_back(ev::OpenUI{ ev::OpenUI::talk, interact_npc, quest_talk(npc.hc_idx) });
                 }

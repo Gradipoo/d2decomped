@@ -813,9 +813,9 @@ struct ObjectRooms {
                 // units.hpp) Natalya (0x129), else within 3, till word 0x16 has bit 13.
                 // ponytail: their quest records' "made" bits aren't kept: a room comes up once.
                 const int init = obj(unit.id, "InitFn");
-                const bool hratli_moved = d2d::rules::qbit(game_quests, 0x10, 13);
+                const bool hratli_moved = d2d::rules::quest::bit(game_quests, 0x10, 13);
                 if ((init == 49 && !hratli_moved) || (init == 50 && hratli_moved)) monster_or_npc(0xfd, unit, 0, false);
-                if (init == 52 && !d2d::rules::qbit(game_quests, 0x16, 13)) monster_or_npc(0x129, unit, 3, false);
+                if (init == 52 && !d2d::rules::quest::bit(game_quests, 0x16, 13)) monster_or_npc(0x129, unit, 3, false);
                 // InitFn 43 (FUN_005bd1f0, a3q7, object 368 by the jungle's head): the Dark
                 // Wanderer (0x170) 7 subtiles east of it, its spot only; a3q7's init (FUN_005bd300)
                 // leaves him due in every game.

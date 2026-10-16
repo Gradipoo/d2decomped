@@ -4001,7 +4001,7 @@ auto Fight::world(bool in_moor, std::uint32_t now_ms, float elapsed, const Crowd
             monster_auras(foes, now_ms);
             for (const auto& pet : pets) foes.push_back(pet_foe(pet));
             // FUN_0065c310(pcdata +0x10 + diff * 4, 0x15, 0): the zealots' spare (a pet's owner's, FUN_0058f090).
-            const bool a3q5 = d2d::rules::qbit(character.header.quests[std::size_t(std::clamp(character.header.active_difficulty(), 0, 2))], 0x15, 0);
+            const bool a3q5 = d2d::rules::quest::bit(character.header.quests[std::size_t(std::clamp(character.header.active_difficulty(), 0, 2))], 0x15, 0);
             for (auto& foe : foes) foe.a3q5_done = a3q5;
             // With Confuse or Attract about, every monster is a foe too, after
             // the player's list (lists 8 / 9, FUN_005dd0b0 mode 5's units),

@@ -297,7 +297,11 @@ skill: `local_c`) and the target 85+ off (`local_8`): 1 = 0, 12 = 10, 10 =
 the same casting nudges (13 = 15, 13+1 = 25, 9 ≥ 20); 105+ off 14 = 60;
 leader 15 = 20. Then a usable Prison (FUN_005fd470 skill 199: `FUN_005b34c0`
 on the target in test mode, flag 1, each of 0x73d4f0's four spots able to take
-its bone, `FUN_005b2a00`; d2d: always usable) zeroes 9; the
+its bone, `FUN_005b2a00`: request +0x24 bit 0 a dry run, radius −1 the
+exact subtile, which must lie in the room's rect, pass `FUN_005fd350` and
+`FUN_0064d9b0` (the class's MonStats2 size and kind mask); the cast places
+them the same way, (1, 1) first or none) zeroes 9. So he picks Prison only
+when the target can't be fully caged (d2d: `fits_on`, 2026-10-16); the
 leader's Prison not usable zeroes 15. Pick: `rand(sum)` on the unit seed
 (power of two: mask), the first index whose running sum passes it; none → 11.
 The port (`rules::mon_think` "Diablo") holds the exact index map, proven

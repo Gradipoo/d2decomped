@@ -17,6 +17,7 @@
 
 #include <algorithm>
 #include <array>
+#include <ranges>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -250,6 +251,16 @@ namespace {
 
 constexpr int kAndrialSpray = 164, kAndyPoisonBolt = 201;
 int subtile(float cells) { return int(std::floor(cells * 5)); }
+// Diablo's Bone Prison round (0x73d4f0): boneprison1..4 at the target's
+// diagonals, (1, 1) first.
+constexpr std::array<std::pair<int, int>, 4> kPrison{ { { 1, 1 }, { 1, -1 }, { -1, -1 }, { -1, 1 } } };
+// FUN_005b2a00 at radius -1: a monster of `type` fits exactly on the subtile
+// (FUN_0064d9b0: its shape on the grid and among the units).
+// ponytail: the room rect (PtInRect) and FUN_005fd350 aren't checked.
+bool fits_on(const GameData& game_data, const Level& level, const Crowd& crowd, int type, int at_x, int at_y) {
+    const UnitState probe{ .x = (float(at_x) + 0.5f) / 5, .y = (float(at_y) + 0.5f) / 5, .shape = game_data.mon_npc[std::size_t(type)].shape };
+    return !level.unit_blocked(probe.x, probe.y, probe.shape) && !crowd.at(probe.x, probe.y, &probe);
+}
 
 // A move's path to subtile (to_x, to_y) (FUN_00649970): rules::monster_path,
 // the toward pather then the wall pather (FUN_00650350, FUN_005a6290).
@@ -821,8 +832,7 @@ bool think(const GameData& game_data, const Level& level, Monster& monster, std:
     // curse, the finger mage's 0x54) as d2d keeps them: armor since its cast,
     // the rest off; Diablo's target pick (FUN_005e8f20) is the search's, its
     // score 0 and the players one; the target's left / right skills unknown
-    // (-1); Bone Prison always usable (FUN_005fd470 for 199: FUN_005b34c0's test of
-    // its four spots, FUN_005b2a00's test mode not traced).
+    // (-1).
     int lay_x = 0, lay_y = 0;
     {
         const auto& name = type_info.ai_name;
@@ -886,6 +896,10 @@ bool think(const GameData& game_data, const Level& level, Monster& monster, std:
             input.command_unit = input.target_player;               // FUN_005353f0 -> FUN_00552f60: the player himself
             input.kin_x = target_x; input.kin_y = target_y;
             input.self_size = type_info.size; input.target_size = target->size;
+            // FUN_005fd470(199): FUN_005b34c0's dry run (flag 1), every bone of
+            // the round fits on its spot; usable zeroes his Prison (act 9).
+            input.usable = !d2d::rules::level_ids::is_town(level.id) && std::ranges::all_of(std::views::iota(0, 4), [&](int bone) {
+                return fits_on(game_data, level, crowd, 0x154 + bone, target_x + kPrison[std::size_t(bone)].first, target_y + kPrison[std::size_t(bone)].second); });
         }
     }
     auto use = [&](std::string_view mode, int skill) {             // FUN_005dead0 / FUN_005ddf90: against the target (mode ctx +8)
@@ -1085,10 +1099,14 @@ bool think(const GameData& game_data, const Level& level, Monster& monster, std:
             // run's; a sequence that walks first and isn't Charge stands.
             // DiabRun (srvst 54 / do 103, FUN_005cd2c0 / FUN_005cd380): a run at
             // the target's spot, one hit of the skill's damage on contact.
-            // ponytail: played as Charge (its run, its swing), not its sequence's frames.
+            // It always starts (FUN_005cd2c0: the path to the target's spot): no
+            // path right by the target is its contact hit, played as the swing.
+            // ponytail: played as Charge (its run, its swing), not its sequence's frames;
+            // "right by" is within 2 cells.
             if (const auto* run_skill = game_data.skills.get(id); run_skill && run_skill->srvdofunc == d2d::rules::ServerDoFunction::kDiabRun) {
                 if (input.in_melee) { charge_swing(game_data, monster, *target, id, now_ms, rng); return true; }
                 if (set_off(true, target)) { monster.chase = int(target - foes.data()); monster.charging = id; return true; }
+                if (std::hypot(target->x - unit.x, target->y - unit.y) <= 2.f) { charge_swing(game_data, monster, *target, id, now_ms, rng); return true; }
                 idle(0);
                 return true;
             }
@@ -1481,14 +1499,13 @@ bool monster_update(const GameData& game_data, const Level& level, Monster& mons
                 } else if (cast->srvdofunc == ServerDoFunction::kDiabPrison) {
                     // FUN_005cd5d0 -> FUN_005b34c0 -> FUN_005b3270 (0x73d4f0, flag 1: the
                     // class steps): boneprison1..4 (0x154..0x157) at the target's diagonals,
-                    // (1, 1) first, the other three only once it stood; each the free spot nearest.
-                    // ponytail: d2d's nearest free spot for FUN_005b3130 / FUN_005b31b0's searches (radius 8); not in a town.
-                    static constexpr std::array<std::pair<int, int>, 4> kPrison{ { { 1, 1 }, { 1, -1 }, { -1, -1 }, { -1, 1 } } };
+                    // (1, 1) first, the other three only once it stood; each on its spot
+                    // exactly (FUN_005b3130 / FUN_005b31b0 at radius -1), none where it won't fit.
                     if (born && !d2d::rules::level_ids::is_town(level.id))
                         for (std::size_t k = 0; k < kPrison.size(); ++k) {
-                            const auto [want_x, want_y] = level.nearest_free(foe.x + float(kPrison[k].first) / 5, foe.y + float(kPrison[k].second) / 5);
-                            if (k == 0 && std::hypot(want_x - foe.x, want_y - foe.y) > 8.f / 5) break;
-                            auto bone = make_monster(game_data, 0x154 + int(k), want_x, want_y, rng, monster.difficulty);
+                            const int at_x = subtile(foe.x) + kPrison[k].first, at_y = subtile(foe.y) + kPrison[k].second;
+                            if (!fits_on(game_data, level, crowd, 0x154 + int(k), at_x, at_y)) { if (k == 0) break; continue; }
+                            auto bone = make_monster(game_data, 0x154 + int(k), (float(at_x) + 0.5f) / 5, (float(at_y) + 0.5f) / 5, rng, monster.difficulty);
                             bone.seed = d2d::rules::Rng{ rng.next() };
                             born->push_back(std::move(bone));
                         }

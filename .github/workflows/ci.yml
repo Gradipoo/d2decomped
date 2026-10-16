@@ -57,7 +57,7 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y cmake ninja-build build-essential pkg-config \
+          sudo apt-get install -y cmake ninja-build build-essential pkg-config libcurl4-openssl-dev \
             libsdl3-dev libopenal-dev zlib1g-dev libbz2-dev libstorm-dev qt6-base-dev libgl1-mesa-dev \
             clang-tidy
 

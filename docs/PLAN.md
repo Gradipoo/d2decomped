@@ -868,6 +868,17 @@ and 3: the levels diffed against game.exe, the town, the monsters, the quests.
 6. Then population (`diff_drlg.py monsters`, `game`), act 4's NPC thinks
    (`npcs.py` level 103), `ACT=4 sweep.sh`.
 
+*Done (2026-10-16):* the layout 2000/2000; 103..108 rooms, tiles, units,
+monsters, object groups as game.exe's (`ACT=4 sweep.sh`). New on the way:
+animated presets keep every frame (DrlgAnim.cpp), FillBlanks is the row's
+flag, outdoor preset units roll on the room's whole seed, the River of
+Flame's pass (FUN_00673320) and its file rotation, the knights' variant
+draw, InitFns 34 / 46 (trapped souls) / 58. The hellgate takes the player
+to the fortress (its start: the first spawn tile, FUN_0066ac40);
+`quests_d2d.py ... 4`; the fortress's NPCs think as game.exe's
+(`diff_drlg.py 1-20 103 npcs` 20/20). Left: nightmare / hell population
+(fails in Act 1 too: an older gap).
+
 **Step 2 — the monsters** (monster-ai.md "Act 4's MonAIs", skills.md "Act
 4's monster skills"): VileMother, VileDog, FingerMage, Regurgitator, the
 three knights, Megademon, Izual, Diablo (his 17-way chooser). Seven already

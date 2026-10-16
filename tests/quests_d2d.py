@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Acts 1-3's quests end to end: drive a headless d2d over devctl.
+"""Acts 1-4's quests end to end: drive a headless d2d over devctl.
 
 Usage: quests_d2d.py <path-to-d2d> [acts]
 
-`acts` picks the acts to play, "123" by default; each one starts on its
-own from a new character (ctest runs quests_act1..3 side by side).
+`acts` picks the acts to play, "1234" by default; each one starts on its
+own from a new character (ctest runs quests_act1..4 side by side).
 
 A new Amazon (made sturdy: 400 Vitality) plays Act 1's six quests
 through the World: the NPC talks, the quest objects (Tree of Inifuss,
@@ -26,9 +26,9 @@ import tempfile
 import time
 
 d2d = sys.argv[1]
-acts = sys.argv[2] if len(sys.argv) > 2 else "123"
-if not acts or set(acts) - set("123"):
-    sys.exit(f"acts must be digits from 1-3, got {acts!r}")
+acts = sys.argv[2] if len(sys.argv) > 2 else "1234"
+if not acts or set(acts) - set("1234"):
+    sys.exit(f"acts must be digits from 1-4, got {acts!r}")
 data = os.environ.get("D2_MPQ_DIR") or os.path.expanduser("~/Workspace/private/diablo2")
 patch = os.environ.get("D2_PATCH_INSTALLER")
 if not os.path.exists(os.path.join(data, "d2data.mpq")) or not patch or not os.path.exists(patch):
@@ -649,6 +649,22 @@ def act3():
     go(75)
     talk_until("Ormus", lambda: not bits(0x16) & 0x800, "the report not taken")
     print("OK: Mephisto dead, the hellgate open, the bridge up, the report (a3q6)")
+
+
+def act4():
+    # The hellgate (OperateFn 46, FUN_00584750): Mephisto dead (word 0x16
+    # bit 0 here) lets the player through; from the Durance's third level
+    # word 0x17 gets bits 0 and 13 (FUN_00546ac0), the fortress's waypoint,
+    # and the player stands at the Pandemonium Fortress's start.
+    cmd("debug quest 22")
+    go(102)
+    gate = [l.split("\t") for l in cmd("debug objects").splitlines() if l.split("\t")[3:4] == ["op46"]]
+    assert gate, f"no hellgate on level 102: {cmd('debug objects')!r}"
+    cmd(f"debug warp {gate[0][1]} {gate[0][2]}")
+    cmd(f"debug operate {gate[0][0]}")
+    until("in the Pandemonium Fortress", lambda: level() == 103, 10)
+    assert bits(0x17) & 0x2001 == 0x2001, f"word 0x17: {bits(0x17):#x}"
+    print("OK: through the hellgate to the Pandemonium Fortress")
 
 
 try:

@@ -172,8 +172,10 @@ hammers about, +0x14 gems per round, +0x1c the soulstone given.
 | 342 hellgate (Durance 3) | 44 / 46 `FUN_00584750` | word 0x16 bit 13 or 0: the warp (`FUN_00546ac0`); from level 0x66 the fortress waypoint (0x67) given and act 4 opened (`FUN_0053aec0`) |
 | 345..347 hellfire | 22 `FUN_0054fb40` | mode 2 unless the objects.txt flags +0x141 / +0x13f say; event 0 at +25 frames |
 | 259, 373 skeleton spawns | 26 `FUN_005500e0` | mode 1 (client fn 7 plays it) |
-| 358, 359 hell brazier | 34 `FUN_005500f0` | **objrgn rng** step: odd → mode 1 (affects later rolls) |
+| 358, 359 hell brazier | 34 `FUN_005500f0` | an **objrgn** step: odd → mode 1 |
 | 380 burning soul | 51 `FUN_005501f0` / 48 `FUN_005869f0` | init: mode 1 / 2 → event 9 at +35; operate: rand(100) < 90 → a chest drop (`FUN_00585b90`) and mode 5; else mode 1, events 1 and 9 (+20) |
 | 383, 384 souls | 2 / 3 | the usual urn / chest |
 | 255 diablo start point | 55 `FUN_005b5590` | a4q2's +6 / +8 (and the all-seals check) |
 | 131 the flash | 59 | in level 108 its event 7 makes the seal's boss |
+| 369 trapped soul placeholder | 46 `FUN_005506d0` | the trapped souls (monsters.md "Act 4's population") |
+| 399 fissure | 58 `FUN_0054fdb0` | an **objrgn** step: its first eruption (event 8) at that % 250 + 25 frames |

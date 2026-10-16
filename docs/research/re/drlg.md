@@ -735,6 +735,25 @@ and stops there if that fails; then a LitVersion slot adds a twin wall
 at the same spot, sequence | LvlWarp Tiles << 8 (the cliff cave's
 lit mouth).
 
+**Animated presets** (LvlPrest Animate, preset +0x14; Act 4's lava 836..862):
+FUN_0066d290 counts, per layer, the extra entries animated keys need (a
+key's first candidate with DT1 header +6 & 0x100) and flags the room
+0x8000000; after the walk FUN_0066d700 runs FUN_0066d440 (DrlgAnim.cpp) on
+the walls, then the floors, then the shadows, as listed so far: each
+animated tile becomes its key's candidate with rarity 0, and the ones with
+rarity 1..n−1 (the frames; n the key's candidates) follow it onto the same
+list, flagged 8, at the same spot. The pick before it still rolled the
+room seed. d2d: `level_room_tiles` (`Preset::animate`).
+
+**FillBlanks** is the preset's own flag (LvlPrest FillBlanks, preset
++0x1c): 34 rows have 0, Act 4's lava among them; their empty floors stay
+empty. d2d: `Preset::fill_blanks`.
+
+**Preset units at bring-up** (FUN_00667890 → FUN_00667620): the roll is on
+the room's whole seed (room +0x14: its allocation step's low and high),
+outdoors too — the 1-in-2 MonPlace group50 roll reads the high word's
+parity (found on the Mesa's 24x24 presets).
+
 Room tiles as game.exe keeps them (room +0x54): walls +0x08 count /
 +0x14 array, floors +0x0c / +0x1c, shadows +0x10 / +0x24; 0x30-byte
 entries with room-relative x, y at +0x08, +0x0c, the tile header at

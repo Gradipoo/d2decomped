@@ -88,6 +88,8 @@ template <class Read> void load_outdoor_assets(OutdoorAssets& assets, Read&& rea
         for (int i = 0; i < 6; ++i) preset.maps[std::size_t(i)] = ds1(prest.get(row, "File" + std::to_string(i + 1)));
         preset.populate = to_int(prest.get(row, "Populate"));
         preset.logicals = to_int(prest.get(row, "Logicals"));
+        preset.animate = to_int(prest.get(row, "Animate"));
+        preset.fill_blanks = to_int(prest.get(row, "FillBlanks"));
         assets.data.presets[def] = preset;
     }
     const auto sub = table("LvlSub.txt");

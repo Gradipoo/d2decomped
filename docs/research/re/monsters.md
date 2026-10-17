@@ -307,8 +307,8 @@ handlers do nothing without it, so a unique's minions don't explode.
   90 / 75 / 66) scale the champion and strong damage and to-hit bonuses.
 
 d2d: `components/rules/uniques.hpp` (`roll_boss`, `boss_stats`,
-`fire_blast`, `kSpectralElement`, `kBossBonus`), `populate_room` with a
-`Population`; `make_boss` (ai.hpp) applies the stats and mana burn when a
+`fire_blast`, `kSpectralElement`, `kBossBonus`), objgroups.cpp's `unique()`
+with a `Population`; `make_boss` (ai.hpp) applies the stats and mana burn when a
 game's monsters are made; `Fight::boss_events` runs the lightning bolts
 and death effects each tick; `attack_starts` (spectral hit) and the
 multishot and mana-burn hooks sit in `monster_update`.

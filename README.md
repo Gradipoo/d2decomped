@@ -13,18 +13,20 @@ data we own, and lets us adventure together.
 
 ## What to expect
 
-D2Decomp is an unfinished project—not the original game or a
-complete replacement. Acts I to III play through: character setup, the Rogue
-Encampment, Lut Gholein and the Kurast Docks, every area from the Blood Moor
-to Mephisto's Durance of Hate, and all eighteen quests. The hellgate opens,
-but Act IV isn't built yet. d2d can also join a game hosted by the original game
-over TCP/IP.
+D2Decomp is an unfinished project—not the original game or a complete
+replacement. Acts I to IV play through: character setup, the Rogue Encampment,
+Lut Gholein, the Kurast Docks and the Pandemonium Fortress, every area from the
+Blood Moor to the Chaos Sanctuary, and all twenty-one quests up to Diablo's
+death. A classic game ends there; in Lord of Destruction, Tyrael's portal leads
+to Act V, which isn't built yet. Nightmare and Hell populate their levels as
+the original does. d2d can also join a game hosted by the original game over
+TCP/IP.
 
 | Area | Progress |
 |---|---:|
 | [Full roadmap](docs/PLAN.md) | Phases, known gaps, and next steps |
 | Launcher and asset formats | ✅ 100% |
-| Act I levels | ✅ 100% (38 of 38; maps match the original's) |
+| Act I levels | ✅ 100% (39 of 39; maps match the original's) |
 | Act I quests | ✅ 100% (6 of 6) |
 | Act I matching the original exactly | Maps, item drops, monster and object placement ✅; a few details left |
 | Act II levels | ✅ 100% (35 of 35; maps match the original's) |
@@ -33,7 +35,11 @@ over TCP/IP.
 | Act III levels | ✅ 100% (28 of 28; maps match the original's) |
 | Act III quests | ✅ 100% (6 of 6) |
 | Act III matching the original exactly | Maps, monster and object placement, monster AI checked against the original ✅; a few details left |
-| Acts IV–V | Not started |
+| Act IV levels | ✅ 100% (6 of 6; maps match the original's) |
+| Act IV quests | ✅ 100% (3 of 3) |
+| Act IV matching the original exactly | Maps, monster and object placement, monster AI and Diablo checked against the original ✅; a few details left |
+| Nightmare and Hell | ✅ Monster and object placement match the original on every level of Acts I–IV |
+| Act V | Not started |
 | Single player, softcore and hardcore | ✅ Runs as a one-player client/server, like the original |
 | Multiplayer over TCP/IP (a d2d host) | Not started |
 | Joining a game hosted by the original | 🚧 Acts I and II together: party, trade, portals, waypoints, chat, quests, travel; live checks pending |
@@ -58,7 +64,9 @@ this reimplementation.
 ## Beyond the original game
 
 **Available now:** Linux support alongside Windows and macOS, plus an optional
-headless mode and local control channel for scripted play and testing.
+headless mode and local control channel for scripted play and testing, and
+opt-in crash reports from the launcher (off by default; see
+[apps/README.md](apps/README.md)).
 Small comforts, each switchable off with `--toggle`: gold is picked up by
 walking over it, and roofs turn see-through around your character.
 

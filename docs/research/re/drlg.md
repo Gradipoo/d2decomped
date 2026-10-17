@@ -1207,8 +1207,8 @@ Conditions those results hold under, so they aren't overstated:
 | What the server does with units: superunique mods and stat bonuses, minion placement, MonPlace units; objects' behaviour (shrines, chests); monster populating in general (d2d populates every room at load, in cell order, one game seed across both levels) | partly built, not diffed |
 
 d2d: `components/drlg/outdoor.hpp` (`generate_outdoor`), data loading in
-`outdoor_data.hpp`, `tests/test_outdoor.cpp`; the app's `load_wilderness`
-and `Town::cross_level`.
+`outdoor_data.hpp`, `tests/test_outdoor.cpp`; `build_outdoor`
+(components/game/gamedata.cpp) and `World::cross_level`.
 
 ### Taking a warp (FUN_005550b0)
 

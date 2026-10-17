@@ -260,6 +260,25 @@ struct Level {
                         return { x + float(offset_x) * 0.2f, y + float(offset_y) * 0.2f };
         return { x, y };
     }
+    // FUN_00545340: a spot near subtile (x, y) for something `size` wide
+    // whose (size x 2 + 1) square, centred a subtile up-left of it, has no
+    // bit of `mask` (FUN_0064d800), searched ring by ring (c = 1 .. rings - 1:
+    // rows c, c - 2 .. > -c; columns -c, -c + 2 .. < c). None: nullopt.
+    // ponytail: the units' bits (0x1000+) are the Crowd's, not the grid's.
+    [[nodiscard]] std::optional<std::pair<int, int>> free_area(int x, int y, int size, std::uint16_t mask, int rings) const {
+        const int half = size >> 1, side = size * 2 + 1;
+        const auto clear = [&](int centre_x, int centre_y) {
+            for (int row = 0; row < side; ++row)
+                for (int column = 0; column < side; ++column)
+                    if (blocked((float(centre_x - side / 2 + column) + 0.5f) / 5, (float(centre_y - side / 2 + row) + 0.5f) / 5, mask & 0x0fff)) return false;
+            return true;
+        };
+        for (int ring = 1; ring < rings; ++ring)
+            for (int row = ring; row > -ring; row -= 2)
+                for (int column = -ring; column < ring; column += 2)
+                    if (clear(x - half + column, y - half + row)) return std::pair{ x + column, y + row };
+        return std::nullopt;
+    }
     std::pair<float, float> start{ -1.f, -1.f };            // cells: where a player joining arrives; see load_world
     std::pair<float, float> portal_spot{ -1.f, -1.f };      // cells: a town's portal arrival (DS1 special 33, spawn index 11)
     // Every spawn index's spot (the first tile of each; -1 none): 5 is where

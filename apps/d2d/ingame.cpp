@@ -287,6 +287,10 @@ void render_ingame(std::vector<std::uint8_t>& framebuffer,
         }
         set_phase(MainPhase::IngameHudText);
     } else {
+        if (wide) {
+            std::fill(world.begin(), world.end(), std::uint8_t{0});
+            for (std::size_t i = 3; i < world.size(); i += 4) world[i] = 0xFF;
+        }
         std::fill(framebuffer.begin(), framebuffer.end(), std::uint8_t{0});
         for (std::size_t i = 3; i < framebuffer.size(); i += 4) framebuffer[i] = 0xFF;
         blit_dc6_grid(framebuffer, scene.credits_bg, scene.pal, 0, 0, scene.bg_tiles_across);

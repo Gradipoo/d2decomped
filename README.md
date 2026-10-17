@@ -106,6 +106,11 @@ Game, type the host's address, then pick a character. d2d remembers the
 address as `last_tcp_ip` in `d2d.cfg`. Alt+Enter switches between a window
 and borderless fullscreen; `fullscreen = 1` in `d2d.cfg` starts that way.
 
+Widescreen is opt-in (`--widescreen`, or `widescreen = 1` in `d2d.cfg`): the
+in-game view widens to the window's aspect (up to 1400 pixels wide, 600 high)
+while the HUD and panels stay the 800×600 design, centred. The menus and
+cinematics stay 800×600. `--view-width N` pins the width (for scripts).
+
 d2d looks for the game data in this order, and the first hit wins:
 1. `--data` (or `$D2_MPQ_DIR`).
 2. A `d2data.mpq` beside the binary or in the working directory.

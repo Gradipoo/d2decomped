@@ -106,10 +106,12 @@ Game, type the host's address, then pick a character. d2d remembers the
 address as `last_tcp_ip` in `d2d.cfg`. Alt+Enter switches between a window
 and borderless fullscreen; `fullscreen = 1` in `d2d.cfg` starts that way.
 
-Widescreen is opt-in (`--widescreen`, or `widescreen = 1` in `d2d.cfg`): the
-in-game view widens to the window's aspect (up to 1400 pixels wide, 600 high)
-while the HUD and panels stay the 800×600 design, centred. The menus and
-cinematics stay 800×600. `--view-width N` pins the width (for scripts).
+Widescreen is an opt-in quality-of-life improvement (`--widescreen`, or
+`widescreen = 1` in `d2d.cfg`): the in-game view widens to the window's aspect
+(up to 1400 pixels wide, 600 high), revealing more of the world horizontally
+while preserving the familiar 800×600 HUD and panel layout in the centre.
+Menus and cinematics stay 800×600. The launcher has a Widescreen checkbox for
+this setting. `--view-width N` pins the width (for scripts).
 
 d2d looks for the game data in this order, and the first hit wins:
 1. `--data` (or `$D2_MPQ_DIR`).
@@ -121,8 +123,9 @@ next one. The launcher (`d2d-launcher`) finds an installed Diablo II and writes 
 (and `patch =` for a non-1.14d install, pointing at `LODPatch_114d.exe`)
 into `d2d.cfg`. That file lives in `~/Library/Preferences/d2d` on macOS,
 `~/.config/d2d` on Linux, and `Documents\My Games\d2d` on Windows.
-Your install is read in place and never changed. Its Fullscreen box sets
-`fullscreen =`. Launch saves the settings, starts d2d and closes the launcher.
+Your install is read in place and never changed. Its Fullscreen and
+Widescreen boxes set `fullscreen =` and `widescreen =`. Launch saves the
+settings, starts d2d and closes the launcher.
 
 ## License
 

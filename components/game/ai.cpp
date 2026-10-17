@@ -596,24 +596,18 @@ bool think(const GameData& game_data, const Level& level, Monster& monster, std:
     // fallback: within 5 of him, with the best out of reach (FUN_00622c40)
     // and no path to it (type 2, FUN_00649970), it's taken. None: the
     // search's stays.
-    // ponytail: a pet's or monster's pick reads its fighter's resists only
-    // (no magic resist, max damage, skills or state 0xb).
+    // Each foe's pick: Fight::world's (a pet's or monster's, unit_pick).
     if (target && type_info.ai_name == "Diablo") {
         const auto wall = [&](int at_x, int at_y) { return level.blocked((float(at_x) + 0.5f) / 5, (float(at_y) + 0.5f) / 5, 0x04); };
         const int point_x = monster.has_point ? monster.point_x : x, point_y = monster.has_point ? monster.point_y : y;
         const auto value = [&](const Foe& foe) {
             const int foe_x = subtile(foe.x), foe_y = subtile(foe.y);
             if (!foe.alive && !foe.pet && !foe.of) return 0;
-            auto pick = foe.pick;
-            if (foe.pet || foe.of) {
-                pick.damage_resist = foe.fighter.dr_pct;
-                pick.fire_resist = foe.fighter.res[0]; pick.light_resist = foe.fighter.res[1]; pick.cold_resist = foe.fighter.res[2];
-            }
             const bool reach = d2d::rules::unit_distance(foe_x - x, foe_y - y, type_info.size, foe.size) <= type_info.melee_rng + 1;
             const bool line = !d2d::rules::sight_blocked(x, y, type_info.size, foe_x, foe_y, foe.size, wall);
             const bool point_bonus = d2d::rules::point_apart(x - point_x, y - point_y, (type_info.size >> 1) + 1) > 0x55
                                   && d2d::rules::point_apart(foe_x - point_x, foe_y - point_y, (foe.size >> 1) + 1) < 0x55;
-            return d2d::rules::diablo_score(pick, foe.life_pct, reach, line, point_bonus);
+            return d2d::rules::diablo_score(foe.pick, foe.life_pct, reach, line, point_bonus);
         };
         Foe* top = nullptr; int top_score = 0;
         Foe* spare = nullptr; int spare_score = 0;

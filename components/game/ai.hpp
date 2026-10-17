@@ -336,7 +336,7 @@ struct Foe {
     const Monster* of = nullptr;              // a monster in the fight (Confuse, Attract: monsters fight monsters)
     bool a3q5_done = false;                   // a player, or its pet, with quest 0x15 bit 0 (the zealots spare it)
     int blessed = 0;                          // the wisps' dance's magic find (stat 0x50) put on it this frame
-    d2d::rules::DiabloPick pick;              // a player's: what Diablo's target score reads (FUN_005e8530)
+    d2d::rules::DiabloPick pick;              // what Diablo's target score reads off it (FUN_005e8530)
     void take(const d2d::rules::Taken& taken) {
         blocked = blocked || taken.blocked;
         hits += taken.hit ? 1 : 0;

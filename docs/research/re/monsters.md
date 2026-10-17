@@ -1,7 +1,7 @@
 # Monsters — spawning (1.14d game.exe)
 
 Our port: `components/game/objgroups.cpp` (room population), `components/rules/monsters.hpp`
-(`monster_region`, `monster_stats`), loaded by `load_monsters` (apps/d2d/load.hpp), tested by
+(`monster_region`, `monster_stats`), loaded by `load_monsters` (components/game/gamedata_load.cpp), tested by
 `tests/test_monsters.cpp`. How they notice the player and when they think:
 monster-ai.md.
 

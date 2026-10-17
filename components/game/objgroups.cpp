@@ -870,8 +870,9 @@ struct ObjectRooms {
                 monster(row, unit.x, unit.y, 0);                                                         // its spot only; NS (10) in mode 4
                 tentacle_ns = false;
             }
-            else if ((code == 0x02 || code == 0x03) && pop.difficulty > 0)                               // FUN_005bde80 (1, 0): NM / hell's off the region
-                monster(pick(0), unit.x, unit.y, 0, -1, code);
+            else if ((code == 0x02 || code == 0x03) && pop.difficulty > 0) {                             // FUN_005bde80 (1, 0): NM / hell's off the region
+                if (!region.types.empty()) monster(pick(0), unit.x, unit.y, 0, -1, code);
+            }
             else if ((code == 0x02 || code == 0x03) && !level.mon.umon.empty())                         // normal's pick is a umon
                 monster(level.mon.umon[std::size_t(seed(int(level.mon.umon.size())))], unit.x, unit.y, 0, -1, code);
             else if (unit.id < nmon + nsu) {

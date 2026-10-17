@@ -92,6 +92,10 @@ auto Fight::monster_index(int id) const -> int {
     }
 
 auto Fight::add_monster(Monster monster) -> void { monster.id = next_id++; monsters.push_back(std::move(monster)); }
+auto Fight::add_monster(Monster monster, const Level* where) -> void {
+        monster.id = next_id++;
+        (where == mon_level || !where ? monsters : kept[where]).push_back(std::move(monster));
+    }
 
 auto Fight::own_stats() const -> d2d::d2s::Stats {
         using namespace d2d::d2s;
@@ -107,6 +111,7 @@ auto Fight::new_game(int difficulty) -> void {
         mon_level = nullptr;
         area_seen.clear();
         curses = {};
+        marks = {};
         chilled = 0;
         stunned = 0;
         kept.clear();
@@ -4089,7 +4094,7 @@ auto Fight::world(bool in_moor, std::uint32_t now_ms, float elapsed, const Crowd
                     return true;
                 }
                 return false;
-            });
+            }, [&](int owner) { const int index = monster_index(owner); return index >= 0 && monsters[std::size_t(index)].alive(); });
             return_fire(foes[0], now_ms);                          // the missiles that reached the player just now
             std::ranges::move(pending, std::back_inserter(missiles));
             pending.clear();

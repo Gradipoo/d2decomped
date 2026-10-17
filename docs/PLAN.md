@@ -934,12 +934,14 @@ Expansion Character box. The tidy-up:
   `DIFFICULTY=0..2 ACT=1..4 sweep.sh 1-10 monsters objgroups`: every level
   10/10 on every difficulty.
 
-Left (fidelity, none blocking): the seals' bosses come at once and the
-flash isn't drawn; the Hellforge's gems drop at once on loot's rng;
-DiabRun's speed and contact flag; Diablo's fallback list when no player is
-reachable; the quest log's +0xb values (inferred); the ending's 75 s step;
-Diablo's spawn timer counts only in the sanctuary; devctl `debug
-difficulty` keeps the mazes already built.
+Fidelity pass (2026-10-17): the seals' flash (object 131) at
+FUN_00545340's free spot and the boss at its event 7, 27 frames on; the
+Hellforge's gems a round each 20 frames on the quest seed; DiabRun's
+velocity (calc1 × velocitypercent) and its hit on the event-1 row only;
+Diablo's target lists (pets, list 9's fallback); the quest log's +0xb
+moves traced (quests-act4.md "The quest log"); the 75 s step is a realm
+save (nothing in single player); Diablo comes wherever the player is;
+devctl `debug difficulty` rebuilds the levels.
 
 Next: Act 5.
 

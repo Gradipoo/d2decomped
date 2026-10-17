@@ -245,10 +245,9 @@ struct Monster {
     int seq_frame = -1;
     int charging = -1;                        // Charge (srvstfunc 31) under way: its skill, swung at its end
     // DiabRun under way (seq_diablorun): 1 winding up, 2 running, 3 stopping;
-    // the phase's start, and its one contact hit still to come (unit +0x4e).
+    // the phase's start.
     int diab_run = 0;
     std::uint32_t diab_run_ms = 0;
-    bool run_hit = false;
     // Leap (srvstfunc 40) under way: where it rose and where it lands (cells).
     bool leaping = false;
     // A sand maggot down (MagottDown's start, FUN_005cb270: unit flags 0xe
@@ -483,9 +482,9 @@ inline int direction32(float dx, float dy) {
 // 128ths of the attack's damage; a standing missile (no velocity) strikes
 // what's within 0.4 cells (srvdofunc 1 never strikes standing).
 // A friendly one asks `hits_monster` (true: it struck one, spent).
-template <class Reach, class HitsMonster>
+template <class Reach, class HitsMonster, class OwnerAlive>
 void missiles_update(const Level& level, std::vector<Missile>& ms_, std::span<Foe> foes, d2d::rules::Rng& rng,
-                     std::uint32_t now_ms, Reach&& reach, HitsMonster&& hits_monster) {
+                     std::uint32_t now_ms, Reach&& reach, HitsMonster&& hits_monster, OwnerAlive&& owner_alive) {
     std::vector<Missile> laid;
     const int frame = int(now_ms / 40);
     std::erase_if(ms_, [&](Missile& missile) {
@@ -497,8 +496,9 @@ void missiles_update(const Level& level, std::vector<Missile>& ms_, std::span<Fo
         if (missile.friendly) return hits_monster(missile);
         // A monster's guided one (missile do 7, FUN_005ae780: Bone Spirit)
         // turns to its foe every Param1 frames (0: 5) while that's 4..24 off
-        // (FUN_006416d0: each axis less half the sizes, (short + 2 long) / 2).
-        // ponytail: its owner's death doesn't end it (FUN_005541b0).
+        // (FUN_006416d0: each axis less half the sizes, (short + 2 long) / 2);
+        // its owner dead (FUN_005541b0), it ends.
+        if (missile.info && missile.info->srv_do == 7 && !owner_alive(missile.owner)) return true;
         if (missile.info && missile.info->srv_do == 7 && missile.target >= 0 && std::size_t(missile.target) < foes.size()
             && (int(now_ms - missile.born) / 40) % (missile.info->param1 < 1 ? 5 : missile.info->param1) == 0) {
             const auto& foe = foes[std::size_t(missile.target)];

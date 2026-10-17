@@ -1537,9 +1537,9 @@ std::optional<GameData> load_game_data(const fs::path& data_dir, const fs::path&
 // A new game's seed and difficulty (the mazes' room counts, LvlMaze Rooms(N) / Rooms(H)).
 void set_map_seed(GameData& game_data, std::uint32_t seed, int difficulty) {
     if ((seed == game_data.map_seed && difficulty == game_data.difficulty) || !game_data.builder || !game_data.builder->act1) return;
-    game_data.difficulty = difficulty;
     for (auto& [id, job] : game_data.builder->jobs) job.wait();
     game_data.builder->jobs.clear();
+    game_data.difficulty = difficulty;                  // the builds read it (build_maze): after they're done
     game_data.levels.clear();
     const Level& old = game_data.town;
     Level town{ .id = old.id, .name = old.name, .type = old.type, .layer = old.layer, .song = old.song, .ambience = old.ambience,

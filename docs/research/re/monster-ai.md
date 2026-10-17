@@ -323,12 +323,17 @@ the target's leader to his point (FUN_006417f0: under 0x55 with the leader
 in the Chaos Sanctuary), each (max · 2 + min) / 2. FUN_00573930 (two stack
 words) answers the players about him at +8.
 
-His target (FUN_005e8f20, 2026-10-16): the best scored (FUN_005e8530) of
-the game's players passing FUN_005e8eb0 (same act byte +0x18, FUN_005dc530
-under 0x3fc); it returns how many it looked at (the chooser's
-players_looked) and the best score. A second list (units of his act) can
-stand in for the best player when that one is out of reach and has no path
-(not kept in d2d). The score of a player, C division throughout:
+His target (FUN_005e8f20, 2026-10-16; lists 2026-10-17): over the unit
+lists at game +0x10f8, the best scored (FUN_005e8530, above 0, the first
+on a tie). Lists 0..7: a player passing FUN_005e8eb0 (same act byte +0x18,
+FUN_005dc530 under 0x3fc) scores (0 in mode 0 / 0x11) and so does every pet
+after it; list 8 (good monsters) of his act joins the same best. List 9
+(neutral: Confuse, Attract) of his act keeps its own best, the fallback:
+when it's within 5 of him (FUN_005dc530), the best isn't in reach
+(FUN_00622c40) and a path to it (FUN_00648b90, type 2, FUN_00649970)
+fails (FUN_00648780), the fallback is the target. It returns how many it
+looked at (the chooser's players_looked) and the best score. d2d: ai.cpp's
+Diablo block (a pet's pick reads its fighter's resists only). The score of a player, C division throughout:
 `(300 if life % (FUN_00621f20) < 20) + ((damageresist 0x24 + magicresist
 0x25 x 2) x 4 + lightning 0x29 + fire 0x27 + cold 0x2b only in reach) / 15
 + (reach 100 (FUN_00622c40), else a clear line 75 (FUN_005dd290:

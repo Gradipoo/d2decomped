@@ -588,13 +588,55 @@ bool think(const GameData& game_data, const Level& level, Monster& monster, std:
     // the think runs anyway; it reads none, so any live foe stands in.
     if (!target && type_info.ai_name == "SandMaggotQueen")
         for (auto& foe : foes) if (foe.alive) { target = &foe; break; }
-    // Diablo's (FUN_005e8f20, once his search found someone): the best
-    // scored player of his act (FUN_005e8eb0: under 0x3fc, FUN_005dc530).
-    // ponytail: d2d's one player; the second list's fallback (a pathless
-    // best) isn't kept, and with no player in range the search's stays.
-    if (target && type_info.ai_name == "Diablo")
-        for (auto& foe : foes)
-            if (foe.alive && !foe.pet && !foe.of && d2d::rules::ai_distance(subtile(foe.x) - x, subtile(foe.y) - y) < 0x3fc) { target = &foe; break; }
+    // Diablo's (FUN_005e8f20, once his search found someone): the unit
+    // lists' best by his score (FUN_005e8530), above 0, the first on a tie.
+    // Lists 0..7: a player of his act under 0x3fc (FUN_005e8eb0: FUN_005dc530)
+    // and the pets after it (a dead player scores 0); list 8, the good
+    // monsters of his act. List 9's best (neutral: Confuse, Attract) is the
+    // fallback: within 5 of him, with the best out of reach (FUN_00622c40)
+    // and no path to it (type 2, FUN_00649970), it's taken. None: the
+    // search's stays.
+    // ponytail: a pet's or monster's pick reads its fighter's resists only
+    // (no magic resist, max damage, skills or state 0xb).
+    if (target && type_info.ai_name == "Diablo") {
+        const auto wall = [&](int at_x, int at_y) { return level.blocked((float(at_x) + 0.5f) / 5, (float(at_y) + 0.5f) / 5, 0x04); };
+        const int point_x = monster.has_point ? monster.point_x : x, point_y = monster.has_point ? monster.point_y : y;
+        const auto value = [&](const Foe& foe) {
+            const int foe_x = subtile(foe.x), foe_y = subtile(foe.y);
+            if (!foe.alive && !foe.pet && !foe.of) return 0;
+            auto pick = foe.pick;
+            if (foe.pet || foe.of) {
+                pick.damage_resist = foe.fighter.dr_pct;
+                pick.fire_resist = foe.fighter.res[0]; pick.light_resist = foe.fighter.res[1]; pick.cold_resist = foe.fighter.res[2];
+            }
+            const bool reach = d2d::rules::unit_distance(foe_x - x, foe_y - y, type_info.size, foe.size) <= type_info.melee_rng + 1;
+            const bool line = !d2d::rules::sight_blocked(x, y, type_info.size, foe_x, foe_y, foe.size, wall);
+            const bool point_bonus = d2d::rules::point_apart(x - point_x, y - point_y, (type_info.size >> 1) + 1) > 0x55
+                                  && d2d::rules::point_apart(foe_x - point_x, foe_y - point_y, (foe.size >> 1) + 1) < 0x55;
+            return d2d::rules::diablo_score(pick, foe.life_pct, reach, line, point_bonus);
+        };
+        Foe* top = nullptr; int top_score = 0;
+        Foe* spare = nullptr; int spare_score = 0;
+        const bool player_in = std::ranges::any_of(foes, [&](const Foe& foe) {
+            return !foe.pet && !foe.of && d2d::rules::ai_distance(subtile(foe.x) - x, subtile(foe.y) - y) < 0x3fc; });
+        for (auto& foe : foes) {
+            const bool neutral = foe.of && foe.of->align == 1, good = foe.of && foe.of->align == 2;   // list 9; a converted one is a pet
+            if (foe.of && !neutral && !good) continue;
+            if (!foe.of && !player_in) continue;                    // the player failed FUN_005e8eb0: it and its pets skipped
+            if ((foe.of || foe.pet) && !foe.alive) continue;
+            const int score = value(foe);
+            if (neutral) { if (score > spare_score) { spare = &foe; spare_score = score; } }
+            else if (score > top_score) { top = &foe; top_score = score; }
+        }
+        if (spare && d2d::rules::ai_distance(subtile(spare->x) - x, subtile(spare->y) - y) < 5
+            && (!top || d2d::rules::unit_distance(subtile(top->x) - x, subtile(top->y) - y, type_info.size, top->size) > type_info.melee_rng + 1)) {
+            const bool path = top && !d2d::rules::monster_path(x, y, subtile(top->x), subtile(top->y), true, [&](int at_x, int at_y) {
+                const float centre_x = (float(at_x) + 0.5f) / 5, centre_y = (float(at_y) + 0.5f) / 5;
+                return level.unit_blocked(centre_x, centre_y, unit.shape) || crowd.at(centre_x, centre_y, &unit); }).empty();
+            if (!path) top = spare;
+        }
+        if (top) target = top;
+    }
     auto walk_to = [&](int off_x, int off_y, bool running) {       // to a spot, subtiles off
         unit.goal_x = (float(x + off_x) + 0.5f) / 5; unit.goal_y = (float(y + off_y) + 0.5f) / 5;
         set_off(running, nullptr);
@@ -1128,7 +1170,7 @@ bool think(const GameData& game_data, const Level& level, Monster& monster, std:
                 unit.dir = direction16(dx, dy);
                 set_mode(game_data, monster, "RN", now_ms);
                 monster.skill = id; monster.skill_x = target_x; monster.skill_y = target_y; monster.wandering = false;
-                monster.diab_run = 1; monster.diab_run_ms = now_ms; monster.run_hit = true;
+                monster.diab_run = 1; monster.diab_run_ms = now_ms;
                 monster.seq_mode = "RN"; monster.seq_frame = 0;
                 return true;
             }
@@ -1275,13 +1317,14 @@ bool monster_update(const GameData& game_data, const Level& level, Monster& mons
     }
     // DiabRun's sequence (seq_diablorun, RN rows; FUN_005cd380 on its event
     // rows): rows 0..Param3 - 1 wind up; at Param3 (5) he runs at the spot
-    // (path type 1) at calc1's velocity, the rows looping Param6..Param4
-    // (6..13) on the way; the run over (record flag 2: there, or blocked),
-    // rows Param2.. (14..21) play out. Its one hit (unit +0x4e) lands when
-    // the target is in reach (FUN_00622c40) on a run's frame or the stop's
-    // event row (18): the skill's damage (FUN_0056e680, flags 0x20).
-    // ponytail: calc1 taken as a MonStats velocity, the hit rolled as a
-    // swing; who sets +0x4e isn't traced (set at the start).
+    // (path type 1) at max(calc1 << 8, 0x100) x velocitypercent (stat 0x43)
+    // / 100 (FUN_00483360 into the path's +0x7c, a MonStats Velocity's
+    // unit), the rows looping Param6..Param4 (6..13) on the way; the run
+    // over (record flag 2: there, or blocked), rows Param2.. (14..21) play
+    // out. Unit +0x4e is the frame's event (FUN_00623e.., the sequence's
+    // event column): on an event-1 row (18) the hit lands when the target
+    // is in reach (FUN_00622c40): the skill's damage (FUN_0056e680, flags 0x20).
+    // ponytail: the hit is rolled as a swing (monster_blow).
     if (monster.diab_run > 0) {
         const auto* run_skill = game_data.skills.get(monster.skill);
         const SeqRows* seq = skill_seq(game_data, type_info, monster.skill);
@@ -1295,8 +1338,7 @@ bool monster_update(const GameData& game_data, const Level& level, Monster& mons
         const std::uint32_t frame_ms = std::max<std::uint32_t>(game_data.npc_timing(monster.npc, "RN").ms_per_frame() * 100 / std::uint32_t(100 + monster.anim_pct), 1);
         const int frames = int((now_ms - monster.diab_run_ms) / frame_ms);
         const auto contact = [&] {
-            if (!monster.run_hit || !foe.alive || d2d::rules::unit_distance(subtile(foe.x) - subtile(unit.x), subtile(foe.y) - subtile(unit.y), type_info.size, foe.size) > type_info.melee_rng + 1) return;
-            monster.run_hit = false;
+            if (!foe.alive || d2d::rules::unit_distance(subtile(foe.x) - subtile(unit.x), subtile(foe.y) - subtile(unit.y), type_info.size, foe.size) > type_info.melee_rng + 1) return;
             auto stats = monster.stats;
             stats.a1_min = d2d::rules::skill_phys(game_data.skills, *run_skill, {}, lvl, false) >> 8;
             stats.a1_max = std::max(d2d::rules::skill_phys(game_data.skills, *run_skill, {}, lvl, true) >> 8, stats.a1_min);
@@ -1315,14 +1357,14 @@ bool monster_update(const GameData& game_data, const Level& level, Monster& mons
             const int loop = std::max(par[3] - par[5] + 1, 1);
             monster.seq_frame = par[2] + frames <= par[3] ? par[2] + frames : par[5] + (par[2] + frames - par[5]) % loop;
             const float chill = now_ms < monster.chill_until ? float(100 + type_info.diff[std::size_t(monster.difficulty)].cold_effect) / 100.f : 1.f;
-            const float step = cells_per_sec(float(d2d::rules::eval_calc(game_data.skills, run_skill->calc[0], {}, monster.skill, lvl))) * elapsed * chill;
-            contact();
+            const float pace = float(std::max(100 + monster.speed_pct + monster.boss_speed, 10)) / 100;
+            const float step = cells_per_sec(float(std::max(d2d::rules::eval_calc(game_data.skills, run_skill->calc[0], {}, monster.skill, lvl), 1))) * pace * elapsed * chill;
             if (!move_frame(level, monster, nullptr, true, type_info.size, step, crowd)) { monster.diab_run = 3; monster.diab_run_ms = now_ms; }
             return false;
         }
         const int row = par[1] + frames;
         for (int k = std::max(monster.seq_frame + 1, par[1]); k <= row && k < int(seq->size()); ++k)
-            if ((*seq)[std::size_t(k)].event != 0) contact();                     // the stop's event row (18)
+            if ((*seq)[std::size_t(k)].event == 1) contact();                     // the stop's event-1 row (18)
         monster.seq_frame = row;
         if (row < int(seq->size())) return false;
         monster.diab_run = 0; monster.seq_frame = -1;

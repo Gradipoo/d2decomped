@@ -2999,6 +2999,7 @@ auto Fight::summon_one(const d2d::rules::Skill& skill, int type, int lvl, const 
             } else pet.ctrl = d2d::rules::shadow_master_init(type_info.diff[std::size_t(monster.difficulty)].aip[2], monster.seed);
         }
         set_mode(*game_data, monster, "NU", now_ms);
+        pet.monster.id = next_id++;                              // a unit id as a monster's (a guided missile's hold on it)
         pets.push_back(std::move(pet));
     }
 
@@ -3059,7 +3060,7 @@ auto Fight::pet_foe(const Pet& pet) const -> Foe {
         const bool still = type_info.velocity == 0 && type_info.run == 0 && pet.ranged >= 0;   // a Hydra, like a trap, isn't there to hit
         Foe foe{ pet.monster.unit.x, pet.monster.unit.y, pet.monster.stats.level, pet.monster.alive() && pet.monster.mode != "DT" && pet.shot_skill < 0 && !still && pet.where == level,
                  pet.monster.unit.walking, fighter };
-        foe.pet = true; foe.size = type_info.size; foe.threat = type_info.threat;
+        foe.pet = true; foe.size = type_info.size; foe.threat = type_info.threat; foe.id = pet.monster.id;
         foe.life_pct = int(std::int64_t(pet.monster.hit_points) * 100 / std::max(pet.monster.stats.hit_points, 1));
         const auto& own = type_info.diff[std::size_t(pet.monster.difficulty)].res;
         std::array<int, 5> res{ own[0], own[1] };
@@ -4070,7 +4071,7 @@ auto Fight::world(bool in_moor, std::uint32_t now_ms, float elapsed, const Crowd
                     for (std::size_t k = 0; k < 4; ++k) fighter.res[k] = std::min(target.res[2 + k], 95);
                     const auto& type_info = game_data->monsters.types[std::size_t(monster.type)];
                     Foe& foe = foes.emplace_back(Foe{ monster.unit.x, monster.unit.y, monster.stats.level, monster.targetable() && monster.mode != "DT", monster.unit.walking, fighter });
-                    foe.size = type_info.size; foe.threat = type_info.threat; foe.of = &monster;
+                    foe.size = type_info.size; foe.threat = type_info.threat; foe.of = &monster; foe.id = monster.id;
                     foe.pick = unit_pick(*game_data, { target.res[0], target.res[1], target.res[2], target.res[3], target.res[4] }, monster.aura, monster.aura_lvl);
                     foe.pick.state_b = now_ms < monster.chill_until;   // state 0xb, cold
                 }
@@ -4214,7 +4215,7 @@ auto Fight::world(bool in_moor, std::uint32_t now_ms, float elapsed, const Crowd
             self_hurt &= 255;
             using namespace d2d::d2s;
             bool died = false;
-            if (foe.damage > 0) {
+            if (foe.damage > 0 && !dead()) {                    // a dead player takes no more (no second death)
                 character.stats.values[kLife] -= std::int64_t(foe.damage) << 8;
                 if (character.stats.values[kLife] <= 0) { die(now_ms); died = true; }
             }

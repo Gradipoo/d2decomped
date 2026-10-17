@@ -337,6 +337,7 @@ struct Foe {
     bool a3q5_done = false;                   // a player, or its pet, with quest 0x15 bit 0 (the zealots spare it)
     int blessed = 0;                          // the wisps' dance's magic find (stat 0x50) put on it this frame
     d2d::rules::DiabloPick pick;              // what Diablo's target score reads off it (FUN_005e8530)
+    int id = -1;                              // a pet's or monster's Monster::id (the player and merc: -1, always 0 / 1)
     void take(const d2d::rules::Taken& taken) {
         blocked = blocked || taken.blocked;
         hits += taken.hit ? 1 : 0;
@@ -375,6 +376,7 @@ struct Missile {
     // row's own is replaced (Meteor's fire: FUN_005aaa90's 0x8001), the
     // last frame a spawner or burner ran.
     int target = -1, hops = 0, ed_pct = 0, fixed = -1, frame = -1;
+    int target_id = -1;                       // its target's Foe::id: the foes are rebuilt each frame, pets come and go
     float target_x = 0, target_y = 0;                     // where it was sent (Molten Boulder), a spiral's centre
     float origin_x = 0, origin_y = 0;                     // where it came from (Blade Sentinel goes back and forth)
     int turn = 0;                             // Frozen Orb's direction index (do 15), a spiral's angle
@@ -499,6 +501,10 @@ void missiles_update(const Level& level, std::vector<Missile>& ms_, std::span<Fo
         // (FUN_006416d0: each axis less half the sizes, (short + 2 long) / 2);
         // its owner dead (FUN_005541b0), it ends.
         if (missile.info && missile.info->srv_do == 7 && !owner_alive(missile.owner)) return true;
+        if (missile.info && missile.info->srv_do == 7 && missile.target >= 2) {          // past the player and merc: found again by id, or lost
+            const auto found = std::ranges::find(foes, missile.target_id, &Foe::id);
+            missile.target = found == foes.end() ? -1 : int(found - foes.begin());
+        }
         if (missile.info && missile.info->srv_do == 7 && missile.target >= 0 && std::size_t(missile.target) < foes.size()
             && (int(now_ms - missile.born) / 40) % (missile.info->param1 < 1 ? 5 : missile.info->param1) == 0) {
             const auto& foe = foes[std::size_t(missile.target)];

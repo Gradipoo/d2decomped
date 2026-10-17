@@ -242,6 +242,7 @@ struct World {
     bool had_soulstone = false;            // the Hellforge's item event (LAB_005b5a90): the soulstone picked up
     std::uint32_t gems_at = 0;             // the forge's event 7 (FUN_005b6710): the next round of gems
     int gem_rounds = 0;                    // its data +8: rounds left (4 perfect .. 1 plain)
+    bool forge_inited = false;             // the forge's InitFn ran (its room came up)
     // A seal's boss, due at its flash's event 7 (object 131, 27 frames on;
     // FUN_005b5750 -> FUN_00545c30) at the flash's spot, subtiles.
     struct SealBoss { int superunique, x, y; std::uint32_t at; };

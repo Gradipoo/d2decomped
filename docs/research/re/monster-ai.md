@@ -333,7 +333,13 @@ when it's within 5 of him (FUN_005dc530), the best isn't in reach
 (FUN_00622c40) and a path to it (FUN_00648b90, type 2, FUN_00649970)
 fails (FUN_00648780), the fallback is the target. It returns how many it
 looked at (the chooser's players_looked) and the best score. d2d: ai.cpp's
-Diablo block (a pet's pick reads its fighter's resists only). The score of a player, C division throughout:
+Diablo block. FUN_00625480 reads the same stats off a pet or monster: its
+resists raw (a merc's base + gear, no penalty), and its aura is its right
+skill (FUN_005701b0 → FUN_00643c50: a merc's FUN_005e4d30, a summon's
+FUN_005c4470, Aura Enchanted's FUN_005a1650, Duriel's Holy Freeze), the
+auras' attackrank 1..9; a monster's max damage is its last swing's mode
+stats (FUN_005a4f50 into list 1), which d2d leaves 0 (`unit_pick`).
+The score of a player, C division throughout:
 `(300 if life % (FUN_00621f20) < 20) + ((damageresist 0x24 + magicresist
 0x25 x 2) x 4 + lightning 0x29 + fire 0x27 + cold 0x2b only in reach) / 15
 + (reach 100 (FUN_00622c40), else a clear line 75 (FUN_005dd290:

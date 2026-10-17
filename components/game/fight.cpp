@@ -83,6 +83,19 @@ void cloak(const GameData& game_data, Monster& monster, int skill, int lvl, std:
 
 constexpr int kTerror = 77;                     // Skills.txt Terror: Howl's state (FUN_005ddd00, 0x4d)
 
+// Diablo's score of a pet or monster (FUN_005e8530 reads any unit's stats
+// so): its resists as stats 0x24 / 0x25 / 0x27 / 0x29 / 0x2b, raw, and its
+// aura as its right skill (FUN_005701b0 sets it: a merc's FUN_005e4d30, a
+// summon's FUN_005c4470, Aura Enchanted's FUN_005a1650) at its level.
+// ponytail: a monster's or summon's max damage left 0 (its last swing's
+// mode stats, FUN_005a4f50), and no left skill on any of them.
+d2d::rules::DiabloPick unit_pick(const GameData& game_data, std::array<int, 5> res, int aura, int aura_level) {
+    d2d::rules::DiabloPick pick;
+    std::tie(pick.damage_resist, pick.magic_resist, pick.fire_resist, pick.light_resist, pick.cold_resist) = std::tuple{ res[0], res[1], res[2], res[3], res[4] };
+    if (const auto* skill = aura > 0 ? game_data.skills.get(aura) : nullptr) { pick.right_skill = skill->id; pick.right_level = aura_level; pick.right_rank = skill->attack_rank; }
+    return pick;
+}
+
 }  // namespace
 
 auto Fight::monster_index(int id) const -> int {
@@ -3048,6 +3061,10 @@ auto Fight::pet_foe(const Pet& pet) const -> Foe {
                  pet.monster.unit.walking, fighter };
         foe.pet = true; foe.size = type_info.size; foe.threat = type_info.threat;
         foe.life_pct = int(std::int64_t(pet.monster.hit_points) * 100 / std::max(pet.monster.stats.hit_points, 1));
+        const auto& own = type_info.diff[std::size_t(pet.monster.difficulty)].res;
+        std::array<int, 5> res{ own[0], own[1] };
+        for (std::size_t k = 0; k < 3; ++k) res[k + 2] = pet.res[k] + pet_buff_stat(pet, kResists[k]);
+        foe.pick = unit_pick(*game_data, res, pet.aura, pet.aura_level);
         return foe;
     }
 
@@ -4015,9 +4032,20 @@ auto Fight::world(bool in_moor, std::uint32_t now_ms, float elapsed, const Crowd
                 foes[1].size = game_data->monsters.types[std::size_t(row)].size, foes[1].threat = game_data->monsters.types[std::size_t(row)].threat;
             // The merc's curse: its damageresist (Amplify Damage's -100 %).
             // ponytail: its other aurastats (Weaken's damagepercent) aren't on the merc's fighter.
+            int curse_dr = 0;
             if (const auto* skill = now_ms < curses[1].until ? game_data->skills.get(curses[1].skill) : nullptr)
                 for (std::size_t i = 0; i < skill->aurastat.size(); ++i)
-                    if (skill->aurastat[i] == d2d::d2s::kDamageResist) foes[1].fighter.dr_pct += calc(*skill, skill->aura_calc[i], curses[1].level);
+                    if (skill->aurastat[i] == d2d::d2s::kDamageResist) curse_dr += calc(*skill, skill->aura_calc[i], curses[1].level);
+            foes[1].fighter.dr_pct += curse_dr;
+            if (merc) {                                          // its stats for Diablo's score: base + gear + curse, raw (no penalty or cap)
+                const auto sum = merc_gear().sum;
+                const auto stat = [&](int id) { return int(sum[std::size_t(id)]); };
+                int aura_level = 0;
+                for (std::size_t k = 0; k < merc_ids.size(); ++k) if (merc_ids[k] == merc_aura) aura_level = merc_levels[k];
+                foes[1].pick = unit_pick(*game_data, { stat(0x24) + curse_dr, stat(0x25), merc_st.resist + stat(0x27), merc_st.resist + stat(0x29), merc_st.resist + stat(0x2b) },
+                                         merc_aura, aura_level);
+                foes[1].pick.max_damage = stat(0x16) + stat(0x31) + stat(0x33) + stat(0x35) + stat(0x37) + (stat(0x3a) >> 8);   // 0x16 holds no base (merc_fighter)
+            }
             for (std::size_t k = 0; k < 2; ++k)                  // the states on them the AIs read (their skills' +0x82)
                 for (const auto* held : { &curses[k], &marks[k] })
                     if (const auto* skill = now_ms < held->until ? game_data->skills.get(held->skill) : nullptr) foes[k].states.push_back(skill->auratarget);
@@ -4043,6 +4071,8 @@ auto Fight::world(bool in_moor, std::uint32_t now_ms, float elapsed, const Crowd
                     const auto& type_info = game_data->monsters.types[std::size_t(monster.type)];
                     Foe& foe = foes.emplace_back(Foe{ monster.unit.x, monster.unit.y, monster.stats.level, monster.targetable() && monster.mode != "DT", monster.unit.walking, fighter });
                     foe.size = type_info.size; foe.threat = type_info.threat; foe.of = &monster;
+                    foe.pick = unit_pick(*game_data, { target.res[0], target.res[1], target.res[2], target.res[3], target.res[4] }, monster.aura, monster.aura_lvl);
+                    foe.pick.state_b = now_ms < monster.chill_until;   // state 0xb, cold
                 }
             std::vector<Monster> born;
             for (std::size_t i = 0; i < monsters.size(); ++i) {

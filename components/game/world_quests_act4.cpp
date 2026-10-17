@@ -75,6 +75,7 @@ auto World::act4_join() -> void {
         terror.join(quests());
         izual_ghost_at = diablo_at = diablo_dead_at = gems_at = 0;
         gem_rounds = 0;
+        forge_inited = false;
         seal_bosses.clear();
         fortress_warp_done = end_movie = game_closed = false;
         had_soulstone = carries(d2d::rules::HellforgeQuest::kStone);
@@ -94,9 +95,6 @@ auto World::act4_enter(const Level& /*from*/) -> void {
         izual.enter(quests(), level->id);
         hellforge.enter(quests(), level->id);
         terror.enter(quests(), level->id);
-        // The forge's InitFn (48, FUN_005b5a20) as its room comes up.
-        // ponytail: run on entering the River of Flame, not the forge's room.
-        if (level->id == d2d::rules::level_ids::kRiverOfFlame) hellforge.forge_seen();
     }
 
 auto World::act4_talk_closed(int hc_idx) -> void {
@@ -221,26 +219,36 @@ auto World::act4_update(std::uint32_t now_ms) -> void {
         // The forge's gems (event 7, FUN_005b6710): a round each 20 frames,
         // round 4 a perfect, 3 and 2 flawless, 1 plain, rand(7) on the quest
         // seed (FUN_005438b0; skulls the seventh); LoD, a rune rand(11) on by
-        // difficulty after the last.
-        // ponytail: dropped while the player's on the River of Flame (the loot is the level's).
-        if (gems_at && now_ms >= gems_at && level->id == d2d::rules::level_ids::kRiverOfFlame) {
-            const auto forge = std::ranges::find(level->npcs, d2d::rules::operate_fn::kHellforge, &Npc::operate_fn);
-            if (forge != level->npcs.end()) {
-                const int diff = std::clamp(character.header.active_difficulty(), 0, 2);
-                const auto& area_levels = game_data->area_level;
-                const int alvl = std::size_t(level->id) < area_levels.size() ? area_levels[std::size_t(level->id)][std::size_t(diff)] : 1;
-                const auto& table = d2d::rules::HellforgeQuest::kGems[std::size_t(gem_rounds == 4 ? 2 : gem_rounds == 1 ? 0 : 1)];
-                const char* gem = table[std::size_t(fight.spawning.quests(7))];
-                loot.put({ .code = gem }, forge->x, forge->y, alvl, fight.spawning.game, now_ms);
-                d2d::log::info("The Hellforge: round {}, {}", gem_rounds, gem);
-                if (--gem_rounds > 0) gems_at = now_ms + d2d::rules::HellforgeQuest::kRoundFrames * kTickMs;
-                else {
-                    gems_at = 0;
-                    if (character.header.expansion()) {
-                        const int rune = d2d::rules::HellforgeQuest::kRuneFirst[std::size_t(diff)] + fight.spawning.quests(11);
-                        loot.put({ .code = std::format("r{:02}", rune) }, forge->x, forge->y, alvl, fight.spawning.game, now_ms);
-                        d2d::log::info("The Hellforge: the rune r{:02}", rune);
-                    }
+        // difficulty after the last. They fall at the forge wherever the
+        // player is (the River of Flame's floor kept till they're back).
+        const Level* river = game_data->level(d2d::rules::level_ids::kRiverOfFlame);
+        const Npc* forge = nullptr;
+        if (river)
+            if (const auto found = std::ranges::find(river->npcs, d2d::rules::operate_fn::kHellforge, &Npc::operate_fn); found != river->npcs.end()) forge = &*found;
+        // The forge's InitFn (48, FUN_005b5a20) as its room comes up.
+        // ponytail: once; d2d's rooms stay up (player_moved), game.exe's
+        // come up again after one's freed and run it again.
+        if (!forge_inited && forge)
+            if (const auto made = fight.spawning.levels.find(river); made != fight.spawning.levels.end())
+                if (const int room = room_of(*river, forge->x, forge->y); room >= 0 && std::ranges::contains(made->second.order, std::size_t(room))) {
+                    forge_inited = true;
+                    hellforge.forge_seen();
+                }
+        if (gems_at && now_ms >= gems_at && forge) {
+            const int diff = std::clamp(character.header.active_difficulty(), 0, 2);
+            const auto& area_levels = game_data->area_level;
+            const int alvl = std::size_t(river->id) < area_levels.size() ? area_levels[std::size_t(river->id)][std::size_t(diff)] : 1;
+            const auto& table = d2d::rules::HellforgeQuest::kGems[std::size_t(gem_rounds == 4 ? 2 : gem_rounds == 1 ? 0 : 1)];
+            const char* gem = table[std::size_t(fight.spawning.quests(7))];
+            loot.put({ .code = gem }, forge->x, forge->y, alvl, fight.spawning.game, now_ms, false, 0, river);
+            d2d::log::info("The Hellforge: round {}, {}", gem_rounds, gem);
+            if (--gem_rounds > 0) gems_at = now_ms + d2d::rules::HellforgeQuest::kRoundFrames * kTickMs;
+            else {
+                gems_at = 0;
+                if (character.header.expansion()) {
+                    const int rune = d2d::rules::HellforgeQuest::kRuneFirst[std::size_t(diff)] + fight.spawning.quests(11);
+                    loot.put({ .code = std::format("r{:02}", rune) }, forge->x, forge->y, alvl, fight.spawning.game, now_ms, false, 0, river);
+                    d2d::log::info("The Hellforge: the rune r{:02}", rune);
                 }
             }
         }

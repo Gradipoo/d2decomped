@@ -1,5 +1,7 @@
 # D2Decomp
 
+![D2Decomp widescreen gameplay](https://raw.githubusercontent.com/psi29a/d2decomped/feature/widescreen-launcher/docs/screenshots/widescreen-act1.png)
+
 D2Decomp is a cross-platform, open-source reimplementation of the Diablo II:
 Lord of Destruction game engine. It aims to reproduce the original game's
 behavior, using version 1.14d as its reference. The long-term goal is a

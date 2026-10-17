@@ -1598,8 +1598,8 @@ bool monster_update(const GameData& game_data, const Level& level, Monster& mons
                     for (auto& near_foe : foes)
                         if (near_foe.alive && !near_foe.of && !foe.of && std::hypot(near_foe.x - foe.x, near_foe.y - foe.y) * 5 <= float(radius))
                             near_foe.cursed = { curse, lvl };
-                } else if (cast->srvdofunc == ServerDoFunction::kDiabCold) {
-                    // FUN_005cce80: one sure hit (hit flags | 1) of the skill's own damage at the unit.
+                } else if (cast->srvdofunc == ServerDoFunction::kDiabCold && foe.alive) {
+                    // FUN_005cce80: one sure hit (hit flags | 1) of the skill's own damage at the unit (a live one).
                     auto stats = monster.stats;
                     stats.a1_min = stats.a1_max = 0;
                     stats.to_hit = 1 << 20;
@@ -1615,7 +1615,7 @@ bool monster_update(const GameData& game_data, const Level& level, Monster& mons
                     if (cast->srvdofunc == ServerDoFunction::kDoomKnightMissile && monster.variant > 0 && !name.empty() && name.back() == '1') name.back() = char('1' + std::min(monster.variant, 3));
                     const std::size_t sent = missiles.size();
                     andariel_missile(game_data, monster, name, dx, dy, now_ms, missiles, lvl, cast);
-                    if (cast->srvdofunc == ServerDoFunction::kGuidedMissile && missiles.size() > sent) missiles.back().target = int(&foe - foes.data());   // its unit (flags 0x20)
+                    if (cast->srvdofunc == ServerDoFunction::kGuidedMissile && missiles.size() > sent) { missiles.back().target = int(&foe - foes.data()); missiles.back().target_id = foe.id; }   // its unit (flags 0x20)
                 } else if (cast->srvdofunc == ServerDoFunction::kDiabPrison) {
                     // FUN_005cd5d0 -> FUN_005b34c0 -> FUN_005b3270 (0x73d4f0, flag 1: the
                     // class steps): boneprison1..4 (0x154..0x157) at the target's diagonals,

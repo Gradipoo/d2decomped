@@ -542,7 +542,8 @@ public:
         crashReports_->setToolTip(tr(
             "When enabled, a crash report may include a crash dump, hardware and OS details, the GPU model when "
             "reported by its driver, graphics backend, recent warning/error messages, optional notes, and the "
-            "latest 800x600 game frame captured about once per second. The image shows only the game framebuffer, "
+            "latest game frame (up to 1400x600) captured about once per second. "
+            "The image shows only the game framebuffer, "
             "not your desktop, and may include names or other visible game information. Crash dumps may contain "
             "sensitive data from the game's memory. These items are sent to Sentry only if the game crashes. "
             "You can turn this off at any time."));

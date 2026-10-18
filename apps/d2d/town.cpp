@@ -1472,8 +1472,26 @@ auto Town::pad_walk() -> void {
             if (!pad_walking ? pad_move.run != view.running : pad_move.run != pad_ran) send(cmd::Run{ pad_move.run });
             send(cmd::Move{ world.player.x + step.x, world.player.y + step.y, !pad_walking });
             pad_ran = pad_move.run;
+        } else if (pad_walking) {
+            send(cmd::Move{ world.player.x, world.player.y, true });   // stick centred: stop here, not at the old destination
         }
         pad_walking = walk;
+    }
+
+auto Town::pad_focus() const -> std::optional<PadFocus> {
+        if (game_menu.open) {
+            const int count = int(game_menu.rows().size());
+            const int row = game_menu.menu == 0 ? 1 : count - 1;        // the main menu: Save and Exit; a submenu: its Previous
+            return PadFocus{ 1000 + game_menu.menu, int(kScreenWidth) / 2, game_menu.top() + game_menu.step() * row + count + game_menu.step() / 2 };
+        }
+        if (npc_menu.npc >= 0) {
+            int base = npc_menu.y;
+            for (const auto& line : npc_menu.lines) {                   // the topmost line you can choose
+                base += line.height;
+                if (!line.header) return PadFocus{ 2000 + npc_menu.npc * 64 + int(npc_menu.lines.size()), npc_menu.x + npc_menu.box_width / 2, base - line.height / 2 };
+            }
+        }
+        return std::nullopt;
     }
 
 auto Town::walk(const Mouse& mouse, bool over_ui, std::uint32_t frame_ms, std::uint32_t last_ms) -> void {

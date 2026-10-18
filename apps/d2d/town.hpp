@@ -211,6 +211,9 @@ struct Town {
     void pad_act();
     // True when no panel, menu or dialog is up: the pad plays without a cursor.
     [[nodiscard]] bool pad_field() const;
+    // Where the pad's cursor goes when a menu opens (or its lines change): the choice to start on.
+    struct PadFocus { int key = 0, x = 0, y = 0; };
+    [[nodiscard]] std::optional<PadFocus> pad_focus() const;
     std::unordered_map<int, Automap> other_automaps;   // other Layers' maps, while elsewhere
     std::uint32_t level_ms = 0;            // when the player entered `level`
     bool have_world = false;

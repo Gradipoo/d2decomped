@@ -1440,7 +1440,7 @@ auto Town::pad_act() -> void {
         if (left && pad_move.attack) {
             std::vector<pad::Candidate> loot;
             for (const auto& item : view.ground) loot.push_back({ item.id, item.x, item.y });
-            if (const int pick = pad::pick_target(px, py, pad_face_x, pad_face_y, loot, -1); pick >= 0) {
+            if (const int pick = pad::pick_target(px, py, pad_face_x, pad_face_y, loot, -1, pad::Aim{ 3.5f, 3.5f, -0.2f }); pick >= 0) {
                 send(cmd::Pickup{ loot[std::size_t(pick)].id });
                 return;
             }
@@ -1453,12 +1453,14 @@ auto Town::pad_act() -> void {
                     if (state && !state->mode.empty() && npc.root == "objects" && !(npc.selectable >> game::mode_index(state->mode) & 1)) continue;
                     things.push_back({ int(i), state ? state->x : npc.x, state ? state->y : npc.y });
                 }
-            if (const int pick = pad::pick_target(px, py, pad_face_x, pad_face_y, things, -1); pick >= 0) {
+            if (const int pick = pad::pick_target(px, py, pad_face_x, pad_face_y, things, -1, pad::Aim{ 4.5f, 4.5f, -0.2f }); pick >= 0) {
                 send(cmd::Interact{ things[std::size_t(pick)].id });
                 return;
             }
         }
-        if (pad_move.attack || pad_move.alt)       // nothing there: swing or cast ahead
+        // Nothing in reach: swing or cast ahead only with a monster about, so in camp A never just walks.
+        const bool foe_near = std::ranges::any_of(monsters, [&](const pad::Candidate& m) { return std::hypot(m.x - px, m.y - py) < 10.f; });
+        if ((pad_move.attack || pad_move.alt) && foe_near)
             send(cmd::UseSkill{ skill, px + pad_face_x * 3.f, py + pad_face_y * 3.f, -1, left });
     }
 

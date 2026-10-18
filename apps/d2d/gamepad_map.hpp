@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <span>
 #include <vector>
 
 namespace d2d::client::pad {
@@ -59,6 +60,32 @@ struct WorldStep { float x = 0, y = 0; };
     const float x = (iso_u + iso_v) / 2, y = (iso_v - iso_u) / 2;
     const float length = std::hypot(x, y);
     return length > 0 ? WorldStep{ x / length * reach, y / length * reach } : WorldStep{};
+}
+
+// Soft targeting in the field, where the pad shows no cursor: the thing to hit
+// is the nearest one inside `reach` tiles and a cone round the facing, the
+// target already held (`sticky`) staying while it is in `sticky_reach`.
+struct Candidate { int id = -1; float x = 0, y = 0; };
+struct Aim {
+    float reach = 2.5f;               // tiles from the hero
+    float sticky_reach = 4.f;         // a held target is let go beyond this
+    float cone_cos = 0.35f;           // cos of the half angle (~70 degrees) either side of the facing
+};
+// Index into `candidates` or -1. `face` is a world direction (need not be unit; zero = any way).
+[[nodiscard]] inline int pick_target(float from_x, float from_y, float face_x, float face_y, std::span<const Candidate> candidates,
+                                     int sticky, const Aim& aim = {}) {
+    const float face_length = std::hypot(face_x, face_y);
+    int best = -1;
+    float best_distance = 0;
+    for (std::size_t i = 0; i < candidates.size(); ++i) {
+        const float dx = candidates[i].x - from_x, dy = candidates[i].y - from_y;
+        const float distance = std::hypot(dx, dy);
+        if (candidates[i].id == sticky && distance <= aim.sticky_reach) return int(i);
+        if (distance > aim.reach) continue;
+        if (face_length > 0 && distance > 0.3f && (dx * face_x + dy * face_y) / (distance * face_length) < aim.cone_cos) continue;
+        if (best < 0 || distance < best_distance) { best = int(i); best_distance = distance; }
+    }
+    return best;
 }
 
 class Mapper {

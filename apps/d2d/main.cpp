@@ -759,6 +759,8 @@ int run_windowed(std::vector<std::uint8_t>& framebuffer,
             if (pad_actions.click_release && mouse.down) { mouse.down = false; mouse.release_this_frame = true; }
             if (pad_actions.rclick_press && !pad_field)  mouse.rpress_this_frame = true;
             for (const pad::Key pad_key : pad_actions.keys) {
+                // Escape quits from the title screen; B must not be able to close the app there.
+                if (screen == Screen::Title && pad_key == pad::Key::Escape) continue;
                 SDL_Event key_event{};
                 key_event.type = SDL_EVENT_KEY_DOWN;
                 key_event.key.down = true;

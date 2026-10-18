@@ -1,98 +1,83 @@
 # whisper
 
-A small control socket inside the **original game.exe (1.14d)**, so the real
-game can be read and driven from another machine on your own network.
+A remote control inside the **original game.exe (1.14d)**: read its
+state and drive its player from another machine on your network.
 
-## Why
+## Run it
 
-d2d's ground truth is game.exe, and the mode that matters is d2d joining a
-game.exe host. Checking that live used to need a person at each keyboard:
-one playing the host, one reading d2d, both describing what they saw. whisper
-puts the host on a socket instead, so one session (or one script) can play
-both sides:
+```sh
+cd apps/whisper
+./whisper.py 192.168.50.68 TOKEN state
+```
 
-- **See what the host sees**: `screenshot` of the game's window, next to
-  d2d's own `devctl screenshot` of the same moment.
-- **Read the host's truth**: `state` gives the host player's unit id,
-  class, mode and subtile position straight from game.exe's memory; `peek`
-  reads any address. No guessing from packets.
-- **Drive the host**: `click`, `rclick`, `key` and `text` go in as ordinary
-  window messages, so game.exe's client acts exactly as it would for a
-  mouse; `send` puts a raw C->S packet through game.exe's own SendPacket.
-- **Check our packets against game.exe's parser**: `send` refuses anything
-  game.exe's own sizer (`FUN_0052bc20`) frames differently, the same check
-  the host applies to d2d. That is how d2d's chat packet was caught missing
-  its count byte (2026-10-17).
+Reply: `id 1 type 0 class 4 mode 5 x 5118 y 5168 life 59/59 mana 12/12`.
+`TOKEN` is line 1 of `whisper.txt` on the game's PC (see Install).
 
-It turns the "netplay live checklist" from a supervised session into
-something scriptable, and later a scripted Act 1-4 run against the host.
+## Why it exists
 
-## How it loads
+- d2d's ground truth is game.exe, and the mode that matters is d2d
+  joining a game.exe host. Checking that used to need a person at each
+  keyboard. With whisper, one session (or one script) plays both sides.
+- `send` refuses any packet game.exe's own sizer would frame
+  differently. That's how d2d's chat packet was caught missing a byte.
+- On 2026-10-18 it drove a full Act 1 and Act 2 run with d2d.
 
-game.exe imports `IJL11.DLL` (Intel's JPEG library) by ordinals 2, 3 and 5,
-from its own folder. whisper is built as a stand-in `ijl11.dll`: it forwards
-those three to the real library (renamed `ijl11_real.dll`) and starts its
-socket thread. No injector, no patched bytes; undoing it is a rename.
+## Install (once, on the game.exe PC)
 
-Everything that reads or sends runs on the game's own thread (a `WM_APP`
-sent to the subclassed game window), the same "commands in, then the tick"
-rule d2d follows.
-
-## Install (on the game.exe machine)
-
-1. Build here: `./build.sh` (needs `brew install mingw-w64`) makes `ijl11.dll`.
-2. In the Diablo II folder rename `ijl11.dll` to `ijl11_real.dll`, then copy
-   the built `ijl11.dll` in. With file extensions hidden in Explorer, check
-   the rename didn't make `ijl11_real.dll.dll`.
-3. Write `whisper.txt` beside `game.exe`: a token on line 1
-   (`openssl rand -hex 12`), the port on line 2 (default 4100).
-   **Without that file nothing listens**; a client must send the token first.
-4. Start the game, host a TCP/IP game, and allow it through the firewall
-   when Windows asks.
-
-game.exe must be 1.14d: the addresses are its own. A different build shows
-as `state` failing (check `peek 463dd0 2`: 1.14d reads `7a6a70a1 ccccc300`).
-Problems are written to `whisper.log` beside game.exe.
+1. On the Mac: `./build.sh` (needs `brew install mingw-w64`). It makes `ijl11.dll`.
+2. In the Diablo II folder, rename `ijl11.dll` to `ijl11_real.dll`.
+   With extensions hidden in Explorer, check you didn't get `ijl11_real.dll.dll`.
+3. Copy the built `ijl11.dll` in.
+4. Make `whisper.txt` beside `game.exe`: a token on line 1
+   (`openssl rand -hex 12`), the port on line 2 (`4100`).
+   **No file, nothing listens.**
+5. Start the game, host a TCP/IP game, allow it through the firewall.
 
 Undo: delete `ijl11.dll`, rename `ijl11_real.dll` back.
 
-## Use
+## More uses
 
-    ./whisper.py 192.168.50.68 TOKEN state
-    ./whisper.py 192.168.50.68 TOKEN click 400 300
-    ./whisper.py 192.168.50.68 TOKEN send 15 01 00 68 69 00 00 00   # chat "hi"
-    ./whisper.py 192.168.50.68 TOKEN screenshot /tmp/host.bmp
+| You want | Command (after `./whisper.py HOST TOKEN`) |
+|---|---|
+| A screenshot | `screenshot /tmp/host.bmp` |
+| Every unit the client knows | `units` (`type id class mode x y life maxlife` a line) |
+| Click / right-click / hover (800x600) | `click 400 300`, `rclick 400 300`, `move 400 300` |
+| Talk to an NPC, take a warp, use a waypoint | `realclick X Y` (a real mouse click; the game must be the front window) |
+| A key | `key 27` (Esc), `key 0x49` ('I', inventory) |
+| Type text | `text hello` (into the open chat box) |
+| A raw packet | `send 13 02 00 00 00 9a 00 00 00` (interact with object 0x9a) |
+| Party up | `party accept 6` / `party invite 6` (the other player's id) |
+| Follow another player like a mercenary | `follow` (Ctrl-C stops) |
+| Read memory | `peek 463dd0 2` |
+| Is it alive | `ping` |
 
-| Verb | Reply | Does |
-|---|---|---|
-| `ping` | `ok` | Liveness. |
-| `state` | `id … type … class … mode … x … y … life a/b mana a/b` | The host player's unit (`DAT_007a6a70`, set by `FUN_00463d90`); x / y in subtiles; stats through `FUN_00625480`. |
-| `units` | `type id class mode x y life maxlife` per unit | Every unit the client knows (its two hash tables, `FUN_00463a50`). |
-| `peek ADDR [N]` | `addr value` per u32, `?` if unreadable | Read game.exe memory (up to 64 u32s), safely. |
-| `click X Y` / `rclick X Y` / `move X Y` | `ok` | Mouse at window coords (800x600). |
-| `realclick X Y` / `realrclick X Y` | `ok` / `err` | A real click: `SetCursorPos` + `SendInput`. Needed for an NPC's or warp's interact (posted clicks walk there, never act). The game must be the foreground window; the machine's cursor moves. |
-| `key VK` | `ok` | A virtual-key press: 13 Return, 27 Esc, 0x41 'A'. |
-| `text WORDS` | `ok` | Typed characters (WM_CHAR), e.g. into the chat box. |
-| `send HEX…` | `ok <result>` / `err` | A raw C->S packet via `FUN_0052ae50`, refused unless `FUN_0052bc20` frames it at exactly that size. |
-| `screenshot` | `ok <n>` + n BMP bytes | The game window. `whisper.py` saves it to a path. |
+### The follower
 
-Several clients may connect; their commands still run one at a time on the
-game thread. Keep it on your own network: anyone with the token can drive
-the game.
+`follow` keeps the host's player beside the nearest other player:
+fights monsters near you both, drinks belt potions under 45% life,
+accepts and makes party invites, and follows through warps and town
+portals.
 
-**Posted clicks aren't a whole mouse.** Hover, moving, attacking and
-talking work, but a posted click on a warp walks the player to its mouth
-and stops; a real click goes in (2026-10-17). game.exe reads more than the
-window messages there (the real button state, it seems), so the follower
-takes warps and town portals with `send 13` (interact) once there.
+## When it breaks
 
-## The follower
+| You see | Fix |
+|---|---|
+| `0xc0000142` when game.exe starts | The real DLL isn't named `ijl11_real.dll` (check for `.bak` or `.dll.dll`) |
+| Connection refused / timed out | No `whisper.txt`, wrong port, or the firewall. Read `whisper.log` beside game.exe |
+| `refused (token?)` | The token doesn't match line 1 of `whisper.txt` |
+| `err no player unit` | game.exe is at a menu, not in a game |
+| `state` fails, `peek 463dd0 2` isn't `7a6a70a1 ccccc300` | Not 1.14d: whisper's addresses are 1.14d's |
+| A posted `click` walks but doesn't open the NPC / warp | Use `realclick`, or `send 13 ...` once close |
+| `realclick` says `err` | game.exe isn't the front window on its PC |
+| The game quit to the menu | A stray `key 27` opened the game menu and a later click hit **Save and Exit**. Send Esc only to close something you know is open |
 
-    ./whisper.py 192.168.50.68 TOKEN follow
+## How it loads
 
-Plays the host's character as a merc for whoever is driving the other
-player (d2d): stays within a few subtiles of them, attacks the nearest
-monster near both of you with the left skill (MonStats' npc / ally /
-in-town / unkillable rows left alone), and drinks from belt columns 1-4
-under 45% life. Warps and waypoints are the driver's: walk up to them with
-`click`, or let the follower close in and click the warp yourself.
+game.exe imports `IJL11.DLL` (Intel's JPEG library) by ordinals 2, 3
+and 5, from its own folder. whisper is a stand-in `ijl11.dll` that
+forwards those three to the real one (`ijl11_real.dll`) and starts its
+socket thread. No injector and no patched bytes; undoing it is a rename.
+Every command runs on the game's own thread (a `WM_APP` message to the
+game window).
+
+Keep it on your own network: anyone with the token can drive the game.

@@ -42,8 +42,22 @@ jobs:
       - name: Configure
         run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo
 
+      # FFmpeg (Bink-only, built from source in build/ffmpeg-*) is ~110K lines
+      # of someone else's C: build it outside cov-build so the scan is ours only.
+      - name: Build FFmpeg (not scanned)
+        run: cmake --build build --config RelWithDebInfo --target ffmpeg_build
+
       - name: Build with cov-build
         run: cov-build --dir cov-int cmake --build build --config RelWithDebInfo -- -k 0
+
+      # Which translation units Coverity couldn't capture, and why.
+      - name: Keep Coverity's build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverity-build-log
+          path: cov-int/build-log.txt
+          retention-days: 14
 
       - name: Package results
         run: tar czf d2decomped.tgz cov-int

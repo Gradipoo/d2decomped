@@ -6,6 +6,7 @@
 #include "audio.hpp"
 #include "common.hpp"
 #include "cursor.hpp"
+#include "gamepad_map.hpp"
 #include "ingame.hpp"
 #include "panels.hpp"
 #include "platform.hpp"
@@ -1406,6 +1407,18 @@ auto Town::input(const Mouse& mouse, bool over_ui) const -> std::vector<Command>
         return out;
     }
 
+auto Town::pad_walk() -> void {
+        const bool walk = pad_move.active && !view.dead && !game_menu.open && !chat_typing && !trade_gold_typing;
+        if (walk) {
+            const auto step = pad::world_step(pad_move.x, pad_move.y, kIsoW, kIsoH, 6.f);
+            // Running follows the tilt: a Run toggle only when it changes (R still flips it by hand).
+            if (!pad_walking ? pad_move.run != view.running : pad_move.run != pad_ran) send(cmd::Run{ pad_move.run });
+            send(cmd::Move{ world.player.x + step.x, world.player.y + step.y, !pad_walking });
+            pad_ran = pad_move.run;
+        }
+        pad_walking = walk;
+    }
+
 auto Town::walk(const Mouse& mouse, bool over_ui, std::uint32_t frame_ms, std::uint32_t last_ms) -> void {
         frame_now = frame_ms;
         if (net_game) {
@@ -1701,6 +1714,7 @@ auto Town::walk(const Mouse& mouse, bool over_ui, std::uint32_t frame_ms, std::u
             if (host_npc && host_npc->id != net_chat_npc) { net_chat_npc = host_npc->id; net_game->send_items({ c2s::npc_chat(true, 1, net_chat_npc) }); }
         }
         for (const auto& command : input(mouse, over_ui)) send(command);
+        pad_walk();
         // Fixed ticks of kTickMs; after a stall, a few to catch up, then the
         // clock skips ahead (game.exe catches up one frame at most).
         if (world_ms == 0 || frame_ms - world_ms > 1000) world_ms = frame_ms - std::min<std::uint32_t>(frame_ms - last_ms, kTickMs);

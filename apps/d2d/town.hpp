@@ -200,6 +200,11 @@ struct Town {
     std::uint32_t world_ms = 0;            // the World's clock: when it last ticked
     float prev_x = 0, prev_y = 0;          // the player a tick before: the camera slides between the two
     float cam_x = 0, cam_y = 0;            // where the camera is this frame
+    // A gamepad's left stick, set each frame by main: walk towards this screen
+    // direction (unit length); `run` at full tilt.
+    struct PadMove { float x = 0, y = 0; bool active = false, run = false; } pad_move;
+    bool pad_walking = false, pad_ran = false;   // last frame's stick walk, to send a fresh walk and a Run change once
+    void pad_walk();
     std::unordered_map<int, Automap> other_automaps;   // other Layers' maps, while elsewhere
     std::uint32_t level_ms = 0;            // when the player entered `level`
     bool have_world = false;

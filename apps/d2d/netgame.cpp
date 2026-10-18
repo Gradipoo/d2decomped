@@ -15,6 +15,7 @@
 #include <tcp.hpp>
 
 #include <algorithm>
+#include <array>
 #include <bitset>
 #include <chrono>
 #include <cmath>
@@ -514,6 +515,9 @@ auto NetGame::handle(const d2d::net::Bytes& packet) -> void {
             unit.cls = read_u16(packet, 5);
             place(unit, read_u16(packet, 7), read_u16(packet, 9));
             unit.life = packet[0xb];
+            if (const auto boss = d2d::net::d2gs::s2c::monster_boss(packet, unit.cls >= 0 && std::size_t(unit.cls) < monster_parts.size() ? monster_parts[std::size_t(unit.cls)] : std::array<std::uint8_t, 16>{})) {
+                unit.boss_flags = boss->flags; unit.super = boss->super; unit.mods = boss->mods; unit.name_seed = boss->name_seed;
+            }
         }
         break;
     case 0x67:   // monster to x, y; +0xd i16 its velocity % (0: unchanged)

@@ -8,7 +8,7 @@ do exactly what it does.
 Decompile one function to a file:
 
 ```sh
-H=$(command -v ghidra-analyzeHeadless || find /opt/homebrew/Cellar/ghidra -name analyzeHeadless -type f | head -1)
+H=$(command -v ghidra-analyzeHeadless || echo "$(brew --prefix ghidra)/libexec/support/analyzeHeadless")
 $H tools/ghidra/project D2Decomp -process game.exe -noanalysis -readOnly \
    -scriptPath tools/ghidra/scripts -postScript DecompileRange.java 00584870 00584a00 /tmp/f.c
 cat /tmp/f.c
@@ -42,7 +42,7 @@ Each run takes ~2.5 s; batch several `-postScript` calls in one run.
 | You see | Fix |
 |---|---|
 | Empty output for an address | Code reached only through a table isn't a function yet: use `DecompileAt.java` or `Disasm.java` |
-| `analyzeHeadless` not found | `brew install ghidra`; Homebrew changes the version folder, so use the `find` line above |
+| `analyzeHeadless` not found | `brew install ghidra`; the `H=` line above finds it under `brew --prefix ghidra` |
 | Project missing | Run `tools/ghidra/import.sh` once |
 
 ## Reference

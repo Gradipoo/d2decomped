@@ -1008,6 +1008,7 @@ int run_windowed(std::vector<std::uint8_t>& framebuffer,
                     town.net_monsters.clear();
                     town.world.fight.remote_monsters = false;
                     town.world.hosted_quests = false;
+                    town.world.host_warps = false;
                     town.world.characters = g_no_save ? nullptr : &characters;
                 }
                 if (screen == Screen::CharSelect && scene) {         // left the game (saved): the roster again,

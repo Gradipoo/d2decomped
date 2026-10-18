@@ -1576,8 +1576,9 @@ auto Town::walk(const Mouse& mouse, bool over_ui, std::uint32_t frame_ms, std::u
                 if (net_warp_to < 0) {                               // there: the reassign took us
                     net_waypoint_level = -1;
                 } else if (net_game->waypoint_menu == net_waypoint_object) {
-                    net_game->waypoint(net_waypoint_object, net_waypoint_level);
-                    net_waypoint_level = -1;
+                    net_game->waypoint(net_waypoint_object, net_waypoint_level);   // pending till the reassign: the retries below if it's dropped
+                    net_game->waypoint_menu = 0;
+                    net_waypoint_ms = frame_ms;
                 } else if (frame_ms - net_waypoint_ms > 3000 && net_waypoint_tries < 3 && net_game->steady_now() - net_game->walked_ms >= 500) {
                     // Out of its reach the host walks us up (FUN_00548a50) and
                     // stops: again from there.

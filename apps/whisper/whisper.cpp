@@ -261,6 +261,8 @@ auto handle(const std::string& text) -> std::string {
     return job.reply.empty() ? "err unknown verb '" + job.verb + "'\n" : job.reply;
 }
 
+constexpr std::size_t kMaxLine = 4096;                     // the longest line read (a send of ~1300 bytes fits)
+
 auto read_line(SOCKET client, std::string& pending, std::string& line) -> bool {
     for (;;) {
         if (const auto end = pending.find('\n'); end != std::string::npos) {
@@ -269,6 +271,7 @@ auto read_line(SOCKET client, std::string& pending, std::string& line) -> bool {
             pending.erase(0, end + 1);
             return true;
         }
+        if (pending.size() > kMaxLine) return false;          // no line that long: a stuck or hostile client
         char buffer[512];
         const int got = recv(client, buffer, sizeof buffer, 0);
         if (got <= 0) return false;
@@ -287,7 +290,11 @@ auto send_all(SOCKET client, const std::string& data) -> void {
 DWORD WINAPI talk(void* socket_handle) {
     const auto client = SOCKET(reinterpret_cast<std::uintptr_t>(socket_handle));
     std::string pending, line;
+    DWORD wait_ms = 10000;                                     // the token within 10 s, or the thread ends
+    setsockopt(client, SOL_SOCKET, SO_RCVTIMEO, reinterpret_cast<const char*>(&wait_ms), sizeof wait_ms);
     if (read_line(client, pending, line) && line == g_token) {
+        wait_ms = 0;                                           // then no limit: commands come when the driver sends them
+        setsockopt(client, SOL_SOCKET, SO_RCVTIMEO, reinterpret_cast<const char*>(&wait_ms), sizeof wait_ms);
         send_all(client, "ok whisper\n");
         while (read_line(client, pending, line)) send_all(client, handle(line));
     }

@@ -1436,10 +1436,10 @@ auto Fight::boss_events(std::span<Foe> foes, std::uint32_t now_ms) -> void {
             const int mlvl = std::max(monster.stats.level, 1);
             // Scarab (FUN_005a2eb0 / FUN_005a2ee0): into GH or DT, 2 frames on,
             // 8 buglightning (4 ways x 2) at its level, steered as lightning enchanted's.
-            if (scarab && monster.mode != monster.fx_mode && (monster.mode == "GH" || monster.mode == "DT")) monster.scarab_at = now_ms + 2 * 40;
+            if (scarab && monster.mode != monster.fx_mode && (monster.mode == "GH" || monster.mode == "DT")) monster.scarab_due.push_back(now_ms + 2 * 40);
             monster.fx_mode = monster.mode;
-            if (monster.scarab_at && now_ms >= monster.scarab_at) {
-                monster.scarab_at = 0;
+            while (!monster.scarab_due.empty() && now_ms >= monster.scarab_due.front()) {
+                monster.scarab_due.erase(monster.scarab_due.begin());
                 d2d::log::info("{} lets off its bugs' lightning", monster.npc.name);
                 const auto ring = std::make_shared<std::vector<int>>();
                 for (const auto& [dir_x, dir_y] : { std::pair{ 0.f, -1.f }, { 1.f, 0.f }, { 0.f, 1.f }, { -1.f, 0.f } })
@@ -1492,7 +1492,10 @@ auto Fight::boss_missile(const Monster& monster, const char* name, float dx, flo
         d2d::rules::MonStats stats;
         stats.level = monster.stats.level;
         stats.to_hit = 1 << 20;                                     // ToHit 0: always hits
-        if (damage.etype >= 0) stats.elements[0] = { damage.etype, 100, damage.elo >> 8, std::max(damage.ehi >> 8, 1), damage.elen, "A2" };
+        // Poison (3) is kept as monster poison is: x 10 makes it 256ths a frame
+        // (combat.hpp, FUN_005a4f50's stats 0x39 / 0x3a); the rest in points.
+        if (damage.etype == 3) stats.elements[0] = { damage.etype, 100, damage.elo / 10, std::max(damage.ehi / 10, 1), damage.elen, "A2" };
+        else if (damage.etype >= 0) stats.elements[0] = { damage.etype, 100, damage.elo >> 8, std::max(damage.ehi >> 8, 1), damage.elen, "A2" };
         const float speed = missile_speed(missile_info, lvl), distance = std::max(std::hypot(dx, dy), 0.01f);
         Missile x{ &missile_info, monster.unit.x, monster.unit.y, dx / distance * speed, dy / distance * speed, direction32(dx, dy), now_ms, now_ms + std::uint32_t(std::max(missile_info.range, 1)) * 40, stats };
         x.struck = ring; x.level = lvl; x.owner = monster.id;

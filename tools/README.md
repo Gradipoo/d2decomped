@@ -30,14 +30,16 @@ the command to run first.
 
 | File | What it is | Run it |
 |---|---|---|
-| `validate-linux.sh` | CI's Linux build, clang-tidy and tests, in Docker (`validate-linux.Dockerfile`; its own `build-linux/`). Run before every push | `tools/validate-linux.sh; echo "exit $?"` (exit 0 = good) |
+| `validate-linux.sh` | CI's Linux build, clang-tidy and tests, in Docker (`validate-linux.Dockerfile`; its own `build-linux/`). Run before every push | `tools/validate-linux.sh` (exit status 0 = good) |
 | `tidy-pr-select.py` | CI only: picks the files a PR needs clang-tidy on | not run by hand |
 
 ## Before any of them
 
 1. Build once: `cmake -S . -B build -G Ninja && cmake --build build`
-2. Have your own Diablo II + LoD files (the MPQs). The examples use
-   `~/Workspace/private/diablo2`; put your folder there instead.
+2. For the tools that read game data (d2d, mpq-cat, the dumps, emu,
+   net-join, d2proxy's game.exe tables): your own Diablo II + LoD files
+   (the MPQs). The examples use `~/Workspace/private/diablo2`; put your
+   folder there instead.
 3. For the 1.14d patch data, set
    `D2_PATCH_INSTALLER=/path/to/LODPatch_114d.exe`.
 

@@ -1651,6 +1651,7 @@ auto World::use_portal(std::uint32_t now_ms) -> void {
             if (!player.walking) take_portal = -1;
             return;
         }
+        if (host_warps) { take_portal = -1; return; }   // joined: the host's portal moves us (it may refuse: a quest's level), its reassign brings us
         cues.cue("player_townportal_enter", now_ms, player.x, player.y);
         if (take_portal == 2) {                       // to Tristram, by its own portal back (object 60)
             take_portal = -1;

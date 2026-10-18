@@ -1373,6 +1373,61 @@ auto Town::input(const Mouse& mouse, bool over_ui) const -> std::vector<Command>
         return out;
     }
 
+auto Town::pad_field() const -> bool {
+        return have_world && !inv_open && !char_open && !tree_open && !stash_open && !cube_open && !belt_open && !quest_log.open
+            && !game_menu.open && npc_menu.npc < 0 && speech.npc < 0 && store.npc < 0 && !held && identify_with < 0
+            && !skillbar.picking && !chat_typing && !trade_gold_typing && !(net_game && net_game->trade.state != 0);
+    }
+
+// The pad's buttons in the field: hit what is in reach in the facing, else
+// pick up / talk to what is, else swing that way. Nothing is latched: a
+// released button forgets its target.
+auto Town::pad_act() -> void {
+        if (pad_move.active) {
+            const auto face = pad::world_step(pad_move.x, pad_move.y, kIsoW, kIsoH, 1.f);
+            pad_face_x = face.x; pad_face_y = face.y;
+        }
+        const bool want = pad_move.attack || pad_move.attack_down || pad_move.alt;
+        if (!want || view.dead || !pad_field()) { if (!want) pad_target = -1; return; }
+        const float px = world.player.x, py = world.player.y;
+        std::vector<pad::Candidate> monsters;
+        for (const auto& monster : view.monsters)
+            if (monster.alive()) monsters.push_back({ monster.id, monster.unit.x, monster.unit.y });
+        const int hit = pad::pick_target(px, py, pad_face_x, pad_face_y, monsters, pad_target);
+        const bool left = !pad_move.alt;
+        const int skill = left ? skillbar.left : skillbar.right;
+        if (hit >= 0) {
+            pad_target = monsters[std::size_t(hit)].id;
+            send(cmd::UseSkill{ skill, monsters[std::size_t(hit)].x, monsters[std::size_t(hit)].y, pad_target, left });
+            return;
+        }
+        pad_target = -1;
+        if (pad_move.attack_down && !pad_move.attack && !pad_move.alt) return;   // held with nothing left to hit
+        if (left && pad_move.attack) {
+            std::vector<pad::Candidate> loot;
+            for (const auto& item : view.ground) loot.push_back({ item.id, item.x, item.y });
+            if (const int pick = pad::pick_target(px, py, pad_face_x, pad_face_y, loot, -1); pick >= 0) {
+                send(cmd::Pickup{ loot[std::size_t(pick)].id });
+                return;
+            }
+            std::vector<pad::Candidate> things;      // NPCs and objects you can use
+            if (level)
+                for (std::size_t i = 0; i < level->npcs.size(); ++i) {
+                    const auto& npc = level->npcs[i];
+                    const UnitState* state = i < view.npc_states.size() ? &view.npc_states[i] : nullptr;
+                    if ((state && state->hidden) || npc.name.empty()) continue;
+                    if (state && !state->mode.empty() && npc.root == "objects" && !(npc.selectable >> game::mode_index(state->mode) & 1)) continue;
+                    things.push_back({ int(i), state ? state->x : npc.x, state ? state->y : npc.y });
+                }
+            if (const int pick = pad::pick_target(px, py, pad_face_x, pad_face_y, things, -1); pick >= 0) {
+                send(cmd::Interact{ things[std::size_t(pick)].id });
+                return;
+            }
+        }
+        if (pad_move.attack || pad_move.alt)       // nothing there: swing or cast ahead
+            send(cmd::UseSkill{ skill, px + pad_face_x * 3.f, py + pad_face_y * 3.f, -1, left });
+    }
+
 auto Town::pad_walk() -> void {
         const bool walk = pad_move.active && !view.dead && !game_menu.open && !chat_typing && !trade_gold_typing;
         if (walk) {
@@ -1674,6 +1729,7 @@ auto Town::walk(const Mouse& mouse, bool over_ui, std::uint32_t frame_ms, std::u
         }
         for (const auto& command : input(mouse, over_ui)) send(command);
         pad_walk();
+        pad_act();
         // Fixed ticks of kTickMs; after a stall, a few to catch up, then the
         // clock skips ahead (game.exe catches up one frame at most).
         if (world_ms == 0 || frame_ms - world_ms > 1000) world_ms = frame_ms - std::min<std::uint32_t>(frame_ms - last_ms, kTickMs);

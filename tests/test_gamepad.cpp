@@ -119,5 +119,16 @@ int main() {
         const WorldStep none = world_step(0, 0, 160, 80, 6.f);
         assert(none.x == 0 && none.y == 0);
     }
+    // Soft targeting: the nearest in the facing cone and in reach; the held target sticks.
+    {
+        const std::vector<Candidate> things{ { 1, 1.f, 0.f }, { 2, -1.f, 0.f }, { 3, 6.f, 0.f }, { 4, 0.f, 2.f } };
+        assert(pick_target(0, 0, 1, 0, things, -1) == 0);       // facing +x: the one ahead, not behind (2) or far (3)
+        assert(pick_target(0, 0, -1, 0, things, -1) == 1);
+        assert(pick_target(0, 0, 0, 0, things, -1) == 0);       // no facing: nearest of any
+        assert(pick_target(0, 0, 0, -1, things, -1) == -1);     // nothing that way
+        assert(pick_target(0, 0, 1, 0, things, 4) == 3);        // sticky 4 (2 tiles off the cone) stays in sticky reach
+        assert(pick_target(0, 0, 1, 0, things, 3) == 0);        // sticky 3 is out of sticky reach: back to the nearest
+        assert(pick_target(0, 0, 1, 0, {}, -1) == -1);
+    }
     return 0;
 }

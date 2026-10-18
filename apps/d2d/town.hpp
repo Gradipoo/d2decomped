@@ -201,9 +201,15 @@ struct Town {
     float cam_x = 0, cam_y = 0;            // where the camera is this frame
     // A gamepad's left stick, set each frame by main: walk towards this screen
     // direction (unit length); `run` at full tilt.
-    struct PadMove { float x = 0, y = 0; bool active = false, run = false; } pad_move;
+    // `attack`/`attack_down`/`alt` are the pad's buttons in the field (no cursor): they hit what is in reach.
+    struct PadMove { float x = 0, y = 0; bool active = false, run = false, attack = false, attack_down = false, alt = false; } pad_move;
     bool pad_walking = false, pad_ran = false;   // last frame's stick walk, to send a fresh walk and a Run change once
+    float pad_face_x = 0.707f, pad_face_y = 0.707f;   // the facing the pad last pointed (world, south at first)
+    int pad_target = -1;                          // the monster the held button stays on
     void pad_walk();
+    void pad_act();
+    // True when no panel, menu or dialog is up: the pad plays without a cursor.
+    [[nodiscard]] bool pad_field() const;
     std::unordered_map<int, Automap> other_automaps;   // other Layers' maps, while elsewhere
     std::uint32_t level_ms = 0;            // when the player entered `level`
     bool have_world = false;

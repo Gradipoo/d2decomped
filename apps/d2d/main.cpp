@@ -538,6 +538,7 @@ int run_windowed(std::vector<std::uint8_t>& framebuffer,
     pad::Mapper pad_mapper;
     gamepads.open_connected();
     std::uint32_t pad_last_ms = std::uint32_t(SDL_GetTicks());
+    bool pad_in_use = false, pad_was_field = false, pad_cursor_hidden = false;   // the pad was the last to act; its field mode
     TitleUI title = scene ? title_ui(*scene) : TitleUI{};
     TitleUI other_multiplayer = scene ? other_multiplayer_ui(*scene) : TitleUI{};
     TcpIpUI tcpip;
@@ -719,6 +720,7 @@ int run_windowed(std::vector<std::uint8_t>& framebuffer,
             else if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN || event.type == SDL_EVENT_MOUSE_BUTTON_UP) event.button.x -= view_off;
             else if (event.type == SDL_EVENT_MOUSE_WHEEL) event.wheel.mouse_x -= view_off;
             gamepads.handle_event(event);
+            if (event.type == SDL_EVENT_MOUSE_MOTION || event.type == SDL_EVENT_MOUSE_BUTTON_DOWN) pad_in_use = false;
             handle_sdl_events(event, mouse, screen, text_this_frame,
                               backspace_this_frame, keys_this_frame, quit);
         }
@@ -731,12 +733,22 @@ int run_windowed(std::vector<std::uint8_t>& framebuffer,
                                            : screen == Screen::Title  ? pad::Context::Title : pad::Context::Menu;
             const pad::Actions pad_actions = pad_mapper.step(gamepads.sample(), pad_context, pad_dt);
             const int pad_side = (win.view_w - int(kScreenWidth)) / 2;   // widescreen's world beyond the 800x600 UI
+            const bool pad_active = pad_actions.move_active || pad_actions.click_press || pad_actions.click_down || pad_actions.rclick_press
+                                    || pad_actions.cursor_dx != 0 || pad_actions.cursor_dy != 0 || !pad_actions.keys.empty();
+            if (pad_active) pad_in_use = true;
+            // In the field a pad plays without a cursor: its buttons hit what is in reach (Town::pad_act).
+            const bool pad_field = screen == Screen::InGame && pad_in_use && town.pad_field();
+            if (pad_field != pad_was_field) { mouse.x = int(kScreenWidth) / 2; mouse.y = int(kScreenHeight) / 2; }   // the cursor comes back centred
+            pad_was_field = pad_field;
+            pad_cursor_hidden = pad_field;
             if (pad_actions.recentre_cursor) { mouse.x = int(kScreenWidth) / 2; mouse.y = int(kScreenHeight) / 2; }
-            mouse.x = std::clamp(mouse.x + int(std::lround(pad_actions.cursor_dx)), -pad_side, int(kScreenWidth) + pad_side - 1);
-            mouse.y = std::clamp(mouse.y + int(std::lround(pad_actions.cursor_dy)), 0, int(kScreenHeight) - 1);
-            if (pad_actions.click_press)   { mouse.down = true;  mouse.press_this_frame = true; }
-            if (pad_actions.click_release) { mouse.down = false; mouse.release_this_frame = true; }
-            if (pad_actions.rclick_press)  mouse.rpress_this_frame = true;
+            if (!pad_field) {
+                mouse.x = std::clamp(mouse.x + int(std::lround(pad_actions.cursor_dx)), -pad_side, int(kScreenWidth) + pad_side - 1);
+                mouse.y = std::clamp(mouse.y + int(std::lround(pad_actions.cursor_dy)), 0, int(kScreenHeight) - 1);
+            }
+            if (pad_actions.click_press && !pad_field)   { mouse.down = true;  mouse.press_this_frame = true; }
+            if (pad_actions.click_release && mouse.down) { mouse.down = false; mouse.release_this_frame = true; }
+            if (pad_actions.rclick_press && !pad_field)  mouse.rpress_this_frame = true;
             for (const pad::Key pad_key : pad_actions.keys) {
                 SDL_Event key_event{};
                 key_event.type = SDL_EVENT_KEY_DOWN;
@@ -745,7 +757,9 @@ int run_windowed(std::vector<std::uint8_t>& framebuffer,
                 handle_sdl_events(key_event, mouse, screen, text_this_frame, backspace_this_frame, keys_this_frame, quit);
             }
             town.pad_move = screen == Screen::InGame
-                ? Town::PadMove{ pad_actions.move_x, pad_actions.move_y, pad_actions.move_active, pad_actions.run } : Town::PadMove{};
+                ? Town::PadMove{ pad_actions.move_x, pad_actions.move_y, pad_actions.move_active, pad_actions.run,
+                                pad_field && pad_actions.click_press, pad_field && pad_actions.click_down, pad_field && pad_actions.rclick_press }
+                : Town::PadMove{};
         }
         current_phase.store(std::uint32_t(MainPhase::Devctl),
                             std::memory_order_relaxed);
@@ -1151,7 +1165,7 @@ int run_windowed(std::vector<std::uint8_t>& framebuffer,
                 const auto& frame = scene->cursor_buysell.frame(0, 0);
                 blit_sprite(framebuffer, frame, pal, mouse.x + cursor_dx + frame.offset_x,
                             mouse.y + 0x21 + frame.offset_y - int(frame.height) + 1);
-            } else if (screen != Screen::Video && scene->cursor.frames_per_direction() >= 8) {   // hidden over cinematics
+            } else if (screen != Screen::Video && !(screen == Screen::InGame && pad_cursor_hidden) && scene->cursor.frames_per_direction() >= 8) {   // hidden over cinematics
                 const auto& pal = screen == Screen::InGame
                                       ? (scene->act_pal.entries().empty() ? scene->pal : scene->act_pal)
                                   : screen == Screen::CharCreate ? scene->charselect_pal : scene->pal;

@@ -59,10 +59,14 @@ jobs:
           path: cov-int/build-log.txt
           retention-days: 14
 
+      # A manual run on a branch only builds and keeps the log above: no upload,
+      # so it spends none of Coverity Scan's weekly builds and leaves main's results.
       - name: Package results
+        if: github.ref == 'refs/heads/main'
         run: tar czf d2decomped.tgz cov-int
 
       - name: Upload to Coverity Scan
+        if: github.ref == 'refs/heads/main'
         run: |
           curl -sS --fail \
             --form token="$COVERITY_TOKEN" \

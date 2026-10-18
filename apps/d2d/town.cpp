@@ -482,7 +482,17 @@ auto Town::send(const Command& command) -> void {
                     d2d::log::info("net: no host object within 4 of {} at ({:.0f}, {:.0f}); nearest is {} (row {}) at ({:.0f}, {:.0f})", npc.name, subtile_x(npc.x), subtile_y(npc.y), closest->id, closest->cls, closest->x, closest->y);
                 else d2d::log::info("net: no host object near {} at ({:.0f}, {:.0f})", npc.name, subtile_x(npc.x), subtile_y(npc.y));
             } else if (const auto* host_npc = net_npc(interact->npc)) {
-                net_game->interact(1, host_npc->id);          // the host walks us up too (talk at 6)
+                // A talk as a trade's (kind -1): the host takes 0x13 only
+                // within 6 and standing, then 0x2f on its NPC info heals
+                // (live, 2026-10-18: an 0x13 while walking was dropped).
+                net_trade_pending = int(host_npc->id);
+                net_trade_kind = -1; net_trade_extra = 0;
+                net_trade_ms = frame_now;
+                net_trade_asked = false;
+            } else {                                         // the host hasn't sent it (0x0a'd, out of its sight): walk there, 0x13 once it shows
+                net_game->move_to(subtile_x(npc.x), subtile_y(npc.y), view.running);
+                net_interact_pending = interact->npc;
+                net_game->log.note("no host unit for " + npc.name + " yet: walking there");
             }
         } else if (interact && interact->npc <= -3000 && std::size_t(-3000 - interact->npc) < world.corpses.size()) {
             // Our corpse: the host's corpse unit (0x8e) nearest d2d's, its
@@ -660,12 +670,30 @@ auto Town::net_overlay() -> void {
                 view.others.push_back(std::move(other));
                 continue;
             }
-            if (unit.id == net_game->merc_id && unit.id != 0) continue;   // ours: the World's merc stands in
+            if (unit.id == net_game->merc_id && unit.id != 0) {   // ours: the World's merc, drawn where the host has it
+                if (view.merc) {
+                    if (unit.moving) view.merc->unit.dir = direction16(unit.goal_x - unit.x, unit.goal_y - unit.y);
+                    view.merc->unit.x = cell_x(unit.x);
+                    view.merc->unit.y = cell_y(unit.y);
+                    view.merc->unit.walking = unit.moving;
+                    view.merc->mode = unit.life == 0 ? "DD" : unit.moving ? "WL" : "NU";   // ponytail: no attack modes from the host's merc yet
+                }
+                continue;
+            }
             if (unit.type != 1 || unit.cls < 0 || std::size_t(unit.cls) >= scene->monsters.types.size()) continue;   // objects and warps: d2d's own
             if (std::size_t(unit.cls) < scene->mon_is_npc.size() && scene->mon_is_npc[std::size_t(unit.cls)]) continue;
             auto found = net_monsters.find(unit.id);
-            if (found == net_monsters.end())
+            if (found == net_monsters.end()) {
                 found = net_monsters.emplace(unit.id, make_monster(*scene, unit.cls, cell_x(unit.x), cell_y(unit.y), rng, net_game->difficulty)).first;
+                // The host's boss as its 0xac says: name, colour, mods. An act
+                // boss (Andariel, Blood Raven) comes as unique with name seed 0:
+                // its MonStats name stays.
+                // ponytail: a rolled unique with seed 0 keeps its plain name too (1 in 65536).
+                using d2d::rules::Boss;
+                const Boss kind = unit.boss_flags & 4 ? Boss::superunique : unit.boss_flags & 2 ? Boss::unique : unit.boss_flags & 1 ? Boss::champion : unit.boss_flags & 8 ? Boss::minion : Boss::none;
+                if (kind != Boss::none && (kind != Boss::unique || unit.name_seed != 0))
+                    make_boss(*scene, found->second, kind, unit.mods, unit.super, unit.name_seed, net_game->difficulty, rng);
+            }
             auto& monster = found->second;
             monster.id = int(unit.id);
             if (unit.moving) monster.unit.dir = direction16(unit.goal_x - unit.x, unit.goal_y - unit.y);
@@ -1529,10 +1557,10 @@ auto Town::walk(const Mouse& mouse, bool over_ui, std::uint32_t frame_ms, std::u
                     // Talking: start the chat, then the trade (1), gamble (2: unverified) or travel (0).
                     namespace c2s = d2d::net::d2gs::c2s;
                     const auto host_npc = std::uint32_t(net_trade_pending);
-                    if (net_trade_kind != 0) net_game->trade_npc = host_npc;
-                    if (net_chat_npc != host_npc) net_game->send_items({ c2s::npc_chat(true, 1, host_npc) });   // the talk's open already
+                    if (net_trade_kind > 0) net_game->trade_npc = host_npc;
+                    if (net_chat_npc != host_npc || net_trade_kind < 0) net_game->send_items({ c2s::npc_chat(true, 1, host_npc) });   // a talk: again, its first came before the 0x13 landed
                     net_chat_npc = host_npc;
-                    net_game->send_items({ c2s::npc_action(std::uint32_t(net_trade_kind), host_npc, std::uint32_t(net_trade_extra)) });
+                    if (net_trade_kind >= 0) net_game->send_items({ c2s::npc_action(std::uint32_t(net_trade_kind), host_npc, std::uint32_t(net_trade_extra)) });
                     net_trade_pending = -1;
                     net_trade_asked = false;
                 }
@@ -1654,6 +1682,13 @@ auto Town::walk(const Mouse& mouse, bool over_ui, std::uint32_t frame_ms, std::u
         // frame, so a talk opened before the host's NPC is known opens once it is.
         if (net_game) {
             namespace c2s = d2d::net::d2gs::c2s;
+            if (const auto* waited = net_interact_pending >= 0 ? net_npc(net_interact_pending) : nullptr) {
+                net_trade_pending = int(waited->id);
+                net_trade_kind = -1; net_trade_extra = 0;
+                net_trade_ms = frame_now;
+                net_trade_asked = false;
+                net_interact_pending = -1;
+            }
             const int talk = talking_sent;
             const auto* host_npc = talk >= 0 && level && std::size_t(talk) < level->npcs.size() && level->npcs[std::size_t(talk)].root != "objects" ? net_npc(talk) : nullptr;
             if (net_chat_npc && (!host_npc || host_npc->id != net_chat_npc)) { net_game->send_items({ c2s::npc_chat(false, 1, net_chat_npc) }); net_chat_npc = 0; }
@@ -1685,6 +1720,7 @@ auto Town::walk(const Mouse& mouse, bool over_ui, std::uint32_t frame_ms, std::u
 
 auto Town::handle(const Event& event, std::uint32_t frame_ms) -> void {
         if (const auto* level_changed = std::get_if<ev::LevelChanged>(&event)) {
+            net_interact_pending = -1;                    // its index was the old level's
             if (level_changed->from->layer != level->layer) {
                 // A layer change saves the old layer's map and loads the
                 // new one's (FUN_00458d40).

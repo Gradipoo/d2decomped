@@ -160,6 +160,12 @@ The tail, in order:
 5. **Stats**, 1 bit; if set a stat list as in 0xa8, only stats whose
    ItemStatCost flags (+4) match `DAT_006ce268`.
 
+The bits are LSB-first. d2d reads the boss (`s2c::monster_boss`, checked
+on Lord De Seis's: row 37, mods 5 / 30 / 22) and names the host's monster
+with `make_boss`; an act boss (Andariel, Blood Raven) comes as unique
+with name seed 0 and keeps its own name. A rolled unique has both
+champion and unique set.
+
 The client makes the monster (`FUN_00466360`), then sets stat 7 = 0x8000
 and stat 6 = life << 8 (not for its own merc). **The exact hit points
 never cross**: every monster's life is a byte, 0..128 of its maximum.
@@ -267,7 +273,8 @@ can't see the target (the target's x, y).
 Builders `0x53d530` / `0x53d4d0` (from `FUN_00548090` for players,
 `FUN_00597d70` for monsters). With the builder's last argument set
 (caller `0x571cd0`) the ids become 0x99 / 0x9a with the same layout,
-handled by `FUN_004ca200` / `FUN_004ca230` **(?)** what they mean.
+handled by `FUN_004ca200` / `FUN_004ca230` (0x99 below: the effect
+without a mode).
 
 **0x73 missile** (32; `0x45e6d0` → `FUN_004cd540`): fills a missile
 create struct (flags 0x40000001, or 0x40000021 when +0xf and +0x13 are
@@ -678,12 +685,36 @@ The ids apps/d2proxy flagged in a real game.exe client's session (table
 - **0x7e load act COFs** (5; `0x45e970`): reloads `DATA\GLOBAL\cmncof_a<act>`
   for the own player's act (`FUN_006427f0`); the payload isn't read.
 
+- **0x11 overlay on a unit** (8; `0x45d0f0` → `FUN_00464e50`): +1 u8
+  unit type, +2 u32 id, +6 u16 Overlay.txt row (under the count at data
+  +0xbc0): played once on the unit (`FUN_00470390` kind 2). Rows 0x97
+  `steallife` and 0x98 `stealmana` also play sound 0x18c / 0x18d
+  (`FUN_004b9a00`). The 2026-10-18 logs: 1202, all on our merc's leech.
+  d2d: not drawn (ponytail: a one-shot overlay on a host unit).
+- **0x74 assign corpse** (10; `0x45e7b0` → `FUN_00462f60`): +1 u8 flag,
+  +2 u32 player id, +6 u32 corpse id. With the flag 0 (every one of the
+  49 logged) the client does nothing; set, it moves the corpse's items
+  (`FUN_00462ee0`, type 3 entries) to the player and revives it as 0x8e
+  does. d2d: corpses by 0x8e.
+- **0x90 party member at** (13; `0x45e9c0` → `FUN_0047a100`): +1 u32
+  player id, +5 u32 x, +9 u32 y (act subtiles): kept in the roster
+  entry (`FUN_004792e0`, +0x28 / +0x2c) for the automap's party marks.
+  About one a second per member. d2d: not kept (its automap marks the
+  players it has units for).
+- **0x99 skill effect on a unit** (16; `0x45de80` → `FUN_004ca200` →
+  `FUN_004ca060`): 0x4c's layout (+1 type, +2 id, +6 u16 skill, +8 u8
+  level, +9 target type, +0xa id, +0xe u16): the caster faces the
+  target, the skill's sound (Skills +0x122) and overlay (+0x124) play,
+  no mode change. d2d: not drawn. **(?)** All 351 logged are our Act 2
+  merc's with skill 84 (Bone Spear) at level 16: the u16 may not be a
+  plain skill row here.
+
 ### Not traced
 
-0x11 (report kill: +1 type, +2 id, +6 u16 → `FUN_00464e50`), 0x12..0x14
+0x12..0x14
 and 0x66 (no-op handlers), 0x45 and 0x54 (no-ops), 0x47 / 0x48
-relators, 0x53 darkness, 0x5d / 0x5e / 0x5f, 0x61, 0x74, 0x78, 0x79,
-0x7a, 0x7c / 0x7d, 0x7e (loads `cmncof_aN.d2`), 0x90..0x93, 0x98, 0x9b,
+relators, 0x53 darkness, 0x5d / 0x5e / 0x5f, 0x61, 0x78, 0x79,
+0x7a, 0x7c / 0x7d, 0x7e (loads `cmncof_aN.d2`), 0x91..0x93, 0x98, 0x9b,
 0xa3..0xa6: handlers are known (the table), fields not.
 
 ## Client → server: layouts and d2d's commands

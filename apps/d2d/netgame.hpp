@@ -47,6 +47,10 @@ struct NetGame {
         float skill_x = 0, skill_y = 0;   // where it went
         int velocity_pct = 100;       // a monster's stat 0x43 velocitypercent, from its moves (0x67 / 0x68)
         std::vector<int> states;      // the States.txt rows the host has on it (0xa8 / 0xaa set, 0xa9 end)
+        int boss_flags = 0;           // a monster's 0xac boss bits: 1 champion, 2 unique, 4 superunique, 8 minion, 0x10 ghostly
+        int super = -1;               // its SuperUniques row, -1 none
+        std::vector<int> mods;        // its MonUMod mods
+        int name_seed = 0;            // a unique's name roll
     };
 
     // An item on the ground (0x9c actions 0 / 2 / 3): act subtiles.
@@ -115,6 +119,7 @@ struct NetGame {
     std::uint32_t waypoint_menu = 0;  // the waypoint whose menu the host opened for us (0x63); 0x49 only then
     std::uint32_t walked_ms = 0;      // the host's last word of our walk (0x96), steady ms: still walking
     std::unordered_map<std::uint64_t, Unit> units;
+    std::vector<std::array<std::uint8_t, 16>> monster_parts;   // MonStats2 HDv..S8v entry counts by MonStats row (0xac's component widths)
     std::vector<int> monster_velocity;   // MonStats Velocity by row: a monster's walk (empty: a player's walk)
     std::unordered_map<std::uint32_t, GroundItem> ground;   // by the host's item id
     // The States.txt rows the host has on our player (0xa8 set, 0xa9 end):

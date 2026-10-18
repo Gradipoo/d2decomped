@@ -163,10 +163,11 @@ struct Town {
     int net_waypoint_level = -1, net_waypoint_tries = 0;                              // ... the level asked for once its menu's open (0x63), -1 none
     std::uint32_t net_drift_ms = 0;                          // since when d2d's player has been far from the host's (0: not)
     std::uint32_t net_follow_ms = 0;                         // when the host was last told where our walk is
+    int net_interact_pending = -1;                           // a level NPC whose host unit we wait for before its 0x13
     int net_trade_pending = -1;                              // the host NPC being walked to for a trade
     // Its C->S 0x38: kind 1 trade, 2 gamble, 0 travel (the extra: the handler's
     // level, 0x28 Warriv's east and Meshif's west, 0x4b Meshif's east, 1 Warriv's west).
-    int net_trade_kind = 1, net_trade_extra = 0;
+    int net_trade_kind = 1, net_trade_extra = 0;             // 0 travel, 1 trade, 2 gamble, -1 a talk alone (0x2f, no 0x38)
     bool net_trade_asked = false;                            // its 0x59 + 0x13 went out, NPC info awaited
     int net_operate_type = 2;                                // the host unit being walked to (0x13 once there): 2 object, 0 our corpse
     std::uint32_t net_operate = 0, net_operate_ms = 0;       // ... its id, when

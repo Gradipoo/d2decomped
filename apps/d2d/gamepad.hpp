@@ -23,9 +23,10 @@ public:
     [[nodiscard]] pad::Sample sample() const;
     [[nodiscard]] bool connected() const { return pad_ != nullptr; }
 
+    void close();
+
 private:
     void open(SDL_JoystickID id);
-    void close();
     SDL_Gamepad* pad_ = nullptr;
     SDL_JoystickID id_ = 0;
 };

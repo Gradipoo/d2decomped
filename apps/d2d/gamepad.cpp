@@ -1,8 +1,12 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Definitions for gamepad.hpp.
 #include "gamepad.hpp"
+#include "gamepad_map.hpp"
 
 #include <log.hpp>
+
+#include <algorithm>
+#include <cstddef>
 
 namespace d2d::client {
 

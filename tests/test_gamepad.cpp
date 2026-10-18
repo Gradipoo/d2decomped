@@ -3,8 +3,11 @@
 // walk/run switch, click edges, per-screen keys, and a pad that goes away.
 #include "gamepad_map.hpp"
 
+#include <algorithm>
 #include <cassert>
 #include <cmath>
+#include <cstddef>
+#include <vector>
 
 using namespace d2d::client::pad;
 
@@ -111,8 +114,8 @@ int main() {
     }
     // Screen directions as world ones (isometric, 160x80 tiles): up the screen is (-x, -y), right is (+x, -y).
     {
-        const WorldStep up = world_step(0, -1, 160, 80, 6.f);
-        assert(up.x < -4.2f && up.y < -4.2f && std::abs(up.x - up.y) < 1e-4f);
+        const WorldStep north = world_step(0, -1, 160, 80, 6.f);
+        assert(north.x < -4.2f && north.y < -4.2f && std::abs(north.x - north.y) < 1e-4f);
         const WorldStep right = world_step(1, 0, 160, 80, 6.f);
         assert(right.x > 4.2f && right.y < -4.2f);
         assert(std::abs(std::hypot(right.x, right.y) - 6.f) < 1e-4f);

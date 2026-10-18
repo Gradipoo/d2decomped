@@ -1389,11 +1389,11 @@ auto Town::pad_act() -> void {
         }
         const bool want = pad_move.attack || pad_move.attack_down || pad_move.alt;
         if (!want || view.dead || !pad_field()) { if (!want) pad_target = -1; return; }
-        const float px = world.player.x, py = world.player.y;
+        const float hero_x = world.player.x, hero_y = world.player.y;
         std::vector<pad::Candidate> monsters;
         for (const auto& monster : view.monsters)
             if (monster.alive()) monsters.push_back({ monster.id, monster.unit.x, monster.unit.y });
-        const int hit = pad::pick_target(px, py, pad_face_x, pad_face_y, monsters, pad_target);
+        const int hit = pad::pick_target(hero_x, hero_y, pad_face_x, pad_face_y, monsters, pad_target);
         const bool left = !pad_move.alt;
         const int skill = left ? skillbar.left : skillbar.right;
         if (hit >= 0) {
@@ -1406,7 +1406,7 @@ auto Town::pad_act() -> void {
         if (left && pad_move.attack) {
             std::vector<pad::Candidate> loot;
             for (const auto& item : view.ground) loot.push_back({ item.id, item.x, item.y });
-            if (const int pick = pad::pick_target(px, py, pad_face_x, pad_face_y, loot, -1, pad::Aim{ 3.5f, 3.5f, -0.2f }); pick >= 0) {
+            if (const int pick = pad::pick_target(hero_x, hero_y, pad_face_x, pad_face_y, loot, -1, pad::Aim{ 3.5f, 3.5f, -0.2f }); pick >= 0) {
                 send(cmd::Pickup{ loot[std::size_t(pick)].id });
                 return;
             }
@@ -1419,19 +1419,19 @@ auto Town::pad_act() -> void {
                     if (state && !state->mode.empty() && npc.root == "objects" && !(npc.selectable >> game::mode_index(state->mode) & 1)) continue;
                     things.push_back({ int(i), state ? state->x : npc.x, state ? state->y : npc.y });
                 }
-            if (const int pick = pad::pick_target(px, py, pad_face_x, pad_face_y, things, -1, pad::Aim{ 4.5f, 4.5f, -0.2f }); pick >= 0) {
+            if (const int pick = pad::pick_target(hero_x, hero_y, pad_face_x, pad_face_y, things, -1, pad::Aim{ 4.5f, 4.5f, -0.2f }); pick >= 0) {
                 send(cmd::Interact{ things[std::size_t(pick)].id });
                 return;
             }
         }
-        // Nothing in reach: swing or cast ahead only with a monster about, so in camp A never just walks.
-        const bool foe_near = std::ranges::any_of(monsters, [&](const pad::Candidate& m) { return std::hypot(m.x - px, m.y - py) < 10.f; });
-        if ((pad_move.attack || pad_move.alt) && foe_near)
-            send(cmd::UseSkill{ skill, px + pad_face_x * 3.f, py + pad_face_y * 3.f, -1, left });
+        // Nothing in reach: the left skill swings only with a monster about (in camp A never just walks); the right one always casts (buffs, teleport).
+        const bool foe_near = std::ranges::any_of(monsters, [&](const pad::Candidate& foe) { return std::hypot(foe.x - hero_x, foe.y - hero_y) < 10.f; });
+        if (pad_move.alt || (pad_move.attack && foe_near))
+            send(cmd::UseSkill{ skill, hero_x + pad_face_x * 3.f, hero_y + pad_face_y * 3.f, -1, left });
     }
 
 auto Town::pad_walk() -> void {
-        const bool walk = pad_move.active && !view.dead && !game_menu.open && !chat_typing && !trade_gold_typing;
+        const bool walk = pad_field() && pad_move.active && !view.dead && !game_menu.open && !chat_typing && !trade_gold_typing;
         if (walk) {
             const auto step = pad::world_step(pad_move.x, pad_move.y, kIsoW, kIsoH, 6.f);
             // Running follows the tilt: a Run toggle only when it changes (R still flips it by hand).

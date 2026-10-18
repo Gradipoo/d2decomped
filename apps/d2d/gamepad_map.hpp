@@ -92,23 +92,23 @@ class Mapper {
 public:
     explicit Mapper(Config config = {}) : config_(config) {}
 
-    // `dt` seconds since the last frame. A pad that went away is a default
+    // `seconds` since the last frame. A pad that went away is a default
     // Sample: every button lets go, so nothing stays held.
-    Actions step(const Sample& in, Context context, float dt) {
+    Actions step(const Sample& sample, Context context, float seconds) {
         Actions out;
-        left_trigger_ = hysteresis(in.left_trigger, left_trigger_);
-        right_trigger_ = hysteresis(in.right_trigger, right_trigger_);
-        auto held = in.held;
+        left_trigger_ = hysteresis(sample.left_trigger, left_trigger_);
+        right_trigger_ = hysteresis(sample.right_trigger, right_trigger_);
+        auto held = sample.held;
         const auto pressed = [&](Button which) { return held[std::size_t(which)] && !prev_[std::size_t(which)]; };
         const bool game = context == Context::Game;
 
         // The left button: south or the right trigger, anywhere.
-        out.click_down = in[Button::South] || right_trigger_;
+        out.click_down = sample[Button::South] || right_trigger_;
         out.click_press = out.click_down && !click_prev_;
         out.click_release = !out.click_down && click_prev_;
         click_prev_ = out.click_down;
         if (game) {
-            const bool secondary = in[Button::East] || left_trigger_;
+            const bool secondary = sample[Button::East] || left_trigger_;
             out.rclick_press = secondary && !secondary_prev_;
             secondary_prev_ = secondary;
         } else {
@@ -116,17 +116,17 @@ public:
         }
 
         // Right stick: the cursor. In the menus the left one moves it too.
-        float cursor_x = in.rx, cursor_y = in.ry;
-        if (!game) { cursor_x += in.lx; cursor_y += in.ly; }
+        float cursor_x = sample.rx, cursor_y = sample.ry;
+        if (!game) { cursor_x += sample.lx; cursor_y += sample.ly; }
         const auto [tilt_x, tilt_y, tilt] = dead(cursor_x, cursor_y);
         const float speed = config_.cursor_speed * tilt * tilt;   // gentle near the centre, quick at the edge
-        out.cursor_dx = tilt_x * speed * dt;
-        out.cursor_dy = tilt_y * speed * dt;
+        out.cursor_dx = tilt_x * speed * seconds;
+        out.cursor_dy = tilt_y * speed * seconds;
         out.recentre_cursor = pressed(Button::RightStick);
 
         // Left stick: walking, in the game.
         if (game) {
-            const auto [dir_x, dir_y, tilt_move] = dead(in.lx, in.ly);
+            const auto [dir_x, dir_y, tilt_move] = dead(sample.lx, sample.ly);
             out.move_active = tilt_move > 0;
             out.move_x = dir_x; out.move_y = dir_y;
             if (out.move_active) running_ = running_ ? tilt_move >= config_.walk_below : tilt_move >= config_.run_above;

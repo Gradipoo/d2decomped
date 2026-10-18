@@ -11,8 +11,8 @@ the command to run first.
 | [apps/launcher](../apps/launcher/README.md) | Finds or installs the game data, then starts d2d | `open build/apps/launcher/d2d-launcher.app` (macOS) |
 | [apps/whisper](../apps/whisper/README.md) | A remote control inside the real game.exe | `./whisper.py 192.168.50.68 TOKEN state` |
 | [apps/d2proxy](../apps/d2proxy/README.md) | Sits between a client and a game.exe host and logs every packet | `build/apps/d2proxy/d2proxy --host 192.168.50.68` |
-| [apps/flatpak](../apps/flatpak/README.md) | Linux / Steam Deck packaging files | built by CI, nothing to run |
 | [assets/icon](../assets/icon/README.md) | The icon and the launcher's banner | nothing to run |
+| [assets/flatpak](../assets/flatpak/README.md) | Linux / Steam Deck packaging: desktop entry and app info | built by CI, nothing to run |
 
 ## Tools (for comparing d2d against game.exe)
 

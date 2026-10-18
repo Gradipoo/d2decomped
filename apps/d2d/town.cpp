@@ -1439,10 +1439,10 @@ auto Town::pad_act() -> void {
         pad_target = -1;
         if (pad_move.attack_down && !pad_move.attack && !pad_move.alt) return;   // held with nothing left to hit
         if (left && pad_move.attack) {
-            std::vector<pad::Candidate> loot;
-            for (const auto& item : view.ground) loot.push_back({ item.id, item.x, item.y });
-            if (const int pick = pad::pick_target(hero_x, hero_y, pad_face_x, pad_face_y, loot, -1, pad::Aim{ 3.5f, 3.5f, -0.2f }); pick >= 0) {
-                send(cmd::Pickup{ loot[std::size_t(pick)].id });
+            std::vector<pad::Candidate> drops;
+            for (const auto& item : view.ground) drops.push_back({ item.id, item.x, item.y });
+            if (const int pick = pad::pick_target(hero_x, hero_y, pad_face_x, pad_face_y, drops, -1, pad::Aim{ 3.5f, 3.5f, -0.2f }); pick >= 0) {
+                send(cmd::Pickup{ drops[std::size_t(pick)].id });
                 return;
             }
             std::vector<pad::Candidate> things;      // NPCs and objects you can use

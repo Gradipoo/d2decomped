@@ -168,6 +168,7 @@ auto NetGame::pump(std::uint32_t now_ms, std::uint32_t elapsed_ms) -> void {
             d2d::log::warn("net: {}", received.error());
             socket_gone = true;
         } else if (!received->empty()) {
+            heard_ms = now_ms;
             auto step = session.receive(*received, now_ms);
             for (const auto& packet : step.packets) {
                 log.from_host(packet);
@@ -176,6 +177,13 @@ auto NetGame::pump(std::uint32_t now_ms, std::uint32_t elapsed_ms) -> void {
             }
             send(step.to_send);
             if (session.state() == d2d::net::JoinState::Desync) d2d::log::warn("net: the stream broke: {}", session.desync_reason());
+        }
+        // The host answers our 0x6d every 5 s: silence that long means it's
+        // gone without a word (live 2026-10-18: TCP took 18 min to say so).
+        if (session.state() == d2d::net::JoinState::InGame && heard_ms != 0 && now_ms - heard_ms > kSilentMs) {
+            log.note("the host's said nothing for " + std::to_string(kSilentMs / 1000) + " s");
+            d2d::log::warn("net: the host's said nothing for {} s; gone", kSilentMs / 1000);
+            socket_gone = true;
         }
         send(session.tick(now_ms));
         // Stopped: no walk sent for as long as the host's player needs to
@@ -224,7 +232,9 @@ auto NetGame::handle(const d2d::net::Bytes& packet) -> void {
             auto& unit = unit_at(0, read_u32(packet, 1));
             unit.cls = packet[5];
             unit.name = std::string(read_name(packet, 6, 16));
-            if (unit.name == session.name()) self_id = unit.id;
+            // Ours comes at 0, 0; our corpse from an earlier game comes as a
+            // player of our name too, at its spot (live 2026-10-17, then 0x74).
+            if (unit.name == session.name() && read_u16(packet, 0x16) == 0 && read_u16(packet, 0x18) == 0) self_id = unit.id;
             place(unit, read_u16(packet, 0x16), read_u16(packet, 0x18));
         }
         break;
@@ -567,6 +577,9 @@ auto NetGame::handle(const d2d::net::Bytes& packet) -> void {
         break;
     case 0xab:   // heal: type, id, life
         if (size >= 7) unit_at(packet[1], read_u32(packet, 2)).life = packet[6];
+        break;
+    case 0x63:   // the waypoint menu's open (FUN_0045e670): +1 its object, then our waypoints
+        if (size >= 5) waypoint_menu = read_u32(packet, 1);
         break;
     case 0x0a:   // remove: type, id (4: an item)
         if (size >= 6) {

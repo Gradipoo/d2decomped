@@ -141,6 +141,16 @@ void register_game_verbs(d2d::devctl::Channel& channel, Window& win, Screen& scr
         }
         return std::string("ok\n");
     });
+    channel.on("text", [&](const std::vector<std::string>& args) {
+        if (args.size() < 2) return std::string("err text <words>\n");
+        static std::string typed;   // SDL keeps the pointer until the event is read
+        typed.clear();
+        for (std::size_t index = 1; index < args.size(); ++index) typed += (index > 1 ? " " : "") + args[index];
+        SDL_Event event{};
+        event.text = { .type = SDL_EVENT_TEXT_INPUT, .windowID = SDL_GetWindowID(win.window), .text = typed.c_str() };
+        SDL_PushEvent(&event);
+        return std::string("ok\n");
+    });
     channel.on("move", [&](const std::vector<std::string>& args) {
         if (args.size() < 3) return std::string("err move <x> <y>\n");
         float x = 0, y = 0;
@@ -227,10 +237,20 @@ void register_game_verbs(d2d::devctl::Channel& channel, Window& win, Screen& scr
             town.world.take_warp = int(npc_index);
             return std::string("ok\n");
         }
+        if (args.size() >= 2 && args[1] == "tomb") {          // the true Tal Rasha's Tomb (the act seed's roll, FUN_0061aeb0)
+            auto act = d2d::drlg::act_seed(town.world.game_data->map_seed);
+            return std::format("ok {}\n", d2d::drlg::roll_act2_tombs(act).boss);
+        }
+        if (args.size() >= 3 && args[1] == "netsend" && town.net_game) {   // a raw C->S packet to the host, hex bytes (live checks)
+            d2d::net::Bytes packet;
+            for (std::size_t i = 2; i < args.size(); ++i) packet.push_back(std::uint8_t(std::strtoul(args[i].c_str(), nullptr, 16)));
+            town.net_game->send_items({ packet });
+            return std::string("ok\n");
+        }
         if (args.size() >= 2 && args[1] == "net" && town.net_game && town.level) {   // a joined game: where the host has us, where d2d has us (act subtiles), and how far apart
             const float local_x = (town.world.player.x + float(town.level->world_x)) * 5.f, local_y = (town.world.player.y + float(town.level->world_y)) * 5.f;
-            std::string out = std::format("host {:.0f} {:.0f} local {:.0f} {:.0f} apart {:.1f} units {} trade {}\n", town.net_game->host_x, town.net_game->host_y, local_x, local_y,
-                                          std::hypot(town.net_game->host_x - local_x, town.net_game->host_y - local_y), town.net_game->units.size(), town.net_game->trade.state);
+            std::string out = std::format("host {:.0f} {:.0f} local {:.0f} {:.0f} apart {:.1f} units {} trade {} self {}\n", town.net_game->host_x, town.net_game->host_y, local_x, local_y,
+                                          std::hypot(town.net_game->host_x - local_x, town.net_game->host_y - local_y), town.net_game->units.size(), town.net_game->trade.state, town.net_game->self_id);
             for (const auto& other : town.view.others)   // the other players: id, name, cell
                 out += std::format("player\t{}\t{}\t{:.1f}\t{:.1f}\n", other.id, other.name, other.unit.x, other.unit.y);
             return out + "ok\n";

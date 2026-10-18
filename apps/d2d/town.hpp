@@ -159,6 +159,9 @@ struct Town {
     std::uint32_t net_cursor = 0;                            // the host's id for the item in our hand
     bool net_items_checked = false;                          // the once-a-game item match logged
     std::size_t net_store_shown = 0;                         // the host stock count the store last showed
+    std::uint32_t net_waypoint_object = 0, net_waypoint_ms = 0;   // a waypoint we operated: its id, when
+    int net_waypoint_level = -1, net_waypoint_tries = 0;                              // ... the level asked for once its menu's open (0x63), -1 none
+    std::uint32_t net_drift_ms = 0;                          // since when d2d's player has been far from the host's (0: not)
     std::uint32_t net_follow_ms = 0;                         // when the host was last told where our walk is
     int net_trade_pending = -1;                              // the host NPC being walked to for a trade
     // Its C->S 0x38: kind 1 trade, 2 gamble, 0 travel (the extra: the handler's
@@ -168,6 +171,8 @@ struct Town {
     int net_operate_type = 2;                                // the host unit being walked to (0x13 once there): 2 object, 0 our corpse
     std::uint32_t net_operate = 0, net_operate_ms = 0;       // ... its id, when
     bool net_operate_moves = false;                          // ... a warp or portal: it takes us to another area
+    float net_warp_x = 0, net_warp_y = 0;                    // ... a warp: its mouth (act subtiles), the host's player walked there first
+    int net_warp_to = -1;                                    // the level the host's warp takes us to (its 0x15 lands us there)
     auto add_chat(const std::string& text, int colour = 0, std::size_t gold = 0) -> void;
     auto draw_portraits(std::vector<std::uint8_t>& framebuffer, bool left_open) -> void;
     struct Said { std::uint16_t string = 0; std::uint32_t until = 0; };

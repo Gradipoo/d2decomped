@@ -112,6 +112,7 @@ struct NetGame {
     std::uint32_t merc_id = 0;        // our merc (0x81): d2d's World draws its own
     float self_x = 0, self_y = 0;     // where the host put us (0x15)
     float host_x = 0, host_y = 0;     // where the host has us now (0x95 / 0x96 / 0x18)
+    std::uint32_t waypoint_menu = 0;  // the waypoint whose menu the host opened for us (0x63); 0x49 only then
     std::uint32_t walked_ms = 0;      // the host's last word of our walk (0x96), steady ms: still walking
     std::unordered_map<std::uint64_t, Unit> units;
     std::vector<int> monster_velocity;   // MonStats Velocity by row: a monster's walk (empty: a player's walk)
@@ -189,6 +190,8 @@ struct NetGame {
 
 private:
     bool socket_gone = false;
+    std::uint32_t heard_ms = 0;                // when the host last sent anything
+    static constexpr std::uint32_t kSilentMs = 20000;
     const d2d::d2s::ItemTables* item_tables = nullptr;
     bool reassigned = false;
     std::vector<d2d::net::Bytes> when_still;   // held till the host's player stops (or 3 s)

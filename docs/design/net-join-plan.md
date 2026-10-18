@@ -1,7 +1,7 @@
 # Joining a game.exe host — implementation plan (step 1)
 
-Status: built through M10 (PRs #8–#12, 2026-10-06); the live checks on
-PR #12's features are still open. M4's menu path (Other Multiplayer → TCP/IP
+Status: built through M10 (PRs #8–#12, 2026-10-06); live checks run
+2026-10-17 and 2026-10-18 (Acts 1-2 played through; "Live checks" below), the rest still open. M4's menu path (Other Multiplayer → TCP/IP
 → Join) and its error popup landed 2026-10-07: re/tcpip-menu.md. Planned 2026-09-30. Goal: d2d's client joins an open
 TCP/IP game hosted by an unmodified 1.14d game.exe, and Act 1 plays
 together (multiplayer.md "Order" step 4, the netplay goal's first leg).
@@ -193,6 +193,50 @@ Focused days, one developer or agent. Each lands alone, tree green.
   save-back loads in game.exe; an hour with no Desync or disconnect.
 
 **Total: about 27.5 days** (the join itself, M1-M4: 6 days).
+
+## Live checks, 2026-10-17
+
+Against Bret's son's game.exe (192.168.50.68; it was 1.14b until patched
+to 1.14d that day), driven from one Mac: d2d headless as the joining
+player, the host's own player through apps/whisper (a control socket
+inside game.exe) and its follower.
+
+| Check | Result |
+|---|---|
+| Join, items (34 of 34 match), positions | ✓ |
+| Chat both ways | ✓ after the fix: `c2s::chat` lacked 0x15's count byte, so the host cut every later packet wrong (net-packets.md "Chat's framing"); with it right the host echoes our line back |
+| Event lines ("joined our world", "joined your party") | ✓ |
+| Party (0x5e invite / accept) | ✓ |
+| The host's player running (0x0f command 0x17) | ✓ in the packets; the run's look not checked |
+| Casts | ✓ the host runs them; a cast from too far spends mana and hits nothing |
+| **Party portraits** | ✗ d2d draws none; game.exe draws the other player's |
+| **Own mana** | ✗ d2d shows its own (641) while the host's 0x95 says 13 |
+| **Our look** | ✗ green in d2d, red / orange on the host: one side has her gear wrong |
+| **Mercenary** | ✗ d2d draws a second Act 2 guard beside us; the host's is elsewhere |
+| **Warps (Den of Evil)** | ✗ d2d's World took the warp at once while the host never did: d2d sent 0x13 only within 8 of the warp unit, which sits in the mouth's rocks. Now sent within 50 (game.exe's 0x33), but the host's own walk toward the unit stalls on the rocks too: game.exe's client walks round to the mouth (~5 south of the unit) first, d2d must do the same, and pull its World back when the host doesn't follow |
+| Corpse owner (S→C 0x74) | unhandled (the body draws) |
+| Shrines, Den exit, trade gold, quests, travel, curse overlays | not reached yet |
+
+## Live checks, 2026-10-18
+
+Act 1 and Act 2 played through with the host's player (Arne, level 3)
+driven by whisper and Miriam by d2d; Act 3 reached the Blackened Temple.
+
+| Check | Result |
+|---|---|
+| Party portraits, own mana | ✓ fixed: `self_id` came from our corpse's 0x59 (same name); now only a 0x59 at 0, 0 |
+| Warps | ✓ the host walks to the mouth (`nearest_free` + ExitWalk), takes 0x13; d2d arrives on its reassign |
+| Waypoints | ✓ joined, d2d's World doesn't travel; 0x13 + 0x49 from beside the waypoint, again every 3 s until the host's 0x63 / reassign (a 0x49 before its menu, or within 10 s of a level change, is dropped) |
+| Caravan / boat (new act) | ✓ the reassign lands outside every level d2d expects: it goes by the last 0x03's area |
+| A quest door the host makes (Duriel's lair) | ✓ the level of the act that holds the reassign's spot |
+| Town portals, teleport (54) | ✓ the host casts; d2d hops where the host says |
+| Doors after rooms come up again | ✓ fixed: relevel stamped used doors shut (`World::reopen_doors`) |
+| d2d drifting from the host's player | 15+ subtiles for 2 s → back to the host's spot |
+| A dead host | ✓ 20 s without a packet (the host answers 0x6d every 5 s) → character select; TCP itself took 18 min |
+| Quests through the host | ✓ Den, Blood Raven, Andariel, Horadric Staff, Tainted Sun, Summoner, Seven Tombs, the High Council |
+| Quest items | game.exe gives them only to a player still on the quest; Levels.txt QuestFlag gates a portal's other end (`FUN_00584870` → `FUN_0065c310`) |
+| A d2d host dropped at 01:56Z | the Mac's idle sleep (pmset), not the protocol: `caffeinate` for live runs |
+| Unknown S→C | 0x11, 0x90, 0x99 still unhandled; some 0x9c action 0 items don't parse |
 
 ## Open risks
 

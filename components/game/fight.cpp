@@ -87,10 +87,11 @@ constexpr int kTerror = 77;                     // Skills.txt Terror: Howl's sta
 // so): its resists as stats 0x24 / 0x25 / 0x27 / 0x29 / 0x2b, raw, and its
 // aura as its right skill (FUN_005701b0 sets it: a merc's FUN_005e4d30, a
 // summon's FUN_005c4470, Aura Enchanted's FUN_005a1650) at its level.
-// ponytail: a monster's or summon's max damage left 0 (its last swing's
-// mode stats, FUN_005a4f50), and no left skill on any of them.
-d2d::rules::DiabloPick unit_pick(const GameData& game_data, std::array<int, 5> res, int aura, int aura_level) {
+// A monster's or summon's max damage is its last swing's (rules::swing_max_damage).
+// ponytail: no left skill on any of them; the merc's max damage left 0.
+d2d::rules::DiabloPick unit_pick(const GameData& game_data, std::array<int, 5> res, int aura, int aura_level, int max_damage = 0) {
     d2d::rules::DiabloPick pick;
+    pick.max_damage = max_damage;
     std::tie(pick.damage_resist, pick.magic_resist, pick.fire_resist, pick.light_resist, pick.cold_resist) = std::tuple{ res[0], res[1], res[2], res[3], res[4] };
     if (const auto* skill = aura > 0 ? game_data.skills.get(aura) : nullptr) { pick.right_skill = skill->id; pick.right_level = aura_level; pick.right_rank = skill->attack_rank; }
     return pick;
@@ -3088,7 +3089,7 @@ auto Fight::pet_foe(const Pet& pet) const -> Foe {
         const auto& own = type_info.diff[std::size_t(pet.monster.difficulty)].res;
         std::array<int, 5> res{ own[0], own[1] };
         for (std::size_t k = 0; k < 3; ++k) res[k + 2] = pet.res[k] + pet_buff_stat(pet, kResists[k]);
-        foe.pick = unit_pick(*game_data, res, pet.aura, pet.aura_level);
+        foe.pick = unit_pick(*game_data, res, pet.aura, pet.aura_level, d2d::rules::swing_max_damage(pet.monster.stats, pet.monster.swing_mode));
         return foe;
     }
 
@@ -4095,7 +4096,8 @@ auto Fight::world(bool in_moor, std::uint32_t now_ms, float elapsed, const Crowd
                     const auto& type_info = game_data->monsters.types[std::size_t(monster.type)];
                     Foe& foe = foes.emplace_back(Foe{ monster.unit.x, monster.unit.y, monster.stats.level, monster.targetable() && monster.mode != "DT", monster.unit.walking, fighter });
                     foe.size = type_info.size; foe.threat = type_info.threat; foe.of = &monster; foe.id = monster.id;
-                    foe.pick = unit_pick(*game_data, { target.res[0], target.res[1], target.res[2], target.res[3], target.res[4] }, monster.aura, monster.aura_lvl);
+                    foe.pick = unit_pick(*game_data, { target.res[0], target.res[1], target.res[2], target.res[3], target.res[4] }, monster.aura, monster.aura_lvl,
+                                         d2d::rules::swing_max_damage(monster.stats, monster.swing_mode));
                     foe.pick.state_b = now_ms < monster.chill_until;   // state 0xb, cold
                 }
             std::vector<Monster> born;

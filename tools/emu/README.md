@@ -6,7 +6,7 @@ function can be checked against the real one. No Windows or wine needed.
 ## Run it
 
 ```sh
-cd tools/emu                              # macOS only: emu.py reads the launcher's game.dataPath through `defaults`
+cd tools/emu
 uv sync                                   # once
 uv run python diff_drlg.py 1-20 2         # d2d's Blood Moor vs game.exe's, map seeds 1..20
 ```
@@ -38,7 +38,7 @@ Good: `level 2: 20/20 seeds match game.exe`.
 | You see | Fix |
 |---|---|
 | `SystemExit` naming an import | game.exe called a Win32 function nobody stubbed: add a `w_<ImportName>` method to `emu.py` |
-| Can't find game.exe or the MPQs | Run the launcher once (it puts `bin/game.exe` beside the MPQs) |
+| Can't find game.exe or the MPQs | Set `D2_MPQ_DIR`, or run the launcher once (it writes `data =` and puts `bin/game.exe` beside the MPQs) |
 | `mpq-cat` not found | Build first: `cmake --build build` |
 | 1.14d tables missing | Set `D2_PATCH_INSTALLER=/path/to/LODPatch_114d.exe` |
 | First run is slow | Normal: files are cached in `.cache/` after that |
@@ -53,10 +53,11 @@ cd tools/emu
 uv sync                      # .venv with unicorn, pefile, capstone
 ```
 
-Needs the launcher's `bin/game.exe` (found through the launcher's
-`game.dataPath` default), the MPQs in that same directory, and a built
-`build/tools/mpq-cat/mpq-cat`. The 1.14d patch data comes from
-`$D2_PATCH_INSTALLER`, which defaults to
+Needs `bin/game.exe` beside the MPQs (the launcher puts it there) and a
+built `build/tools/mpq-cat/mpq-cat`. The MPQ folder is found as d2d finds
+it: `$D2_MPQ_DIR`, else `data =` in d2d.cfg (`~/.config/d2d/` on Linux,
+`~/Library/Preferences/d2d/` on macOS), else the macOS launcher's setting.
+The 1.14d patch data comes from `$D2_PATCH_INSTALLER`, which defaults to
 `~/Downloads/Diablo II + LoD/patch/LODPatch_114d.exe`.
 
 ## What's there

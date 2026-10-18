@@ -10,6 +10,7 @@ few Win32 calls the code paths we run need are stubbed in Python.
 import os
 import struct
 import subprocess
+import sys
 from pathlib import Path
 
 import pefile
@@ -27,9 +28,32 @@ TEB = 0x7EF00000
 RET_MAGIC = STUB + STUB_SIZE - 16            # a call returns here
 
 
+def d2d_cfg():
+    """d2d.cfg in d2d's user dir (components/userdir/userdir.hpp): macOS, Linux (XDG), Windows."""
+    home = Path.home()
+    if sys.platform == "darwin":
+        return home / "Library/Preferences/d2d/d2d.cfg"
+    if sys.platform == "win32":
+        return home / "Documents/My Games/d2d/d2d.cfg"
+    return Path(os.environ.get("XDG_CONFIG_HOME") or home / ".config") / "d2d/d2d.cfg"
+
+
 def data_path():
-    return subprocess.run(["defaults", "read", "com.d2decomp.D2 Launcher", "game.dataPath"],
-                          capture_output=True, text=True, check=True).stdout.strip()
+    """The MPQ folder, found as d2d finds it: $D2_MPQ_DIR, then d2d.cfg's `data =`
+    (the launcher writes it), then the macOS launcher's own setting."""
+    if os.environ.get("D2_MPQ_DIR"):
+        return os.environ["D2_MPQ_DIR"]
+    cfg = d2d_cfg()
+    if cfg.exists():
+        for line in cfg.read_text().splitlines():
+            key, _, value = line.partition("=")
+            if key.strip() == "data" and value.strip():
+                return value.strip()
+    if sys.platform == "darwin":
+        found = subprocess.run(["defaults", "read", "com.d2decomp.D2 Launcher", "game.dataPath"], capture_output=True, text=True)
+        if found.returncode == 0 and found.stdout.strip():
+            return found.stdout.strip()
+    sys.exit(f"no game data: set D2_MPQ_DIR, or `data = <MPQ folder>` in {cfg} (the launcher writes it)")
 
 
 class Emu:

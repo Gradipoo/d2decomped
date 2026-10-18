@@ -151,6 +151,8 @@ struct Monster {
     int last_hp = 0;
     std::uint32_t bolts_at = 0, fx_at = 0;
     bool fx_done = false;
+    std::string_view fx_mode = "NU";         // its mode as of the last boss_events (a scarab's GH / DT comes once)
+    std::uint32_t scarab_at = 0;              // when a scarab's bolts are due (0: none)
     int mana_lo = 0, mana_hi = 0;
     d2d::rules::Boss boss = d2d::rules::Boss::none;   // champion, unique, superunique, minion
     std::vector<int> mods;                    // MonUMod ids

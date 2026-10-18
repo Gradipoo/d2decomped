@@ -414,6 +414,7 @@ auto Town::send(const Command& command) -> void {
                 net_game->move_to(vendor->x + from_x / apart * 3.f, vendor->y + from_y / apart * 3.f, view.running);
                 net_game->store_items.clear();
                 net_store_shown = 0;
+                net_interact_pending = -1;                    // a newer NPC action wins
                 net_trade_pending = int(vendor->id);
                 net_trade_kind = trade->gamble ? 2 : 1; net_trade_extra = 0;
                 net_trade_ms = frame_now;
@@ -429,6 +430,7 @@ auto Town::send(const Command& command) -> void {
             if (const auto* host_npc = net_npc(caravan->npc)) {
                 const float from_x = net_game->host_x - host_npc->x, from_y = net_game->host_y - host_npc->y, apart = std::max(std::hypot(from_x, from_y), 1.f);
                 net_game->move_to(host_npc->x + from_x / apart * 3.f, host_npc->y + from_y / apart * 3.f, view.running);
+                net_interact_pending = -1;                    // a newer NPC action wins
                 net_trade_pending = int(host_npc->id);
                 net_trade_kind = 0;
                 net_trade_extra = hc_idx == monster_ids::kMeshif ? 0x4b : hc_idx == monster_ids::kWarrivAct2 ? 1 : 0x28;
@@ -485,6 +487,7 @@ auto Town::send(const Command& command) -> void {
                 // A talk as a trade's (kind -1): the host takes 0x13 only
                 // within 6 and standing, then 0x2f on its NPC info heals
                 // (live, 2026-10-18: an 0x13 while walking was dropped).
+                net_interact_pending = -1;                    // a newer NPC action wins
                 net_trade_pending = int(host_npc->id);
                 net_trade_kind = -1; net_trade_extra = 0;
                 net_trade_ms = frame_now;
@@ -670,7 +673,7 @@ auto Town::net_overlay() -> void {
                 view.others.push_back(std::move(other));
                 continue;
             }
-            if (unit.id == net_game->merc_id && unit.id != 0) {   // ours: the World's merc, drawn where the host has it
+            if (unit.type == 1 && unit.id == net_game->merc_id && unit.id != 0) {   // ours: the World's merc, drawn where the host has it
                 if (view.merc) {
                     if (unit.moving) view.merc->unit.dir = direction16(unit.goal_x - unit.x, unit.goal_y - unit.y);
                     view.merc->unit.x = cell_x(unit.x);
@@ -687,12 +690,15 @@ auto Town::net_overlay() -> void {
                 found = net_monsters.emplace(unit.id, make_monster(*scene, unit.cls, cell_x(unit.x), cell_y(unit.y), rng, net_game->difficulty)).first;
                 // The host's boss as its 0xac says: name, colour, mods. An act
                 // boss (Andariel, Blood Raven) comes as unique with name seed 0:
-                // its MonStats name stays.
+                // a boss still, under its MonStats name.
                 // ponytail: a rolled unique with seed 0 keeps its plain name too (1 in 65536).
                 using d2d::rules::Boss;
                 const Boss kind = unit.boss_flags & 4 ? Boss::superunique : unit.boss_flags & 2 ? Boss::unique : unit.boss_flags & 1 ? Boss::champion : unit.boss_flags & 8 ? Boss::minion : Boss::none;
-                if (kind != Boss::none && (kind != Boss::unique || unit.name_seed != 0))
+                if (kind != Boss::none) {
+                    const auto plain_name = found->second.npc.name;
                     make_boss(*scene, found->second, kind, unit.mods, unit.super, unit.name_seed, net_game->difficulty, rng);
+                    if (kind == Boss::unique && unit.name_seed == 0) found->second.npc.name = plain_name;
+                }
             }
             auto& monster = found->second;
             monster.id = int(unit.id);

@@ -74,7 +74,7 @@ NetGame::NetGame(d2d::net::JoinSession joined, d2d::net::TcpConnection socket, c
 
 auto NetGame::join(const std::string& host, const std::filesystem::path& game_exe, std::vector<std::uint8_t> save,
                    const std::filesystem::path& log_path, int timeout_ms, const d2d::d2s::ItemTables* item_tables, bool auto_party,
-                   std::vector<std::pair<int, int>> send_bits)
+                   std::vector<std::pair<int, int>> send_bits, std::vector<std::array<std::uint8_t, 16>> monster_parts)
     -> std::expected<std::unique_ptr<NetGame>, JoinError> {
     const auto tables = d2d::net::d2gs::load_exe_tables(game_exe);
     if (!tables) return std::unexpected(JoinError{ tables.error() });
@@ -86,6 +86,7 @@ auto NetGame::join(const std::string& host, const std::filesystem::path& game_ex
     game->item_tables = item_tables;
     game->auto_party = auto_party;
     game->stat_send_bits = std::move(send_bits);   // before the first 0xaa: join pumps the world in
+    game->monster_parts = std::move(monster_parts);   // and the first 0xac (the bosses near where we land)
     game->log.note("joining " + host + " as " + game->session.name());
     const auto deadline = steady_ms() + std::uint32_t(timeout_ms);
     while (game->session.state() != d2d::net::JoinState::InGame) {

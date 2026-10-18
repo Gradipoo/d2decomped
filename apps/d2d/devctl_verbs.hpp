@@ -453,7 +453,8 @@ void register_game_verbs(d2d::devctl::Channel& channel, Window& win, Screen& scr
         if (args.size() >= 2 && args[1] == "kill" && scene) {   // kill the level's monsters but <n> and those of MonStats id <spare> (quests)
             int keep = args.size() >= 3 && args[2] != "spare" ? std::atoi(args[2].c_str()) : 0;
             const auto spare_at = std::ranges::find(args, std::string("spare"));
-            const std::string spare = spare_at != args.end() && spare_at + 1 != args.end() ? *(spare_at + 1) : "";
+            if (spare_at != args.end() && spare_at + 1 == args.end()) return std::string("err spare <MonStats id>\n");
+            const std::string spare = spare_at != args.end() ? *(spare_at + 1) : "";
             auto& monsters = town.world.fight.monsters;
             for (std::size_t i = 0; i < monsters.size(); ++i)
                 if (monsters[i].alive() && (spare.empty() || scene->monsters.types[std::size_t(monsters[i].type)].id != spare) && keep-- <= 0 && hurt(*scene, monsters[i], monsters[i].hit_points, town.world.now)) town.world.fight.killed(i, town.world.now);

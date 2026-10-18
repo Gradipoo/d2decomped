@@ -1427,6 +1427,23 @@ auto Fight::boss_events(std::span<Foe> foes, std::uint32_t now_ms) -> void {
         for (auto& monster : monsters) {
             const bool boss = monster.boss == Boss::unique || monster.boss == Boss::superunique;
             const auto has = [&](int id) { return boss && std::ranges::contains(monster.mods, id); };
+            const auto family = d2d::rules::family_mods(monster.type >= 0 ? game_data->monsters.types[std::size_t(monster.type)].base : -1);
+            const bool scarab = std::ranges::contains(family, d2d::rules::umod::scarab), mummy = std::ranges::contains(family, d2d::rules::umod::poisondead);
+            const int mlvl = std::max(monster.stats.level, 1);
+            // Scarab (FUN_005a2eb0 / FUN_005a2ee0): into GH or DT, 2 frames on,
+            // 8 buglightning (4 ways x 2) at its level, steered as lightning enchanted's.
+            if (scarab && monster.mode != monster.fx_mode && (monster.mode == "GH" || monster.mode == "DT")) monster.scarab_at = now_ms + 2 * 40;
+            monster.fx_mode = monster.mode;
+            if (monster.scarab_at && now_ms >= monster.scarab_at) {
+                monster.scarab_at = 0;
+                d2d::log::info("{} lets off its bugs' lightning", monster.npc.name);
+                const auto ring = std::make_shared<std::vector<int>>();
+                for (const auto& [dir_x, dir_y] : { std::pair{ 0.f, -1.f }, { 1.f, 0.f }, { 0.f, 1.f }, { -1.f, 0.f } })
+                    for (int k = 0; k < 2; ++k) {
+                        const float angle = float(rng(51) - 25) * 3.14159265f / 180, cosine = std::cos(angle), sine = std::sin(angle);
+                        boss_missile(monster, "buglightning", dir_x * cosine - dir_y * sine, dir_x * sine + dir_y * cosine, ring, now_ms, mlvl);
+                    }
+            }
             if (monster.alive()) {
                 if (has(d2d::rules::umod::lightning) && monster.hit_points < monster.last_hp && now_ms - monster.bolts_at >= 10 * 40) {
                     monster.bolts_at = now_ms;
@@ -1438,10 +1455,16 @@ auto Fight::boss_events(std::span<Foe> foes, std::uint32_t now_ms) -> void {
                             boss_missile(monster, "lightunique", dir_x * cosine - dir_y * sine, dir_x * sine + dir_y * cosine, ring, now_ms);
                         }
                 }
-            } else if (boss && !monster.fx_done) {
+            } else if ((boss || mummy) && !monster.fx_done) {
                 if (!monster.fx_at) monster.fx_at = now_ms + 4 * 40;
                 else if (now_ms >= monster.fx_at) {
                     monster.fx_done = true;
+                    // Poisondead (FUN_005a3800 / FUN_005a2c20): corpsepoisoncloud (155) on its spot at its level.
+                    // ponytail: poisons each foe within 0.4 cells once; srvdofunc 3's own area and ticks untraced.
+                    if (mummy) {
+                        d2d::log::info("{} leaves a poison cloud", monster.npc.name);
+                        boss_missile(monster, "corpsepoisoncloud", 0, 0, std::make_shared<std::vector<int>>(), now_ms, mlvl);
+                    }
                     if (has(d2d::rules::umod::fire)) fire_blast(monster, foes, now_ms);
                     if (has(d2d::rules::umod::cold)) {
                         const auto ring = std::make_shared<std::vector<int>>();
@@ -1456,11 +1479,11 @@ auto Fight::boss_events(std::span<Foe> foes, std::uint32_t now_ms) -> void {
         }
     }
 
-auto Fight::boss_missile(const Monster& monster, const char* name, float dx, float dy, const std::shared_ptr<std::vector<int>>& ring, std::uint32_t now_ms) -> void {
+auto Fight::boss_missile(const Monster& monster, const char* name, float dx, float dy, const std::shared_ptr<std::vector<int>>& ring, std::uint32_t now_ms, int missile_level) -> void {
         const auto found = game_data->missiles.find(name);
         if (found == game_data->missiles.end()) return;
         const auto& missile_info = found->second;
-        const int lvl = std::max(monster.stats.level / 2, 1);
+        const int lvl = missile_level > 0 ? missile_level : std::max(monster.stats.level / 2, 1);   // the enchanted mods' mlvl / 2 by default
         const auto damage = d2d::rules::row_damage(missile_info.etype, missile_info.emin, missile_info.emax, missile_info.emin_lev, missile_info.emax_lev, missile_info.hitshift, missile_info.elen, missile_info.elen_lev, lvl);
         d2d::rules::MonStats stats;
         stats.level = monster.stats.level;

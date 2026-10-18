@@ -88,7 +88,10 @@ constexpr int kTerror = 77;                     // Skills.txt Terror: Howl's sta
 // aura as its right skill (FUN_005701b0 sets it: a merc's FUN_005e4d30, a
 // summon's FUN_005c4470, Aura Enchanted's FUN_005a1650) at its level.
 // A monster's or summon's max damage is its last swing's (rules::swing_max_damage).
-// ponytail: no left skill on any of them; the merc's max damage left 0.
+// None has a left skill: every FUN_005701b0 call with EDX 1 is a player's
+// (FUN_0055c5c0, FUN_0056af80 test unit type 0; FUN_0055da70 / FUN_00580280
+// put a player's saved hands back).
+// ponytail: the merc's max damage left 0.
 d2d::rules::DiabloPick unit_pick(const GameData& game_data, std::array<int, 5> res, int aura, int aura_level, int max_damage = 0) {
     d2d::rules::DiabloPick pick;
     pick.max_damage = max_damage;

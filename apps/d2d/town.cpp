@@ -478,6 +478,9 @@ auto Town::send(const Command& command) -> void {
             // once the menu's up (OpenTrade).
             if (npc.root == "objects") {
                 if (const auto* object = net_game->nearest(2, -1, subtile_x(npc.x), subtile_y(npc.y), 4.f)) { net_operate_type = 2; net_operate = object->id; net_operate_ms = frame_now; net_operate_moves = false; net_operate_waypoint = -1; }
+                else if (const auto* closest = net_game->nearest(2, -1, subtile_x(npc.x), subtile_y(npc.y), 40.f))
+                    d2d::log::info("net: no host object within 4 of {} at ({:.0f}, {:.0f}); nearest is {} (row {}) at ({:.0f}, {:.0f})", npc.name, subtile_x(npc.x), subtile_y(npc.y), closest->id, closest->cls, closest->x, closest->y);
+                else d2d::log::info("net: no host object near {} at ({:.0f}, {:.0f})", npc.name, subtile_x(npc.x), subtile_y(npc.y));
             } else if (const auto* host_npc = net_npc(interact->npc)) {
                 net_game->interact(1, host_npc->id);          // the host walks us up too (talk at 6)
             }
@@ -528,6 +531,11 @@ auto Town::send(const Command& command) -> void {
             if (const auto* object = net_game->nearest(2, -1, subtile_x(npc.x), subtile_y(npc.y), 4.f)) {
                 net_operate_type = 2; net_operate = object->id; net_operate_ms = frame_now; net_operate_moves = true;   // once the host has us there, stopped
                 net_operate_waypoint = travel->level;
+                net_warp_to = travel->level;                        // the host's reassign takes us there
+                const auto [free_x, free_y] = level->nearest_free(npc.x + 0.5f, npc.y + 1.5f);   // beside it, as d2d's own walk-up
+                net_warp_x = subtile_x(free_x); net_warp_y = subtile_y(free_y);
+            } else {
+                net_game->log.note(std::format("no host waypoint near ({:.0f}, {:.0f})", subtile_x(npc.x), subtile_y(npc.y)));
             }
         }
         net.send(command);
@@ -1371,13 +1379,51 @@ auto Town::walk(const Mouse& mouse, bool over_ui, std::uint32_t frame_ms, std::u
             // The host moved us (a correction, later warps and waypoints): there we are.
             // Only a spot on d2d's level: a warp's or waypoint's lands as d2d
             // takes it too (the same exit spot, FUN_005550b0).
+            world.host_warps = true;
             if (net_game->take_reassign() && level) {
                 net_moving_until = 0;
                 const float to_x = (net_game->self_x + 0.5f) / 5.f - float(level->world_x), to_y = (net_game->self_y + 0.5f) / 5.f - float(level->world_y);
-                if (to_x >= 0 && to_y >= 0 && to_x < float(level->ds1.width()) && to_y < float(level->ds1.height())) {
+                const auto inside = [](const Level& where, float cell_x, float cell_y) {
+                    return cell_x >= 0 && cell_y >= 0 && cell_x < float(where.ds1.width()) && cell_y < float(where.ds1.height());
+                };
+                if (!inside(*level, to_x, to_y))
+                    d2d::log::info("net: the host put us at {}, {}, off level {} (the warp asked for: {})", net_game->self_x, net_game->self_y, level->id, net_warp_to);
+                if (inside(*level, to_x, to_y)) {
                     world.player.x = to_x;
                     world.player.y = to_y;
                     world.player.walking = false;
+                } else if (const Level* landed = [&]() -> const Level* {
+                               // The warp asked for, else the last 0x03's area, else the
+                               // act's level that holds the spot (a quest's door: Duriel's lair).
+                               for (const int id : { net_warp_to, net_game->area })
+                                   if (const Level* asked = id >= 0 ? world.game_data->level(id) : nullptr; asked && asked->ds1.width() > 0
+                                       && inside(*asked, (net_game->self_x + 0.5f) / 5.f - float(asked->world_x), (net_game->self_y + 0.5f) / 5.f - float(asked->world_y))) return asked;
+                               for (int id = 1; id < 137; ++id)
+                                   if (d2d::rules::level_ids::act_of(id) == d2d::rules::level_ids::act_of(level->id))
+                                       if (const Level* holder = world.game_data->level(id); holder && holder->ds1.width() > 0
+                                           && inside(*holder, (net_game->self_x + 0.5f) / 5.f - float(holder->world_x), (net_game->self_y + 0.5f) / 5.f - float(holder->world_y))) return holder;
+                               return nullptr;
+                           }(); landed) {
+                    // The host took the warp we asked for: there with it; else
+                    // where its last 0x03 said (a caravan, a boat: a new act).
+                    const float there_x = (net_game->self_x + 0.5f) / 5.f - float(landed->world_x), there_y = (net_game->self_y + 0.5f) / 5.f - float(landed->world_y);
+                    if (inside(*landed, there_x, there_y)) world.arrive(landed, there_x, there_y, "the host's warp");
+                    net_warp_to = -1;
+                    level = world.level;
+                }
+            }
+            // The host's player is the truth: d2d's walked on where the host's
+            // couldn't (a door only d2d opened, a wall the host's path won't
+            // take); 2 s that far apart and d2d goes back to where the host has us.
+            if (level && net_game->host_x > 0) {
+                const float drift = std::hypot((world.player.x + float(level->world_x)) * 5.f - net_game->host_x, (world.player.y + float(level->world_y)) * 5.f - net_game->host_y);
+                const float back_x = net_game->host_x / 5.f - float(level->world_x), back_y = net_game->host_y / 5.f - float(level->world_y);
+                if (drift < 15.f || back_x < 0 || back_y < 0 || back_x >= float(level->ds1.width()) || back_y >= float(level->ds1.height())) net_drift_ms = 0;
+                else if (net_drift_ms == 0) net_drift_ms = frame_ms;
+                else if (frame_ms - net_drift_ms > 2000) {
+                    d2d::log::info("net: {:.0f} subtiles from the host's player; back to it", drift);
+                    world.player.x = back_x; world.player.y = back_y; world.player.walking = false;
+                    net_drift_ms = 0;
                 }
             }
             // The host killed us: d2d's death plays (DT, DD, the corpse); a
@@ -1497,22 +1543,52 @@ auto Town::walk(const Mouse& mouse, bool over_ui, std::uint32_t frame_ms, std::u
             // stopped close by; until then the host's player walks there.
             if (net_operate != 0) {
                 const auto object = net_game->units.find(std::uint64_t(net_operate_type) << 32 | net_operate);
-                if (object == net_game->units.end() || frame_ms - net_operate_ms > 8000) {
+                // A warp: to its mouth (the host takes 0x13 within 0x33 and walks
+                // the rest, FUN_00548b00 case 5; under 5 it warps).
+                const bool warp = net_operate_type == 5 || net_operate_waypoint >= 0;   // a waypoint too: its object fills its tile
+                const float spot_x = warp ? net_warp_x : object == net_game->units.end() ? 0.f : object->second.x;
+                const float spot_y = warp ? net_warp_y : object == net_game->units.end() ? 0.f : object->second.y;
+                if (object == net_game->units.end() || frame_ms - net_operate_ms > (warp ? 15000u : 8000u)) {
                     net_game->log.note("object " + std::to_string(net_operate) + " couldn't be reached on the host");
                     net_operate = 0;
-                } else if (std::hypot(net_game->host_x - object->second.x, net_game->host_y - object->second.y) > (net_operate_type == 5 ? 8.f : 4.f)) {   // a warp stands in its doorway
+                    net_warp_to = -1;
+                } else if (std::hypot(net_game->host_x - spot_x, net_game->host_y - spot_y) > (warp ? 2.f : 4.f)) {
                     if (frame_ms - net_follow_ms >= 500) {
                         net_follow_ms = frame_ms;
-                        net_game->move_to(object->second.x, object->second.y, view.running);
+                        net_game->move_to(spot_x, spot_y, view.running);
                     }
                 } else if (net_game->steady_now() - net_game->walked_ms >= 500) {
                     if (net_operate_type == 0 && net_game->units.contains(net_operate) && net_game->corpses.end() == std::ranges::find(net_game->corpses, net_operate))
                         net_game->trade_request(net_operate);            // a player, not our corpse: a trade
                     else net_game->interact(net_operate_type, net_operate);
-                    if (net_operate_waypoint >= 0) net_game->waypoint(net_operate, net_operate_waypoint);
+                    if (net_operate_waypoint >= 0) net_game->waypoint(net_operate, net_operate_waypoint);   // in reach and 10 s on from a level change, it goes at once
+                    if (net_operate_waypoint >= 0) { net_waypoint_object = net_operate; net_waypoint_level = net_operate_waypoint; net_waypoint_ms = frame_ms; net_waypoint_tries = 0; net_game->waypoint_menu = 0; }
                     net_operate = 0;
                     net_operate_waypoint = -1;
                     if (net_operate_moves) net_moving_until = frame_ms + 5000;
+                }
+            }
+            // Until the host moves us: its menu open (0x63) takes the level
+            // (0x49); out of reach it walks us up and stops, so both again
+            // (live 2026-10-18: a 0x49 before the menu, or within 10 s of a
+            // level change, is dropped).
+            if (net_waypoint_level >= 0) {
+                if (net_warp_to < 0) {                               // there: the reassign took us
+                    net_waypoint_level = -1;
+                } else if (net_game->waypoint_menu == net_waypoint_object) {
+                    net_game->waypoint(net_waypoint_object, net_waypoint_level);
+                    net_waypoint_level = -1;
+                } else if (frame_ms - net_waypoint_ms > 3000 && net_waypoint_tries < 3 && net_game->steady_now() - net_game->walked_ms >= 500) {
+                    // Out of its reach the host walks us up (FUN_00548a50) and
+                    // stops: again from there.
+                    net_game->interact(2, net_waypoint_object);
+                    net_game->waypoint(net_waypoint_object, net_waypoint_level);
+                    net_waypoint_ms = frame_ms;
+                    ++net_waypoint_tries;
+                } else if (frame_ms - net_waypoint_ms > 3500) {
+                    net_game->log.note("the host didn't open waypoint " + std::to_string(net_waypoint_object));
+                    net_waypoint_level = -1;
+                    net_warp_to = -1;
                 }
             }
             // The host's doors (0x0e: opened by anyone, a monster too): d2d's
@@ -1547,6 +1623,14 @@ auto Town::walk(const Mouse& mouse, bool over_ui, std::uint32_t frame_ms, std::u
                 const auto& warp = level->warps[std::size_t(world.take_warp)];
                 if (const auto* unit = net_game->nearest(5, -1, (warp.unit_x + float(level->world_x)) * 5.f, (warp.unit_y + float(level->world_y)) * 5.f, 15.f)) {
                     net_operate_type = 5; net_operate = unit->id; net_operate_ms = frame_ms; net_operate_moves = true; net_operate_waypoint = -1;   // as an object's: once the host has us there, stopped
+                    // Its mouth: where one comes out (the free spot nearest the unit,
+                    // then ExitWalk, FUN_005550b0). The unit sits in the rocks, and
+                    // the host's walk to it (FUN_00548a50) stalls from the wrong side;
+                    // game.exe's client walks round to the mouth first (live 2026-10-17).
+                    const auto [free_x, free_y] = level->nearest_free(warp.unit_x, warp.unit_y);
+                    net_warp_x = (free_x + warp.exit_x + float(level->world_x)) * 5.f;
+                    net_warp_y = (free_y + warp.exit_y + float(level->world_y)) * 5.f;
+                    net_warp_to = warp.destination;
                 }
             }
             net_warp_sent = world.take_warp;

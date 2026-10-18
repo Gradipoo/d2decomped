@@ -997,6 +997,10 @@ int run_windowed(std::vector<std::uint8_t>& framebuffer,
                     load_act_palettes(*scene, scene->mpqs, act);
                 town.update(framebuffer, mouse, keys_this_frame, screen, audio, now_ms, last_ms);
                 write_save_back();
+                if (town.net_game && town.net_game->closed()) {        // the host's gone: back to the characters, as game.exe's drop
+                    d2d::log::warn("net: lost the host; leaving the game");
+                    screen = Screen::CharSelect;
+                }
                 if (screen == Screen::CharSelect && town.net_game) {   // a joined game: leave the host, saving on again
                     town.net_game->leave();
                     write_save_back();

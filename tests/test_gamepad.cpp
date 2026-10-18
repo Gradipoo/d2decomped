@@ -91,7 +91,7 @@ int main() {
         assert(!actions.rclick_press && has(actions, Key::Escape));
         mapper.step(Sample{}, Context::Menu, 0.016f);
         actions = mapper.step(with(Button::East), Context::Title, 0.016f);
-        assert(actions.keys.empty());
+        assert(actions.keys.empty() && !actions.click_press && !actions.rclick_press);
     }
     // A key is sent once per press, not every frame it's held.
     {

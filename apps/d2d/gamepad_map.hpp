@@ -35,8 +35,8 @@ struct Sample {                       // one frame of a pad: sticks -1..1, trigg
 struct Config {
     float deadzone = 0.25f;           // radial, both sticks
     float cursor_speed = 650.f;       // game pixels per second at full tilt
-    float run_above = 0.85f;          // stick tilt (past the dead zone, 0..1): at or above it the hero runs...
-    float walk_below = 0.6f;          // ...and under this walks again
+    float run_above = 0.75f;          // stick tilt (past the dead zone, 0..1): at or above it the hero runs...
+    float walk_below = 0.55f;          // ...and under this walks again
     float trigger_press = 0.5f, trigger_release = 0.3f;
     float walk_reach = 6.f;           // tiles ahead a held stick walks towards
 };

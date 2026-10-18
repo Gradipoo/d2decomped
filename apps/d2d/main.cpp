@@ -540,6 +540,7 @@ int run_windowed(std::vector<std::uint8_t>& framebuffer,
     pad::Mapper pad_mapper;
     gamepads.open_connected();
     std::uint32_t pad_last_ms = std::uint32_t(SDL_GetTicks());
+    int pad_focus_key = 0;
     bool pad_in_use = false, pad_was_field = false, pad_cursor_hidden = false;   // the pad was the last to act; its field mode
     TitleUI title = scene ? title_ui(*scene) : TitleUI{};
     TitleUI other_multiplayer = scene ? other_multiplayer_ui(*scene) : TitleUI{};
@@ -744,6 +745,10 @@ int run_windowed(std::vector<std::uint8_t>& framebuffer,
             const bool pad_field = screen == Screen::InGame && pad_in_use && town.pad_field();
             if (pad_field != pad_was_field && !mouse_took_over) { mouse.x = int(kScreenWidth) / 2; mouse.y = int(kScreenHeight) / 2; }   // the cursor comes back centred
             pad_was_field = pad_field;
+            // A menu opening puts the pad's cursor on the choice to start from.
+            const auto pad_focus = screen == Screen::InGame && pad_in_use && !mouse_took_over ? town.pad_focus() : std::nullopt;
+            if (pad_focus && pad_focus->key != pad_focus_key) { mouse.x = pad_focus->x; mouse.y = pad_focus->y; }
+            pad_focus_key = pad_focus ? pad_focus->key : 0;
             pad_cursor_hidden = pad_field;
             if (pad_actions.recentre_cursor) { mouse.x = int(kScreenWidth) / 2; mouse.y = int(kScreenHeight) / 2; }
             if (!pad_field) {

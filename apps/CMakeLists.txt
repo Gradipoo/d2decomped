@@ -44,7 +44,7 @@ if(D2D_FLATPAK)
     install(TARGETS d2d-launcher d2d crashpad_handler RUNTIME DESTINATION bin)
     install(FILES "${_flatpak_desktop}" DESTINATION share/applications)
     install(FILES "${_flatpak_metainfo}" DESTINATION share/metainfo)
-    install(FILES "${PROJECT_SOURCE_DIR}/apps/icon/d2d.png"
+    install(FILES "${PROJECT_SOURCE_DIR}/assets/icon/d2d.png"
         DESTINATION "share/icons/hicolor/256x256/apps"
         RENAME "${D2D_FLATPAK_APP_ID}.png")
     install(FILES "${PROJECT_SOURCE_DIR}/LICENSE"

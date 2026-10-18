@@ -20,6 +20,7 @@
 #include "cursor.hpp"
 #include "devctl_verbs.hpp"
 #include "frontend.hpp"
+#include "gamepad.hpp"
 #include "load.hpp"
 #include "platform.hpp"
 #include "scene.hpp"
@@ -425,6 +426,8 @@ int run_windowed(std::vector<std::uint8_t>& framebuffer,
         d2d::log::error("SDL_Init: {}", SDL_GetError());
         return 1;
     }
+    // A pad is optional: without gamepad support d2d plays with keyboard and mouse as before.
+    if (!SDL_InitSubSystem(SDL_INIT_GAMEPAD)) d2d::log::warn("gamepad support unavailable: {}", SDL_GetError());
     const int sdl_v = SDL_GetVersion();
     d2d::log::info("Initializing SDL... done! SDL {}.{}.{} ({})", SDL_VERSIONNUM_MAJOR(sdl_v),
                    SDL_VERSIONNUM_MINOR(sdl_v), SDL_VERSIONNUM_MICRO(sdl_v), SDL_GetCurrentVideoDriver());
@@ -531,6 +534,10 @@ int run_windowed(std::vector<std::uint8_t>& framebuffer,
     CinematicsUI cin_ui = scene ? cinematics_ui(*scene, cinematics_unlocked(read_seen())) : CinematicsUI{};
     Screen last_screen = screen;
     Mouse  mouse;
+    Gamepads gamepads;
+    pad::Mapper pad_mapper;
+    gamepads.open_connected();
+    std::uint32_t pad_last_ms = std::uint32_t(SDL_GetTicks());
     TitleUI title = scene ? title_ui(*scene) : TitleUI{};
     TitleUI other_multiplayer = scene ? other_multiplayer_ui(*scene) : TitleUI{};
     TcpIpUI tcpip;
@@ -711,8 +718,34 @@ int run_windowed(std::vector<std::uint8_t>& framebuffer,
             if (event.type == SDL_EVENT_MOUSE_MOTION) event.motion.x -= view_off;
             else if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN || event.type == SDL_EVENT_MOUSE_BUTTON_UP) event.button.x -= view_off;
             else if (event.type == SDL_EVENT_MOUSE_WHEEL) event.wheel.mouse_x -= view_off;
+            gamepads.handle_event(event);
             handle_sdl_events(event, mouse, screen, text_this_frame,
                               backspace_this_frame, keys_this_frame, quit);
+        }
+        {
+            // The pad plays as a cursor, clicks and keys through the same paths as the mouse and keyboard.
+            const std::uint32_t pad_now = std::uint32_t(SDL_GetTicks());
+            const float pad_dt = std::min(float(pad_now - pad_last_ms) / 1000.f, 0.1f);
+            pad_last_ms = pad_now;
+            const pad::Context pad_context = screen == Screen::InGame ? pad::Context::Game
+                                           : screen == Screen::Title  ? pad::Context::Title : pad::Context::Menu;
+            const pad::Actions pad_actions = pad_mapper.step(gamepads.sample(), pad_context, pad_dt);
+            const int pad_side = (win.view_w - int(kScreenWidth)) / 2;   // widescreen's world beyond the 800x600 UI
+            if (pad_actions.recentre_cursor) { mouse.x = int(kScreenWidth) / 2; mouse.y = int(kScreenHeight) / 2; }
+            mouse.x = std::clamp(mouse.x + int(std::lround(pad_actions.cursor_dx)), -pad_side, int(kScreenWidth) + pad_side - 1);
+            mouse.y = std::clamp(mouse.y + int(std::lround(pad_actions.cursor_dy)), 0, int(kScreenHeight) - 1);
+            if (pad_actions.click_press)   { mouse.down = true;  mouse.press_this_frame = true; }
+            if (pad_actions.click_release) { mouse.down = false; mouse.release_this_frame = true; }
+            if (pad_actions.rclick_press)  mouse.rpress_this_frame = true;
+            for (const pad::Key pad_key : pad_actions.keys) {
+                SDL_Event key_event{};
+                key_event.type = SDL_EVENT_KEY_DOWN;
+                key_event.key.down = true;
+                key_event.key.key = pad_keycode(pad_key);
+                handle_sdl_events(key_event, mouse, screen, text_this_frame, backspace_this_frame, keys_this_frame, quit);
+            }
+            town.pad_move = screen == Screen::InGame
+                ? Town::PadMove{ pad_actions.move_x, pad_actions.move_y, pad_actions.move_active, pad_actions.run } : Town::PadMove{};
         }
         current_phase.store(std::uint32_t(MainPhase::Devctl),
                             std::memory_order_relaxed);

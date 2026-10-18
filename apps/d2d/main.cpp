@@ -21,6 +21,7 @@
 #include "devctl_verbs.hpp"
 #include "frontend.hpp"
 #include "gamepad.hpp"
+#include "gamepad_map.hpp"
 #include "load.hpp"
 #include "platform.hpp"
 #include "scene.hpp"
@@ -49,6 +50,7 @@
 #include <array>
 #include <atomic>
 #include <chrono>
+#include <cmath>
 #include <csignal>
 #include <cstddef>
 #include <cstdint>
@@ -709,6 +711,7 @@ int run_windowed(std::vector<std::uint8_t>& framebuffer,
         std::vector<SDL_Keycode> keys_this_frame;
         current_phase.store(std::uint32_t(MainPhase::PollEvents),
                             std::memory_order_relaxed);
+        bool mouse_took_over = false;   // the mouse moved or clicked this frame: it ends the pad's field mode
         SDL_Event event;
         while (SDL_PollEvent(&event)) {
             // SDL3 doesn't rescale event coords under logical presentation;
@@ -720,7 +723,7 @@ int run_windowed(std::vector<std::uint8_t>& framebuffer,
             else if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN || event.type == SDL_EVENT_MOUSE_BUTTON_UP) event.button.x -= view_off;
             else if (event.type == SDL_EVENT_MOUSE_WHEEL) event.wheel.mouse_x -= view_off;
             gamepads.handle_event(event);
-            if (event.type == SDL_EVENT_MOUSE_MOTION || event.type == SDL_EVENT_MOUSE_BUTTON_DOWN) pad_in_use = false;
+            if (event.type == SDL_EVENT_MOUSE_MOTION || event.type == SDL_EVENT_MOUSE_BUTTON_DOWN) { pad_in_use = false; mouse_took_over = true; }
             handle_sdl_events(event, mouse, screen, text_this_frame,
                               backspace_this_frame, keys_this_frame, quit);
         }
@@ -739,7 +742,7 @@ int run_windowed(std::vector<std::uint8_t>& framebuffer,
             if (pad_active) pad_in_use = true;
             // In the field a pad plays without a cursor: its buttons hit what is in reach (Town::pad_act).
             const bool pad_field = screen == Screen::InGame && pad_in_use && town.pad_field();
-            if (pad_field != pad_was_field) { mouse.x = int(kScreenWidth) / 2; mouse.y = int(kScreenHeight) / 2; }   // the cursor comes back centred
+            if (pad_field != pad_was_field && !mouse_took_over) { mouse.x = int(kScreenWidth) / 2; mouse.y = int(kScreenHeight) / 2; }   // the cursor comes back centred
             pad_was_field = pad_field;
             pad_cursor_hidden = pad_field;
             if (pad_actions.recentre_cursor) { mouse.x = int(kScreenWidth) / 2; mouse.y = int(kScreenHeight) / 2; }
@@ -1252,6 +1255,7 @@ int run_windowed(std::vector<std::uint8_t>& framebuffer,
     watchdog_stop.store(true, std::memory_order_relaxed);
     watchdog.join();
     g_current_phase_ptr = nullptr;
+    gamepads.close();   // before SDL goes away, not at scope exit
     SDL_Quit();
     return 0;
 }

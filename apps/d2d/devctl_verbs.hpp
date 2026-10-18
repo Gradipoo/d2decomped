@@ -238,12 +238,18 @@ void register_game_verbs(d2d::devctl::Channel& channel, Window& win, Screen& scr
             return std::string("ok\n");
         }
         if (args.size() >= 2 && args[1] == "tomb") {          // the true Tal Rasha's Tomb (the act seed's roll, FUN_0061aeb0)
+            if (!town.world.game_data) return std::string("err no game data\n");
             auto act = d2d::drlg::act_seed(town.world.game_data->map_seed);
             return std::format("ok {}\n", d2d::drlg::roll_act2_tombs(act).boss);
         }
         if (args.size() >= 3 && args[1] == "netsend" && town.net_game) {   // a raw C->S packet to the host, hex bytes (live checks)
             d2d::net::Bytes packet;
-            for (std::size_t i = 2; i < args.size(); ++i) packet.push_back(std::uint8_t(std::strtoul(args[i].c_str(), nullptr, 16)));
+            for (std::size_t i = 2; i < args.size(); ++i) {
+                char* end = nullptr;
+                const unsigned long byte = std::strtoul(args[i].c_str(), &end, 16);
+                if (args[i].empty() || *end != '\0' || byte > 0xff) return std::string("err not a hex byte: ") + args[i] + "\n";
+                packet.push_back(std::uint8_t(byte));
+            }
             town.net_game->send_items({ packet });
             return std::string("ok\n");
         }

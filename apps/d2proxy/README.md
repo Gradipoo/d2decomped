@@ -30,7 +30,7 @@ address instead of the host's: TCP/IP Game → Join → your Mac's IP.
 | Logs in one folder | `--log-dir /tmp/proxy` (one file per session) |
 | One log for all sessions | `--log /tmp/proxy.log` |
 | Clients from another subnet | `--allow 192.168.50.0/24,10.0.0.0/8` |
-| Another port | `--port 4000` (host side), `--listen 4000` (client side) |
+| Another port | `--port 4001` (the host's), `--listen 4010` (the clients'); both default to 4000 |
 | Drop an idle client sooner | `--idle 120` (seconds) |
 
 Logs use d2d's net-log format, the same as `net-join` and d2d's own
@@ -41,7 +41,7 @@ Logs use d2d's net-log format, the same as `net-join` and d2d's own
 | You see | Fix |
 |---|---|
 | Table check fails at start | game.exe must be 1.14d (`--game-exe` or `D2_GAME_EXE`) |
-| Client can't connect | Is it reaching the proxy's machine? Allow port 4000 through its firewall |
+| Client can't connect | Is it reaching the proxy's machine? Allow the `--listen` port (default 4000) through its firewall |
 | Client refused right away | Its address isn't private or loopback: add `--allow` |
 | `warning ... unknown` lines | Not an error: a packet nobody has decoded yet. Its bytes are logged for you |
 | Second client refused | One client at a time, by design |

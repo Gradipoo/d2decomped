@@ -6,7 +6,7 @@ function can be checked against the real one. No Windows or wine needed.
 ## Run it
 
 ```sh
-cd tools/emu
+cd tools/emu                              # macOS only: emu.py reads the launcher's game.dataPath through `defaults`
 uv sync                                   # once
 uv run python diff_drlg.py 1-20 2         # d2d's Blood Moor vs game.exe's, map seeds 1..20
 ```
@@ -17,8 +17,11 @@ Good: `level 2: 20/20 seeds match game.exe`.
 
 - d2d must match game.exe exactly (levels, drops, monster AI, ...).
   Reading decompiled code gets close; running the real code proves it.
-- Each oracle prints game.exe's answer in the same text form a small
-  d2d tool prints, so a plain diff finds the first difference.
+- The dump oracles (levels, drops, objects) print game.exe's answer in
+  the same text form a small d2d tool prints, so a plain diff finds the
+  first difference. The AI checks (sight.py, search.py, moves.py,
+  missiles.py) compare against line-for-line copies in-process and print
+  `ok`.
 
 ## The checks you'll use most
 

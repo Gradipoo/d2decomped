@@ -39,6 +39,7 @@
 #include <filesystem>
 #include <format>
 #include <initializer_list>
+#include <optional>
 #include <span>
 #include <string>
 #include <tuple>

@@ -13,10 +13,10 @@ docker image inspect "$tag" >/dev/null 2>&1 || docker build -t "$tag" -f tools/v
 # --asan: a Debug build with AddressSanitizer + UBSan on glibc (where the
 # v0.4.0 exit-time heap abort was reported), in its own volume, then ctest.
 # Game data for the real-data tests (smoke, quests) when these are set on
-# the host: D2_MPQ_DIR, D2_PATCH_INSTALLER, D2_SAVES_DIR (mounted read-only).
+# the host: D2_MPQ_DIR, D2_PATCH_INSTALLER, D2_SAVES_DIR, D2_GAME_EXE (mounted read-only).
 if [[ "${1:-}" == "--asan" ]]; then
     mounts=() envs=()
-    for var in D2_MPQ_DIR D2_PATCH_INSTALLER D2_SAVES_DIR; do
+    for var in D2_MPQ_DIR D2_PATCH_INSTALLER D2_SAVES_DIR D2_GAME_EXE; do
         [[ -n "${!var:-}" ]] || continue
         mounts+=(-v "${!var}:/data/$var:ro") envs+=(-e "$var=/data/$var")
     done

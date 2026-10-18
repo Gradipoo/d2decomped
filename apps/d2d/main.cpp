@@ -979,8 +979,10 @@ int run_windowed(std::vector<std::uint8_t>& framebuffer,
                         d2d::log::info("Joining {} as {} (net log {})", g_join_host, header.name, log_path.string());
                         std::vector<std::pair<int, int>> send_bits;
                         for (const auto& desc : scene->stat_desc) send_bits.emplace_back(desc.send_bits, desc.send_param);
+                        std::vector<std::array<std::uint8_t, 16>> monster_parts;
+                        for (const auto& type_info : scene->monsters.types) monster_parts.push_back(type_info.choices);
                         auto joined = NetGame::join(g_join_host, g_game_exe, std::move(save), log_path, 10000,
-                                                    scene->item_tables ? &*scene->item_tables : nullptr, g_autoparty, std::move(send_bits));
+                                                    scene->item_tables ? &*scene->item_tables : nullptr, g_autoparty, std::move(send_bits), std::move(monster_parts));
                         if (!joined) {
                             d2d::log::error("join failed: {}", joined.error().what);
                             csu.popup = join_error_text(*scene, joined.error(), header.expansion());
@@ -997,7 +999,6 @@ int run_windowed(std::vector<std::uint8_t>& framebuffer,
                             town.world.characters = nullptr;
                             town.world.fight.remote_monsters = true;
                             for (const auto& type_info : scene->monsters.types) net.monster_velocity.push_back(type_info.velocity);
-                            for (const auto& type_info : scene->monsters.types) net.monster_parts.push_back(type_info.choices);
                             town.net_game = std::move(*joined);
                             town.net_chat_npc = 0;
                             town.world.hosted_quests = true;

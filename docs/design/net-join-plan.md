@@ -237,6 +237,12 @@ driven by whisper and Miriam by d2d; Act 3 reached the Blackened Temple.
 | Quest items | game.exe gives them only to a player still on the quest; Levels.txt QuestFlag gates a portal's other end (`FUN_00584870` → `FUN_0065c310`) |
 | A d2d host dropped at 01:56Z | the Mac's idle sleep (pmset), not the protocol: `caffeinate` for live runs |
 | Unknown S→C | 0x11, 0x90, 0x99 still unhandled; some 0x9c action 0 items don't parse |
+| Act 3 to the hellgate, Act 4 to Diablo | ✓ Travincal, the Durance, Mephisto, the hellgate; the Chaos Sanctuary's five seals, Vizier, De Seis, Infector and Diablo all through the host |
+| Quest credit for the other player | Only near the kill: Arne at the Plains of Despair's entrance got no Izual (The Fallen Angel), nor Terror's End (never opened: Tyrael's 681 follows Izual). Small levels (Catacombs 4, the Arcane, Duriel's lair) were near enough |
+| Healing at an NPC | Needs the start of a chat (0x2f), not 0x13 alone; d2d's `cmd interact` on Ormus sent nothing to the host (no host unit found) — **to fix** |
+| A host superunique | Drawn and listed without its name (De Seis, the Vizier) — **to fix** |
+| A seal boss | Seal 394 (OperateFn 55) is De Seis's, 396 (56) the Vizier's, 392 (54) the Infector's; each boss at the seal plus its offset (quests-act4.md) |
+
 
 ## Open risks
 

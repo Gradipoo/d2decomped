@@ -17,6 +17,7 @@
 #include <log.hpp>
 #include <mpq.hpp>
 #include <palette.hpp>
+#include <rules.hpp>
 #include <txt.hpp>
 
 #include <algorithm>

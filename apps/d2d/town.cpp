@@ -1502,7 +1502,7 @@ auto Town::pad_walk(PadPlayer& player_pad, const UnitState& unit, bool dead, boo
 auto Town::coop_seat(int seat) -> void {
         if (!scene || std::ranges::contains(coop, seat, &CoopPlayer::seat)) return;
         std::vector<std::string> playing;
-        for (const auto& player : world.players) playing.push_back(player->character.name);
+        for (const auto& in_game : world.players) playing.push_back(in_game->character.name);
         auto& waiting = coop.emplace_back();
         waiting.seat = seat;
         waiting.roster = open_roster(*scene, playing, world.lead().character.header);
@@ -1544,8 +1544,8 @@ auto Town::coop_pad(int seat, const pad::Sample& sample, float seconds) -> void 
                 } else {                                 // a new character, saved at once (as char-create's OK)
                     coop_join(seat, made_character(*scene, choice->cls, choice->name, lead.hardcore(), lead.expansion(), rng));
                     auto& made = *world.players.back();
-                    world.each_player([&](World::Player& player) {
-                        if (&player != &made) return;
+                    world.each_player([&](World::Player& each) {
+                        if (&each != &made) return;
                         if (const auto why = world.save(); !why.empty()) d2d::log::warn("{}: {}", made.character.name, why);
                     });
                 }

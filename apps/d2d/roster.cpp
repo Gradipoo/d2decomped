@@ -4,15 +4,25 @@
 
 #include "common.hpp"
 #include "frontend.hpp"
+#include "gamepad_map.hpp"
+#include "scene.hpp"
 #include "ui.hpp"
 
+#include <d2s.hpp>
 #include <join.hpp>
 
 #include <algorithm>
 #include <cctype>
 #include <cmath>
 #include <cstddef>
+#include <cstdint>
 #include <format>
+#include <optional>
+#include <span>
+#include <string>
+#include <string_view>
+#include <utility>
+#include <vector>
 
 namespace d2d::client {
 

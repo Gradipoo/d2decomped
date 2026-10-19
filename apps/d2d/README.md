@@ -41,7 +41,7 @@ default layout, by button position. The first pad connected plays.
 
 | Pad | In game | In the menus |
 |---|---|---|
-| Left stick | Walk; run at full tilt | Move the cursor |
+| Left stick | Walk (run follows the run toggle) | Move the cursor |
 | Right stick | Move the cursor; click it to recentre | Move the cursor |
 | A (south) / right trigger | Left click: attack or use what's in reach | Left click |
 | B (east) / left trigger | Right-hand skill | Back (Esc) |

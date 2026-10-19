@@ -1085,7 +1085,7 @@ auto Fight::spot(const d2d::rules::Skill& skill, std::uint32_t now_ms, const Cas
                 auto& corpse = monsters[std::size_t(corpse_index)];
                 corpse.corpse_used = true;
                 if (int(rng(100)) >= calc(skill, skill.calc[0], lvl)) break;
-                if (skill.srvdofunc == ServerDoFunction::kFindItem) { loot.drop(corpse, spawning.game, now_ms); break; }
+                if (skill.srvdofunc == ServerDoFunction::kFindItem) { const auto [players, nearby] = drop_counts(); loot.drop(corpse, spawning.game, now_ms, players, nearby); break; }
                 const std::string code = d2d::rules::find_potion(level ? level->id : 1, game_difficulty, int(rng(100)), skill.par[2], skill.par[3]);
                 loot.put({ code, 2, 0 }, corpse.unit.x, corpse.unit.y, corpse.stats.level, spawning.game, now_ms);
                 break;
@@ -1534,16 +1534,59 @@ auto Fight::fire_blast(const Monster& monster, std::span<Foe> foes, std::uint32_
 
 auto Fight::killed(std::size_t monster_index, std::uint32_t now_ms, bool credit) -> void {
         auto& monster = monsters[monster_index];
+        const auto [players, nearby] = drop_counts();
         if (!credit) {                                      // a monster's kill (FUN_0057e7b0: no player behind it)
-            loot.drop(monster, spawning.game, now_ms);
-            kills.push_back({ monster.type, monster.unit.x, monster.unit.y, monster.stats.level, monster.super, monster.id });
+            loot.drop(monster, spawning.game, now_ms, players, nearby);
+            kills.push_back({ monster.type, monster.unit.x, monster.unit.y, monster.stats.level, monster.super, monster.id, 0 });
             return;
         }
+        // Who gets the experience (FUN_0057e990): alone, the killer; in a
+        // party (local co-op: everyone), its members alive within 80
+        // subtiles of the dead (dx² + dy² <= 0x1900, FUN_0057e5a0) share it
+        // by level (rules::party_shares) — one of them leaves it all the
+        // killer's, none nobody's.
+        // ponytail: the merc's share (FUN_0057e860) isn't kept.
+        Hero& killer = *actor;
+        if (heroes.size() == 1) {
+            gain_exp(monster.stats.exp, monster, now_ms);
+        } else {
+            std::vector<Hero*> members;
+            std::vector<int> levels;
+            const auto subtile = [](float value) { return int(std::floor(value * 5)); };
+            for (Hero* hero : heroes) {
+                act_as(*hero);
+                const int dx = subtile(monster.unit.x) - subtile(hero->player.x), dy = subtile(monster.unit.y) - subtile(hero->player.y);
+                if (dead() || std::uint32_t(dx * dx + dy * dy) > 0x1900u || members.size() >= 8) continue;
+                members.push_back(hero);
+                levels.push_back(int(hero->character.stats.get(d2d::d2s::kLevel)));
+            }
+            if (members.size() == 1) members = { &killer };
+            const auto shares = d2d::rules::party_shares(monster.stats.exp, levels);
+            for (std::size_t i = 0; i < members.size(); ++i) {
+                act_as(*members[i]);
+                gain_exp(shares[i], monster, now_ms);
+            }
+            act_as(killer);
+        }
+        loot.drop(monster, spawning.game, now_ms, players, nearby);
+        kills.push_back({ monster.type, monster.unit.x, monster.unit.y, monster.stats.level, monster.super, monster.id, killer.id });
+    }
+
+auto Fight::drop_counts() -> std::pair<int, int> {
+        if (heroes.size() == 1) return { 1, 1 };
+        Hero& was = *actor;
+        int alive = 0;
+        for (Hero* hero : heroes) { act_as(*hero); alive += dead() ? 0 : 1; }
+        act_as(was);
+        return { int(heroes.size()), std::max(alive, 1) };
+    }
+
+auto Fight::gain_exp(std::int64_t share, const Monster& monster, std::uint32_t now_ms) -> void {
         const auto save_class = std::size_t(std::max(actor->character.character_class, 0));
-        auto exp = d2d::rules::kill_exp(monster.stats.exp, int(actor->character.stats.get(d2d::d2s::kLevel)), monster.stats.level);
+        auto exp = d2d::rules::kill_exp(int(std::min<std::int64_t>(share, 0x7fffffff)), int(actor->character.stats.get(d2d::d2s::kLevel)), monster.stats.level);
         exp += exp * int(actor->psum[d2d::d2s::kAddExperience]) / 100;                   // item_addexperience (the experience shrine)
         const int levels_gained = d2d::rules::gain_exp(actor->character.stats, exp, game_data->exp_next, game_data->class_gains[save_class]);
-        d2d::log::info("killed {} (+{} exp){}", monster.npc.name, exp, levels_gained ? std::format(", level {}", actor->character.stats.get(d2d::d2s::kLevel)) : "");
+        d2d::log::info("{} killed {} (+{} exp){}", actor->character.name, monster.npc.name, exp, levels_gained ? std::format(", level {}", actor->character.stats.get(d2d::d2s::kLevel)) : "");
         if (levels_gained) {
             actor->character.panel = panel_stats(*game_data, actor->character.header, actor->character.items, actor->character.stats);
             // The server's unit sound event 2 (FUN_00570880 → FUN_00553380),
@@ -1551,8 +1594,6 @@ auto Fight::killed(std::size_t monster_index, std::uint32_t now_ms, bool credit)
             // Sounds.txt 7, cursor_level_up, not placed (FUN_004cb9c0).
             cues.cue(d2d::rules::sound_ids::kCursorLevelUp, now_ms, actor->player.x, actor->player.y);
         }
-        loot.drop(monster, spawning.game, now_ms);
-        kills.push_back({ monster.type, monster.unit.x, monster.unit.y, monster.stats.level, monster.super, monster.id });
     }
 
 auto Fight::merc_fighter() const -> d2d::rules::Fighter {
@@ -4439,7 +4480,7 @@ auto Fight::rooms_up(const Level& here, float x, float y, bool arrived) -> void 
             if (remote_monsters) continue;          // the rooms still come up (their objects); the host has the monsters
             const auto& spawns = spawning.levels[grown].spawns;
             const auto& region = std::size_t(grown->id) < spawning.regions.size() ? spawning.regions[std::size_t(grown->id)] : d2d::rules::Region{};
-            auto made = spawn_monsters(*game_data, std::span(spawns).subspan(from), region, rng, game_difficulty);
+            auto made = spawn_monsters(*game_data, std::span(spawns).subspan(from), region, rng, game_difficulty, int(heroes.size()));
             auto& into = grown == mon_level ? monsters : kept[grown];
             for (auto& monster : made) { monster.id = next_id++; into.push_back(std::move(monster)); }
         }

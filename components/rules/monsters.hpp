@@ -257,9 +257,11 @@ bool room_spot(SpawnRoom& room, Fits&& fits, Near&& near_entrance, int& spot_x, 
 // Elemental attacks: MonLvl damage x El1..3 MinD / MaxD % the same way
 // (FUN_005a4f50), the length as written. tools/emu/monstats.py checks
 // every row and difficulty against game.exe.
-// ponytail: single player; the /players life and experience bonus
-// (FUN_005738f0 / FUN_00573910: 50 % a player past 2) waits for players;
-// Nightmare / Hell take the area's level (FUN_0061dca0) for a ratio row,
+// With `players` in the game (FUN_00535790's count, FUN_00573930) life
+// and experience grow by player_life_pct / player_exp_pct of the roll
+// (FUN_00483360: truncated), life capped at 0x7fffff (FUN_00573cb0).
+// ponytail: monster data +0x4c (unidentified) skips the bonus in game.exe;
+// d2d's pets never take it; Nightmare / Hell take the area's level (FUN_0061dca0) for a ratio row,
 // not Level(N) / Level(H), which waits for those difficulties.
 struct MonStats {
     int level = 1, hit_points = 1, armor_class = 0, to_hit = 0, a1_min = 0, a1_max = 0, a2_min = 0, a2_max = 0, exp = 0;
@@ -286,7 +288,19 @@ inline int swing_max_damage(const MonStats& stats, std::string_view swing_mode) 
     return total;
 }
 
-inline MonStats monster_stats(const Monsters& monsters, int type, int difficulty, Rng& rng, int level_add = 0) {
+// The player-count bonus in % (FUN_005738f0 life, table 0x6e1590;
+// FUN_00573910 experience, 0x6e15b4): 50 a player past the first up to 8,
+// then (n - 2) x 50 and (5n + 130) x 2.
+inline int player_life_pct(int players) {
+    static constexpr std::array<int, 9> kPct{ 0, 0, 50, 100, 150, 200, 250, 300, 350 };
+    return players < 9 ? kPct[std::size_t(std::max(players, 0))] : (players - 2) * 50;
+}
+inline int player_exp_pct(int players) {
+    static constexpr std::array<int, 9> kPct{ 0, 0, 50, 100, 150, 200, 250, 300, 350 };
+    return players < 9 ? kPct[std::size_t(std::max(players, 0))] : (players * 5 + 130) * 2;
+}
+
+inline MonStats monster_stats(const Monsters& monsters, int type, int difficulty, Rng& rng, int level_add = 0, int players = 1) {
     MonStats stats;
     if (type < 0 || std::size_t(type) >= monsters.types.size()) return stats;
     const auto& type_info = monsters.types[std::size_t(type)];
@@ -298,6 +312,7 @@ inline MonStats monster_stats(const Monsters& monsters, int type, int difficulty
     auto pct = [&](int base, int percent) { return type_info.no_ratio ? percent : base * percent / 100; };
     const int hit_points = level_row.hit_points[std::size_t(difficulty_index)];
     stats.hit_points  = std::max(rng.range(pct(hit_points, per_difficulty.min_hp), pct(hit_points, per_difficulty.max_hp)), 1);
+    stats.hit_points = int(std::min<std::int64_t>(stats.hit_points + std::int64_t(stats.hit_points) * player_life_pct(players) / 100, 0x7fffff));
     stats.armor_class  = pct(level_row.armor_class[std::size_t(difficulty_index)], per_difficulty.armor_class);
     stats.to_hit  = pct(level_row.to_hit[std::size_t(difficulty_index)], per_difficulty.a1_th);
     stats.to_hit2 = pct(level_row.to_hit[std::size_t(difficulty_index)], per_difficulty.a2_th);
@@ -309,6 +324,7 @@ inline MonStats monster_stats(const Monsters& monsters, int type, int difficulty
     stats.s1_min = pct(level_row.damage[std::size_t(difficulty_index)], per_difficulty.s1_min);
     stats.s1_max = std::max(pct(level_row.damage[std::size_t(difficulty_index)], per_difficulty.s1_max), stats.s1_min);
     stats.exp = pct(level_row.experience[std::size_t(difficulty_index)], per_difficulty.exp);
+    stats.exp += int(std::int64_t(stats.exp) * player_exp_pct(players) / 100);
     for (std::size_t element = 0; element < 3; ++element) {
         const auto& element_info = per_difficulty.elements[element];
         if (type_info.el_type[element] < 0 || element_info.max <= 0) continue;

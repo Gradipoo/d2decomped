@@ -508,17 +508,59 @@ int main() {
         const auto prey = std::ranges::find_if(coop.fight.monsters, [&](const Monster& monster) {
             return monster.alive() && !blood_moor->unit_blocked(monster.unit.x + 1, monster.unit.y); });
         assert(prey != coop.fight.monsters.end());
+        const int prey_id = prey->id, prey_type = prey->type;
         std::tie(second.player.x, second.player.y) = blood_moor->nearest_free(prey->unit.x + 1, prey->unit.y);
         second.target_x = second.player.x; second.target_y = second.player.y;
         std::tie(coop.lead().player.x, coop.lead().player.y) = blood_moor->nearest_free(prey->unit.x + 20, prey->unit.y);
         coop.lead().target_x = coop.lead().player.x; coop.lead().target_y = coop.lead().player.y;
-        const auto full = second.character.stats.get(d2d::d2s::kMaxLife);
+        const auto full = second.character.stats.get(d2d::d2s::kMaxLife);   // `prey` may move as monsters are born: by id from here
         for (int frame = 0; frame < 250 && second.character.stats.get(d2d::d2s::kLife) >= full; ++frame, now_ms += kTickMs) coop.tick({}, now_ms + kTickMs, now_ms);
         assert(second.character.stats.get(d2d::d2s::kLife) < full);
 
+        // Player-count rules (net-host.md section 2). Life and experience +50 %
+        // a player past the first (FUN_00573cb0, tables 0x6e1590 / 0x6e15b4).
+        {
+            d2d::rules::Rng alone{ 99 }, pair{ 99 };
+            const auto one = d2d::rules::monster_stats(data->monsters, prey_type, 0, alone);
+            const auto two = d2d::rules::monster_stats(data->monsters, prey_type, 0, pair, 0, 2);
+            assert(two.hit_points == one.hit_points + one.hit_points / 2 && two.exp == one.exp + one.exp / 2);
+            assert(d2d::rules::player_life_pct(8) == 350 && d2d::rules::player_life_pct(10) == 400 && d2d::rules::player_exp_pct(10) == 360);
+        }
+        // The party's share of a kill (FUN_0057e6c0): 100 + 100 x 89 / 256 =
+        // 134 over levels 10 + 20, 4.4666665 a level.
+        assert((d2d::rules::party_shares(100, std::vector{ 10, 20 }) == std::vector<std::int64_t>{ 44, 89 }));
+        assert((d2d::rules::party_shares(100, std::vector{ 7 }) == std::vector<std::int64_t>{ 100 }));
+        // Both near a kill: both gain.
+        std::tie(coop.lead().player.x, coop.lead().player.y) = blood_moor->nearest_free(second.player.x + 1, second.player.y);
+        second.character.stats.values[d2d::d2s::kLife] = second.character.stats.values[d2d::d2s::kMaxLife];
+        const auto lead_exp = coop.lead().character.stats.get(d2d::d2s::kExp), second_exp = second.character.stats.get(d2d::d2s::kExp);
+        assert(coop.fight.monster_index(prey_id) >= 0);
+        const auto prey_index = std::size_t(coop.fight.monster_index(prey_id));
+        coop.fight.monsters[prey_index].hit_points = 0;
+        coop.fight.killed(prey_index, now_ms);
+        assert(coop.lead().character.stats.get(d2d::d2s::kExp) > lead_exp && second.character.stats.get(d2d::d2s::kExp) > second_exp);
+        // Gold picked up is shared (FUN_00540900): 100 between two, 50 each.
+        const auto lead_gold = coop.lead().character.stats.get(d2d::d2s::kGold), second_gold = second.character.stats.get(d2d::d2s::kGold);
+        coop.loot.put({ .code = "gld", .gold = 100 }, coop.lead().player.x, coop.lead().player.y, 1, coop.fight.spawning.game, now_ms);
+        coop.loot.ground.back().gold = 100;
+        coop.loot.take(coop.loot.ground.size() - 1);
+        assert(coop.lead().character.stats.get(d2d::d2s::kGold) == lead_gold + 50 && second.character.stats.get(d2d::d2s::kGold) == second_gold + 50);
+        // A quest step's bits reach the partner who hasn't done that quest.
+        {
+            namespace quest = d2d::rules::quest;
+            auto& theirs = second.character.header.quests[std::size_t(second.character.header.active_difficulty())];
+            quest::set(theirs, 6, 0);                                     // done Sisters to the Slaughter already
+            coop.credit_party([&] {
+                auto& mine = coop.quests();
+                quest::set(mine, 5, 13); quest::set(mine, 5, 1);
+                quest::set(mine, 6, 13);
+            });
+            assert(quest::bit(theirs, 5, 13) && quest::bit(theirs, 5, 1) && !quest::bit(theirs, 6, 13));
+        }
+
         assert(coop.leave(second.id) == "no character store" && coop.players.size() == 1 && coop.fight.heroes.size() == 1);
         assert(coop.leave(coop.lead().id) == "the last player stays");
-        std::printf("OK: two players: their own orders, the other in the View, the party arrives together, monsters go at the near one\n");
+        std::printf("OK: two players: their own orders, the other in the View, the party arrives together, monsters go at the near one; scaling, party experience, gold, quest credit\n");
     }
     return 0;
 }

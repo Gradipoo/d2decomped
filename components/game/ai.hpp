@@ -571,9 +571,10 @@ std::string unique_name(const GameData& game_data, int name_seed);
 
 // A champion / unique / superunique / minion (rules/uniques.hpp,
 // FUN_005a2120): a higher level, more life, damage and to-hit,
-// resistances, speed, an element; its name. At full life.
+// resistances, speed, an element; its name. At full life. `players`: in
+// the game (rules::monster_stats' bonus).
 void make_boss(const GameData& game_data, Monster& monster, d2d::rules::Boss kind, const std::vector<int>& mods, int super, int name_seed,
-               int difficulty, d2d::rules::Rng& rng);
+               int difficulty, d2d::rules::Rng& rng, int players = 1);
 // MonUMod poison hit's init (FUN_005a1e00): its own poison stats.
 void poison_hit(const GameData& game_data, Monster& monster, int difficulty, bool unique);
 // Whether a skill may put the monster on a special think (FUN_0056e2f0 ->
@@ -587,13 +588,16 @@ bool swaps_ai(const GameData& game_data, const Monster& monster);
 void ai_toggle(const GameData& game_data, Monster& monster, int special);
 
 // A plain monster of MonStats row `type` at (x, y) cells: its components
-// and stats rolled (a boss's by make_boss instead: `stats` false).
-Monster make_monster(const GameData& game_data, int type, float x, float y, d2d::rules::Rng& rng, int difficulty, bool stats = true);
+// and stats rolled (a boss's by make_boss instead: `stats` false), for
+// `players` in the game.
+Monster make_monster(const GameData& game_data, int type, float x, float y, d2d::rules::Rng& rng, int difficulty, bool stats = true, int players = 1);
+// The players among the foes (not a pet, not a monster): the game's.
+[[nodiscard]] int players_in(std::span<const Foe> foes);
 
 // Spawns as monsters, each looking as its unit seed picks from `region`
 // (rules::monster_look).
 std::vector<Monster> spawn_monsters(const GameData& game_data, std::span<const d2d::rules::Spawn> spawns, const d2d::rules::Region& region,
-                                    d2d::rules::Rng& rng, int difficulty);
+                                    d2d::rules::Rng& rng, int difficulty, int players = 1);
 
 void set_mode(const GameData& game_data, Monster& monster, std::string_view mode, std::uint32_t now_ms);
 

@@ -100,10 +100,21 @@ jobs:
           Get-ChildItem $deps
 
       # pkg-config for FFmpeg's .pc files (pkgconfiglite is a prebuilt binary).
+      # choco exits 0 when its feed is down ("installed 0/0 packages",
+      # 2026-10-19), so retry and check pkg-config runs: a failure shows here,
+      # not as configure's "Could NOT find PkgConfig".
       - name: Install pkg-config (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
-        run: choco install pkgconfiglite -y --no-progress
+        run: |
+          foreach ($try in 1..3) {
+            choco install pkgconfiglite -y --no-progress
+            if (Get-Command pkg-config -ErrorAction SilentlyContinue) { break }
+            Write-Host "pkg-config not installed (try $try of 3)"
+            Start-Sleep -Seconds (20 * $try)
+          }
+          if (-not (Get-Command pkg-config -ErrorAction SilentlyContinue)) { throw "pkg-config is missing: the Chocolatey install failed 3 times" }
+          pkg-config --version
 
       - name: Set up Ninja (Windows)
         if: runner.os == 'Windows'

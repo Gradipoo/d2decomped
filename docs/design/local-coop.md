@@ -82,6 +82,8 @@ PC or Mac with pads works the same way.
 - The skill exists only in co-op. A save never stores it on a button (the
   previous right skill is written instead), so .d2s files stay game.exe's.
 
+![The ghost and the aura through a channel (a mockup over d2d screenshots)](https://github.com/psi29a/d2decomped/raw/pr-assets/pr57-resurrection-mockup.png)
+
 ## Fidelity
 
 - Co-op on one screen is a d2d addition; it goes in

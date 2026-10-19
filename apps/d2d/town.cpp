@@ -358,9 +358,9 @@ auto Town::enter() -> void {
 // (FUN_0045a5c0).
 auto Town::save() -> std::string {
         if (scene && level) save_automap(automap, automap_dir(world), character.name, scene->map_seed, level->layer);
-        world.each_player([&](World::Player& player) {   // the other co-op players' characters too
-            if (&player == &hero) return;
-            if (const auto why = world.save(); !why.empty()) d2d::log::warn("{}: {}", player.character.name, why);
+        world.each_player([&](World::Player& other) {    // the other co-op players' characters too
+            if (&other == &hero) return;
+            if (const auto why = world.save(); !why.empty()) d2d::log::warn("{}: {}", other.character.name, why);
         });
         return world.save();
     }
@@ -1498,9 +1498,9 @@ auto Town::pad_walk(PadPlayer& player_pad, const UnitState& unit, bool dead, boo
     }
 
 auto Town::coop_join(int seat, const Character& joining) -> void {
-        auto& player = world.join(joining);
+        const int id = world.join(joining).id;
         auto& joined = coop.emplace_back();
-        joined.seat = seat; joined.id = player.id;
+        joined.seat = seat; joined.id = id;
     }
 
 auto Town::coop_leave(int seat) -> void {
@@ -1514,9 +1514,9 @@ auto Town::coop_pad(int seat, const pad::Sample& sample, float seconds) -> void 
         const auto found = std::ranges::find(coop, seat, &CoopPlayer::seat);
         if (found == coop.end()) return;
         auto& coop_player = *found;
-        const auto player = std::ranges::find(world.players, coop_player.id, [](const auto& each) { return each->id; });
-        if (player == world.players.end()) return;
-        const auto& hero_there = **player;
+        const auto in_world = std::ranges::find(world.players, coop_player.id, [](const auto& each) { return each->id; });
+        if (in_world == world.players.end()) return;
+        const auto& hero_there = **in_world;
         const auto actions = coop_player.mapper.step(sample, pad::Context::Game, seconds);
         coop_player.pad.move = { actions.move_x, actions.move_y, actions.move_active, actions.click_press, actions.click_down, actions.rclick_press };
         const auto out = [&](const Command& command) { coop_player.orders.push_back(command); };

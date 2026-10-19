@@ -149,9 +149,9 @@ void register_game_verbs(d2d::devctl::Channel& channel, Window& win, Screen& scr
         // `pad [n] axis <leftx|lefty|rightx|righty> <-1..1>`, `pad <n> plug [deck]` (deck: the
         // Steam Deck's own controls' ids), `pad <n> unplug`.
         static std::array<SDL_Joystick*, 4> virtual_pads{};
-        std::size_t at = 1, which = 0;
-        if (args.size() > 1 && args[1].size() == 1 && args[1][0] >= '0' && args[1][0] <= '3') { which = std::size_t(args[1][0] - '0'); at = 2; }
-        const auto word = [&](std::size_t k) { return at + k < args.size() ? args[at + k] : std::string(); };
+        std::size_t first = 1, which = 0;
+        if (args.size() > 1 && args[1].size() == 1 && args[1][0] >= '0' && args[1][0] <= '3') { which = std::size_t(args[1][0] - '0'); first = 2; }
+        const auto word = [&](std::size_t nth) { return first + nth < args.size() ? args[first + nth] : std::string(); };
         auto& handle = virtual_pads[which];
         const auto plug = [&](bool deck) -> std::string {
             if (handle) return {};

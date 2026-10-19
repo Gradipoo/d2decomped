@@ -420,6 +420,13 @@ struct World {
                                                  kSewerLever, kSewerStairs, kCompellingOrb, kHellforge, kSeal, kSealInfector, kSealDeSeis, kSealVizier, kLastPortal }, operate_fn)
             || is_door(operate_fn);
     }
+    // The quests' objects a click walks up to and operates (the quest says
+    // what they do): the Cairn Stones, the Gibbet, the Inifuss Tree, the Sun
+    // Altar, the Orifice, Horazon's Journal, the Sanctuary's portal.
+    static bool quest_object(int operate_fn) {
+        using namespace d2d::rules::operate_fn;
+        return std::ranges::contains(std::array{ kCairnStone, kGibbet, kInifussTree, kSunAltar, kOrifice, kJournal, kSanctuaryPortal }, operate_fn);
+    }
     static bool is_door(int operate_fn) {
         using namespace d2d::rules::operate_fn;
         return operate_fn == kDoor || operate_fn == kTrapDoor || operate_fn == kSecretDoor;

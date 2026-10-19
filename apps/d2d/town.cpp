@@ -1478,6 +1478,17 @@ auto Town::pad_walk() -> void {
     }
 
 auto Town::pad_focus() const -> std::optional<PadFocus> {
+        if (skillbar.picking) {                                         // the hand's skill now, else its button
+            const bool on_left = skillbar.picking == 1;
+            const auto rows = skillbar.rows(on_left);
+            for (std::size_t row = 0; row < rows.size(); ++row)
+                for (std::size_t col = 0; col < rows[row].size(); ++col)
+                    if (rows[row][col] == (on_left ? skillbar.left : skillbar.right)) {
+                        const auto [x, y] = skillbar.picker_at(rows, on_left, int(row), int(col));
+                        return PadFocus{ 3000 + skillbar.picking, x + SkillBar::kIcon / 2, y - SkillBar::kIcon / 2 };
+                    }
+            return PadFocus{ 3000 + skillbar.picking, (on_left ? SkillBar::kButtonLeftX : SkillBar::kButtonRightX) + SkillBar::kIcon / 2, int(kScreenHeight) - SkillBar::kIcon / 2 };
+        }
         if (game_menu.open) {
             const int count = int(game_menu.rows().size());
             const int row = game_menu.menu == 0 ? 1 : count - 1;        // the main menu: Save and Exit; a submenu: its Previous
@@ -1523,6 +1534,16 @@ auto Town::pad_snap_points() const -> std::vector<pad::Point> {
         if (inv_open)
             for (int slot = d2d::d2s::body_location::kFirst; slot <= d2d::d2s::body_location::kLast; ++slot)
                 if (const auto& rect = inv.slots[std::size_t(slot)]; rect[2] > 0) centre(rect[0], rect[1], rect[2], rect[3]);
+        if (skillbar.picking) {                                         // the picker's icons and both hands' buttons
+            const bool on_left = skillbar.picking == 1;
+            const auto rows = skillbar.rows(on_left);
+            for (std::size_t row = 0; row < rows.size(); ++row)
+                for (std::size_t col = 0; col < rows[row].size(); ++col) {
+                    const auto [x, y] = skillbar.picker_at(rows, on_left, int(row), int(col));
+                    centre(x, y - SkillBar::kIcon, SkillBar::kIcon, SkillBar::kIcon);
+                }
+            for (const int x : { SkillBar::kButtonLeftX, SkillBar::kButtonRightX }) centre(x, int(kScreenHeight) - SkillBar::kIcon, SkillBar::kIcon, SkillBar::kIcon);
+        }
         if (store.npc >= 0) {
             if (held) centre(96, 123, 10 * 29, 10 * 29);
             else
@@ -1546,6 +1567,12 @@ auto Town::pad_trade(int mouse_x, int mouse_y) -> void {
             const auto rect = grid_rect(*scene, inv, item);
             if (mouse_x >= rect[0] && mouse_x < rect[0] + rect[2] && mouse_y >= rect[1] && mouse_y < rect[1] + rect[3]) { send(cmd::Sell{ item.id }); return; }
         }
+    }
+
+// The field's right stick click: the right hand's skill picker (A on the
+// left skill button switches to the left's), the cursor on its skill.
+auto Town::pad_open_picker() -> void {
+        if (pad_field()) skillbar.picking = 2;
     }
 
 // A store's shoulders: the next tab with stock on it, that way round.

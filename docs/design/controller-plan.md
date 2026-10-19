@@ -5,7 +5,8 @@ default layout by button position (`apps/d2d/gamepad.*`, `gamepad_map.hpp`;
 the layout is in [apps/d2d/README.md](../../apps/d2d/README.md)), stick
 walking by direction (run follows the run toggle), soft targeting in the field, menus by cursor
 and d-pad; panels hop the cursor item to item on the d-pad, and a store
-trades on X with the shoulders for tabs. Not yet: remapping, Steam Input / glyphs, a second pad, touch.
+trades on X with the shoulders for tabs; the right stick's click opens the
+skill picker. Not yet: remapping, Steam Input / glyphs, a second pad, touch.
 The plan below was written 2026-10-15, before any controller code.
 
 ## Goal

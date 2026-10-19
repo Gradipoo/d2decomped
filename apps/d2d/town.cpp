@@ -287,7 +287,7 @@ Lighting frame_light(const Scene& scene, const View& view, float cam_x, float ca
         }
     };
     for (const auto& each_unit : units) overs(each_unit, each_unit.x, each_unit.y);
-    if (player_look) overs(*player_look, cam_x, cam_y);
+    if (player_look) overs(*player_look, player_x, player_y);
     std::erase_if(eases, [&](const auto& entry) { return now - entry.second.seen > 2000; });
     return lighting;
 }
@@ -846,7 +846,7 @@ auto Town::update(std::vector<std::uint8_t>& framebuffer, const Mouse& frame_mou
         }
         std::erase_if(chat_lines, [&](const auto& line) { return frame_ms >= line.until; });
         for (const auto key : keys_this_frame) {
-            if ((trade_gold_typing || chat_typing) && key != SDLK_ESCAPE) continue;   // typing: no hotkeys
+            if ((trade_gold_typing || chat_typing || coop_typing()) && key != SDLK_ESCAPE) continue;   // typing (a co-op roster's name too): no hotkeys
             if (game_menu.open && key != SDLK_ESCAPE) continue;   // the menu's input table (FUN_00467a70) has the keys
             if (key == SDLK_I) { inv_open = !inv_open; if (inv_open) tree_open = false; }
             if (key == SDLK_T) { tree_open = !tree_open; if (tree_open) inv_open = false; }   // both right-hand panels

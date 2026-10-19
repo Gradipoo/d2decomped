@@ -228,32 +228,8 @@ Noted while playing the dev build (2026-09-24):
   entry flag bits, units blocking each other, doors. Every walker takes
   game.exe's pathers (collision.md "Path types"): the player type 7,
   monsters, NPCs, Cain, the merc and pets 0xd then 0xf.
-- **NPC menu entries.** Not every menu item does something yet:
-  - trade/repair, gamble, healing, hire and identify work (see Next up
-    for what's approximate);
-  - quest topics and the extra entries (Kashya's hire, Warriv's "go
-    east") come from the game server (docs/research/re/npc-talk.md).
-
-Noted in a playthrough (2026-09-27), to follow up:
-
-- Fixed: **crossing camp → Blood Moor popped** — the neighbour's objects
-  and NPCs draw across the edge now (NPCs at their start), and the
-  camera's slide carries across (it snapped).
-- Fixed: **Charged Bolt's black box** — Missiles.txt Trans 1 / 2 are draw
-  modes 3 / 4, the PL2 additive / multiply tables (world_view.hpp
-  blit_dcc_frame; in RGB, not the tables).
-
-Noted in a playthrough (2026-09-28), fixed:
-
-- **Click on an NPC's menu walked the player there**: a press that
-  starts on the UI stays the UI's until the button comes up.
-- **The weapon drew over the torso facing north**: the COF's draw-order
-  row is picked through the compass order, not the DCC's
-  (docs/research/re/cof-draw-order.md).
-- **Gaps in the camp's fence, wagons and trees**: a corner (orientation 3)
-  is two tiles, the second picked with orientation 4 (FUN_0066e9b0), and
-  a wall tile's block x counts from its cell's left corner whatever the
-  tile's width; narrower tiles drew shifted right.
+- Open, by act and in joined games: the newest checkpoint below.
+  (The September playthrough notes here were all fixed; git history has them.)
 
 ## Wilderness plan (from 2026-09-25)
 
@@ -915,6 +891,43 @@ character. Left as notes: the quest log's +0xb values (inferred), the
 classic ending (90 s, the credits), the seal flash's event (the boss comes
 at once), the gems at once on loot's rng, the burning souls' chest drop,
 Act 5 past the portal.
+
+## Checkpoint 2026-10-19: Coverity scans our code; max mana %
+
+PR #52 (`coverity-mana`), on top of the gamepad (#36):
+
+- Coverity Scan uploads again: the C++23 scan's tarball hit 545M and
+  scan.coverity.com answered 413. FFmpeg, Sentry/Crashpad and the
+  header-check stubs now build outside cov-build (545M → 470M before the stubs went), so only
+  our code is captured. Coverity's 2024.12 parser couldn't deduce
+  `for (... : { std::pair{..}, {..} })` and dropped 8 functions
+  (`load_scene`, `Crowd::at`, `boss_events`, ...): those lists are named
+  and typed now.
+- Max life / mana % (item_maxhp_percent 76, item_maxmana_percent 77):
+  game.exe's op 11 (FUN_00626200) is raw × (items' % + states' %) / 100,
+  raw = own + the items' flat, without the attributes' op 8 share
+  (char-panel.md). d2d ignored the items' % (stats ≥ 64 were dropped) and
+  took Battle Orders' % of the whole maximum. Miriam: 929 → 1296 mana,
+  the host's figure.
+- Joined games: the host's maxima (7 / 9 / 11) are the character's own;
+  our gear and Battle Orders shares stay on top. Walks past the host's
+  reach (snaps from ~45 subtiles) go in 40-subtile legs.
+
+Still open in Acts I–IV (none blocking):
+
+- Nobody has played an act end to end in d2d: the quest tests set up
+  each quest with debug verbs. A scripted play-through (Den of Evil →
+  Andariel, by play) would give a real gap list.
+- Quests keep one player's lists (`ponytail: one player` in quests.hpp);
+  they matter once d2d hosts.
+- The Council's S1 shot (Act 3): its mode event isn't traced.
+- Joined games, live: the netplay fixes above and a Battle Orders cast vs
+  d2d's maxima; 0x74 corpses, 0x11 leech, 0x90 party spots, 0x99 skill
+  effects are read but not drawn (docs/design/net-join-plan.md).
+  Shrine overheads, leaving a cave, the trade gold box's Backspace and
+  other units' states haven't been seen live yet.
+
+Next: those live checks with the host, or Act 5.
 
 ## Checkpoint 2026-10-17: Act 4 done, v0.4.0
 

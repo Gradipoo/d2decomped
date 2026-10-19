@@ -246,6 +246,15 @@ driven by whisper and Miriam by d2d; Act 3 reached the Blackened Temple.
 | Our corpse through the host | ✓ live: `cmd interact` on it, the host hands the 12 items back (0x9d); its 0x74 came with flag 0 |
 | A seal boss | Seal 394 (OperateFn 55) is De Seis's, 396 (56) the Vizier's, 392 (54) the Infector's; each boss at the seal plus its offset (quests-act4.md) |
 
+## Live checks, 2026-10-19
+
+| Check | Result |
+|---|---|
+| Our look with gear on, superunique names, healing at Akara | ✓ live |
+| Max life / mana / stamina | The host's 7 / 9 / 11 are the character's own (Miriam 714 / 409 / 423); d2d now keeps its gear and Battle Orders shares on top. Not yet seen live |
+| Max mana from gear | Host 1296, d2d 929: the items' max mana % (77) was ignored. Fixed (op 11, char-panel.md); headless d2d now gives 1296 |
+| Long walks | The host snaps a walk back (0x15) from about 45 subtiles out, most past 50 (five net logs, 2026-10-18); d2d now walks in 40-subtile legs. Not yet seen live |
+| `cmd interact` across the camp | Stops short by design: path type 7 is a click walk, and NPCs off screen aren't clickable |
 
 ## Open risks
 

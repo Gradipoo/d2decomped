@@ -34,6 +34,23 @@ Or use [the launcher](../launcher/README.md), which finds them for you.
 
 In game, Alt+Enter switches window / borderless fullscreen.
 
+## Gamepad
+
+Any pad SDL knows (Xbox, PlayStation, Switch, Steam Deck) plays with one
+default layout, by button position. The first pad connected plays.
+
+| Pad | In game | In the menus |
+|---|---|---|
+| Left stick | Walk; run at full tilt | Move the cursor |
+| Right stick | Move the cursor; click it to recentre | Move the cursor |
+| A (south) / right trigger | Left click: attack or use what's in reach | Left click |
+| B (east) / left trigger | Right-hand skill | Back (Esc) |
+| Y (north) / X (west) | Inventory / character | |
+| Left / right shoulder | Skill tree / automap | |
+| View (back) / Menu (start) | Quest log / game menu (Esc) | — / Enter |
+| D-pad | Belt slots 1–4 | Up, down, left, right |
+| Left stick click | Walk / run toggle | |
+
 Settings live in `d2d.cfg`: `~/Library/Preferences/d2d` (macOS),
 `~/.config/d2d` (Linux), `Documents\My Games\d2d` (Windows). The log,
 `d2d.log`, is in the same folder.

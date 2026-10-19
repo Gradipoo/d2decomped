@@ -22,7 +22,7 @@ Blood Moor to the Chaos Sanctuary, and all twenty-one quests up to Diablo's
 death. A classic game ends there; in Lord of Destruction, Tyrael's portal leads
 to Act V, which isn't built yet. Nightmare and Hell populate their levels as
 the original does. d2d can also join a game hosted by the original game over
-TCP/IP.
+TCP/IP, and plays with a gamepad as well as mouse and keyboard.
 
 | Area | Progress |
 |---|---:|
@@ -44,7 +44,8 @@ TCP/IP.
 | Act V | Not started |
 | Single player, softcore and hardcore | ✅ Runs as a one-player client/server, like the original |
 | Multiplayer over TCP/IP (a d2d host) | Not started |
-| Joining a game hosted by the original | 🚧 Acts I and II together: party, trade, portals, waypoints, chat, quests, travel; live checks pending |
+| Joining a game hosted by the original | 🚧 Acts I–IV played through together: party, trade, portals, waypoints, chat, quests, travel; a few live checks pending |
+| Gamepad | ✅ Xbox, PlayStation, Switch and Steam Deck pads, one default layout ([apps/d2d](apps/d2d/README.md)) |
 | Dedicated server | Not started |
 
 ## Bring your own game
@@ -68,17 +69,17 @@ this reimplementation.
 **Available now:** Linux support alongside Windows and macOS, plus an optional
 headless mode and local control channel for scripted play and testing, and
 opt-in crash reports from the launcher (off by default; see
-[apps/README.md](apps/README.md)).
+[apps/README.md](apps/README.md)), and gamepad play.
 Small comforts, each switchable off with `--toggle`: gold is picked up by
 walking over it, and roofs turn see-through around your character.
 
 **Planned:** continue through the rest of the campaign; let d2d host multiplayer
-games and run a dedicated server; and support controllers, high-DPI displays, and remappable controls. These features are not implemented yet.
+games and run a dedicated server; and support high-DPI displays and remappable controls. These features are not implemented yet.
 
 ## Steam Deck
 
-Steam Deck support is experimental: there is no Flathub listing or controller
-support yet. Download and extract the `d2decomped-x86_64` artifact from a
+Steam Deck support is experimental: there is no Flathub listing yet. The
+Deck's own controls work as a gamepad. Download and extract the `d2decomped-x86_64` artifact from a
 successful [CI workflow run](https://github.com/psi29a/d2decomped/actions/workflows/ci.yml),
 switch to Desktop Mode, then run:
 

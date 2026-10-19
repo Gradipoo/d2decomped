@@ -48,10 +48,10 @@ auto World::act3_join() -> void {
         bridge_check = 0;
         blade = {};
         blade.join(quests(), carries(d2d::rules::BladeQuest::kGidbinn));
-        had_gidbinn = carries(d2d::rules::BladeQuest::kGidbinn); gidbinn_timer = 0; gidbinn_altar = -1;
+        actor->had_gidbinn = carries(d2d::rules::BladeQuest::kGidbinn); gidbinn_timer = 0; gidbinn_altar = -1;
         golden_bird = {};
         golden_bird.join(quests(), carries(d2d::rules::GoldenBirdQuest::kBird), carries(d2d::rules::GoldenBirdQuest::kFigurine));
-        had_figurine = carries(d2d::rules::GoldenBirdQuest::kFigurine); had_bird = carries(d2d::rules::GoldenBirdQuest::kBird);
+        actor->had_figurine = carries(d2d::rules::GoldenBirdQuest::kFigurine); actor->had_bird = carries(d2d::rules::GoldenBirdQuest::kBird);
     }
 
 auto World::act3_enter(const Level& from) -> void {
@@ -63,7 +63,7 @@ auto World::act3_enter(const Level& from) -> void {
     }
 
 auto World::act3_talk(std::vector<d2d::rules::QuestMsg>& out, int hc_idx) -> void {
-        std::ranges::copy(d2d::rules::HratliGreeting::talk(quests(), hc_idx, character.header.cls), std::back_inserter(out));
+        std::ranges::copy(d2d::rules::HratliGreeting::talk(quests(), hc_idx, actor->character.header.cls), std::back_inserter(out));
         std::ranges::copy(lam_esen.talk(quests(), hc_idx, carries(d2d::rules::LamEsenQuest::kTome)), std::back_inserter(out));
         std::ranges::copy(khalim.talk(quests(), hc_idx, khalim_parts(), !temple.orb_broken), std::back_inserter(out));
         std::ranges::copy(temple.talk(quests(), hc_idx), std::back_inserter(out));
@@ -82,14 +82,14 @@ auto World::act3_said(int hc_idx, int message_string) -> void {
         // Lam Esen's Tome handed to Alkor (FUN_005b7740): the tome goes (FUN_00544160), 5 stat points.
         if (const auto heard = lam_esen.said(quests(), game_bits, hc_idx, message_string, carries(d2d::rules::LamEsenQuest::kTome), d2d::rules::level_act(level->id) == 2); heard.takes_tome || heard.stat_points) {
             if (heard.takes_tome) take_carried(d2d::rules::LamEsenQuest::kTome);
-            character.stats.values[d2d::d2s::kStatPts] += heard.stat_points;
+            actor->character.stats.values[d2d::d2s::kStatPts] += heard.stat_points;
             d2d::log::info("Lam Esen's Tome: handed to Alkor, +{} stat points", heard.stat_points);
         }
         // The Golden Bird (FUN_005ba320): the figurine for the bird at Meshif's, the bird to Alkor, his potion.
         using Bird = d2d::rules::GoldenBirdQuest;
         const auto bird = golden_bird.said(quests(), game_bits, hc_idx, message_string, carries(Bird::kFigurine), carries(Bird::kBird));
         if (bird.takes_figurine) take_carried(Bird::kFigurine);
-        if (bird.gives_bird) { give_item(Bird::kBird, now); had_bird = true; d2d::log::info("The Golden Bird: Meshif's golden bird"); }
+        if (bird.gives_bird) { give_item(Bird::kBird, now); actor->had_bird = true; d2d::log::info("The Golden Bird: Meshif's golden bird"); }
         if (bird.takes_bird) take_carried(Bird::kBird);
         if (bird.gives_potion) { give_item(Bird::kPotion, now); d2d::log::info("The Golden Bird: Alkor's Potion of Life"); }
         // Khalim's Will (FUN_005b8060): Cain's bits; the Blackened Temple
@@ -106,7 +106,7 @@ auto World::act3_said(int hc_idx, int message_string) -> void {
         const auto blade_heard = blade.said(quests(), game_bits, hc_idx, message_string, carries(Blade::kGidbinn));
         if (blade_heard.takes_gidbinn) { take_carried(Blade::kGidbinn); d2d::log::info("The Blade of the Old Religion: the Gidbinn to Ormus"); }
         if (blade_heard.ring) {
-            give_item(Blade::kRing, now, Blade::kRingLevel[std::size_t(std::clamp(character.header.active_difficulty(), 0, 2))], 6);
+            give_item(Blade::kRing, now, Blade::kRingLevel[std::size_t(std::clamp(actor->character.header.active_difficulty(), 0, 2))], 6);
             d2d::log::info("The Blade of the Old Religion: Ormus's ring");
         }
         if (blade_heard.merc) {
@@ -115,7 +115,7 @@ auto World::act3_said(int hc_idx, int message_string) -> void {
             if (!offers.empty()) {
                 auto free_offer = offers.front();
                 free_offer.cost = 0;
-                d2d::rules::hire(free_offer, character.header, character.stats);
+                d2d::rules::hire(free_offer, actor->character.header, actor->character.stats);
                 for (auto& entry : hire_lists[std::size_t(act())]) if (d2d::rules::for_hire(entry)) { entry.hired = true; break; }
                 hire_list(act());
                 spawn_merc();
@@ -166,17 +166,17 @@ auto World::act3_update(std::uint32_t now_ms) -> void {
                 if ((monster.boss == d2d::rules::Boss::unique || monster.boss == d2d::rules::Boss::superunique) && monster.type != 0x197
                     && !game_data->mon_is_npc[std::size_t(monster.type)]) { golden_bird.made(monster.id); break; }
         if (const bool figurine = carries(d2d::rules::GoldenBirdQuest::kFigurine), bird = carries(d2d::rules::GoldenBirdQuest::kBird); !hosted_quests) {
-            if (figurine && !had_figurine && golden_bird.picked_up(quests(), false)) d2d::log::info("The Golden Bird: the jade figurine (FUN_00553380)");
-            if (bird && !had_bird) golden_bird.picked_up(quests(), true);
-            had_figurine = figurine; had_bird = bird;
+            if (figurine && !actor->had_figurine && golden_bird.picked_up(quests(), false)) d2d::log::info("The Golden Bird: the jade figurine (FUN_00553380)");
+            if (bird && !actor->had_bird) golden_bird.picked_up(quests(), true);
+            actor->had_figurine = figurine; actor->had_bird = bird;
         }
         // a3q3's timer (FUN_005b9a30): with the player by the altar, a unique
         // fetish (fetish11) and its pack come (FUN_005b9930 -> FUN_005a43e0).
         // ponytail: "in its room" is within 20 cells; it waits for the player.
         if (gidbinn_timer && now_ms >= gidbinn_timer && !blade.spawned && gidbinn_altar >= 0 && std::size_t(gidbinn_altar) < level->npcs.size()) {
             const auto& altar = level->npcs[std::size_t(gidbinn_altar)];
-            if (std::hypot(player.x - altar.x, player.y - altar.y) < 20 && d2d::rules::BladeQuest::kGuardian < int(game_data->monsters.types.size())) {
-                const int diff = character.header.active_difficulty();
+            if (std::hypot(actor->player.x - altar.x, actor->player.y - altar.y) < 20 && d2d::rules::BladeQuest::kGuardian < int(game_data->monsters.types.size())) {
+                const int diff = actor->character.header.active_difficulty();
                 auto fetish_lord = make_monster(*game_data, d2d::rules::BladeQuest::kGuardian, altar.x + 1, altar.y + 1, fight.rng, diff);
                 make_boss(*game_data, fetish_lord, d2d::rules::Boss::unique, {}, -1, int(fight.rng.next() & 0xffff), diff, fight.rng);
                 const int minion = game_data->monsters.types[std::size_t(d2d::rules::BladeQuest::kGuardian)].minion[0];
@@ -193,8 +193,8 @@ auto World::act3_update(std::uint32_t now_ms) -> void {
             }
         }
         if (const bool gidbinn = carries(d2d::rules::BladeQuest::kGidbinn); !hosted_quests) {
-            if (gidbinn && !had_gidbinn && blade.picked_up(quests())) d2d::log::info("The Blade of the Old Religion: the Gidbinn (FUN_00553380)");
-            had_gidbinn = gidbinn;
+            if (gidbinn && !actor->had_gidbinn && blade.picked_up(quests())) d2d::log::info("The Blade of the Old Religion: the Gidbinn (FUN_00553380)");
+            actor->had_gidbinn = gidbinn;
         }
         // The tome picked up / dropped (a3q1's +0xb0 / +0xb4, FUN_005b7970 / FUN_005b7a00).
         // ponytail: polled from what's carried, not the item events.

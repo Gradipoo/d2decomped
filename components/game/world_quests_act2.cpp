@@ -91,10 +91,10 @@ auto World::act2_said(int hc_idx, int message_string) -> void {
         const int tainted_was = tainted.state;
         tainted.said(quests(), game_bits, hc_idx, message_string);
         if (tainted_was != 5 && tainted.state == 5 && arcane.chain()) tombs.chain();   // the Tainted Sun's +0xf0: on to record 11's, then 13's
-        arcane.said(quests(), game_bits, hc_idx, message_string, room_of(*level, player.x, player.y));
+        arcane.said(quests(), game_bits, hc_idx, message_string, room_of(*level, actor->player.x, actor->player.y));
         summoner.said(quests(), game_bits, message_string);
         if (const auto heard = tombs.said(quests(), game_bits, hc_idx, message_string, level->id == d2d::rules::SevenTombsQuest::kLair); heard.town_portal) {
-            open_portal_at(player.x, player.y + 0.6f, now);              // Tyrael's (FUN_0056d130: object 59 to level 40)
+            open_portal_at(actor->player.x, actor->player.y + 0.6f, now);              // Tyrael's (FUN_0056d130: object 59 to level 40)
             if (heard.act3) open_act(2);                                  // Act 3 open
             d2d::log::info("The Seven Tombs: Tyrael's portal");
         } else if (heard.take_staff) {
@@ -115,8 +115,8 @@ auto World::act2_tick() -> void {
         // ponytail: the takers' unit event 0x36 (LAB_0059c710) unread.
         if (level->id == d2d::rules::SevenTombsQuest::kLair && tombs.tyrael_portal && !tombs.tyrael_gone)
             for (std::size_t i = 0; i < level->npcs.size() && i < npc_states.size(); ++i)
-                if (level->npcs[i].hc_idx == d2d::rules::SevenTombsQuest::kTyrael && talking[0] != int(i)
-                    && std::hypot(level->npcs[i].x - player.x, level->npcs[i].y - player.y) * 5 >= 12) {
+                if (level->npcs[i].hc_idx == d2d::rules::SevenTombsQuest::kTyrael && actor->talking[0] != int(i)
+                    && std::hypot(level->npcs[i].x - actor->player.x, level->npcs[i].y - actor->player.y) * 5 >= 12) {
                     npc_states[i].hidden = true;
                     tombs.tyrael_gone = true;
                     d2d::log::info("The Seven Tombs: Tyrael leaves");

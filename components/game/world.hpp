@@ -35,6 +35,7 @@
 #include <cstdint>
 #include <ctime>
 #include <map>
+#include <memory>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -146,25 +147,50 @@ struct View {
 constexpr std::uint32_t kTickMs = 40;
 
 struct World {
+    // A player in the game (docs/design/local-coop.md): their fight (Hero:
+    // unit, character, merc, combat), where they're headed, what they hold
+    // and have open, what the World told them.
+    struct Player : Fight::Hero {
+        float target_x = 0, target_y = 0;      // where the player is walking to
+        bool  running = false;                 // run / walk (game.exe's 0x53 / 0x54)
+        int   take_warp = -1;                  // the warp of `level` the player is walking to
+        int   interact_npc = -1;               // the object / NPC being walked to
+        int   pick_item = -1;                  // the ground item being walked to (its unit id)
+        int take_portal = -1;                  // the portal (0..3) the player is walking to
+        // The player's corpses (FUN_0057f700): where they fell, what they wore
+        // and had in hand, 75% of the experience the death took; at most 16.
+        struct Corpse { const Level* level = nullptr; float x = 0, y = 0; int dir = 0; std::vector<d2d::d2s::Item> items;
+                        std::int64_t exp = 0; GameData::Appearance gfx{}; };
+        std::vector<Corpse> corpses;
+        int take_corpse = -1;                  // the corpse the player is walking to
+        int last_pmode = -1;                   // the player's mode at the last tick (death's stages)
+        std::int64_t exp_lost = 0;             // what the last death took
+        std::uint32_t arrived_at = 0;          // when the player last changed level (pcdata+0x160)
+        std::array<int, 3> talking{ -1, -1, -1 };   // NPCs the client has a menu, speech or store open with (they stand)
+        std::vector<Event> events;             // for the client, since it last looked
+        std::optional<d2d::d2s::Item> held;    // the item in the player's hand (the cursor)
+        Store store;                           // the NPC window open (npc < 0: none): its stock
+        bool had_soulstone = false;            // the Hellforge's item event (LAB_005b5a90): the soulstone picked up
+        bool had_gidbinn = false;
+        bool had_figurine = false, had_bird = false;   // the Golden Bird's items, last tick (its pickups)
+        std::int64_t gold_lost = 0;            // goldlost (175), as the last death set it
+    };
+    using Corpse = Player::Corpse;
+    // The players, in join order; [0] is there from the start. `actor` is the
+    // one acting now (act_as): the World's, the fight's and the loot's.
+    std::vector<std::unique_ptr<Player>> players;
+    Player* actor = nullptr;
+    void act_as(Player& player);
     const GameData* game_data = nullptr;
-    Character character;                       // the character: the World's own (the client's is a copy of the View's)
     const Level* level = nullptr;          // where the player is: the town, the Blood Moor, the Den of Evil
-    UnitState player;                      // DS1 cells (x.5 = a cell centre)
-    std::optional<Monster> merc;            // the save's mercenary (Fight::merc_turn)
-    const Npc* merc_npc = nullptr;
     std::vector<UnitState> npc_states;     // the level's NPCs as they patrol
     // Other levels' NPCs, kept while the player's away; the neighbours'
     // keep patrolling (game.exe runs every unit in the rooms in play).
     std::unordered_map<const Level*, std::vector<UnitState>> other_npcs;
     d2d::rules::Rng rng{ 0x2545f491u };    // rolls (the client's stock, talk topics, gambles, merc offers too)
     Cues  cues{ game_data };                   // world sounds due later
-    Loot  loot{ game_data, level, character, player, rng, cues };                       // on the ground (loot.hpp)
-    Fight fight{ game_data, level, character, player, merc, merc_npc, rng, loot, cues };  // the fight (fight.hpp)
-    float target_x = 0, target_y = 0;      // where the player is walking to
-    bool  running = false;                 // run / walk (game.exe's 0x53 / 0x54)
-    int   take_warp = -1;                  // the warp of `level` the player is walking to
-    int   interact_npc = -1;               // the object / NPC being walked to
-    int   pick_item = -1;                  // the ground item being walked to (its unit id)
+    Loot  loot{ game_data, level, rng, cues };          // on the ground (loot.hpp)
+    Fight fight{ game_data, level, rng, loot, cues };   // the fight (fight.hpp)
     bool  autoloot_gold = true;            // d2d: gold walked over goes into the purse (deviations.md #5, --toggle autoloot)
     std::vector<int> not_there;            // levels walked toward that aren't built (logged once)
     std::map<std::pair<const Level*, int>, std::uint32_t> operated;   // shrines / chests used: when
@@ -185,22 +211,8 @@ struct World {
     // way). A portal's other end is k ^ 1.
     struct Portal { const Level* level = nullptr; float x = 0, y = 0; std::uint32_t born = 0; };
     std::array<Portal, 8> portal{};
-    int take_portal = -1;                  // the portal (0..3) the player is walking to
-    // The player's corpses (FUN_0057f700): where they fell, what they wore
-    // and had in hand, 75% of the experience the death took; at most 16.
-    struct Corpse { const Level* level = nullptr; float x = 0, y = 0; int dir = 0; std::vector<d2d::d2s::Item> items;
-                    std::int64_t exp = 0; GameData::Appearance gfx{}; };
-    std::vector<Corpse> corpses;
-    int take_corpse = -1;                  // the corpse the player is walking to
-    int last_pmode = -1;                   // the player's mode at the last tick (death's stages)
-    std::int64_t exp_lost = 0;             // what the last death took
     std::uint32_t now = 0;                 // the tick's time
-    std::uint32_t arrived_at = 0;          // when the player last changed level (pcdata+0x160)
-    std::array<int, 3> talking{ -1, -1, -1 };   // NPCs the client has a menu, speech or store open with (they stand)
-    std::vector<Event> events;             // for the client, since it last looked
     const CharacterStore* characters = nullptr;   // where the character is saved
-    std::optional<d2d::d2s::Item> held;    // the item in the player's hand (the cursor)
-    Store store;                           // the NPC window open (npc < 0: none): its stock
     // A vendor's stock lasts the game (the NPC's own inventory, server
     // side): bought items gone, sold ones there to buy back. By NPC index.
     // An act change refreshes them (World::arrive clears the lot), so NPC
@@ -239,7 +251,6 @@ struct World {
     bool fortress_warp_done = false;       // a4q2's +5: the 90 s step
     bool end_movie = false;                // the client's DAT_007a0604: ACT04END and the endgame screen on leaving
     bool game_closed = false;              // classic, 95 s on (FUN_00530590), or 90 s without bit 13 (C->S 0x69)
-    bool had_soulstone = false;            // the Hellforge's item event (LAB_005b5a90): the soulstone picked up
     std::uint32_t gems_at = 0;             // the forge's event 7 (FUN_005b6710): the next round of gems
     int gem_rounds = 0;                    // its data +8: rounds left (4 perfect .. 1 plain)
     bool forge_inited = false;             // the forge's InitFn ran (its room came up)
@@ -248,10 +259,8 @@ struct World {
     struct SealBoss { int superunique, x, y; std::uint32_t at; };
     std::vector<SealBoss> seal_bosses;
     [[nodiscard]] d2d::rules::KhalimQuest::Parts khalim_parts() const;
-    bool had_gidbinn = false;
     std::uint32_t gidbinn_timer = 0;       // a3q3's 7 ticks from the altar's use (FUN_00543f10 -> FUN_005b9a30)
     int gidbinn_altar = -1;                // the altar's Level::npcs index
-    bool had_figurine = false, had_bird = false;   // the Golden Bird's items, last tick (its pickups)
     d2d::rules::TaintedSunQuest tainted;   // and the Tainted Sun
     d2d::rules::HoradricStaffQuest staff;  // and the Horadric Staff
     d2d::rules::ArcaneQuest arcane;        // and the Arcane Sanctuary
@@ -328,33 +337,34 @@ struct World {
     // map's middle; then the nearest free spot so we never start inside a
     // tent.
     World(const GameData* loaded_data, int start_x, int start_y) : game_data(loaded_data), level(loaded_data ? &loaded_data->town : nullptr) {
+        act_as(*players.emplace_back(std::make_unique<Player>()));
         const bool have_world = level && !level->dt1s.empty();
-        player.x = (start_x >= 0 ? float(start_x) : have_world ? float(level->ds1.width() / 2) : 0.f) + 0.5f;
-        player.y = (start_y >= 0 ? float(start_y) : have_world ? float(level->ds1.height() / 2) : 0.f) + 0.5f;
+        actor->player.x = (start_x >= 0 ? float(start_x) : have_world ? float(level->ds1.width() / 2) : 0.f) + 0.5f;
+        actor->player.y = (start_y >= 0 ? float(start_y) : have_world ? float(level->ds1.height() / 2) : 0.f) + 0.5f;
         if (have_world && start_x < 0 && start_y < 0 && level->start.first >= 0)
-            std::tie(player.x, player.y) = level->start;
-        if (have_world) std::tie(player.x, player.y) = level->nearest_free(player.x, player.y);
+            std::tie(actor->player.x, actor->player.y) = level->start;
+        if (have_world) std::tie(actor->player.x, actor->player.y) = level->nearest_free(actor->player.x, actor->player.y);
         if (game_data) npc_states = npc_start(*level);
         if (game_data) fight.new_game(0);
-        target_x = player.x; target_y = player.y;
-        player.dir = 4;                    // south, facing the viewer
+        actor->target_x = actor->player.x; actor->target_y = actor->player.y;
+        actor->player.dir = 4;                    // south, facing the viewer
         // Its monsters open its doors (monster_door).
         fight.open_door = [this](const Monster& monster, std::uint32_t now_ms) { return monster_door(monster, now_ms); };
         // The character's skill levels for the fight, the skill shrine's
         // +all skills (item_allskills) while its boost lasts, and a self
         // state's (Battle Command's aurastat1: its stats on the player,
         // FUN_00644180 adding item_allskills to every skill).
-        fight.skill_base = [this](int id) { return skill_base_level(*game_data, character, id); };
+        fight.skill_base = [this](int id) { return skill_base_level(*game_data, actor->character, id); };
         fight.skill_level = [this](int id) {
             std::vector<d2d::d2s::ItemProp> extra;
-            if (now < fight.boost.until)
-                for (const auto& [stat, value] : fight.boost.stats) if (stat == d2d::d2s::kAllSkills) extra.push_back({ .stat = d2d::d2s::kAllSkills, .value = value });
-            for (const auto& state : fight.self_states)
+            if (now < actor->boost.until)
+                for (const auto& [stat, value] : actor->boost.stats) if (stat == d2d::d2s::kAllSkills) extra.push_back({ .stat = d2d::d2s::kAllSkills, .value = value });
+            for (const auto& state : actor->self_states)
                 if (const auto* skill = game_data->skills.get(state.skill); skill && now < state.until)
                     for (std::size_t k = 0; k < skill->aurastat.size(); ++k)
                         if (skill->aurastat[k] == d2d::d2s::kAllSkills)
                             extra.push_back({ .stat = d2d::d2s::kAllSkills, .value = d2d::rules::eval_calc(game_data->skills, skill->aura_calc[k], {}, skill->id, state.level) });
-            return skill_level(*game_data, character, id, extra);
+            return skill_level(*game_data, actor->character, id, extra);
         };
     }
     World(const World&) = delete;
@@ -367,7 +377,6 @@ struct World {
     // ponytail: the roll is on the unit id, not the unit's seed (the same
     // odds, not the same colour as game.exe's for a given monster); Utrans
     // 0xff's pick (FUN_004791b0) is taken as 1.
-    std::int64_t gold_lost = 0;            // goldlost (175), as the last death set it
     [[nodiscard]] int monster_colour(const Monster& monster) const;
     [[nodiscard]] View view() const;
 
@@ -526,7 +535,7 @@ struct World {
     void open_act(int act);                                    // FUN_00538680: the save's progression
     void class_cue(std::string_view line, std::uint32_t at_ms);   // the class's voice: <class>_<line>
     void give_item(std::string_view code, std::uint32_t now_ms, int ilvl = 1, int quality = 2);
-    void set_waypoint(int index) { if (index >= 0 && index < 40) character.header.waypoints[std::size_t(character.header.active_difficulty())][std::size_t(index >> 3)] |= std::uint8_t(1 << (index & 7)); }
+    void set_waypoint(int index) { if (index >= 0 && index < 40) actor->character.header.waypoints[std::size_t(actor->character.header.active_difficulty())][std::size_t(index >> 3)] |= std::uint8_t(1 << (index & 7)); }
 
     // Dying (FUN_00580ec0 → FUN_00535ab0), killed by a monster:
     // - experience (FUN_005359f0): DifficultyLevels DeathExpPenalty % of the

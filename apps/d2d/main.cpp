@@ -927,7 +927,7 @@ int run_windowed(std::vector<std::uint8_t>& framebuffer,
             case Screen::Endgame:
                 // FUN_0044e770: OK pressed and released on it (FUN_0044e460 /
                 // FUN_0044e4f0) -> the main menu.
-                if (prev_screen != Screen::Endgame || !endgame.background.frames_per_direction()) endgame = endgame_ui(*scene, town.world.character.header);
+                if (prev_screen != Screen::Endgame || !endgame.background.frames_per_direction()) endgame = endgame_ui(*scene, town.hero.character.header);
                 if (mouse.press_this_frame && endgame_on_ok(mouse.x, mouse.y)) endgame.pressed = true;
                 if (mouse.release_this_frame) {
                     if (endgame.pressed && endgame_on_ok(mouse.x, mouse.y)) screen = Screen::Title;
@@ -1112,8 +1112,8 @@ int run_windowed(std::vector<std::uint8_t>& framebuffer,
                             town.world.hosted_quests = true;
                             town.enter();
                             if (const auto* here = town.world.level; here && net.self_x > 0) {
-                                town.world.player.x = (net.self_x + 0.5f) / 5.f - float(here->world_x);
-                                town.world.player.y = (net.self_y + 0.5f) / 5.f - float(here->world_y);
+                                town.hero.player.x = (net.self_x + 0.5f) / 5.f - float(here->world_x);
+                                town.hero.player.y = (net.self_y + 0.5f) / 5.f - float(here->world_y);
                                 town.publish();
                             }
                             town.net_game->set_running(town.view.running);   // the host starts us walking

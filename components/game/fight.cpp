@@ -4096,6 +4096,7 @@ auto Fight::crowd(Crowd& crowd_out) -> void {
 auto Fight::player_foe(std::uint32_t now_ms) -> Foe {
         Foe foe{ actor->player.x, actor->player.y, int(actor->character.stats.get(d2d::d2s::kLevel)), !dead(), actor->player.walking, actor->player_combat };
         foe.running = actor->owner_mode == 3;                   // RN (World: walking with run on and stamina)
+        foe.id = -2 - 2 * actor->id;                            // its own id below the monsters' (a guided missile finds it again)
         foe.life_pct = int(std::int64_t(actor->character.stats.get(d2d::d2s::kLife)) * 100 / std::max<std::int64_t>(actor->character.stats.get(d2d::d2s::kMaxLife), 1));
         // Diablo's score of the player (FUN_005e8530).
         const auto stat = [&](int id) { return int(actor->psum[std::size_t(id)]); };
@@ -4117,6 +4118,7 @@ auto Fight::merc_foe(std::uint32_t now_ms) -> Foe {
         Foe foe{ actor->merc ? actor->merc->unit.x : 0, actor->merc ? actor->merc->unit.y : 0, actor->merc_st.level, actor->merc && actor->merc->mode != "DT",
                  actor->merc && actor->merc->unit.walking, merc_fighter() };
         foe.pet = true;                                  // the merc: its MonStats class's size
+        foe.id = -3 - 2 * actor->id;                     // as the player's, its own
         foe.life_pct = actor->merc ? int(std::int64_t(actor->merc->hit_points) * 100 / std::max(merc_max_life(), 1)) : 0;
         if (const int row = actor->merc_npc ? game_data->monsters.row(actor->merc_npc->id) : -1; row >= 0)
             foe.size = game_data->monsters.types[std::size_t(row)].size, foe.threat = game_data->monsters.types[std::size_t(row)].threat;

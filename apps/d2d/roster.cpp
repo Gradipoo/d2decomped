@@ -53,7 +53,7 @@ Roster open_roster(const Scene& scene, std::span<const std::string> playing, con
     }
     roster.entries.push_back({ "New character", {}, -1, lead.active_difficulty() == 0 });   // a new one plays Normal only
     const auto first = std::ranges::find_if(roster.entries, &Roster::Entry::usable);
-    roster.pick = int(first - roster.entries.begin());
+    roster.pick = first == roster.entries.end() ? 0 : int(first - roster.entries.begin());   // none usable: the first, greyed
     return roster;
 }
 

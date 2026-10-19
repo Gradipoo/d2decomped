@@ -341,7 +341,7 @@ struct Foe {
     bool a3q5_done = false;                   // a player, or its pet, with quest 0x15 bit 0 (the zealots spare it)
     int blessed = 0;                          // the wisps' dance's magic find (stat 0x50) put on it this frame
     d2d::rules::DiabloPick pick;              // what Diablo's target score reads off it (FUN_005e8530)
-    int id = -1;                              // a pet's or monster's Monster::id (the player and merc: -1, always 0 / 1)
+    int id = -1;                              // a pet's or monster's Monster::id; a player's -2 - 2 x Hero::id, their merc's one below
     void take(const d2d::rules::Taken& taken) {
         blocked = blocked || taken.blocked;
         hits += taken.hit ? 1 : 0;

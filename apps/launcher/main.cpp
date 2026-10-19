@@ -652,12 +652,12 @@ public:
     }
 
 private:
-    // A box that writes `key = on|off` to d2d.cfg as it's toggled.
-    QCheckBox* cfgCheckBox(const QString& text, const char* key, const char* on, const char* off) {
+    // A box that writes `key = checked_value|unchecked_value` to d2d.cfg as it's toggled.
+    QCheckBox* cfgCheckBox(const QString& text, const char* key, const char* checked_value, const char* unchecked_value) {
         auto* box = new QCheckBox(text, this);
-        connect(box, &QCheckBox::toggled, this, [this, key, on, off](bool checked) {
+        connect(box, &QCheckBox::toggled, this, [this, key, checked_value, unchecked_value](bool checked) {
             const auto cfg = d2d::userdir::user_dir("d2d") / "d2d.cfg";
-            if (!d2d::userdir::save_cfg(cfg, { { key, checked ? on : off } }))
+            if (!d2d::userdir::save_cfg(cfg, { { key, checked ? checked_value : unchecked_value } }))
                 QMessageBox::warning(this, tr("Settings"), tr("Could not write %1").arg(from_path(cfg)));
         });
         return box;

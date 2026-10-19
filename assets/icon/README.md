@@ -27,6 +27,7 @@ The rest are rendered from it (rsvg-convert, ImageMagick, macOS iconutil):
 | `d2d.png` (256) | the launcher's window icon (Qt resource) |
 | `d2d.bmp` (64, BMP4 with alpha) | d2d's window/dock icon (SDL_LoadBMP, embedded at configure) |
 | `hero.png` (1120 wide) from `hero.svg` | the launcher's banner, 2x its 560 px width |
+| `steam-*.png` from `steam-*.svg` (`steam-render.sh`) | Steam library art for the Deck's Non-Steam Game: capsule 600x900, wide 920x430, hero 1920x620, logo (the wordmark, transparent) |
 
 `hero.svg` draws `d2d.svg` beside the wordmark: AvQest (freeware, GemFonts / Imitation Warehouse; the Exocet look-alike famfonts offers for Diablo),
 converted to outlines, so no font is needed to render it.

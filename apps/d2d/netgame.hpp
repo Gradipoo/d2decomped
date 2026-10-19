@@ -203,6 +203,10 @@ private:
     std::uint32_t still_since_ms = 0;          // when the first of them was held
     float walk_to_x = 0, walk_to_y = 0;        // our last walk sent (0x01 / 0x03), and when
     std::uint32_t walk_sent_ms = 0;
+    // A walk past the host's reach goes in legs (kWalkReach): where it ends,
+    // and whether it runs; the next leg leaves when the host nears this one's end.
+    float walk_goal_x = -1, walk_goal_y = -1;
+    bool walk_goal_run = false;
     bool died = false;
     d2d::net::Bytes last_sent;
     std::uint32_t last_sent_ms = 0;

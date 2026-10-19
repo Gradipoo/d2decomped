@@ -64,6 +64,10 @@ auto steady_ms() -> std::uint32_t {
 }
 
 constexpr float kWalkSubtilesPerSec = d2d::game::cells_per_sec(6) * 5;   // a player's walk (6)
+// The host walks us at most about 0x32 subtiles in one go; a target further
+// off gets a 0x15 snap back (live 2026-10-18: none under 45 out, most past
+// 50). A longer walk goes in legs this long.
+constexpr float kWalkReach = 40;
 // A run: velocitypercent + run * 100 / walk - 100 (FUN_00620e80), every class's 9 / 6.
 constexpr float kRunSubtilesPerSec = d2d::game::cells_per_sec(9) * 5;
 
@@ -188,6 +192,9 @@ auto NetGame::pump(std::uint32_t now_ms, std::uint32_t elapsed_ms) -> void {
             socket_gone = true;
         }
         send(session.tick(now_ms));
+        // A long walk's next leg, once the host has us near this one's end.
+        if (walk_goal_x >= 0 && std::hypot(walk_to_x - host_x, walk_to_y - host_y) < 5)
+            move_to(walk_goal_x, walk_goal_y, walk_goal_run);
         // Stopped: no walk sent for as long as the host's player needs to
         // reach the last one from where it last said it was (at a walk's
         // speed, the slower), and no word of walking lately; or 5 s.
@@ -602,6 +609,12 @@ auto NetGame::handle(const d2d::net::Bytes& packet) -> void {
 
 auto NetGame::move_to(float subtile_x, float subtile_y, bool run) -> void {
     if (session.state() != d2d::net::JoinState::InGame || subtile_x < 0 || subtile_y < 0) return;
+    walk_goal_x = walk_goal_y = -1;
+    if (const float apart = std::hypot(subtile_x - host_x, subtile_y - host_y); (host_x > 0 || host_y > 0) && apart > kWalkReach) {
+        walk_goal_x = subtile_x; walk_goal_y = subtile_y; walk_goal_run = run;
+        subtile_x = host_x + (subtile_x - host_x) * kWalkReach / apart;
+        subtile_y = host_y + (subtile_y - host_y) * kWalkReach / apart;
+    }
     send({ d2d::net::d2gs::c2s::move_to(std::uint16_t(subtile_x), std::uint16_t(subtile_y), run) });
     walk_to_x = subtile_x;
     walk_to_y = subtile_y;

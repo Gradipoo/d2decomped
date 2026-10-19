@@ -1565,10 +1565,17 @@ auto Town::walk(const Mouse& mouse, bool over_ui, std::uint32_t frame_ms, std::u
             // Our stats as the host sets them: attributes, points, life / mana /
             // stamina and their maxima (8.8 fixed point, as in a save), level,
             // experience, gold. The host's word wins over d2d's own regen.
+            // The maxima (7, 9, 11) are the character's own, as a save keeps
+            // them (Miriam: 714 / 409 / 423): our items' and Battle Orders'
+            // shares stay on top (Fight::own_stats).
             for (const auto& change : net_game->stat_changes) {
                 if (change.id < 0 || change.id > 15) continue;
                 auto& value = world.character.stats.values[std::size_t(change.id)];
                 value = change.add ? value + change.value : change.value;
+                if (!change.add && (change.id == d2d::d2s::kMaxLife || change.id == d2d::d2s::kMaxMana || change.id == d2d::d2s::kMaxStamina)) {
+                    const auto which = std::size_t(change.id - d2d::d2s::kMaxLife) / 2;   // life, mana, stamina
+                    value += world.fight.item_max[which] + std::array<std::int64_t, 3>{ world.fight.bo_life, world.fight.bo_mana, 0 }[which];
+                }
                 if (std::getenv("D2D_NET_STATS")) d2d::log::info("net stat {} = {}", change.id, value);
             }
             net_game->stat_changes.clear();

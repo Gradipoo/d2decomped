@@ -733,7 +733,8 @@ int run_windowed(std::vector<std::uint8_t>& framebuffer,
             const std::uint32_t pad_now = std::uint32_t(SDL_GetTicks());
             const float pad_dt = std::min(float(pad_now - pad_last_ms) / 1000.f, 0.1f);
             pad_last_ms = pad_now;
-            const pad::Context pad_context = screen == Screen::InGame ? (town.store.npc >= 0 ? pad::Context::Shop : town.pad_field() ? pad::Context::Game : pad::Context::Panel)
+            const pad::Context pad_context = screen == Screen::InGame ? (town.store.npc >= 0 ? pad::Context::Shop : town.pad_dialog() ? pad::Context::Dialog
+                                                                         : town.pad_field() ? pad::Context::Game : pad::Context::Panel)
                                            : screen == Screen::Title  ? pad::Context::Title : pad::Context::Menu;
             const pad::Actions pad_actions = pad_mapper.step(gamepads.sample(), pad_context, pad_dt);
             const int pad_side = (win.view_w - int(kScreenWidth)) / 2;   // widescreen's world beyond the 800x600 UI
@@ -759,7 +760,21 @@ int run_windowed(std::vector<std::uint8_t>& framebuffer,
                 mouse.y = std::clamp(mouse.y + int(std::lround(pad_actions.cursor_dy)), 0, int(kScreenHeight) - 1);
             }
             if (pad_actions.snap_x != 0 || pad_actions.snap_y != 0) {
-                const auto points = town.pad_snap_points();
+                // The menus' hops: the screen's buttons (char select steps its roster by key instead).
+                std::vector<pad::Point> points;
+                const auto buttons = [&](std::initializer_list<const Button*> shown) {
+                    for (const Button* button : shown) points.push_back({ button->x + button->width / 2, button->y + button->height / 2 });
+                };
+                if (screen == Screen::InGame) points = town.pad_snap_points();
+                else if (screen == Screen::Title)            for (const auto& button : title.buttons) buttons({ &button });
+                else if (screen == Screen::OtherMultiplayer) for (const auto& button : other_multiplayer.buttons) buttons({ &button });
+                else if (screen == Screen::TcpIp) {
+                    if (tcpip.box_open) buttons({ &tcpip.box_ok, &tcpip.box_cancel });
+                    else buttons({ &tcpip.join, &tcpip.host, &tcpip.cancel });
+                } else if (screen == Screen::CharCreate) {
+                    for (const auto& position : kClassPos) points.push_back({ position.x, position.y - 50 });   // ponytail: a spot up each figure, not its frame's box
+                    buttons({ &character.cancel_btn, &character.ok_btn });
+                }
                 if (const int pick = pad::snap_pick(mouse.x, mouse.y, pad_actions.snap_x, pad_actions.snap_y, points); pick >= 0) {
                     mouse.x = points[std::size_t(pick)].x; mouse.y = points[std::size_t(pick)].y;
                 }

@@ -121,10 +121,15 @@ void view_units(const Scene& scene, const View& view, float camera_x, float came
                         opening ? portal.born : portal.born + kPortalOpenMs, -2000 - portal.which });
         out.back().shadow = false;
     }
-    if (view.merc)
+    if (view.merc) {
         out.push_back({ view.merc->unit.x, view.merc->unit.y, &scene.npc_anim(*view.merc->npc, view.merc->mode), view.merc->unit.dir,
                         view.merc->mode == "DT" ? nullptr : merc_label, view.merc->unit.mode_ms, -2 });
-    for (const auto& pet : view.pets) out.push_back({ pet.unit.x, pet.unit.y, &scene.npc_anim(pet.npc, pet.mode), pet.unit.dir, nullptr, pet.unit.mode_ms, -3 });
+        out.back().hold = view.merc->mode == "DT";
+    }
+    for (const auto& pet : view.pets) {
+        out.push_back({ pet.unit.x, pet.unit.y, &scene.npc_anim(pet.npc, pet.mode), pet.unit.dir, nullptr, pet.unit.mode_ms, -3 });
+        out.back().hold = pet.mode == "DT";
+    }
     // A joined game's other players, in what they wear (0x9d), walking,
     // standing or in a skill's mode.
     const bool in_town = view.level && d2d::rules::level_ids::is_town(view.level->id);
@@ -153,6 +158,7 @@ void view_units(const Scene& scene, const View& view, float camera_x, float came
         out.push_back({ monster.unit.x, monster.unit.y, &anim, monster.unit.dir, monster.targetable() ? &monster.npc.name : nullptr,
                         row ? now_ms - mpf * std::uint32_t(monster.seq_frame) - mpf / 2 : down && monster.mode != "S1" ? 0u : monster.unit.mode_ms, -10 - int(i) });
         out.back().reverse = down;
+        out.back().hold = !row && monster.mode == "DT";             // a death outlasting its frames (the host's 1500 ms) stays on the last, not back to the first
         out.back().overlay_class = monster.npc.overlay_class;
         out.back().cmap = scene.monster_map(monster.npc);
         out.back().ghostly = monster.alive() && std::ranges::find(monster.mods, d2d::rules::umod::ghostly) != monster.mods.end();
@@ -1497,10 +1503,9 @@ auto Town::pad_focus() const -> std::optional<PadFocus> {
                     }
             return PadFocus{ 3000 + skillbar.picking, (on_left ? SkillBar::kButtonLeftX : SkillBar::kButtonRightX) + SkillBar::kIcon / 2, int(kScreenHeight) - SkillBar::kIcon / 2 };
         }
-        if (game_menu.open) {
+        if (game_menu.open) {                                           // its highlight: the d-pad steps it by key, the cursor follows
             const int count = int(game_menu.rows().size());
-            const int row = game_menu.menu == 0 ? 1 : count - 1;        // the main menu: Save and Exit; a submenu: its Previous
-            return PadFocus{ 1000 + game_menu.menu, int(kScreenWidth) / 2, game_menu.top() + game_menu.step() * row + count + game_menu.step() / 2 };
+            return PadFocus{ 1000 + game_menu.menu * 64 + game_menu.sel, int(kScreenWidth) / 2, game_menu.top() + game_menu.step() * game_menu.sel + count + game_menu.step() / 2 };
         }
         if (npc_menu.npc >= 0) {
             int base = npc_menu.y;
@@ -1551,6 +1556,13 @@ auto Town::pad_snap_points() const -> std::vector<pad::Point> {
                     centre(x, y - SkillBar::kIcon, SkillBar::kIcon, SkillBar::kIcon);
                 }
             for (const int x : { SkillBar::kButtonLeftX, SkillBar::kButtonRightX }) centre(x, int(kScreenHeight) - SkillBar::kIcon, SkillBar::kIcon, SkillBar::kIcon);
+        }
+        if (npc_menu.npc >= 0 && store.npc < 0) {                      // the lines you can choose
+            int base = npc_menu.y;
+            for (const auto& line : npc_menu.lines) {
+                base += line.height;
+                if (!line.header) points.push_back({ npc_menu.x + npc_menu.box_width / 2, base - line.height / 2 });
+            }
         }
         if (store.npc >= 0) {
             if (held) centre(96, 123, 10 * 29, 10 * 29);

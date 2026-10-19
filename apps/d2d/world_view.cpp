@@ -305,7 +305,9 @@ void render_world(std::vector<std::uint8_t>& framebuffer,
             const auto [anchor_x, anchor_y] = iso_point(unit.x, unit.y);
             if (anchor_x < -200 || anchor_x > screen_w + 200 || anchor_y < -100 || anchor_y > int(kScreenHeight) + 300) continue;
             if (++id == 0) { std::ranges::fill(mask, std::uint16_t{ 0 }); id = 1; }
-            shadow_composite(framebuffer, *unit.anim, unit.dir, std::uint32_t(float(elapsed_ms - unit.mode_ms) * unit.rate), anchor_x, anchor_y, mask, id);
+            auto elapsed = std::uint32_t(float(elapsed_ms - unit.mode_ms) * unit.rate);
+            if (unit.hold) elapsed = std::min(elapsed, std::uint32_t(std::max(int(unit.anim->cof.frames_per_direction()), 1) - 1) * unit.anim->ms_per_frame());
+            shadow_composite(framebuffer, *unit.anim, unit.dir, elapsed, anchor_x, anchor_y, mask, id);
         }
     }
     set_phase(MainPhase::IngameWalls);

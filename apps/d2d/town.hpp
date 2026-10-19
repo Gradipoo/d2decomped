@@ -212,6 +212,8 @@ struct Town {
     void pad_act();
     // True when no panel, menu or dialog is up: the pad plays without a cursor.
     [[nodiscard]] bool pad_field() const;
+    // An NPC's menu or speech, the game menu or a waypoint: B leaves, the d-pad steps the choices.
+    [[nodiscard]] bool pad_dialog() const { return npc_menu.npc >= 0 || speech.npc >= 0 || game_menu.open || waypoint.open; }
     // Where the pad's cursor goes when a menu opens (or its lines change): the choice to start on.
     struct PadFocus { int key = 0, x = 0, y = 0; };
     [[nodiscard]] std::optional<PadFocus> pad_focus() const;

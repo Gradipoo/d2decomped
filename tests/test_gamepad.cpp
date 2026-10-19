@@ -147,6 +147,24 @@ int main() {
         assert(mapper.step(with(Button::LeftShoulder), Context::Shop, 0.016f).tab_step == -1);
         mapper.step(Sample{}, Context::Shop, 0.016f);
         assert(mapper.step(with(Button::DpadDown), Context::Shop, 0.016f).snap_y == 1);
+        mapper.step(Sample{}, Context::Shop, 0.016f);
+        actions = mapper.step(with(Button::East), Context::Shop, 0.016f);   // B leaves the store
+        assert(has(actions, Key::Escape) && !actions.rclick_press);
+    }
+    // A dialog (NPC menu, game menu): B leaves, the d-pad both hops the cursor and steps by key.
+    {
+        Mapper mapper;
+        Actions actions = mapper.step(with(Button::East), Context::Dialog, 0.016f);
+        assert(has(actions, Key::Escape) && !actions.rclick_press);
+        mapper.step(Sample{}, Context::Dialog, 0.016f);
+        actions = mapper.step(with(Button::DpadDown), Context::Dialog, 0.016f);
+        assert(actions.snap_y == 1 && has(actions, Key::Down) && !has(actions, Key::Belt2));
+    }
+    // A menu: the d-pad hops the cursor between buttons, and still sends its arrow.
+    {
+        Mapper mapper;
+        const Actions actions = mapper.step(with(Button::DpadUp), Context::Title, 0.016f);
+        assert(actions.snap_y == -1 && has(actions, Key::Up));
     }
     // The right stick's click: the skill picker in the field, a recentred cursor elsewhere.
     {

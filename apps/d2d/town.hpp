@@ -201,10 +201,10 @@ struct Town {
     float prev_x = 0, prev_y = 0;          // the player a tick before: the camera slides between the two
     float cam_x = 0, cam_y = 0;            // where the camera is this frame
     // A gamepad's left stick, set each frame by main: walk towards this screen
-    // direction (unit length); `run` at full tilt.
+    // direction (unit length), walking or running as the run toggle says.
     // `attack`/`attack_down`/`alt` are the pad's buttons in the field (no cursor): they hit what is in reach.
-    struct PadMove { float x = 0, y = 0; bool active = false, run = false, attack = false, attack_down = false, alt = false; } pad_move;
-    bool pad_walking = false, pad_ran = false;   // last frame's stick walk, to send a fresh walk and a Run change once
+    struct PadMove { float x = 0, y = 0; bool active = false, attack = false, attack_down = false, alt = false; } pad_move;
+    bool pad_walking = false;                     // last frame's stick walk, to send a fresh walk once
     float pad_face_x = 0.707f, pad_face_y = 0.707f;   // the facing the pad last pointed (world, south at first)
     int pad_target = -1;                          // the monster the held button stays on
     void pad_walk();

@@ -158,7 +158,7 @@ file(CONFIGURE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/d2d_icon.hpp" CONTENT
 
 add_executable(d2d
     main.cpp common.cpp cursor.cpp frontend.cpp gamemenu.cpp gamepad.cpp ingame.cpp items.cpp load.cpp panels.cpp
-    netgame.cpp scene.cpp skilltree.cpp store.cpp town.cpp ui.cpp window.cpp world_view.cpp
+    netgame.cpp roster.cpp scene.cpp skilltree.cpp store.cpp town.cpp ui.cpp window.cpp world_view.cpp
     $<$<PLATFORM_ID:Windows>:${PROJECT_SOURCE_DIR}/assets/icon/d2d.rc>)
 target_include_directories(d2d PRIVATE "${CMAKE_CURRENT_BINARY_DIR}")
 target_compile_definitions(d2d PRIVATE D2D_WITH_SENTRY "D2D_APP_VERSION=\"${D2D_VERSION}\"")

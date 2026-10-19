@@ -236,6 +236,17 @@ void register_game_verbs(d2d::devctl::Channel& channel, Window& win, Screen& scr
             }
             return out + "ok\n";
         }
+        if (args.size() >= 2 && args[1] == "roster") {    // the joining pads' rosters: seat, stage, pick, entries (* greyed)
+            std::string out;
+            for (const auto& coop_player : town.coop) {
+                if (!coop_player.roster) continue;
+                const auto& roster = *coop_player.roster;
+                out += std::format("{}\t{}\t{}\t", coop_player.seat, int(roster.stage), roster.pick);
+                for (const auto& entry : roster.entries) out += (entry.usable ? "" : "*") + entry.name + ",";
+                out += "\t" + roster.name + "\n";
+            }
+            return out + "ok\n";
+        }
         if (args.size() >= 4 && args[1] == "blocked" && town.level) {   // can a unit stand at (x, y)?
             return std::format("ok {}\n", int(town.level->unit_blocked(std::strtof(args[2].c_str(), nullptr),
                                                                    std::strtof(args[3].c_str(), nullptr))));

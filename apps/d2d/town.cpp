@@ -9,7 +9,9 @@
 #include "gamepad_map.hpp"
 #include "ingame.hpp"
 #include "panels.hpp"
+#include "load.hpp"
 #include "platform.hpp"
+#include "roster.hpp"
 #include "scene.hpp"
 #include "skilltree.hpp"
 #include "speech_sound.hpp"
@@ -1497,10 +1499,29 @@ auto Town::pad_walk(PadPlayer& player_pad, const UnitState& unit, bool dead, boo
         player_pad.walking = walk;
     }
 
+auto Town::coop_seat(int seat) -> void {
+        if (!scene || std::ranges::contains(coop, seat, &CoopPlayer::seat)) return;
+        std::vector<std::string> playing;
+        for (const auto& player : world.players) playing.push_back(player->character.name);
+        auto& waiting = coop.emplace_back();
+        waiting.seat = seat;
+        waiting.roster = open_roster(*scene, playing, world.lead().character.header);
+    }
+
 auto Town::coop_join(int seat, const Character& joining) -> void {
-        const int id = world.join(joining).id;
-        auto& joined = coop.emplace_back();
-        joined.seat = seat; joined.id = id;
+        auto found = std::ranges::find(coop, seat, &CoopPlayer::seat);
+        if (found == coop.end()) { coop.emplace_back().seat = seat; found = coop.end() - 1; }
+        found->id = world.join(joining).id;
+        found->roster.reset();
+    }
+
+auto Town::coop_text(std::string_view text, bool backspace) -> void {
+        for (auto& coop_player : coop)
+            if (coop_player.roster && roster_typing(*coop_player.roster)) { roster_text(*coop_player.roster, text, backspace); return; }
+    }
+
+auto Town::coop_typing() const -> bool {
+        return std::ranges::any_of(coop, [](const CoopPlayer& coop_player) { return coop_player.roster && roster_typing(*coop_player.roster); });
     }
 
 auto Town::coop_leave(int seat) -> void {
@@ -1514,6 +1535,23 @@ auto Town::coop_pad(int seat, const pad::Sample& sample, float seconds) -> void 
         const auto found = std::ranges::find(coop, seat, &CoopPlayer::seat);
         if (found == coop.end()) return;
         auto& coop_player = *found;
+        if (coop_player.roster) {                       // still choosing: the pad plays the roster
+            const auto actions = coop_player.mapper.step(sample, pad::Context::Menu, seconds);
+            if (const auto choice = scene ? roster_input(*coop_player.roster, actions, *scene) : std::nullopt) {
+                const auto& lead = world.lead().character.header;
+                if (choice->save >= 0) {
+                    coop_join(seat, character_of_save(*scene, std::size_t(choice->save)));
+                } else {                                 // a new character, saved at once (as char-create's OK)
+                    coop_join(seat, made_character(*scene, choice->cls, choice->name, lead.hardcore(), lead.expansion(), rng));
+                    auto& made = *world.players.back();
+                    world.each_player([&](World::Player& player) {
+                        if (&player != &made) return;
+                        if (const auto why = world.save(); !why.empty()) d2d::log::warn("{}: {}", made.character.name, why);
+                    });
+                }
+            }
+            return;
+        }
         const auto in_world = std::ranges::find(world.players, coop_player.id, [](const auto& each) { return each->id; });
         if (in_world == world.players.end()) return;
         const auto& hero_there = **in_world;
@@ -2257,6 +2295,8 @@ auto Town::draw_view(std::vector<std::uint8_t>& framebuffer, std::vector<std::ui
         const bool left_open = char_open || stash_open || cube_open || store.npc >= 0 || waypoint.open || quest_log.open;
         mini.draw(framebuffer, *scene, left_open, inv_open || tree_open, mouse.x, mouse.y);
         if (game_menu.open) game_menu.draw(framebuffer, *scene);
+        for (const auto& coop_player : coop)              // a joining pad's pick
+            if (coop_player.roster) draw_roster(framebuffer, *scene, *coop_player.roster, coop_player.seat);
     }
 
 

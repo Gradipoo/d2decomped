@@ -200,11 +200,7 @@ void draw_npc_menu(std::vector<std::uint8_t>& framebuffer, const Scene& scene, c
                    int mouse_x, int mouse_y, std::uint32_t now_ms) {
     if (menu.npc < 0) return;
     const auto& pal = scene.act_pal.entries().empty() ? scene.pal : scene.act_pal;
-    for (int y = std::max(0, menu.y); y < std::min(int(kScreenHeight), menu.y + menu.box_height); ++y)
-        for (int x = std::max(0, menu.x); x < std::min(int(kScreenWidth), menu.x + menu.box_width); ++x) {
-            auto* pixel = &framebuffer[(std::size_t(y) * kScreenWidth + std::size_t(x)) * 4];
-            pixel[0] = std::uint8_t(pixel[0] / 2); pixel[1] = std::uint8_t(pixel[1] / 2); pixel[2] = std::uint8_t(pixel[2] / 2);
-        }
+    shade_box(framebuffer, menu.x, menu.y, menu.box_width, menu.box_height);
     const int hover = menu.line_at(mouse_x, mouse_y);
     const int cell = scene.font.sheet().frames_per_direction() > 0 ? int(scene.font.sheet().frame(0, 0).height) : 16;
     int base = menu.y;
@@ -214,12 +210,24 @@ void draw_npc_menu(std::vector<std::uint8_t>& framebuffer, const Scene& scene, c
         const int x = menu.x + line.x;
         if (line.header) scene.font.draw_tinted(framebuffer, kScreenWidth, kScreenHeight, pal, x, base - cell + 1, line.text, 199, 179, 119);
         else          scene.font.draw(framebuffer, kScreenWidth, kScreenHeight, pal, x, base - cell + 1, line.text);
-        if (int(i) == hover && scene.focus16.frames_per_direction() > 0) {
-            const auto& frame = scene.focus16.frame(0, (now_ms / 40) % std::min<std::uint32_t>(7, scene.focus16.frames_per_direction()));
-            blit_sprite(framebuffer, frame, pal, x - 24, base + 4 - int(frame.height) + 1);
-            blit_sprite(framebuffer, frame, pal, x + line.width + 2, base + 4 - int(frame.height) + 1);
-        }
+        if (int(i) == hover) draw_focus(framebuffer, scene, x, base, line.width, now_ms);
     }
+}
+
+void shade_box(std::vector<std::uint8_t>& framebuffer, int x, int y, int width, int height) {
+    for (int row = std::max(0, y); row < std::min(int(kScreenHeight), y + height); ++row)
+        for (int column = std::max(0, x); column < std::min(int(kScreenWidth), x + width); ++column) {
+            auto* pixel = &framebuffer[(std::size_t(row) * kScreenWidth + std::size_t(column)) * 4];
+            pixel[0] = std::uint8_t(pixel[0] / 2); pixel[1] = std::uint8_t(pixel[1] / 2); pixel[2] = std::uint8_t(pixel[2] / 2);
+        }
+}
+
+void draw_focus(std::vector<std::uint8_t>& framebuffer, const Scene& scene, int x, int base, int width, std::uint32_t now_ms) {
+    if (scene.focus16.frames_per_direction() == 0) return;
+    const auto& pal = scene.act_pal.entries().empty() ? scene.pal : scene.act_pal;
+    const auto& frame = scene.focus16.frame(0, (now_ms / 40) % std::min<std::uint32_t>(7, scene.focus16.frames_per_direction()));
+    blit_sprite(framebuffer, frame, pal, x - 24, base + 4 - int(frame.height) + 1);
+    blit_sprite(framebuffer, frame, pal, x + width + 2, base + 4 - int(frame.height) + 1);
 }
 
 bool update_button(Button& button, const Mouse& mouse, Screen& current_screen,

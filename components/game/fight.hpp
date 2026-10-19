@@ -1003,7 +1003,7 @@ struct Fight {
     // The acting player and their merc as the monsters see them this frame.
     [[nodiscard]] Foe player_foe(std::uint32_t now_ms);
     [[nodiscard]] Foe merc_foe(std::uint32_t now_ms);
-    void on_foe_states(Foe& foe, std::size_t k, std::uint32_t now_ms) const;
+    void on_foe_states(Foe& foe, std::size_t which, std::uint32_t now_ms) const;
     [[nodiscard]] bool zealots_spare() const;
     // Whether (x, y) is within 30 cells of a player (the rooms in play).
     [[nodiscard]] bool near_players(float x, float y) const;

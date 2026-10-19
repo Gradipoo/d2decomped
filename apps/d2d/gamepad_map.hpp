@@ -9,7 +9,9 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstdint>
 #include <span>
+#include <string>
 #include <vector>
 
 namespace d2d::client::pad {
@@ -213,6 +215,50 @@ private:
     Config config_;
     std::array<bool, std::size_t(Button::Count)> prev_{};
     bool click_prev_ = false, secondary_prev_ = false, left_trigger_ = false, right_trigger_ = false;
+};
+
+// Local co-op's seats (docs/design/local-coop.md): pads take seats 0..3 in
+// the order they come (seat 0 is the first player), each by its id while
+// it's there. A pad that goes keeps its seat for kHoldMs: a pad of the same
+// key (model and serial: the same pad, or one just like it) coming back
+// takes it again; after that the seat is free and its player leaves.
+class Seats {
+public:
+    static constexpr std::uint32_t kHoldMs = 60'000;
+    static constexpr int kMost = 4;
+    // Pad `pad` came: its seat (a held one of its key first), or -1 when all are taken.
+    int connect(const std::string& key, int pad) {
+        for (std::size_t seat = 0; seat < seats_.size(); ++seat)
+            if (seats_[seat].used && seats_[seat].pad < 0 && seats_[seat].key == key) { seats_[seat].pad = pad; seats_[seat].gone_at = 0; return int(seat); }
+        for (std::size_t seat = 0; seat < seats_.size(); ++seat)
+            if (!seats_[seat].used) { seats_[seat] = { key, pad, true, 0 }; return int(seat); }
+        return -1;
+    }
+    // Pad `pad` went: its seat, held from now (-1: it had none).
+    int disconnect(int pad, std::uint32_t now_ms) {
+        const int seat = seat_of(pad);
+        if (seat >= 0) { seats_[std::size_t(seat)].pad = -1; seats_[std::size_t(seat)].gone_at = std::max<std::uint32_t>(now_ms, 1); }
+        return seat;
+    }
+    // The seats held too long, freed now (their players leave).
+    std::vector<int> expire(std::uint32_t now_ms) {
+        std::vector<int> freed;
+        for (std::size_t seat = 0; seat < seats_.size(); ++seat)
+            if (seats_[seat].used && seats_[seat].pad < 0 && now_ms - seats_[seat].gone_at >= kHoldMs) { seats_[seat] = {}; freed.push_back(int(seat)); }
+        return freed;
+    }
+    [[nodiscard]] int seat_of(int pad) const {
+        for (std::size_t seat = 0; seat < seats_.size(); ++seat) if (seats_[seat].used && seats_[seat].pad == pad) return int(seat);
+        return -1;
+    }
+    [[nodiscard]] int pad(int seat) const { return seat >= 0 && seat < kMost && seats_[std::size_t(seat)].used ? seats_[std::size_t(seat)].pad : -1; }
+    [[nodiscard]] bool present(int seat) const { return pad(seat) >= 0; }
+    [[nodiscard]] bool used(int seat) const { return seat >= 0 && seat < kMost && seats_[std::size_t(seat)].used; }
+    void clear() { seats_ = {}; }
+
+private:
+    struct Seat { std::string key; int pad = -1; bool used = false; std::uint32_t gone_at = 0; };
+    std::array<Seat, kMost> seats_{};
 };
 
 }  // namespace d2d::client::pad

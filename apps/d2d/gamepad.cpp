@@ -7,6 +7,8 @@
 
 #include <algorithm>
 #include <cstddef>
+#include <format>
+#include <utility>
 
 namespace d2d::client {
 
@@ -17,25 +19,29 @@ float axis(SDL_Gamepad* pad, SDL_GamepadAxis which) {
 }
 
 void Gamepads::open(SDL_JoystickID id) {
-    if (pad_) return;   // one pad plays; a second one stays closed for now
-    pad_ = SDL_OpenGamepad(id);
-    if (!pad_) { d2d::log::warn("gamepad: {}", SDL_GetError()); return; }
-    id_ = id;
-    d2d::log::info("gamepad: {} connected", SDL_GetGamepadName(pad_) ? SDL_GetGamepadName(pad_) : "unnamed pad");
+    if (std::ranges::any_of(pads_, [&](const Pad& pad) { return pad.id == id; })) return;
+    SDL_Gamepad* handle = SDL_OpenGamepad(id);
+    if (!handle) { d2d::log::warn("gamepad: {}", SDL_GetError()); return; }
+    const Uint16 vendor = SDL_GetGamepadVendor(handle), product = SDL_GetGamepadProduct(handle);
+    const char* serial = SDL_GetGamepadSerial(handle);
+    const char* name = SDL_GetGamepadName(handle);
+    Pad pad{ handle, id, vendor == 0x28de && product == 0x1205, std::format("{:04x}:{:04x}:{}", vendor, product, serial ? serial : "") };
+    // What the Deck check rests on: the real device's ids and type, behind Steam Input's virtual pad.
+    d2d::log::info("gamepad: {} connected (id {}, vendor {:04x}, product {:04x}, type {}, real type {}, serial '{}'{})", name ? name : "unnamed pad", id,
+                   vendor, product, int(SDL_GetGamepadType(handle)), int(SDL_GetRealGamepadType(handle)), serial ? serial : "", pad.built_in ? ", the Deck's own" : "");
+    changes_.came.push_back(pad);
+    pads_.push_back(std::move(pad));
 }
 
 void Gamepads::close() {
-    if (!pad_) return;
-    d2d::log::info("gamepad: {} disconnected", SDL_GetGamepadName(pad_) ? SDL_GetGamepadName(pad_) : "unnamed pad");
-    SDL_CloseGamepad(pad_);
-    pad_ = nullptr;
-    id_ = 0;
+    for (const auto& pad : pads_) SDL_CloseGamepad(pad.handle);
+    pads_.clear();
 }
 
 void Gamepads::open_connected() {
     int count = 0;
     if (SDL_JoystickID* ids = SDL_GetGamepads(&count)) {
-        for (int i = 0; i < count && !pad_; ++i) open(ids[i]);
+        for (int i = 0; i < count; ++i) open(ids[i]);
         SDL_free(ids);
     }
 }
@@ -43,21 +49,33 @@ void Gamepads::open_connected() {
 void Gamepads::handle_event(const SDL_Event& event) {
     if (event.type == SDL_EVENT_GAMEPAD_ADDED) {
         open(event.gdevice.which);
-    } else if (event.type == SDL_EVENT_GAMEPAD_REMOVED && pad_ && event.gdevice.which == id_) {
-        close();
-        open_connected();   // another pad takes over
+    } else if (event.type == SDL_EVENT_GAMEPAD_REMOVED) {
+        const auto gone = std::ranges::find(pads_, event.gdevice.which, &Pad::id);
+        if (gone == pads_.end()) return;
+        d2d::log::info("gamepad: {} disconnected (id {})", SDL_GetGamepadName(gone->handle) ? SDL_GetGamepadName(gone->handle) : "unnamed pad", gone->id);
+        SDL_CloseGamepad(gone->handle);
+        changes_.went.push_back(gone->id);
+        pads_.erase(gone);
     }
 }
 
-pad::Sample Gamepads::sample() const {
+bool Gamepads::external() const { return std::ranges::any_of(pads_, [](const Pad& pad) { return !pad.built_in; }); }
+
+auto Gamepads::changes() -> Changes { return std::exchange(changes_, {}); }
+
+pad::Sample Gamepads::sample() const { return pads_.empty() ? pad::Sample{} : sample(pads_.front().id); }
+
+pad::Sample Gamepads::sample(SDL_JoystickID id) const {
     pad::Sample out;
-    if (!pad_) return out;
-    out.lx = axis(pad_, SDL_GAMEPAD_AXIS_LEFTX);   out.ly = axis(pad_, SDL_GAMEPAD_AXIS_LEFTY);
-    out.rx = axis(pad_, SDL_GAMEPAD_AXIS_RIGHTX);  out.ry = axis(pad_, SDL_GAMEPAD_AXIS_RIGHTY);
-    out.left_trigger = std::max(0.f, axis(pad_, SDL_GAMEPAD_AXIS_LEFT_TRIGGER));
-    out.right_trigger = std::max(0.f, axis(pad_, SDL_GAMEPAD_AXIS_RIGHT_TRIGGER));
+    const auto found = std::ranges::find(pads_, id, &Pad::id);
+    if (found == pads_.end()) return out;
+    SDL_Gamepad* handle = found->handle;
+    out.lx = axis(handle, SDL_GAMEPAD_AXIS_LEFTX);   out.ly = axis(handle, SDL_GAMEPAD_AXIS_LEFTY);
+    out.rx = axis(handle, SDL_GAMEPAD_AXIS_RIGHTX);  out.ry = axis(handle, SDL_GAMEPAD_AXIS_RIGHTY);
+    out.left_trigger = std::max(0.f, axis(handle, SDL_GAMEPAD_AXIS_LEFT_TRIGGER));
+    out.right_trigger = std::max(0.f, axis(handle, SDL_GAMEPAD_AXIS_RIGHT_TRIGGER));
     using pad::Button;
-    const auto set = [&](Button which, SDL_GamepadButton button) { out.held[std::size_t(which)] = SDL_GetGamepadButton(pad_, button); };
+    const auto set = [&](Button which, SDL_GamepadButton button) { out.held[std::size_t(which)] = SDL_GetGamepadButton(handle, button); };
     set(Button::South, SDL_GAMEPAD_BUTTON_SOUTH);              set(Button::East, SDL_GAMEPAD_BUTTON_EAST);
     set(Button::West, SDL_GAMEPAD_BUTTON_WEST);                set(Button::North, SDL_GAMEPAD_BUTTON_NORTH);
     set(Button::Back, SDL_GAMEPAD_BUTTON_BACK);                set(Button::Start, SDL_GAMEPAD_BUTTON_START);

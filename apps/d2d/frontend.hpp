@@ -64,6 +64,10 @@ constexpr std::uint8_t kTextGold[3]  = { 199, 179, 119 };  // 4
 // Tier: classic <4/<8/<12/else, LoD <5/<10/<15/else -> 0..3; hardcore
 // shifts non-zero tiers by 3. Female: Amazon, Sorceress, Assassin.
 std::string char_title(const d2d::d2s::Header& header);
+// The title's tier: the difficulties done (0..3), from the save's progression.
+[[nodiscard]] int title_tier(const d2d::d2s::Header& header);
+// The hardest difficulty the save may play (0 normal .. 2 hell).
+[[nodiscard]] inline int top_difficulty(const d2d::d2s::Header& header) { return std::min(title_tier(header), 2); }
 
 // Visible slot index under (x, y), or -1. Row-major: slot i = row i/2, col i%2.
 int charselect_slot_at(int x, int y);

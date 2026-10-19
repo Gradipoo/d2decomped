@@ -199,5 +199,20 @@ int main() {
         assert(snap_pick(0, 0, -1, 0, grid) == -1);
         assert(snap_pick(0, 0, 1, 0, {}) == -1);
     }
+    // Co-op seats: in the order pads come, four at most; a pad that goes is
+    // held for one of its key, which takes its seat back; a minute on, it's
+    // free. Two pads of one model each keep their own seat.
+    {
+        Seats seats;
+        assert(seats.connect("pad-a", 10) == 0 && seats.connect("pad-b", 11) == 1 && seats.connect("pad-b", 12) == 2 && seats.connect("pad-d", 13) == 3);
+        assert(seats.connect("pad-e", 14) == -1);
+        assert(seats.disconnect(12, 1000) == 2 && !seats.present(2) && seats.used(2) && seats.present(1));
+        assert(seats.connect("pad-e", 15) == -1);                  // the seat is held for a pad-b
+        assert(seats.connect("pad-b", 16) == 2 && seats.present(2) && seats.pad(2) == 16);
+        assert(seats.disconnect(11, 5000) == 1);
+        assert(seats.expire(5000 + Seats::kHoldMs - 1).empty());
+        assert((seats.expire(5000 + Seats::kHoldMs) == std::vector<int>{ 1 }) && !seats.used(1));
+        assert(seats.connect("pad-e", 17) == 1 && seats.seat_of(17) == 1);
+    }
     return 0;
 }

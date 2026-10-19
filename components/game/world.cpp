@@ -896,6 +896,11 @@ auto World::join(const Character& entering) -> Player& {
         Player& player = add_player();
         act_as(player);
         take_character(entering);
+        // They play the game's difficulty (the first player's), in its act.
+        auto& difficulty = player.character.header.difficulty;
+        const auto game_difficulty = std::size_t(std::clamp(lead().character.header.active_difficulty(), 0, 2));
+        for (auto& byte : difficulty) byte &= 0x7f;
+        difficulty[game_difficulty] = std::uint8_t(0x80 | (difficulty[game_difficulty] & ~7 & 0x7f) | act());
         std::tie(player.player.x, player.player.y) = level->nearest_free(lead().player.x + 1, lead().player.y);
         player.target_x = player.player.x; player.target_y = player.player.y;
         player.player.dir = 4;

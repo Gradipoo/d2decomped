@@ -348,6 +348,7 @@ auto Town::enter() -> void {
         mini = {};                                // open (FUN_004567f0; ponytail: not the "Mini Panel" registry value)
         game_menu.open = false;
         world.enter(character);
+        coop.clear();                             // a new game: its first player alone
         skillbar.new_game();
         publish();
         if (scene && level) load_automap(automap, automap_dir(world), character.name, scene->map_seed, level->layer);
@@ -357,6 +358,10 @@ auto Town::enter() -> void {
 // (FUN_0045a5c0).
 auto Town::save() -> std::string {
         if (scene && level) save_automap(automap, automap_dir(world), character.name, scene->map_seed, level->layer);
+        world.each_player([&](World::Player& player) {   // the other co-op players' characters too
+            if (&player == &hero) return;
+            if (const auto why = world.save(); !why.empty()) d2d::log::warn("{}: {}", player.character.name, why);
+        });
         return world.save();
     }
 
@@ -1431,32 +1436,33 @@ auto Town::pad_field() const -> bool {
 // The pad's buttons in the field: hit what is in reach in the facing, else
 // pick up / talk to what is, else swing that way. Nothing is latched: a
 // released button forgets its target.
-auto Town::pad_act() -> void {
-        if (pad_move.active) {
-            const auto face = pad::world_step(pad_move.x, pad_move.y, kIsoW, kIsoH, 1.f);
-            pad_face_x = face.x; pad_face_y = face.y;
+auto Town::pad_act(PadPlayer& player_pad, const UnitState& unit, bool dead, bool field, int left_skill, int right_skill, const Send& out) -> void {
+        const auto& move = player_pad.move;
+        if (move.active) {
+            const auto face = pad::world_step(move.x, move.y, kIsoW, kIsoH, 1.f);
+            player_pad.face_x = face.x; player_pad.face_y = face.y;
         }
-        const bool want = pad_move.attack || pad_move.attack_down || pad_move.alt;
-        if (!want || view.dead || !pad_field()) { if (!want) pad_target = -1; return; }
-        const float hero_x = hero.player.x, hero_y = hero.player.y;
+        const bool want = move.attack || move.attack_down || move.alt;
+        if (!want || dead || !field) { if (!want) player_pad.target = -1; return; }
+        const float hero_x = unit.x, hero_y = unit.y, face_x = player_pad.face_x, face_y = player_pad.face_y;
         std::vector<pad::Candidate> monsters;
         for (const auto& monster : view.monsters)
             if (monster.alive()) monsters.push_back({ monster.id, monster.unit.x, monster.unit.y });
-        const int hit = pad::pick_target(hero_x, hero_y, pad_face_x, pad_face_y, monsters, pad_target);
-        const bool left = !pad_move.alt;
-        const int skill = left ? skillbar.left : skillbar.right;
+        const int hit = pad::pick_target(hero_x, hero_y, face_x, face_y, monsters, player_pad.target);
+        const bool left = !move.alt;
+        const int skill = left ? left_skill : right_skill;
         if (hit >= 0) {
-            pad_target = monsters[std::size_t(hit)].id;
-            send(cmd::UseSkill{ skill, monsters[std::size_t(hit)].x, monsters[std::size_t(hit)].y, pad_target, left });
+            player_pad.target = monsters[std::size_t(hit)].id;
+            out(cmd::UseSkill{ skill, monsters[std::size_t(hit)].x, monsters[std::size_t(hit)].y, player_pad.target, left });
             return;
         }
-        pad_target = -1;
-        if (pad_move.attack_down && !pad_move.attack && !pad_move.alt) return;   // held with nothing left to hit
-        if (left && pad_move.attack) {
+        player_pad.target = -1;
+        if (move.attack_down && !move.attack && !move.alt) return;   // held with nothing left to hit
+        if (left && move.attack) {
             std::vector<pad::Candidate> drops;
             for (const auto& item : view.ground) drops.push_back({ item.id, item.x, item.y });
-            if (const int pick = pad::pick_target(hero_x, hero_y, pad_face_x, pad_face_y, drops, -1, pad::Aim{ 3.5f, 3.5f, -0.2f }); pick >= 0) {
-                send(cmd::Pickup{ drops[std::size_t(pick)].id });
+            if (const int pick = pad::pick_target(hero_x, hero_y, face_x, face_y, drops, -1, pad::Aim{ 3.5f, 3.5f, -0.2f }); pick >= 0) {
+                out(cmd::Pickup{ drops[std::size_t(pick)].id });
                 return;
             }
             std::vector<pad::Candidate> things;      // NPCs and objects you can use
@@ -1468,27 +1474,66 @@ auto Town::pad_act() -> void {
                     if (state && !state->mode.empty() && npc.root == "objects" && !(npc.selectable >> game::mode_index(state->mode) & 1)) continue;
                     things.push_back({ int(i), state ? state->x : npc.x, state ? state->y : npc.y });
                 }
-            if (const int pick = pad::pick_target(hero_x, hero_y, pad_face_x, pad_face_y, things, -1, pad::Aim{ 4.5f, 4.5f, -0.2f }); pick >= 0) {
-                send(cmd::Interact{ things[std::size_t(pick)].id });
+            if (const int pick = pad::pick_target(hero_x, hero_y, face_x, face_y, things, -1, pad::Aim{ 4.5f, 4.5f, -0.2f }); pick >= 0) {
+                out(cmd::Interact{ things[std::size_t(pick)].id });
                 return;
             }
         }
         // Nothing in reach: the left skill swings only with a monster about (in camp A never just walks); the right one always casts (buffs, teleport).
         const bool foe_near = std::ranges::any_of(monsters, [&](const pad::Candidate& foe) { return std::hypot(foe.x - hero_x, foe.y - hero_y) < 10.f; });
-        if (pad_move.alt || (pad_move.attack && foe_near))
-            send(cmd::UseSkill{ skill, hero_x + pad_face_x * 3.f, hero_y + pad_face_y * 3.f, -1, left });
+        if (move.alt || (move.attack && foe_near))
+            out(cmd::UseSkill{ skill, hero_x + face_x * 3.f, hero_y + face_y * 3.f, -1, left });
     }
 
-auto Town::pad_walk() -> void {
-        const bool walk = pad_field() && pad_move.active && !view.dead && !game_menu.open && !chat_typing && !trade_gold_typing;
+auto Town::pad_walk(PadPlayer& player_pad, const UnitState& unit, bool dead, bool field, const Send& out) -> void {
+        const bool walk = field && player_pad.move.active && !dead;
         if (walk) {
-            const auto step = pad::world_step(pad_move.x, pad_move.y, kIsoW, kIsoH, 6.f);
+            const auto step = pad::world_step(player_pad.move.x, player_pad.move.y, kIsoW, kIsoH, 6.f);
             // Walk or run is the run toggle's (R, the left stick's click), as with the mouse.
-            send(cmd::Move{ hero.player.x + step.x, hero.player.y + step.y, !pad_walking });
-        } else if (pad_walking) {
-            send(cmd::Move{ hero.player.x, hero.player.y, true });   // stick centred: stop here, not at the old destination
+            out(cmd::Move{ unit.x + step.x, unit.y + step.y, !player_pad.walking });
+        } else if (player_pad.walking) {
+            out(cmd::Move{ unit.x, unit.y, true });   // stick centred: stop here, not at the old destination
         }
-        pad_walking = walk;
+        player_pad.walking = walk;
+    }
+
+auto Town::coop_join(int seat, const Character& joining) -> void {
+        auto& player = world.join(joining);
+        auto& joined = coop.emplace_back();
+        joined.seat = seat; joined.id = player.id;
+    }
+
+auto Town::coop_leave(int seat) -> void {
+        const auto found = std::ranges::find(coop, seat, &CoopPlayer::seat);
+        if (found == coop.end()) return;
+        if (const auto why = world.leave(found->id); !why.empty()) d2d::log::warn("co-op seat {}: {}", seat, why);
+        coop.erase(found);
+    }
+
+auto Town::coop_pad(int seat, const pad::Sample& sample, float seconds) -> void {
+        const auto found = std::ranges::find(coop, seat, &CoopPlayer::seat);
+        if (found == coop.end()) return;
+        auto& coop_player = *found;
+        const auto player = std::ranges::find(world.players, coop_player.id, [](const auto& each) { return each->id; });
+        if (player == world.players.end()) return;
+        const auto& hero_there = **player;
+        const auto actions = coop_player.mapper.step(sample, pad::Context::Game, seconds);
+        coop_player.pad.move = { actions.move_x, actions.move_y, actions.move_active, actions.click_press, actions.click_down, actions.rclick_press };
+        const auto out = [&](const Command& command) { coop_player.orders.push_back(command); };
+        for (const pad::Key key : actions.keys)
+            switch (key) {
+                case pad::Key::ToggleRun:   out(cmd::Run{ !hero_there.running }); break;
+                case pad::Key::Belt1:       out(cmd::UseBelt{ 0 }); break;
+                case pad::Key::Belt2:       out(cmd::UseBelt{ 1 }); break;
+                case pad::Key::Belt3:       out(cmd::UseBelt{ 2 }); break;
+                case pad::Key::Belt4:       out(cmd::UseBelt{ 3 }); break;
+                case pad::Key::SwapWeapons: out(cmd::SwapWeapons{}); break;
+                default: break;                       // panels and menus: phase 5
+            }
+        const bool dead = hero_there.pmode == game::kModeDT || hero_there.pmode == game::kModeDD;
+        const bool field = !game_menu.open;
+        pad_walk(coop_player.pad, hero_there.player, dead, field, out);
+        pad_act(coop_player.pad, hero_there.player, dead, field, int(hero_there.character.header.left_skill), int(hero_there.character.header.right_skill), out);
     }
 
 auto Town::pad_focus() const -> std::optional<PadFocus> {
@@ -1903,8 +1948,10 @@ auto Town::walk(const Mouse& mouse, bool over_ui, std::uint32_t frame_ms, std::u
             if (host_npc && host_npc->id != net_chat_npc) { net_chat_npc = host_npc->id; net_game->send_items({ c2s::npc_chat(true, 1, net_chat_npc) }); }
         }
         for (const auto& command : input(mouse, over_ui)) send(command);
-        pad_walk();
-        pad_act();
+        const Send to_world = [this](const Command& command) { send(command); };
+        const bool field = pad_field() && !game_menu.open && !chat_typing && !trade_gold_typing;
+        pad_walk(pad, hero.player, view.dead, field, to_world);
+        pad_act(pad, hero.player, view.dead, pad_field(), skillbar.left, skillbar.right, to_world);
         // Fixed ticks of kTickMs; after a stall, a few to catch up, then the
         // clock skips ahead (game.exe catches up one frame at most).
         if (world_ms == 0 || frame_ms - world_ms > 1000) world_ms = frame_ms - std::min<std::uint32_t>(frame_ms - last_ms, kTickMs);
@@ -1917,6 +1964,10 @@ auto Town::walk(const Mouse& mouse, bool over_ui, std::uint32_t frame_ms, std::u
             prev_x = view.player.x; prev_y = view.player.y;
             std::vector<Order> orders;
             for (auto& command : net.receive()) orders.push_back({ hero.id, std::move(command) });
+            for (auto& coop_player : coop) {                // the other co-op players' (their pads')
+                for (auto& command : coop_player.orders) orders.push_back({ coop_player.id, std::move(command) });
+                coop_player.orders.clear();
+            }
             world.tick(orders, world_ms + kTickMs, world_ms);
             world_ms += kTickMs;
             ticked = true;

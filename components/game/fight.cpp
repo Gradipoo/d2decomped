@@ -440,9 +440,14 @@ auto Fight::update_fighters(std::uint32_t now_ms) -> void {
             // them, only stay under them.
             constexpr std::array<std::pair<int, int>, 3> kMax{ { { kMaxLife, kLife }, { kMaxMana, kMana }, { kMaxStamina, kStamina } } };
             constexpr std::array<std::size_t, 3> kBonus{ kMaxLife, kMaxMana, kMaxStamina };
+            const std::array<std::int64_t, 3> bo_share{ bo_life, bo_mana, 0 };
             for (std::size_t k = 0; k < 3; ++k) {
-                const std::int64_t want = character.panel.bonus[kBonus[k]] * 256;
                 auto& maximum = character.stats.values[std::size_t(kMax[k].first)];
+                std::int64_t want = character.panel.bonus[kBonus[k]] * 256;
+                if (k < 2) {                              // the items' max life / mana % (op 11): Miriam's 875 mana +42% = the host's 1296
+                    const std::int64_t own = maximum - item_max[k] - bo_share[k];
+                    want += (own + character.panel.max_flat[k] * 256) * character.panel.max_percent[k] / 100;
+                }
                 maximum += want - item_max[k];
                 character.stats.values[std::size_t(kMax[k].second)] = std::min(character.stats.values[std::size_t(kMax[k].second)], maximum);
                 item_max[k] = want;

@@ -427,29 +427,32 @@ auto Fight::update_fighters(std::uint32_t now_ms) -> void {
         }
         if (now_ms < boost.until)
             for (const auto& [id, value] : boost.stats) if (std::size_t(id) < st_sum.size()) st_sum[std::size_t(id)] += value;
-        // Battle Orders (item_maxhp_percent 76, item_maxmana_percent 77): the
-        // maxima up while it lasts, life and mana with them.
+        // Max life / mana % (item_maxhp_percent 76, item_maxmana_percent 77;
+        // op 11 in FUN_00626200): the items' and Battle Orders' % summed, of
+        // the raw maximum (own + the items' flat +life / +mana), not of the
+        // attributes' op 8 share. Battle Orders' part raises life and mana
+        // with it; the items' maxima follow what's worn, life and mana only
+        // stay under them.
         {
-            const std::int64_t base_life = character.stats.values[kMaxLife] - bo_life, base_mana = character.stats.values[kMaxMana] - bo_mana;
-            const std::int64_t want_life = base_life * st_sum[kMaxLifePercent] / 100, want_mana = base_mana * st_sum[kMaxManaPercent] / 100;
-            character.stats.values[kMaxLife] += want_life - bo_life; character.stats.values[kLife] = std::min(character.stats.values[kLife] + std::max<std::int64_t>(want_life - bo_life, 0), character.stats.values[kMaxLife]);
-            character.stats.values[kMaxMana] += want_mana - bo_mana; character.stats.values[kMana] = std::min(character.stats.values[kMana] + std::max<std::int64_t>(want_mana - bo_mana, 0), character.stats.values[kMaxMana]);
-            bo_life = want_life; bo_mana = want_mana;
-            // Items' +life / mana / stamina (and their attributes' share):
-            // the maxima follow what's worn; life and mana don't rise with
-            // them, only stay under them.
             constexpr std::array<std::pair<int, int>, 3> kMax{ { { kMaxLife, kLife }, { kMaxMana, kMana }, { kMaxStamina, kStamina } } };
             constexpr std::array<std::size_t, 3> kBonus{ kMaxLife, kMaxMana, kMaxStamina };
-            const std::array<std::int64_t, 3> bo_share{ bo_life, bo_mana, 0 };
+            constexpr std::array<std::size_t, 2> kPercent{ kMaxLifePercent, kMaxManaPercent };
+            std::array<std::int64_t*, 2> bo_share{ &bo_life, &bo_mana };
             for (std::size_t k = 0; k < 3; ++k) {
                 auto& maximum = character.stats.values[std::size_t(kMax[k].first)];
+                auto& current = character.stats.values[std::size_t(kMax[k].second)];
                 std::int64_t want = character.panel.bonus[kBonus[k]] * 256;
-                if (k < 2) {                              // the items' max life / mana % (op 11): Miriam's 875 mana +42% = the host's 1296
-                    const std::int64_t own = maximum - item_max[k] - bo_share[k];
-                    want += (own + character.panel.max_flat[k] * 256) * character.panel.max_percent[k] / 100;
+                if (k < 2) {                              // Miriam: (409 + 466) mana +42% + 54 = the host's 1296
+                    const std::int64_t raw = maximum - item_max[k] - *bo_share[k] + character.panel.max_flat[k] * 256;
+                    const std::int64_t item_share = raw * character.panel.max_percent[k] / 100;
+                    const std::int64_t orders = raw * (character.panel.max_percent[k] + st_sum[kPercent[k]]) / 100 - item_share;
+                    maximum += orders - *bo_share[k];
+                    current = std::min(current + std::max<std::int64_t>(orders - *bo_share[k], 0), maximum);
+                    *bo_share[k] = orders;
+                    want += item_share;
                 }
                 maximum += want - item_max[k];
-                character.stats.values[std::size_t(kMax[k].second)] = std::min(character.stats.values[std::size_t(kMax[k].second)], maximum);
+                current = std::min(current, maximum);
                 item_max[k] = want;
             }
         }

@@ -635,7 +635,8 @@ ids).
 - **0x76 player in proximity** (6; `FUN_0049f8c0`).
 - **0x89 unique event** (2): +1 u8 (< 0x14) → a bit of `DAT_007a7458`.
 - **0x8f pong** (33): zeros; the latency the correction uses.
-- **0x97 weapon switch** (1): toggles `DAT_007bcc4c`.
+- **0x97 weapon switch** (1): toggles `DAT_007bcc4c` (the inventory's set
+  II art; [weapon-switch.md](weapon-switch.md)).
 
 ### Traced from a recorded session (2026-10-05)
 

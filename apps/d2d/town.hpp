@@ -251,6 +251,7 @@ struct Town {
     d2d::rules::Rng sound_rng{ 0x5eed5u };
     std::vector<int> gossip_pick;          // per world NPC: chosen gossip topic, -1 = not yet
     SkillBar skillbar{ scene, character };        // the skill buttons, picker and hotkeys (skillbar.hpp)
+    int skillbar_set = -1;                        // the weapon set the buttons' skills are for
     int   hovered_npc = -1;                // Level::npcs index under the cursor (last frame); <= -10: monster -10 - i
     std::uint32_t now_ms = 0;              // this frame's ms (devctl)   // shrines / chests used: when
     bool  player_walked = false;           // `walking` as of the last frame

@@ -35,7 +35,7 @@ Everything else is registered by the host binary via `Channel::on()`.
 | `quit`                      | `ok`                   | Main loop exits after this pump completes.                |
 | `click <x> <y>`             | `ok`                   | Pushes real SDL motion + left down/up at window coords; handled next frame. |
 | `rclick <x> <y>`            | `ok`                   | Same with the right button (opens the Horadric Cube item). |
-| `pad <button> down\|up`     | `ok`                   | Holds a button of a virtual SDL pad down or lets it go (`a`, `b`, `x`, `y`, `dpleft`, `leftshoulder`, ...: SDL's names); plugged in on first use. Press = down, a frame, up. |
+| `pad <button> down\|up`     | `ok`                   | Holds a button of a virtual SDL pad down or lets it go (`a`, `b`, `x`, `y`, `dpleft`, `leftshoulder`, `lefttrigger`, ...: SDL's names; a trigger goes all the way); plugged in on first use. Press = down, a frame, up. |
 | `save`                      | `ok` / `err <why>`     | Save the character now (character_store.hpp), as leaving the game does. |
 | `cmd <what> ...`            | `ok`                   | A command straight to the World, applied at its next tick (apps/d2d/protocol.hpp): `move <x> <y>`, `skill <id> <x> <y> [unit] [left]`, `interact <npc>`, `pickup <unit>`, `resurrect`, `stat <stat> [n]`, `skillpt <index>`, `select <skill> <left>`, `belt <slot> [merc]` (merc: the merc drinks it, shift held). What a remote client would send. |
 | `npcs`                      | `<name>\t<x>\t<y>\t<menu 0/1>\t<index>\t<cell x>\t<cell y>` per named NPC/object, then `ok` | Feet on screen in game pixels; menu = has an NPC menu; index for `cmd interact`. |

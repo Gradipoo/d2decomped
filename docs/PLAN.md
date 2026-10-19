@@ -381,8 +381,7 @@ Combat
   chance, the damage order, crushing blow divisors, block, hit recovery
   thresholds, FHR/FBR breakpoint tables, mana regen base.
 - Monster life regeneration (MonStats DamageRegen), cold slowing the
-  player, poison length reduction, set bonuses and the weapon swap in the
-  stat sums.
+  player, poison length reduction, set bonuses in the stat sums.
 - Mercs: resurrection at Kashya, their skills and gear, their share of
   experience.
 - Monster AI: one melee/shooter think for every AI type; the per-type think

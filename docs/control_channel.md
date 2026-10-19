@@ -35,7 +35,10 @@ Everything else is registered by the host binary via `Channel::on()`.
 | `quit`                      | `ok`                   | Main loop exits after this pump completes.                |
 | `click <x> <y>`             | `ok`                   | Pushes real SDL motion + left down/up at window coords; handled next frame. |
 | `rclick <x> <y>`            | `ok`                   | Same with the right button (opens the Horadric Cube item). |
-| `pad <button> down\|up`     | `ok`                   | Holds a button of a virtual SDL pad down or lets it go (`a`, `b`, `x`, `y`, `dpleft`, `leftshoulder`, `lefttrigger`, ...: SDL's names; a trigger goes all the way); plugged in on first use. Press = down, a frame, up. |
+| `pad [n] axis <stick> <v>` | `ok`                   | Virtual pad n (0..3, default 0): a stick axis (`leftx`, `lefty`, `rightx`, `righty`) at -1..1. |
+| `pad <n> plug [deck]` / `pad <n> unplug` | `ok`     | Plug virtual pad n in (`deck`: with the Steam Deck's own controls' ids, 0x28de / 0x1205) or pull it out (co-op seats). |
+| `debug players`            | `<id>\t<name>\t<x>\t<y>\t<seat>` per player, `ok` | The game's players (local co-op): cell, co-op seat (-1: the first player). |
+| `pad [n] <button> down\|up` | `ok`                   | Holds a button of virtual pad n (0..3, default 0; plugged in at its first use) down or lets it go (`a`, `b`, `x`, `y`, `dpleft`, `leftshoulder`, `lefttrigger`, ...: SDL's names; a trigger goes all the way); plugged in on first use. Press = down, a frame, up. |
 | `save`                      | `ok` / `err <why>`     | Save the character now (character_store.hpp), as leaving the game does. |
 | `cmd <what> ...`            | `ok`                   | A command straight to the World, applied at its next tick (apps/d2d/protocol.hpp): `move <x> <y>`, `skill <id> <x> <y> [unit] [left]`, `interact <npc>`, `pickup <unit>`, `resurrect`, `stat <stat> [n]`, `skillpt <index>`, `select <skill> <left>`, `belt <slot> [merc]` (merc: the merc drinks it, shift held). What a remote client would send. |
 | `npcs`                      | `<name>\t<x>\t<y>\t<menu 0/1>\t<index>\t<cell x>\t<cell y>` per named NPC/object, then `ok` | Feet on screen in game pixels; menu = has an NPC menu; index for `cmd interact`. |

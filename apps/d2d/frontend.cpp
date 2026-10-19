@@ -107,11 +107,14 @@ int charselect_max_scroll(int count) {
     return std::max(0, (count + 1) / 2 * 2 - kSlots);
 }
 
-std::string char_title(const d2d::d2s::Header& header) {
+int title_tier(const d2d::d2s::Header& header) {
     const int progression = header.progression;
-    const bool lod = header.expansion();
-    int tier = lod ? (progression < 5 ? 0 : progression < 10 ? 1 : progression < 15 ? 2 : 3)
-                   : (progression < 4 ? 0 : progression < 8 ? 1 : progression < 12 ? 2 : 3);
+    return header.expansion() ? (progression < 5 ? 0 : progression < 10 ? 1 : progression < 15 ? 2 : 3)
+                              : (progression < 4 ? 0 : progression < 8 ? 1 : progression < 12 ? 2 : 3);
+}
+
+std::string char_title(const d2d::d2s::Header& header) {
+    int tier = title_tier(header);
     if (tier == 0) return {};
     if (header.hardcore()) tier += 3;
     const bool female = header.cls == d2d::d2s::kAmazon || header.cls == d2d::d2s::kSorceress || header.cls == d2d::d2s::kAssassin;
@@ -123,7 +126,7 @@ std::string char_title(const d2d::d2s::Header& header) {
         { "", "Slayer ", "Champion ", "Patriarch ", "Destroyer ", "Conqueror ", "Guardian " },
         { "", "Slayer ", "Champion ", "Matriarch ", "Destroyer ", "Conqueror ", "Guardian " },
     };
-    return (lod ? kLod : kClassic)[female][tier];
+    return (header.expansion() ? kLod : kClassic)[female][tier];
 }
 
 int charselect_slot_at(int x, int y) {

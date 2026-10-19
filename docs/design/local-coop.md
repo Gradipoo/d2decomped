@@ -1,6 +1,7 @@
 # Local co-op — up to 4 pads, one screen
 
-Status: planned 2026-10-19. Phases 1 and 2 done (branch local-coop). Builds on
+Status: planned 2026-10-19. Phases 1 to 3 done (branch local-coop); a pad
+joining takes the next save that may (the roster panel is phase 4). Builds on
 [net-host.md](net-host.md) stages 1-2 (the N-player World and its rules) and
 [controller-plan.md](controller-plan.md) (one pad today).
 
@@ -115,10 +116,12 @@ different levels). One screen keeps the party on one level.
 - Phase 1 keeps every existing test green: test_protocol, the per-act
   checks, smoke_d2d, and the netplay join path (`apps/d2d/netgame.cpp`).
 - Two to four virtual players driven by devctl, as net-host.md stage 1.
+- tests/coop_d2d.py: devctl's virtual pads (one with the Deck's ids) take
+  seats, join, walk their own players, replug.
 - The built-in vs external split needs a real Deck. Steam Input shows every
   pad as a virtual Xbox pad; SDL 3 should still report the real device
-  behind it (the Deck's controller is USB 0x28de / 0x1205). Phase 3 logs
-  each pad's real type and ids; one run on a docked Deck with a pad settles
+  behind it (the Deck's controller is USB 0x28de / 0x1205). Each pad's
+  real type and ids are logged as it connects ("gamepad: ... connected"); one run on a docked Deck with a pad settles
   it.
 
 ## What it does for networking

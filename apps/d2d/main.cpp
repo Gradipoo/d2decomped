@@ -551,6 +551,11 @@ int run_windowed(std::vector<std::uint8_t>& framebuffer,
     Gamepads gamepads;
     pad::Mapper pad_mapper;
     gamepads.open_connected();
+    // Local co-op (docs/design/local-coop.md): a game begun with a pad other
+    // than the Deck's own controls in is co-op. Pads take seats; seat 0's
+    // plays the first player, each other one a player of its own.
+    pad::Seats seats;
+    bool coop_game = false, was_in_game = false;
     std::uint32_t pad_last_ms = std::uint32_t(SDL_GetTicks());
     int pad_focus_key = 0;
     bool pad_in_use = false, pad_was_field = false, pad_cursor_hidden = false;   // the pad was the last to act; its field mode
@@ -639,6 +644,23 @@ int run_windowed(std::vector<std::uint8_t>& framebuffer,
     // beachball suspect; that beachball was the pan-left float loop.
     bool text_active = false;
     Town town(scene ? &*scene : nullptr, character, g_start_cam_x, g_start_cam_y);
+    // A pad's seat; a new seat's player joins with the first save that may
+    // (not playing, the first player's hardcore and expansion, their
+    // difficulty open).
+    // ponytail: no roster panel yet (phase 4): the save is picked for them.
+    const auto take_seat = [&](const Gamepads::Pad& pad) {
+        const int seat = seats.connect(pad.key, int(pad.id));
+        if (seat <= 0 || !scene || std::ranges::contains(town.coop, seat, &Town::CoopPlayer::seat)) return;
+        const auto& lead = town.world.lead().character.header;
+        for (std::size_t i = 0; i < scene->saves.size(); ++i) {
+            const auto& save = scene->saves[i];
+            const bool playing = std::ranges::any_of(town.world.players, [&](const auto& player) { return player->character.name == save.name; });
+            if (playing || save.hardcore() != lead.hardcore() || save.expansion() != lead.expansion() || top_difficulty(save) < lead.active_difficulty()) continue;
+            town.coop_join(seat, character_of_save(*scene, i));
+            return;
+        }
+        d2d::log::info("co-op: no save may join at seat {}", seat);
+    };
     // The characters' saves (character_store.hpp): the World writes through
     // it when the player leaves the game or quits; the roster is read again.
     const CharacterStore characters{ save_dir, scene && scene->item_tables ? &*scene->item_tables : nullptr };
@@ -760,7 +782,28 @@ int run_windowed(std::vector<std::uint8_t>& framebuffer,
             const pad::Context pad_context = screen == Screen::InGame ? (town.store.npc >= 0 ? pad::Context::Shop : town.pad_dialog() ? pad::Context::Dialog
                                                                          : town.pad_field() ? pad::Context::Game : pad::Context::Panel)
                                            : screen == Screen::Title  ? pad::Context::Title : pad::Context::Menu;
-            const pad::Actions pad_actions = pad_mapper.step(gamepads.sample(), pad_context, pad_dt);
+            const auto pad_changes = gamepads.changes();
+            const bool in_game = screen == Screen::InGame;
+            if (in_game && !was_in_game) {                       // a game begins: co-op or not, for its length
+                coop_game = gamepads.external() && !town.net_game;
+                seats.clear();
+                if (coop_game) {
+                    d2d::log::info("co-op: a game with {} pads", gamepads.pads().size());
+                    for (const auto& pad : gamepads.pads()) if (!pad.built_in) take_seat(pad);
+                }
+            } else if (in_game && coop_game) {
+                for (const auto& pad : pad_changes.came) if (!pad.built_in) take_seat(pad);
+                for (const auto gone : pad_changes.went) if (const int seat = seats.disconnect(int(gone), pad_now); seat >= 0) d2d::log::info("co-op: seat {} held", seat);
+                // ponytail: seat 0 (the first player) stays when its pad's gone; the lead's hand-over is phase 5's.
+                for (const int seat : seats.expire(pad_now)) if (seat > 0) town.coop_leave(seat);
+            }
+            if (!in_game) coop_game = false;
+            was_in_game = in_game;
+            if (coop_game)
+                for (const auto& coop_player : town.coop)
+                    town.coop_pad(coop_player.seat, gamepads.sample(SDL_JoystickID(std::max(seats.pad(coop_player.seat), 0))), pad_dt);
+            const pad::Sample first = coop_game ? gamepads.sample(SDL_JoystickID(std::max(seats.pad(0), 0))) : gamepads.sample();
+            const pad::Actions pad_actions = pad_mapper.step(first, pad_context, pad_dt);
             const int pad_side = (win.view_w - int(kScreenWidth)) / 2;   // widescreen's world beyond the 800x600 UI
             const bool pad_active = pad_actions.move_active || pad_actions.click_press || pad_actions.click_down || pad_actions.rclick_press
                                     || pad_actions.cursor_dx != 0 || pad_actions.cursor_dy != 0 || !pad_actions.keys.empty()
@@ -817,7 +860,7 @@ int run_windowed(std::vector<std::uint8_t>& framebuffer,
                 key_event.key.key = pad_keycode(pad_key);
                 handle_sdl_events(key_event, mouse, screen, text_this_frame, backspace_this_frame, keys_this_frame, quit);
             }
-            town.pad_move = screen == Screen::InGame
+            town.pad.move = screen == Screen::InGame
                 ? Town::PadMove{ pad_actions.move_x, pad_actions.move_y, pad_actions.move_active,
                                 pad_field && pad_actions.click_press, pad_field && pad_actions.click_down, pad_field && pad_actions.rclick_press }
                 : Town::PadMove{};
@@ -1057,23 +1100,9 @@ int run_windowed(std::vector<std::uint8_t>& framebuffer,
                 if (screen == Screen::InGame) {
                     // Load the picked save into the in-game character.
                     const auto& header = scene->saves[std::size_t(csu.selected)];
+                    static_cast<Character&>(character) = character_of_save(*scene, std::size_t(csu.selected));
                     character.selected   = kSaveClassToUi[header.cls];
-                    character.character_class = header.cls;
-                    character.name = header.name;
                     character.hardcore   = header.hardcore();
-                    character.appearance = header.look();
-                    character.items = csu.selected < int(scene->save_items.size())
-                                   ? scene->save_items[std::size_t(csu.selected)]
-                                   : std::vector<d2d::d2s::Item>{};
-                    character.stats = csu.selected < int(scene->save_stats.size())
-                                   ? scene->save_stats[std::size_t(csu.selected)] : d2d::d2s::Stats{};
-                    character.corpse = csu.selected < int(scene->save_corpses.size())
-                                    ? scene->save_corpses[std::size_t(csu.selected)] : std::vector<d2d::d2s::Item>{};
-                    character.merc_items = csu.selected < int(scene->save_mercs.size())
-                                        ? scene->save_mercs[std::size_t(csu.selected)] : std::vector<d2d::d2s::Item>{};
-                    character.panel = panel_stats(*scene, header, character.items, character.stats);
-                    character.expansion = header.expansion();
-                    character.header = header;
                     if (g_join_host.empty()) {
                         set_map_seed(*scene, game_seed(character.header), character.header.active_difficulty());
                         town.enter();                            // the World takes the character

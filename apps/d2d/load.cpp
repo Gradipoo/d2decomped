@@ -287,6 +287,22 @@ void load_monster_sprites(Scene& scene, const d2d::mpq::Stack& mpqs) {
 
 }  // namespace
 
+Character character_of_save(const Scene& scene, std::size_t index) {
+    Character character;
+    const auto& header = scene.saves[index];
+    character.character_class = header.cls;
+    character.name = header.name;
+    character.appearance = header.look();
+    character.items = index < scene.save_items.size() ? scene.save_items[index] : std::vector<d2d::d2s::Item>{};
+    character.stats = index < scene.save_stats.size() ? scene.save_stats[index] : d2d::d2s::Stats{};
+    character.corpse = index < scene.save_corpses.size() ? scene.save_corpses[index] : std::vector<d2d::d2s::Item>{};
+    character.merc_items = index < scene.save_mercs.size() ? scene.save_mercs[index] : std::vector<d2d::d2s::Item>{};
+    character.panel = panel_stats(scene, header, character.items, character.stats);
+    character.expansion = header.expansion();
+    character.header = header;
+    return character;
+}
+
 void load_saves(Scene& scene, const fs::path& dir) {
     struct Entry { d2d::d2s::Header header; std::vector<d2d::d2s::Item> items; d2d::d2s::Stats stats; std::vector<d2d::d2s::Item> corpse, merc; };
     std::vector<Entry> out;

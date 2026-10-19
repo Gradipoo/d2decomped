@@ -40,6 +40,9 @@ Scene::PlayerAnim load_npc_composite(const d2d::mpq::Stack& mpqs, const Npc& npc
 // Headers (and items) of every valid .d2s in `dir`, most recently played first. Bad files are
 // logged and skipped — saves are user-supplied.
 void load_saves(Scene& scene, const fs::path& dir);
+// Save `index` (Scene::saves' order) as the in-game character: its header,
+// items, stats, corpse, its merc's items, the char panel's numbers.
+[[nodiscard]] Character character_of_save(const Scene& scene, std::size_t index);
 // The act's palette into Scene::act_pal / act_lit (0-based act).
 void load_act_palettes(Scene& scene, const d2d::mpq::Stack& mpqs, int act);
 

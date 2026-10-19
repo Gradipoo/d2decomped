@@ -145,25 +145,48 @@ void register_game_verbs(d2d::devctl::Channel& channel, Window& win, Screen& scr
     // trigger, all the way) down or lets it go; the next frame's sample
     // reads it, as a real pad's.
     channel.on("pad", [](const std::vector<std::string>& args) {
-        if (args.size() < 3 || (args[2] != "down" && args[2] != "up")) return std::string("err pad <button> down|up\n");
-        const SDL_GamepadButton button = SDL_GetGamepadButtonFromString(args[1].c_str());
-        const SDL_GamepadAxis trigger = SDL_GetGamepadAxisFromString(args[1].c_str());
-        const bool is_trigger = trigger == SDL_GAMEPAD_AXIS_LEFT_TRIGGER || trigger == SDL_GAMEPAD_AXIS_RIGHT_TRIGGER;
-        if (button == SDL_GAMEPAD_BUTTON_INVALID && !is_trigger) return std::string("err unknown button (a, b, x, y, dpleft, leftshoulder, lefttrigger, ...)\n");
-        static SDL_Joystick* virtual_pad = nullptr;
-        if (!virtual_pad) {
+        // Virtual SDL pads 0..3, each plugged in at its first use: `pad [n] <button> down|up`,
+        // `pad [n] axis <leftx|lefty|rightx|righty> <-1..1>`, `pad <n> plug [deck]` (deck: the
+        // Steam Deck's own controls' ids), `pad <n> unplug`.
+        static std::array<SDL_Joystick*, 4> virtual_pads{};
+        std::size_t at = 1, which = 0;
+        if (args.size() > 1 && args[1].size() == 1 && args[1][0] >= '0' && args[1][0] <= '3') { which = std::size_t(args[1][0] - '0'); at = 2; }
+        const auto word = [&](std::size_t k) { return at + k < args.size() ? args[at + k] : std::string(); };
+        auto& handle = virtual_pads[which];
+        const auto plug = [&](bool deck) -> std::string {
+            if (handle) return {};
             SDL_VirtualJoystickDesc desc;
             SDL_INIT_INTERFACE(&desc);
             desc.type = SDL_JOYSTICK_TYPE_GAMEPAD;
             desc.naxes = SDL_GAMEPAD_AXIS_COUNT;
             desc.nbuttons = SDL_GAMEPAD_BUTTON_COUNT;
-            desc.name = "devctl pad";
+            desc.vendor_id = deck ? 0x28de : 0x0d2d;
+            desc.product_id = deck ? 0x1205 : Uint16(0x0100 + which);   // one key per index: a replug is the same pad
+            desc.name = deck ? "devctl Steam Deck pad" : "devctl pad";
             const SDL_JoystickID id = SDL_AttachVirtualJoystick(&desc);
-            virtual_pad = id ? SDL_OpenJoystick(id) : nullptr;
-            if (!virtual_pad) return "err " + std::string(SDL_GetError()) + "\n";
+            handle = id ? SDL_OpenJoystick(id) : nullptr;
+            return handle ? std::string() : "err " + std::string(SDL_GetError()) + "\n";
+        };
+        if (word(0) == "plug") { const auto err = plug(word(1) == "deck"); return err.empty() ? std::string("ok\n") : err; }
+        if (word(0) == "unplug") {
+            if (handle) { const SDL_JoystickID id = SDL_GetJoystickID(handle); SDL_CloseJoystick(handle); SDL_DetachVirtualJoystick(id); handle = nullptr; }
+            return std::string("ok\n");
         }
-        if (is_trigger) SDL_SetJoystickVirtualAxis(virtual_pad, trigger, args[2] == "down" ? SDL_JOYSTICK_AXIS_MAX : 0);
-        else SDL_SetJoystickVirtualButton(virtual_pad, button, args[2] == "down");
+        if (word(0) == "axis") {
+            const SDL_GamepadAxis stick = SDL_GetGamepadAxisFromString(word(1).c_str());
+            if (stick == SDL_GAMEPAD_AXIS_INVALID || word(2).empty()) return std::string("err pad [n] axis <leftx|lefty|rightx|righty> <-1..1>\n");
+            if (const auto err = plug(false); !err.empty()) return err;
+            SDL_SetJoystickVirtualAxis(handle, stick, Sint16(std::clamp(std::stof(word(2)), -1.f, 1.f) * SDL_JOYSTICK_AXIS_MAX));
+            return std::string("ok\n");
+        }
+        if (word(1) != "down" && word(1) != "up") return std::string("err pad [n] <button> down|up\n");
+        const SDL_GamepadButton button = SDL_GetGamepadButtonFromString(word(0).c_str());
+        const SDL_GamepadAxis trigger = SDL_GetGamepadAxisFromString(word(0).c_str());
+        const bool is_trigger = trigger == SDL_GAMEPAD_AXIS_LEFT_TRIGGER || trigger == SDL_GAMEPAD_AXIS_RIGHT_TRIGGER;
+        if (button == SDL_GAMEPAD_BUTTON_INVALID && !is_trigger) return std::string("err unknown button (a, b, x, y, dpleft, leftshoulder, lefttrigger, ...)\n");
+        if (const auto err = plug(false); !err.empty()) return err;
+        if (is_trigger) SDL_SetJoystickVirtualAxis(handle, trigger, word(1) == "down" ? SDL_JOYSTICK_AXIS_MAX : 0);
+        else SDL_SetJoystickVirtualButton(handle, button, word(1) == "down");
         return std::string("ok\n");
     });
     channel.on("text", [&](const std::vector<std::string>& args) {
@@ -203,6 +226,15 @@ void register_game_verbs(d2d::devctl::Channel& channel, Window& win, Screen& scr
         if (args.size() >= 2 && args[1] == "level" && town.level) {   // where the player is
             return std::format("ok {} {:.2f} {:.2f} {} {} {} {}\n", town.level->id, town.player.x, town.player.y,
                                town.level->ds1.width(), town.level->ds1.height(), town.level->world_x, town.level->world_y);
+        }
+        if (args.size() >= 2 && args[1] == "players") {   // the game's players (local co-op): id, name, cell, seat (-1: the first player's)
+            std::string out;
+            for (const auto& player : town.world.players) {
+                const auto coop_player = std::ranges::find(town.coop, player->id, &Town::CoopPlayer::id);
+                out += std::format("{}\t{}\t{:.2f}\t{:.2f}\t{}\n", player->id, player->character.name, player->player.x, player->player.y,
+                                   coop_player == town.coop.end() ? -1 : coop_player->seat);
+            }
+            return out + "ok\n";
         }
         if (args.size() >= 4 && args[1] == "blocked" && town.level) {   // can a unit stand at (x, y)?
             return std::format("ok {}\n", int(town.level->unit_blocked(std::strtof(args[2].c_str(), nullptr),

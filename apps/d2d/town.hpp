@@ -24,6 +24,7 @@
 
 #include <cstdint>
 #include <filesystem>
+#include <functional>
 #include <map>
 #include <memory>
 #include <optional>
@@ -202,15 +203,34 @@ struct Town {
     std::uint32_t world_ms = 0;            // the World's clock: when it last ticked
     float prev_x = 0, prev_y = 0;          // the player a tick before: the camera slides between the two
     float cam_x = 0, cam_y = 0;            // where the camera is this frame
-    // A gamepad's left stick, set each frame by main: walk towards this screen
-    // direction (unit length), walking or running as the run toggle says.
-    // `attack`/`attack_down`/`alt` are the pad's buttons in the field (no cursor): they hit what is in reach.
-    struct PadMove { float x = 0, y = 0; bool active = false, attack = false, attack_down = false, alt = false; } pad_move;
-    bool pad_walking = false;                     // last frame's stick walk, to send a fresh walk once
-    float pad_face_x = 0.707f, pad_face_y = 0.707f;   // the facing the pad last pointed (world, south at first)
-    int pad_target = -1;                          // the monster the held button stays on
-    void pad_walk();
-    void pad_act();
+    // A gamepad playing a hero in the field (no cursor): the left stick walks
+    // towards a screen direction (unit length), walking or running as the run
+    // toggle says; `attack` / `attack_down` / `alt` are its buttons, which
+    // hit what is in reach. The first player's is set each frame by main,
+    // the other co-op players' by coop_pad.
+    struct PadMove { float x = 0, y = 0; bool active = false, attack = false, attack_down = false, alt = false; };
+    struct PadPlayer {
+        PadMove move;
+        bool walking = false;                     // last frame's stick walk, to send a fresh walk once
+        float face_x = 0.707f, face_y = 0.707f;   // the facing the pad last pointed (world, south at first)
+        int target = -1;                          // the monster the held button stays on
+    };
+    PadPlayer pad;                                // the first player's
+    using Send = std::function<void(const Command&)>;
+    // The pad's walk and its buttons for the hero at `unit` (`field`: no
+    // panel or menu is up), the commands out through `out`.
+    void pad_walk(PadPlayer& player_pad, const UnitState& unit, bool dead, bool field, const Send& out);
+    void pad_act(PadPlayer& player_pad, const UnitState& unit, bool dead, bool field, int left_skill, int right_skill, const Send& out);
+    // Local co-op's other players at this screen (seats 1..3,
+    // docs/design/local-coop.md): their World player, pad and orders.
+    // ponytail: they play the field only; panels and menus wait for phase 5.
+    struct CoopPlayer { int seat = 0, id = 0; PadPlayer pad; pad::Mapper mapper; std::vector<Command> orders; };
+    std::vector<CoopPlayer> coop;
+    // A seat's player joins with `character` / leaves (saved).
+    void coop_join(int seat, const Character& joining);
+    void coop_leave(int seat);
+    // A seat's pad this frame: its field play, as that player's orders.
+    void coop_pad(int seat, const pad::Sample& sample, float seconds);
     // True when no panel, menu or dialog is up: the pad plays without a cursor.
     [[nodiscard]] bool pad_field() const;
     // An NPC's menu or speech, the game menu or a waypoint: B leaves, the d-pad steps the choices.

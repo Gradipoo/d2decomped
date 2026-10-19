@@ -270,7 +270,15 @@ try:
         cmd(f"move {419 + 29 * col + 14} {315 + 29 * row + 14}"); frames(2)
         press("x"); frames(4)
         assert int(state()["items"]) == n0, "pad X didn't sell the inventory item"
-        cmd("key Escape"); frames()
+        press("b")
+        assert state()["store"] == "-1", "pad B didn't leave the store"
+        # An NPC's menu on a pad: the d-pad steps its lines, A picks one, B leaves.
+        near("Akara")
+        press("dpdown"); press("a"); frames(4)               # talk -> trade
+        assert state()["store"] != "-1", "d-pad + A didn't pick Akara's trade line"
+        press("b"); near("Akara")
+        press("b")
+        assert state()["menu"] == "0", "pad B didn't close Akara's menu"
         # The skill picker on a pad: the right stick's click opens the right
         # hand's; hops left end on the left skill button, A there switches
         # to the left hand's (the cursor on its skill), A again chooses it.

@@ -157,8 +157,10 @@ assert set(led) == {"Beta", "Zed"} and led["Beta"][2] == -1 and led["Zed"][2] ==
 assert cmd("state").split("screen=")[1].split()[0] == "ingame"
 assert roster() == {1: (0, 0, ["Alpha", "*Beta", "Gamma", "*Zed", "New character"], "")} or roster()[1][2][0] == "Alpha", roster()
 assert modes() == {"Beta": -1, "Zed": -1}
-# Beta toward Zed (on screen), so the leash lets the walk through.
-toward = 1 if (led["Zed"][0] - led["Zed"][1]) > (led["Beta"][0] - led["Beta"][1]) else -1
+# Beta toward Zed on screen when they're apart (the leash lets that through),
+# else to the left (not into Zed: the crowd stops a walk into another unit).
+apart = (led["Zed"][0] - led["Zed"][1]) - (led["Beta"][0] - led["Beta"][1])
+toward = 1 if apart > 2 else -1
 cmd(f"pad 2 axis leftx {toward}"); frames(40)
 cmd("pad 2 axis leftx 0"); frames(10)
 after = players()

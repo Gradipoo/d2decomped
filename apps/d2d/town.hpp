@@ -7,6 +7,7 @@
 #include "audio.hpp"
 #include "common.hpp"
 #include "gamemenu.hpp"
+#include "gamepad_map.hpp"
 #include "netgame.hpp"
 #include "panels.hpp"
 #include "platform.hpp"
@@ -214,6 +215,9 @@ struct Town {
     // Where the pad's cursor goes when a menu opens (or its lines change): the choice to start on.
     struct PadFocus { int key = 0, x = 0, y = 0; };
     [[nodiscard]] std::optional<PadFocus> pad_focus() const;
+    [[nodiscard]] std::vector<pad::Point> pad_snap_points() const;
+    void pad_trade(int mouse_x, int mouse_y);
+    void pad_tab(int step);
     std::unordered_map<int, Automap> other_automaps;   // other Layers' maps, while elsewhere
     std::uint32_t level_ms = 0;            // when the player entered `level`
     bool have_world = false;

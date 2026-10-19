@@ -18,8 +18,9 @@ enum class Button { South, East, West, North, Back, Start, LeftShoulder, RightSh
                     DpadUp, DpadDown, DpadLeft, DpadRight, Count };
 
 // What the screen the pad plays is: the title (B is not Esc there: that quits),
-// the other menus, or the game.
-enum class Context { Title, Menu, Game };
+// the other menus, or the game: the field, a panel open (the d-pad hops the
+// cursor between items), or a store (X trades, the shoulders switch tabs).
+enum class Context { Title, Menu, Game, Panel, Shop };
 
 // Keys the pad presses on the game's behalf: the adapter turns them into SDL
 // key events, so every screen's own key handling runs as for the keyboard.
@@ -46,6 +47,9 @@ struct Actions {
     bool  recentre_cursor = false;
     bool  move_active = false;                     // the left stick walks the hero...
     float move_x = 0, move_y = 0;                  // ...towards this screen direction (unit length); walk or run is the run toggle's
+    int   snap_x = 0, snap_y = 0;                  // a panel's d-pad press: hop the cursor this way (-1..1 each)
+    bool  trade_press = false;                     // a store's X: buy or sell what's under the cursor
+    int   tab_step = 0;                            // a store's shoulders: the tab before (-1) or after (1)
     std::vector<Key> keys;
 };
 
@@ -85,6 +89,21 @@ struct Aim {
     return best;
 }
 
+// The cursor's hop in a panel: the spot `points` nearest in the d-pad's
+// direction, a spot off to the side counting double, so a press goes along
+// a grid's row or column before it leaves it. Index or -1.
+struct Point { int x = 0, y = 0; };
+[[nodiscard]] inline int snap_pick(int from_x, int from_y, int dir_x, int dir_y, std::span<const Point> points) {
+    int best = -1, best_score = 0;
+    for (std::size_t i = 0; i < points.size(); ++i) {
+        const int dx = points[i].x - from_x, dy = points[i].y - from_y;
+        const int along = dx * dir_x + dy * dir_y, across = std::abs(dx * dir_y - dy * dir_x);
+        if (along < 4) continue;                   // behind, or the spot the cursor's on
+        if (const int score = along + 2 * across; best < 0 || score < best_score) { best = int(i); best_score = score; }
+    }
+    return best;
+}
+
 class Mapper {
 public:
     explicit Mapper(Config config = {}) : config_(config) {}
@@ -97,7 +116,8 @@ public:
         right_trigger_ = hysteresis(sample.right_trigger, right_trigger_);
         auto held = sample.held;
         const auto pressed = [&](Button which) { return held[std::size_t(which)] && !prev_[std::size_t(which)]; };
-        const bool game = context == Context::Game;
+        const bool game = context == Context::Game || context == Context::Panel || context == Context::Shop;
+        const bool panel = context == Context::Panel || context == Context::Shop, shop = context == Context::Shop;
 
         // The left button: south or the right trigger, anywhere.
         out.click_down = sample[Button::South] || right_trigger_;
@@ -132,15 +152,25 @@ public:
         if (game) {
             key(Button::Start, Key::Escape);
             key(Button::North, Key::Inventory);
-            key(Button::West, Key::Character);
-            key(Button::LeftShoulder, Key::SkillTree);
             key(Button::Back, Key::QuestLog);
-            key(Button::RightShoulder, Key::Automap);
             key(Button::LeftStick, Key::ToggleRun);
-            key(Button::DpadUp, Key::Belt1);
-            key(Button::DpadDown, Key::Belt2);
-            key(Button::DpadLeft, Key::Belt3);
-            key(Button::DpadRight, Key::Belt4);
+            if (shop) {
+                out.trade_press = pressed(Button::West);
+                out.tab_step = int(pressed(Button::RightShoulder)) - int(pressed(Button::LeftShoulder));
+            } else {
+                key(Button::West, Key::Character);
+                key(Button::LeftShoulder, Key::SkillTree);
+                key(Button::RightShoulder, Key::Automap);
+            }
+            if (panel) {
+                out.snap_x = int(pressed(Button::DpadRight)) - int(pressed(Button::DpadLeft));
+                out.snap_y = int(pressed(Button::DpadDown)) - int(pressed(Button::DpadUp));
+            } else {
+                key(Button::DpadUp, Key::Belt1);
+                key(Button::DpadDown, Key::Belt2);
+                key(Button::DpadLeft, Key::Belt3);
+                key(Button::DpadRight, Key::Belt4);
+            }
         } else {
             key(Button::Start, Key::Return);
             if (context == Context::Menu) key(Button::East, Key::Escape);

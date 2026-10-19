@@ -460,8 +460,8 @@ auto World::operate(int npc_index, std::uint32_t now_ms, int force ) -> void {  
         // (0x16e) leaves, the object to mode 1. Else "I can't".
         if (object.operate_fn == d2d::rules::operate_fn::kCompellingOrb) {
             if (hosted_quests || temple.orb_broken) return;
-            // FUN_0063bef0: the weapon in hand (either arm, item type 0x2d).
-            // ponytail: the weapon switch's set isn't told apart.
+            // FUN_0063bef0: the weapon in hand (either arm, item type 0x2d;
+            // the set in use: a switch moves its hands there).
             const bool wields_will = std::ranges::any_of(character.items, [](const d2d::d2s::Item& item) {
                 return item.location == d2d::d2s::item_location::kEquipped && item.code == d2d::rules::KhalimQuest::kWillCode
                     && (item.slot == d2d::d2s::body_location::kRightArm || item.slot == d2d::d2s::body_location::kLeftArm);
@@ -1926,6 +1926,36 @@ auto World::apply(const Command& command, std::uint32_t now_ms) -> void {
             if (character.stats.get(d2d::d2s::kSkillPts) > 0
                 && d2d::rules::can_learn(game_data->rules, character.header.cls, skill_point->skill, character.stats.skills, int(character.stats.get(d2d::d2s::kLevel))))
                 d2d::rules::learn_skill(game_data->rules, character.header.cls, skill_point->skill, character.stats.skills, character.stats);
+            return;
+        }
+        // The weapon switch (C->S 0x60, FUN_0054ce70 -> ItemMode.cpp's
+        // FUN_005616a0): an expansion character's hands (body slots 4 / 5)
+        // and the switch's (0xb / 0xc) trade places, and the left / right
+        // skills the pair the other set kept (header +0x80 / +0x84); a kept
+        // one no longer usable gives way (FUN_00647960 says 2 or 7). Not
+        // while dying or dead (FUN_005541b0).
+        // ponytail: it gives way to Attack, not the skill list's own
+        // (FUN_00643930 / FUN_00643960, untraced).
+        if (std::holds_alternative<cmd::SwapWeapons>(command)) {
+            namespace body = d2d::d2s::body_location;
+            if (!character.expansion || fight.dead()) return;
+            for (auto& item : character.items) {
+                if (item.location != d2d::d2s::item_location::kEquipped) continue;
+                if (item.slot == body::kRightArm || item.slot == body::kLeftArm) item.slot += body::kRightArmSwitch - body::kRightArm;
+                else if (item.slot == body::kRightArmSwitch || item.slot == body::kLeftArmSwitch) item.slot -= body::kRightArmSwitch - body::kRightArm;
+            }
+            auto& header = character.header;
+            header.weapon_set ^= 1;
+            const auto kept = [&](std::uint32_t id, bool left) {
+                const auto* skill = game_data->skills.get(int(id));
+                return skill && !skill->passive && (!left || skill->leftskill) && skill_level(*game_data, character, int(id), {}) > 0 ? id : 0u;
+            };
+            std::swap(header.left_skill, header.left_swap);
+            std::swap(header.right_skill, header.right_swap);
+            header.left_skill = kept(header.left_skill, true);
+            header.right_skill = kept(header.right_skill, false);
+            const auto* right = game_data->skills.get(int(header.right_skill));
+            fight.aura = right && right->aura ? int(header.right_skill) : 0;
             return;
         }
         if (const auto* select = std::get_if<cmd::SelectSkill>(&command)) {

@@ -31,10 +31,14 @@ namespace d2d::client {
 // centred in their body slot's box. Palette: the act's, like the world.
 // The item under (mx, my) gets its hover text.
 // Items draw through their inventory colormap (Scene::item_pal).
+// Weapon switch set II (expansion, FUN_0048edf0 / FUN_004845a0): the tab
+// art (invchar6Tab.dc6) frame 0 over the left hand's box, 1 over the
+// right's, each 5 left and its bottom 4 below the box's (0x722100..0x72210c);
+// the two hands' items 4 right, 4 up.
 // (the Cube: draw_storage)
 void draw_inventory(std::vector<std::uint8_t>& framebuffer, const Scene& scene, const Scene::InvLayout& layout,
                     const std::vector<d2d::d2s::Item>& items, int mouse_x = -1, int mouse_y = -1, const d2d::rules::Wearer* wearer = nullptr,
-                    const std::function<std::string(const d2d::d2s::Item&)>* price = nullptr);
+                    const std::function<std::string(const d2d::d2s::Item&)>* price = nullptr, bool weapon_set_two = false);
 
 // Character panel (left of the inventory: 800x600 puts the left panels
 // at 80..400). Art: invchar6.dc6 frames 0..3. Label and value boxes are
@@ -107,7 +111,7 @@ void draw_char_panel(std::vector<std::uint8_t>& framebuffer, const Scene& scene,
 // smoothing of the shown values (FUN_00496dd0), no stamina potion's blue
 // (state 0x18 / 0x88), no Show HP / MP Text toggles (a globe click,
 // DAT_007befdc / e0); the run key shown is R, not the hotkey's binding.
-struct Hud { bool poisoned = false, running = false, run_down = false; };
+struct Hud { bool poisoned = false, running = false, run_down = false, weapon_set_two = false; };   // weapon_set_two: the inventory shows switch set II
 void draw_hud(std::vector<std::uint8_t>& framebuffer, const Scene& scene, const d2d::d2s::Stats& stats,
               const Hud& hud = {}, int mouse_x = -1, int mouse_y = -1);
 // The run button's hit box (FUN_00497440): x W/2-145..W/2-128 by

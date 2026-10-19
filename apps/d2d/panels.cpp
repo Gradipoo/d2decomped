@@ -33,7 +33,7 @@ namespace d2d::client {
 
 void draw_inventory(std::vector<std::uint8_t>& framebuffer, const Scene& scene, const Scene::InvLayout& layout,
                     const std::vector<d2d::d2s::Item>& items, int mouse_x , int mouse_y , const d2d::rules::Wearer* wearer ,
-                    const std::function<std::string(const d2d::d2s::Item&)>* price) {
+                    const std::function<std::string(const d2d::d2s::Item&)>* price, bool weapon_set_two) {
     const auto& pal = scene.act_pal.entries().empty() ? scene.pal : scene.act_pal;
     // invchar6.dc6 holds two 2x2 panels (256+64 wide, 256+176 tall);
     // frames 4..7 are the inventory, 0..3 the character-stats page.
@@ -44,6 +44,13 @@ void draw_inventory(std::vector<std::uint8_t>& framebuffer, const Scene& scene, 
         blit_sprite(framebuffer, scene.inv_panel.frame(0, 6), pal, layout.panel_x, layout.panel_y + int(frame.height));
         blit_sprite(framebuffer, scene.inv_panel.frame(0, 7), pal, layout.panel_x + int(frame.width), layout.panel_y + int(frame.height));
     }
+    namespace body = d2d::d2s::body_location;
+    if (weapon_set_two && scene.inv_tab.frames_per_direction() >= 2)
+        for (const auto& [tab_frame, slot] : { std::pair{ 0u, body::kLeftArm }, std::pair{ 1u, body::kRightArm } }) {
+            const auto& box = layout.slots[std::size_t(slot)];
+            const auto& art = scene.inv_tab.frame(0, tab_frame);
+            blit_sprite(framebuffer, art, pal, box[0] - 5, box[1] + box[3] + 4 - int(art.height));
+        }
     auto draw_in = [&](const d2d::d2s::Item& item, int x, int y, int width, int height) {
         const auto* spr = scene.item_sprite(item);
         if (!spr || spr->frames_per_direction() == 0) return;
@@ -61,6 +68,7 @@ void draw_inventory(std::vector<std::uint8_t>& framebuffer, const Scene& scene, 
             rect = { layout.grid_x + item.column * layout.box_w, layout.grid_y + item.row * layout.box_h, item_width * layout.box_w, item_height * layout.box_h };
         } else if (item.location == d2d::d2s::item_location::kEquipped && item.slot >= d2d::d2s::body_location::kFirst && item.slot <= d2d::d2s::body_location::kLast) {
             rect = layout.slots[std::size_t(item.slot)];
+            if (weapon_set_two && (item.slot == body::kRightArm || item.slot == body::kLeftArm)) { rect[0] += 4; rect[1] -= 4; }
         }
         if (rect[2] <= 0) continue;
         draw_in(item, rect[0], rect[1], rect[2], rect[3]);

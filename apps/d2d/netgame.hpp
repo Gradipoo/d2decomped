@@ -80,6 +80,7 @@ struct NetGame {
     // Our moves, as game.exe's client sends them (0x01 / 0x03, 0x53 / 0x54).
     auto move_to(float subtile_x, float subtile_y, bool run) -> void;
     auto set_running(bool run) -> void;
+    auto swap_weapons() -> void;   // C->S 0x60: the weapon switch
     // Skills: the hand's skill first when it changed (0x3c), then 05 / 0c
     // at a point or 06 / 0d on a unit.
     auto skill_at(int skill, bool left, float subtile_x, float subtile_y) -> void;

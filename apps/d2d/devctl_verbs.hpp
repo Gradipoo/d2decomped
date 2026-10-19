@@ -141,12 +141,15 @@ void register_game_verbs(d2d::devctl::Channel& channel, Window& win, Screen& scr
         }
         return std::string("ok\n");
     });
-    // A virtual pad (SDL's, plugged in on first use) holds a button down or
-    // lets it go; the next frame's sample reads it, as a real pad's.
+    // A virtual pad (SDL's, plugged in on first use) holds a button (or a
+    // trigger, all the way) down or lets it go; the next frame's sample
+    // reads it, as a real pad's.
     channel.on("pad", [](const std::vector<std::string>& args) {
         if (args.size() < 3 || (args[2] != "down" && args[2] != "up")) return std::string("err pad <button> down|up\n");
         const SDL_GamepadButton button = SDL_GetGamepadButtonFromString(args[1].c_str());
-        if (button == SDL_GAMEPAD_BUTTON_INVALID) return std::string("err unknown button (a, b, x, y, dpleft, leftshoulder, ...)\n");
+        const SDL_GamepadAxis trigger = SDL_GetGamepadAxisFromString(args[1].c_str());
+        const bool is_trigger = trigger == SDL_GAMEPAD_AXIS_LEFT_TRIGGER || trigger == SDL_GAMEPAD_AXIS_RIGHT_TRIGGER;
+        if (button == SDL_GAMEPAD_BUTTON_INVALID && !is_trigger) return std::string("err unknown button (a, b, x, y, dpleft, leftshoulder, lefttrigger, ...)\n");
         static SDL_Joystick* virtual_pad = nullptr;
         if (!virtual_pad) {
             SDL_VirtualJoystickDesc desc;
@@ -159,7 +162,8 @@ void register_game_verbs(d2d::devctl::Channel& channel, Window& win, Screen& scr
             virtual_pad = id ? SDL_OpenJoystick(id) : nullptr;
             if (!virtual_pad) return "err " + std::string(SDL_GetError()) + "\n";
         }
-        SDL_SetJoystickVirtualButton(virtual_pad, button, args[2] == "down");
+        if (is_trigger) SDL_SetJoystickVirtualAxis(virtual_pad, trigger, args[2] == "down" ? SDL_JOYSTICK_AXIS_MAX : 0);
+        else SDL_SetJoystickVirtualButton(virtual_pad, button, args[2] == "down");
         return std::string("ok\n");
     });
     channel.on("text", [&](const std::vector<std::string>& args) {
@@ -686,7 +690,7 @@ void register_game_verbs(d2d::devctl::Channel& channel, Window& win, Screen& scr
              + " missiles=" + std::to_string(town.fight.missiles.size())
              + " pets=" + [&] { std::string list; for (const auto& pet : town.fight.pets) list += (list.empty() ? "" : ",") + std::to_string(pet.monster.hit_points) + "/" + std::to_string(pet.monster.stats.hit_points) + ":" + std::string(pet.monster.mode); return list.empty() ? std::string("-") : list; }()
              + " lskill=" + std::to_string(town.skillbar.left) + " rskill=" + std::to_string(town.skillbar.right)
-             + " picker=" + std::to_string(town.skillbar.picking)
+             + " picker=" + std::to_string(town.skillbar.picking) + " wset=" + std::to_string(character.header.weapon_set)
              + " gamemenu=" + std::to_string(town.game_menu.open ? town.game_menu.menu + 1 : 0) + ":" + std::to_string(town.game_menu.sel)
              + " mini=" + (town.mini.open ? "1" : "0") + " volume=" + std::to_string(audio.master_volume) + "," + std::to_string(audio.music_volume)
              + " charges=" + [&] {

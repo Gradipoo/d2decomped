@@ -425,12 +425,15 @@ int run_windowed(std::vector<std::uint8_t>& framebuffer,
                  std::atomic<std::uint64_t>& frame_count,
                  std::atomic<bool>& quit) {
     // A Steam Deck has no keyboard: SDL_StartTextInput opens Steam's own
-    // (steam://open/keyboard), which SDL does on X11 only. Steam's env asks
-    // for it in Gaming Mode; Desktop Mode doesn't, and may hand us Wayland.
-    // An SDL_VIDEO_DRIVER or SDL_ENABLE_STEAM_SCREEN_KEYBOARD in the env still wins.
+    // (steam://open/keyboard), which SDL does on X11 only, and only once told
+    // to: SDL 3.2 by "SteamDeck", 3.4 by SDL_ENABLE_STEAM_SCREEN_KEYBOARD (named
+    // by string: 3.2's headers lack it). The Deck's buttons count as a keyboard,
+    // so "auto" wouldn't show it. The same variables in the env still win.
     if (std::getenv("SteamDeck") || std::getenv("SteamGamepadUI")) {
         SDL_SetHint(SDL_HINT_VIDEO_DRIVER, "x11,wayland");
-        SDL_SetHint(SDL_HINT_ENABLE_STEAM_SCREEN_KEYBOARD, "1");
+        SDL_SetHint("SteamDeck", "1");
+        SDL_SetHint("SDL_ENABLE_STEAM_SCREEN_KEYBOARD", "1");
+        SDL_SetHint(SDL_HINT_ENABLE_SCREEN_KEYBOARD, "1");
     }
     if (!SDL_Init(SDL_INIT_VIDEO)) {
         d2d::log::error("SDL_Init: {}", SDL_GetError());

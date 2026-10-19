@@ -1493,6 +1493,67 @@ auto Town::pad_focus() const -> std::optional<PadFocus> {
         return std::nullopt;
     }
 
+// Where a panel's d-pad hops the cursor: each item and free cell of the open
+// grids, the body slots, and a store's stock (with an item held, the stock
+// grid's middle: dropping it there sells it).
+auto Town::pad_snap_points() const -> std::vector<pad::Point> {
+        std::vector<pad::Point> points;
+        if (!scene) return points;
+        const auto centre = [&](int x, int y, int width, int height) { points.push_back({ x + width / 2, y + height / 2 }); };
+        const auto& inv = scene->inv_layout[std::size_t(std::max(character.character_class, 0))];
+        std::vector<std::pair<const Scene::InvLayout*, int>> grids;
+        if (inv_open) grids.emplace_back(&inv, d2d::d2s::item_panel::kInventory);
+        if (cube_open) grids.emplace_back(&scene->cube_layout, d2d::d2s::item_panel::kCube);
+        else if (stash_open) grids.emplace_back(&scene->stash_layout[character.expansion ? 1 : 0], d2d::d2s::item_panel::kStash);
+        for (const auto& [layout, panel] : grids) {
+            std::vector<bool> taken(std::size_t(layout->cols * layout->rows));
+            for (const auto& item : character.items) {
+                if (item.location != d2d::d2s::item_location::kStored || item.panel != panel) continue;
+                const auto rect = grid_rect(*scene, *layout, item);
+                centre(rect[0], rect[1], rect[2], rect[3]);
+                const auto [width, height] = d2d::rules::item_size(scene->rules, item.code);
+                for (int row = item.row; row < item.row + height && row < layout->rows; ++row)
+                    for (int col = item.column; col < item.column + width && col < layout->cols; ++col) taken[std::size_t(row * layout->cols + col)] = true;
+            }
+            for (int row = 0; row < layout->rows; ++row)
+                for (int col = 0; col < layout->cols; ++col)
+                    if (!taken[std::size_t(row * layout->cols + col)])
+                        centre(layout->grid_x + col * layout->box_w, layout->grid_y + row * layout->box_h, layout->box_w, layout->box_h);
+        }
+        if (inv_open)
+            for (int slot = d2d::d2s::body_location::kFirst; slot <= d2d::d2s::body_location::kLast; ++slot)
+                if (const auto& rect = inv.slots[std::size_t(slot)]; rect[2] > 0) centre(rect[0], rect[1], rect[2], rect[3]);
+        if (store.npc >= 0) {
+            if (held) centre(96, 123, 10 * 29, 10 * 29);
+            else
+                for (const auto& stock : store.tabs[std::size_t(store.tab)]) {
+                    const auto [width, height] = d2d::rules::item_size(scene->rules, stock.code);
+                    centre(96 + stock.column * 29, 123 + stock.row * 29, width * 29, height * 29);
+                }
+        }
+        return points;
+    }
+
+// A store's X: the stock under the cursor bought, the inventory item under
+// it sold, or the one held sold (as a drop on the stock grid).
+auto Town::pad_trade(int mouse_x, int mouse_y) -> void {
+        if (store.npc < 0 || !scene) return;
+        if (held) { net.send(cmd::Sell{ held->id }); return; }
+        if (const int stock = store_item_at(*scene, store, mouse_x, mouse_y); stock >= 0) { send(cmd::Buy{ stock, store.tab }); return; }
+        const auto& inv = scene->inv_layout[std::size_t(std::max(character.character_class, 0))];
+        for (const auto& item : character.items) {
+            if (item.location != d2d::d2s::item_location::kStored || item.panel != d2d::d2s::item_panel::kInventory) continue;
+            const auto rect = grid_rect(*scene, inv, item);
+            if (mouse_x >= rect[0] && mouse_x < rect[0] + rect[2] && mouse_y >= rect[1] && mouse_y < rect[1] + rect[3]) { send(cmd::Sell{ item.id }); return; }
+        }
+    }
+
+// A store's shoulders: the next tab with stock on it, that way round.
+auto Town::pad_tab(int step) -> void {
+        for (int i = 1; i < 4; ++i)
+            if (const int tab = ((store.tab + step * i) % 4 + 4) % 4; !store.tabs[std::size_t(tab)].empty()) { store.tab = tab; return; }
+    }
+
 auto Town::walk(const Mouse& mouse, bool over_ui, std::uint32_t frame_ms, std::uint32_t last_ms) -> void {
         frame_now = frame_ms;
         if (net_game) {

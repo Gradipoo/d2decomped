@@ -67,6 +67,10 @@ def players():
     return {row[1]: (float(row[2]), float(row[3]), int(row[4])) for row in rows}
 def modes():
     return {row.split("\t")[1]: int(row.split("\t")[5]) for row in cmd("debug players").splitlines() if "\t" in row}
+def ghosts():
+    return {row.split("\t")[1]: row.split("\t")[6] == "1" for row in cmd("debug players").splitlines() if "\t" in row}
+def ids():
+    return {row.split("\t")[1]: int(row.split("\t")[0]) for row in cmd("debug players").splitlines() if "\t" in row}
 
 def walk(pad, frames_held=40):
     cmd(f"pad {pad} axis leftx 1"); frames(frames_held)
@@ -143,6 +147,26 @@ press(2, "y")
 frames(5)
 assert screen_name() == "Alpha", cmd("state")[:300]
 
+# Death in co-op: Beta falls and walks on as a ghost; Alpha's Resurrect
+# (the right button) channels on the body, the gold aura rising; Beta's up.
+cmd("debug goto 2"); frames(60)    # the Blood Moor (a town raises its ghosts at once), its monsters gone
+cmd("debug kill"); frames(5)
+cmd(f"debug die {ids()['Beta']}")
+for _ in range(100):
+    if ghosts()["Beta"]: break
+    frames(5)
+assert ghosts()["Beta"], cmd("debug players").replace("\n", " | ")
+body = players()["Beta"]
+cmd(f"cmd select {0x7ffe} 0")      # Resurrect on the right
+frames(3)
+cmd(f"cmd skill {0x7ffe} {body[0]} {body[1]} {ids()['Beta']}")
+frames(130)                        # about half the channel, after the walk up
+if os.environ.get("COOP_SHOT"): cmd("screenshot " + os.environ["COOP_SHOT"].replace(".png", "-aura.png"))
+for _ in range(80):
+    if not ghosts()["Beta"]: break
+    frames(5)
+assert not ghosts()["Beta"] and modes()["Beta"] == -1, cmd("debug players")
+
 cmd("pad 2 unplug")                # held, then back: the same seat, no one new
 frames(10)
 assert set(players()) == {"Alpha", "Beta"}
@@ -186,4 +210,4 @@ assert abs(after["Beta"][0] - led["Beta"][0]) + abs(after["Beta"][1] - led["Beta
 
 cmd("quit")
 proc.wait(timeout=20)
-print("OK: co-op pads: seats, the roster (a save, a new character), each pad its own player, the Deck's left out, a replug, the leash, the lead's hand-over")
+print("OK: co-op pads: seats, the roster (a save, a new character), each pad its own player, the Deck's left out, a replug, the leash, a partner's panel, a ghost raised, the lead's hand-over")

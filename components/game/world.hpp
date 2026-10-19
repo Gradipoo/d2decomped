@@ -107,8 +107,15 @@ struct View {
     // A joined game's other players (a game.exe host's 0x59 / 0x0f): not
     // replicated, the client sets them after each View (apps/d2d netgame).
     struct OtherPlayer { UnitState unit; int cls = 0; std::string name; std::uint32_t id = 0; GameData::Appearance gfx{}; int mode = -1; bool running = false;
-                        std::vector<std::string_view> states; };   // id: the host's unit; mode: an act, -1 walk / stand; states: the host's on it (States.txt names)
+                        std::vector<std::string_view> states; bool ghost = false; };   // id: the host's unit; mode: an act, -1 walk / stand; states: the host's on it (States.txt names); ghost: local co-op's dead
     std::vector<OtherPlayer> others;
+    // Local co-op's death (docs/design/local-coop.md): the screen's player a
+    // ghost; everyone dead (the death screen, Esc back to town); the bodies
+    // on the level (a player's id, what they wore, the Resurrect channel's
+    // share done and how many channel on it).
+    bool ghost = false, all_dead = false;
+    struct Body { float x = 0, y = 0; int dir = 0; GameData::Appearance gfx{}; int id = 0, cls = 0; float raised = 0; int raisers = 0; };
+    std::vector<Body> bodies;
     // The level's NPCs as they patrol, then each Level::nearby level's in
     // that order (its npcs.size() each, its own cells).
     std::vector<UnitState> npc_states;
@@ -179,6 +186,14 @@ struct World {
         bool had_figurine = false, had_bird = false;   // the Golden Bird's items, last tick (its pickups)
         std::int64_t gold_lost = 0;            // goldlost (175), as the last death set it
         std::size_t portal_pair = 0;           // their town portal in World::portal: [pair] where it was cast, [pair + 1] in town
+        // Local co-op's death (docs/design/local-coop.md): dead, a ghost that
+        // walks along while their body lies where they fell, their gear on
+        // them; a partner's Resurrect raises them there.
+        bool ghost = false;
+        struct Body { const Level* level = nullptr; float x = 0, y = 0; int dir = 0; GameData::Appearance gfx{}; float raised = 0; int raisers = 0; };
+        std::optional<Body> body;              // raised: the channel's share done (0..1); raisers: those channelling now
+        int raising = -1;                      // the body they're channelling on (its player's id), -1 none
+        std::uint32_t right_before = 0;        // the right skill Resurrect took the place of (saved instead of it)
     };
     using Corpse = Player::Corpse;
     // The players, in join order; [0] is there from the start. `actor` is the
@@ -196,6 +211,13 @@ struct World {
         for (auto& player : players) { act_as(*player); each(*player); }
         act_as(was);
     }
+    // Local co-op's death and Resurrect (docs/design/local-coop.md).
+    static constexpr float kRaiseSeconds = 10;           // one channeller's; each more adds as much speed
+    static constexpr float kRaiseReach = 2;              // cells from the body
+    [[nodiscard]] bool anyone_alive() const;
+    void become_ghost(Player& player);
+    void revive(Player& player, std::uint32_t now_ms);   // up where they are, full life
+    void raise_step(float elapsed, std::uint32_t now_ms);   // the bodies' channels this tick
     // A quest step (a kill's, an object's, a tick's) for the party (local
     // co-op, one screen): what it gave the acting player's quest bits, every
     // other player who hasn't done that quest (bits 0 and 1 clear) gets too.

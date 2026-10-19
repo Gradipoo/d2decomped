@@ -559,6 +559,61 @@ int main() {
             assert(quest::bit(theirs, 5, 13) && quest::bit(theirs, 5, 1) && !quest::bit(theirs, 6, 13));
         }
 
+        // Death in co-op (local-coop.md): a ghost with its body where it fell,
+        // the gear kept; it walks, monsters pass it by; a partner's Resurrect
+        // channel raises it there in 10 s (two in 5); a move ends one's.
+        {
+            auto& lead = coop.lead();
+            const auto die = [&](World::Player& who) {
+                coop.act_as(who);
+                who.character.stats.values[d2d::d2s::kLife] = 0;
+                coop.fight.set_pmode(kModeDT, now_ms);
+                coop.act_as(coop.lead());
+                for (int frame = 0; frame < 100 && !who.ghost; ++frame, now_ms += kTickMs) coop.tick({}, now_ms + kTickMs, now_ms);
+            };
+            std::tie(second.player.x, second.player.y) = blood_moor->nearest_free(lead.player.x + 1, lead.player.y);
+            const auto items = second.character.items.size();
+            die(second);
+            assert(second.ghost && second.body && second.character.items.size() == items && second.corpses.empty());
+            const float body_x = second.body->x, body_y = second.body->y;
+            const auto [step_x, step_y] = blood_moor->nearest_free(body_x + 2, body_y);
+            const std::vector<Order> float_on{ { second.id, cmd::Move{ step_x, step_y, true } } };
+            for (int frame = 0; frame < 25; ++frame, now_ms += kTickMs) coop.tick(frame == 0 ? std::span<const Order>(float_on) : std::span<const Order>{}, now_ms + kTickMs, now_ms);
+            assert(std::hypot(second.player.x - body_x, second.player.y - body_y) > 0.5f && second.body->x == body_x);   // the ghost walked, the body stayed
+            const std::vector<Order> raise{ { lead.id, cmd::UseSkill{ kResurrectSkill, body_x, body_y, second.id } } };
+            int frames = 0;
+            for (; frames < 400 && second.ghost; ++frames, now_ms += kTickMs) coop.tick(frames == 0 ? std::span<const Order>(raise) : std::span<const Order>{}, now_ms + kTickMs, now_ms);
+            assert(!second.ghost && !second.body && second.pmode < 0 && second.character.stats.get(d2d::d2s::kLife) > 0);
+            assert(frames >= 250 && frames < 330);              // 10 s of channel (250 frames), after the walk up
+            assert(std::hypot(second.player.x - body_x, second.player.y - body_y) < 0.01f);   // up where it fell
+            // A move ends the channel: the share done is lost.
+            die(second);
+            const std::vector<Order> start{ { lead.id, cmd::UseSkill{ kResurrectSkill, second.body->x, second.body->y, second.id } } };
+            for (int frame = 0; frame < 120; ++frame, now_ms += kTickMs) coop.tick(frame == 0 ? std::span<const Order>(start) : std::span<const Order>{}, now_ms + kTickMs, now_ms);
+            assert(second.body && second.body->raised > 0.1f);
+            const std::vector<Order> walk_off{ { lead.id, cmd::Move{ lead.player.x + 3, lead.player.y, true } } };
+            coop.tick(walk_off, now_ms + kTickMs, now_ms); now_ms += kTickMs;
+            coop.tick({}, now_ms + kTickMs, now_ms); now_ms += kTickMs;
+            assert(second.body && second.body->raised == 0 && lead.raising < 0);
+            // Two channelling: twice as fast.
+            auto third_character = character;
+            third_character.name = "Third";
+            auto& third = coop.join(third_character);
+            std::tie(third.player.x, third.player.y) = blood_moor->nearest_free(second.body->x - 1, second.body->y);
+            third.target_x = third.player.x; third.target_y = third.player.y;
+            const std::vector<Order> both{ { lead.id, cmd::UseSkill{ kResurrectSkill, second.body->x, second.body->y, second.id } },
+                                           { third.id, cmd::UseSkill{ kResurrectSkill, second.body->x, second.body->y, second.id } } };
+            frames = 0;
+            for (; frames < 400 && second.ghost; ++frames, now_ms += kTickMs) coop.tick(frames == 0 ? std::span<const Order>(both) : std::span<const Order>{}, now_ms + kTickMs, now_ms);
+            assert(!second.ghost && frames >= 125 && frames < 200);
+            assert(coop.leave(third.id) == "no character store");
+            die(second);
+            // In a town the ghosts are up again.
+            coop.arrive(&data->town, data->town.start.first, data->town.start.second, "a test");
+            coop.tick({}, now_ms + kTickMs, now_ms); now_ms += kTickMs;
+            assert(!second.ghost && !second.body);
+        }
+
         assert(coop.leave(second.id) == "no character store" && coop.players.size() == 1 && coop.fight.heroes.size() == 1);
         assert(coop.leave(coop.lead().id) == "the last player stays");
         std::printf("OK: two players: their own orders, the other in the View, the party arrives together, monsters go at the near one; scaling, party experience, gold, quest credit\n");

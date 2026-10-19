@@ -231,8 +231,8 @@ void register_game_verbs(d2d::devctl::Channel& channel, Window& win, Screen& scr
             std::string out;
             for (const auto& player : town.world.players) {
                 const auto coop_player = std::ranges::find(town.coop, player->id, &Town::CoopPlayer::id);
-                out += std::format("{}\t{}\t{:.2f}\t{:.2f}\t{}\t{}\n", player->id, player->character.name, player->player.x, player->player.y,
-                                   coop_player == town.coop.end() ? -1 : coop_player->seat, player->pmode);
+                out += std::format("{}\t{}\t{:.2f}\t{:.2f}\t{}\t{}\t{}\n", player->id, player->character.name, player->player.x, player->player.y,
+                                   coop_player == town.coop.end() ? -1 : coop_player->seat, player->pmode, int(player->ghost));
             }
             return out + "ok\n";
         }
@@ -408,9 +408,14 @@ void register_game_verbs(d2d::devctl::Channel& channel, Window& win, Screen& scr
             }
             return out + "ok " + std::to_string(light.grid.origin_x) + " " + std::to_string(light.grid.origin_y) + " bonus=" + std::to_string(town.view.light_bonus) + "\n";
         }
-        if (args.size() >= 2 && args[1] == "die") {        // the player dies where they stand
-            town.hero.character.stats.values[d2d::d2s::kLife] = 0;
+        if (args.size() >= 2 && args[1] == "die") {        // the player (or player <id>, local co-op) dies where they stand
+            const int id = args.size() >= 3 ? std::atoi(args[2].c_str()) : town.hero.id;
+            const auto found = std::ranges::find(town.world.players, id, [](const auto& player) { return player->id; });
+            if (found == town.world.players.end()) return std::string("err no such player\n");
+            town.world.act_as(**found);
+            (*found)->character.stats.values[d2d::d2s::kLife] = 0;
             town.world.fight.set_pmode(kModeDT, town.world.now);
+            town.world.act_as(town.world.lead());
             return std::string("ok\n");
         }
         if (args.size() >= 2 && args[1] == "corpses") {    // the player's corpses: level, cell, items

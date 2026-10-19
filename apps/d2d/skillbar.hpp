@@ -39,6 +39,7 @@ struct SkillBar {
     std::vector<d2d::d2s::ItemProp> extra;   // stats on top of the gear (the skill shrine's +all skills)
     int left = 0, right = 0;               // Skills.txt ids (0: Attack)
     int picking = 0;                       // the picker open: 1 left, 2 right, 0 none
+    bool coop = false;                     // local co-op: Resurrect (kResurrectSkill) on the right, its icon Prayer's
 
     // Buttons: panel.cpp draws the left / right skill icons on the HUD bar
     // (game.exe positions not fully traced; d2d's guess). Picker: spellsel.cpp
@@ -55,6 +56,7 @@ struct SkillBar {
     // Can go on the button: known (a level), not passive, and on the left
     // only when Skills.txt's leftskill allows it.
     [[nodiscard]] bool usable(int id, bool on_left) const {
+        if (id == kResurrectSkill) return coop && !on_left;
         const auto* skill = scene->skills.get(id);
         return skill && !skill->passive && (!on_left || skill->leftskill) && level(id) > 0;
     }
@@ -79,6 +81,7 @@ struct SkillBar {
         for (const auto& skill : scene->skills.rows)
             if (skill.id >= 0 && usable(skill.id, on_left))
                 out[std::size_t(std::clamp(skill.list_row, 0, int(kRows) - 1))].push_back(skill.id);
+        if (usable(kResurrectSkill, on_left)) out[0].push_back(kResurrectSkill);   // with the general skills
         std::erase_if(out, [](const auto& row) { return row.empty(); });
         return out;
     }
@@ -142,7 +145,8 @@ struct SkillBar {
     void draw(std::vector<std::uint8_t>& framebuffer, int mouse_x, int mouse_y) const {
         const auto& pal = scene->act_pal.entries().empty() ? scene->pal : scene->act_pal;
         auto icon = [&](int id, int x, int y) {
-            const auto* skill = scene->skills.get(id);
+            const auto prayer = scene->skills.by_name.find("Prayer");   // Resurrect wears Prayer's gold
+            const auto* skill = scene->skills.get(id == kResurrectSkill && prayer != scene->skills.by_name.end() ? prayer->second : id);
             if (!skill) return;
             int column = -1;
             for (int i = 0; i < 7; ++i) if (skill->cls == d2d::rules::kClassCode[std::size_t(i)]) column = i;
@@ -170,7 +174,10 @@ struct SkillBar {
                     }
                 }
             }
-        if (const int id = picked(mouse_x, mouse_y); id >= 0)
+        if (const int id = picked(mouse_x, mouse_y); id == kResurrectSkill)
+            scene->font.draw(framebuffer, kScreenWidth, kScreenHeight, pal, std::clamp(mouse_x - scene->font.measure("Resurrect") / 2, 0, int(kScreenWidth) - scene->font.measure("Resurrect")),
+                             mouse_y - 30, "Resurrect");
+        else if (id >= 0)
             if (const auto* skill = scene->skills.get(id)) {
                 auto found = lookup_string(*scene, skill->str_name);
                 const std::string name = found ? u16_to_latin1(*found) : skill->name;

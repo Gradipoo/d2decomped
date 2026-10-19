@@ -1,7 +1,6 @@
 # Local co-op — up to 4 pads, one screen
 
-Status: planned 2026-10-19. Phases 1 to 5 done (branch local-coop, PR #57);
-phase 6 (death and resurrection) next. Builds on
+Status: planned 2026-10-19. Phases 1 to 6 done (branch local-coop, PR #57). Builds on
 [net-host.md](net-host.md) stages 1-2 (the N-player World and its rules) and
 [controller-plan.md](controller-plan.md) (one pad today).
 
@@ -93,6 +92,12 @@ PC or Mac with pads works the same way.
   previous right skill is written instead), so .d2s files stay game.exe's.
 
 ![The ghost and the aura through a channel (a mockup over d2d screenshots)](https://github.com/psi29a/d2decomped/raw/pr-assets/pr57-resurrection-mockup.png)
+
+In the game (`World::raise_step`, `draw_raise_aura`): Beta's ghost over the
+body, Alpha's channel half done.
+ponytail: the channeller stands (no cast animation); the raised get full life.
+
+![Resurrect in the game](https://github.com/psi29a/d2decomped/raw/pr-assets/pr57-aura.png)
 
 ## Fidelity
 

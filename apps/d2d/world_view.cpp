@@ -404,7 +404,8 @@ void render_world(std::vector<std::uint8_t>& framebuffer,
                 const auto last = std::uint32_t(std::max(int(unit.anim->cof.frames_per_direction()), 1) - 1) * unit.anim->ms_per_frame();
                 if (unit.hold) elapsed = std::min(elapsed, last);
                 if (unit.reverse) elapsed = last - std::min(elapsed, last);
-                draw_composite(framebuffer, *unit.anim, upal, unit.dir, elapsed, anchor_x, anchor_y);
+                if (unit.spirit) draw_composite(framebuffer, *unit.anim, tinted(upal, 205, 230, 255), unit.dir, elapsed, anchor_x, anchor_y, 4);   // half, pale
+                else draw_composite(framebuffer, *unit.anim, upal, unit.dir, elapsed, anchor_x, anchor_y);
                 if (hovered && unit.name && !unit.name->empty()) bounds = composite_bounds(*unit.anim, unit.dir, elapsed, anchor_x, anchor_y);
             }
             draw_overs(false);
@@ -521,9 +522,9 @@ void shadow_composite(std::vector<std::uint8_t>& framebuffer, const Scene::Playe
 
 void draw_composite(std::vector<std::uint8_t>& framebuffer, const Scene::PlayerAnim& anim,
                     const d2d::palette::Palette& pal, int dir_want,
-                    std::uint32_t elapsed_ms, int anchor_x, int anchor_y) {
+                    std::uint32_t elapsed_ms, int anchor_x, int anchor_y, int trans) {
     composite_frames(anim, dir_want, elapsed_ms, [&](const d2d::dcc::Frame& frame, const d2d::cof::Layer* layer) {
-        blit_dcc_frame(framebuffer, frame, pal, anchor_x, anchor_y, layer_trans(layer));
+        blit_dcc_frame(framebuffer, frame, pal, anchor_x, anchor_y, trans >= 0 ? trans : layer_trans(layer));
     });
 }
 

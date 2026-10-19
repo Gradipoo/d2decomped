@@ -264,6 +264,8 @@ struct Town {
     [[nodiscard]] int focus_seat() const;         // the seat whose pad plays the UI (0: the first player's)
     [[nodiscard]] int focus_colour() const;       // its colour (the cursor's)
     void take_focus(int id);
+    // Local co-op: the fallen body nearest (x, y) within `reach` cells, or null.
+    [[nodiscard]] const View::Body* body_near(float x, float y, float reach) const;
     std::vector<SDL_Keycode> focus_keys;          // the keys a partner took the screen with, for this frame's UI
     // The first player's pad while a partner has the screen: field play only.
     void lead_pad(const pad::Sample& sample, float seconds);

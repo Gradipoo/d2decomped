@@ -10,7 +10,7 @@ finish-args:
   - --share=network
   - --socket=wayland
   - --socket=fallback-x11
-  - --device=dri
+  - --device=all  # gamepads: /dev/input + hidraw (Steam Input's virtual pad)
   - --socket=pulseaudio
 modules:
   - name: d2decomped

@@ -148,6 +148,15 @@ int main() {
         mapper.step(Sample{}, Context::Shop, 0.016f);
         assert(mapper.step(with(Button::DpadDown), Context::Shop, 0.016f).snap_y == 1);
     }
+    // The right stick's click: the skill picker in the field, a recentred cursor elsewhere.
+    {
+        Mapper mapper;
+        Actions actions = mapper.step(with(Button::RightStick), Context::Game, 0.016f);
+        assert(actions.skill_picker && !actions.recentre_cursor);
+        mapper.step(Sample{}, Context::Panel, 0.016f);
+        actions = mapper.step(with(Button::RightStick), Context::Panel, 0.016f);
+        assert(!actions.skill_picker && actions.recentre_cursor);
+    }
     // Hops: along the row before off it, never behind or onto the spot the cursor's on.
     {
         const std::vector<Point> grid{ { 0, 0 }, { 29, 0 }, { 58, 0 }, { 20, 29 }, { 0, 29 } };

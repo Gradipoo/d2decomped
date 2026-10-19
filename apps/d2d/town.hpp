@@ -218,6 +218,7 @@ struct Town {
     [[nodiscard]] std::vector<pad::Point> pad_snap_points() const;
     void pad_trade(int mouse_x, int mouse_y);
     void pad_tab(int step);
+    void pad_open_picker();
     std::unordered_map<int, Automap> other_automaps;   // other Layers' maps, while elsewhere
     std::uint32_t level_ms = 0;            // when the player entered `level`
     bool have_world = false;

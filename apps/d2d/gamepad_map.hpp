@@ -45,6 +45,7 @@ struct Actions {
     bool  click_down = false, click_press = false, click_release = false;   // the left button
     bool  rclick_press = false;
     bool  recentre_cursor = false;
+    bool  skill_picker = false;                    // the field's right stick click: open the skill picker
     bool  move_active = false;                     // the left stick walks the hero...
     float move_x = 0, move_y = 0;                  // ...towards this screen direction (unit length); walk or run is the run toggle's
     int   snap_x = 0, snap_y = 0;                  // a panel's d-pad press: hop the cursor this way (-1..1 each)
@@ -139,7 +140,9 @@ public:
         const float speed = config_.cursor_speed * tilt * tilt;   // gentle near the centre, quick at the edge
         out.cursor_dx = tilt_x * speed * seconds;
         out.cursor_dy = tilt_y * speed * seconds;
-        out.recentre_cursor = pressed(Button::RightStick);
+        // The right stick's click recentres the cursor; in the field, where none
+        // shows, it opens the skill picker.
+        (context == Context::Game ? out.skill_picker : out.recentre_cursor) = pressed(Button::RightStick);
 
         // Left stick: walking, in the game.
         if (game) {

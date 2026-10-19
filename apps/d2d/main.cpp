@@ -739,9 +739,11 @@ int run_windowed(std::vector<std::uint8_t>& framebuffer,
             const int pad_side = (win.view_w - int(kScreenWidth)) / 2;   // widescreen's world beyond the 800x600 UI
             const bool pad_active = pad_actions.move_active || pad_actions.click_press || pad_actions.click_down || pad_actions.rclick_press
                                     || pad_actions.cursor_dx != 0 || pad_actions.cursor_dy != 0 || !pad_actions.keys.empty()
-                                    || pad_actions.snap_x != 0 || pad_actions.snap_y != 0 || pad_actions.trade_press || pad_actions.tab_step != 0;
+                                    || pad_actions.snap_x != 0 || pad_actions.snap_y != 0 || pad_actions.trade_press || pad_actions.tab_step != 0
+                                    || pad_actions.skill_picker || pad_actions.recentre_cursor;
             if (pad_active && !pad_in_use) d2d::log::info("gamepad: in use (screen {})", int(screen));
             if (pad_active) pad_in_use = true;
+            if (pad_actions.skill_picker) town.pad_open_picker();
             // In the field a pad plays without a cursor: its buttons hit what is in reach (Town::pad_act).
             const bool pad_field = screen == Screen::InGame && pad_in_use && town.pad_field();
             if (pad_field != pad_was_field && !mouse_took_over) { mouse.x = int(kScreenWidth) / 2; mouse.y = int(kScreenHeight) / 2; }   // the cursor comes back centred

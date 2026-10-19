@@ -271,6 +271,17 @@ try:
         press("x"); frames(4)
         assert int(state()["items"]) == n0, "pad X didn't sell the inventory item"
         cmd("key Escape"); frames()
+        # The skill picker on a pad: the right stick's click opens the right
+        # hand's; hops left end on the left skill button, A there switches
+        # to the left hand's (the cursor on its skill), A again chooses it.
+        press("rightstick")
+        assert state()["picker"] == "2", "the right stick's click didn't open the skill picker"
+        for _ in range(12):
+            press("dpleft")
+        press("a")
+        assert state()["picker"] == "1", "A on the left skill button didn't switch pickers"
+        press("a")
+        assert state()["picker"] == "0", "A didn't choose the left skill"
 
         # Hire at Kashya: the list, then a rogue follows.
         near("Kashya")

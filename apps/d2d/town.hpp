@@ -11,6 +11,7 @@
 #include "netgame.hpp"
 #include "panels.hpp"
 #include "platform.hpp"
+#include "roster.hpp"
 #include "scene.hpp"
 #include "skillbar.hpp"
 #include "ui.hpp"
@@ -222,13 +223,19 @@ struct Town {
     void pad_walk(PadPlayer& player_pad, const UnitState& unit, bool dead, bool field, const Send& out);
     void pad_act(PadPlayer& player_pad, const UnitState& unit, bool dead, bool field, int left_skill, int right_skill, const Send& out);
     // Local co-op's other players at this screen (seats 1..3,
-    // docs/design/local-coop.md): their World player, pad and orders.
+    // docs/design/local-coop.md): their World player (id 0 while their
+    // roster is up), pad and orders.
     // ponytail: they play the field only; panels and menus wait for phase 5.
-    struct CoopPlayer { int seat = 0, id = 0; PadPlayer pad; pad::Mapper mapper; std::vector<Command> orders; };
+    struct CoopPlayer { int seat = 0, id = 0; PadPlayer pad; pad::Mapper mapper; std::vector<Command> orders; std::optional<Roster> roster; };
     std::vector<CoopPlayer> coop;
+    // A pad took seat `seat`: its roster comes up (a held seat's player stays).
+    void coop_seat(int seat);
     // A seat's player joins with `character` / leaves (saved).
     void coop_join(int seat, const Character& joining);
     void coop_leave(int seat);
+    // Typed text for a roster's name (Steam's keyboard on a Deck); whether one wants it.
+    void coop_text(std::string_view text, bool backspace);
+    [[nodiscard]] bool coop_typing() const;
     // A seat's pad this frame: its field play, as that player's orders.
     void coop_pad(int seat, const pad::Sample& sample, float seconds);
     // True when no panel, menu or dialog is up: the pad plays without a cursor.

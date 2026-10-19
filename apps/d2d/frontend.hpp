@@ -64,6 +64,10 @@ constexpr std::uint8_t kTextGold[3]  = { 199, 179, 119 };  // 4
 // Tier: classic <4/<8/<12/else, LoD <5/<10/<15/else -> 0..3; hardcore
 // shifts non-zero tiers by 3. Female: Amazon, Sorceress, Assassin.
 std::string char_title(const d2d::d2s::Header& header);
+// A class's name (string.tbl's), by the save's class id.
+[[nodiscard]] std::string class_name(const Scene& scene, int save_cls);
+// The save's second char-select line: "Level 12 Barbarian" (string.tbl's words).
+[[nodiscard]] std::string level_class_line(const Scene& scene, const d2d::d2s::Header& header);
 // The title's tier: the difficulties done (0..3), from the save's progression.
 [[nodiscard]] int title_tier(const d2d::d2s::Header& header);
 // The hardest difficulty the save may play (0 normal .. 2 hell).

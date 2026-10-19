@@ -43,6 +43,9 @@ void load_saves(Scene& scene, const fs::path& dir);
 // Save `index` (Scene::saves' order) as the in-game character: its header,
 // items, stats, corpse, its merc's items, the char panel's numbers.
 [[nodiscard]] Character character_of_save(const Scene& scene, std::size_t index);
+// A new character as char-create's OK makes one (CharStats.txt's start; not
+// saved yet): its header, stats, items, the char panel's numbers.
+[[nodiscard]] Character made_character(const Scene& scene, int save_cls, const std::string& name, bool hardcore, bool expansion, d2d::rules::Rng& rng);
 // The act's palette into Scene::act_pal / act_lit (0-based act).
 void load_act_palettes(Scene& scene, const d2d::mpq::Stack& mpqs, int act);
 

@@ -22,6 +22,7 @@
 #include "frontend.hpp"
 #include "gamepad.hpp"
 #include "gamepad_map.hpp"
+#include "roster.hpp"
 #include "load.hpp"
 #include "platform.hpp"
 #include "scene.hpp"
@@ -644,22 +645,9 @@ int run_windowed(std::vector<std::uint8_t>& framebuffer,
     // beachball suspect; that beachball was the pan-left float loop.
     bool text_active = false;
     Town town(scene ? &*scene : nullptr, character, g_start_cam_x, g_start_cam_y);
-    // A pad's seat; a new seat's player joins with the first save that may
-    // (not playing, the first player's hardcore and expansion, their
-    // difficulty open).
-    // ponytail: no roster panel yet (phase 4): the save is picked for them.
+    // A pad's seat; a new seat's player picks their character (Town::coop_seat's roster).
     const auto take_seat = [&](const Gamepads::Pad& pad) {
-        const int seat = seats.connect(pad.key, int(pad.id));
-        if (seat <= 0 || !scene || std::ranges::contains(town.coop, seat, &Town::CoopPlayer::seat)) return;
-        const auto& lead = town.world.lead().character.header;
-        for (std::size_t i = 0; i < scene->saves.size(); ++i) {
-            const auto& save = scene->saves[i];
-            const bool playing = std::ranges::any_of(town.world.players, [&](const auto& player) { return player->character.name == save.name; });
-            if (playing || save.hardcore() != lead.hardcore() || save.expansion() != lead.expansion() || top_difficulty(save) < lead.active_difficulty()) continue;
-            town.coop_join(seat, character_of_save(*scene, i));
-            return;
-        }
-        d2d::log::info("co-op: no save may join at seat {}", seat);
+        if (const int seat = seats.connect(pad.key, int(pad.id)); seat > 0) town.coop_seat(seat);
     };
     // The characters' saves (character_store.hpp): the World writes through
     // it when the player leaves the game or quits; the roster is read again.
@@ -682,13 +670,8 @@ int run_windowed(std::vector<std::uint8_t>& framebuffer,
     if (screen == Screen::InGame && scene) {
         // --start-screen ingame: a new character of the class and name given,
         // made as char-create's OK makes one (unsaved until the game saves).
-        character.character_class = kUiToSaveClass[std::size_t(std::max(character.selected, 0))];
-        auto made = new_character(*scene, character.character_class, character.name.empty() ? std::string("Tester") : character.name,
-                                  character.hardcore, character.expansion, town.rng);
-        character.header = std::move(made.header);
-        character.stats = made.stats;
-        character.items = std::move(made.items);
-        character.panel = panel_stats(*scene, character.header, character.items, character.stats);
+        static_cast<Character&>(character) = made_character(*scene, kUiToSaveClass[std::size_t(std::max(character.selected, 0))],
+                                                            character.name.empty() ? std::string("Tester") : character.name, character.hardcore, character.expansion, town.rng);
         set_map_seed(*scene, game_seed(character.header), character.header.active_difficulty());
         town.enter();
     }
@@ -729,7 +712,7 @@ int run_windowed(std::vector<std::uint8_t>& framebuffer,
         const std::uint32_t frame_start_ms = std::uint32_t(SDL_GetTicks());
         // Toggled inside the `input` timing window, so any IME cost of the
         // switch itself shows up there.
-        if (const bool want = screen == Screen::CharCreate || (screen == Screen::InGame && town.chat_typing)
+        if (const bool want = screen == Screen::CharCreate || (screen == Screen::InGame && (town.chat_typing || town.coop_typing()))
                            || (screen == Screen::TcpIp && tcpip.box_open); want != text_active) {
             if (want) {
                 // The field being typed in, so Steam's keyboard opens clear of it.
@@ -1153,6 +1136,10 @@ int run_windowed(std::vector<std::uint8_t>& framebuffer,
                 break;
             }
             case Screen::InGame: {
+                if (town.coop_typing()) {                        // a joining pad's new character's name
+                    town.coop_text(text_this_frame, backspace_this_frame);
+                    text_this_frame.clear();
+                }
                 town.typed = text_this_frame;
                 // The act's palette follows the player's level.
                 if (const int act = town.view_act(); act != scene->palette_act)
@@ -1220,15 +1207,8 @@ int run_windowed(std::vector<std::uint8_t>& framebuffer,
                         d2d::log::info("a character named {} exists already", character.name);
                         screen = Screen::CharCreate;
                     } else {
-                        character.character_class = kUiToSaveClass[std::size_t(std::max(character.selected, 0))];
-                        auto made = new_character(*scene, character.character_class, character.name,
-                                               character.hardcore, character.expansion, town.rng);
-                        character.header = std::move(made.header);
-                        character.stats = made.stats;
-                        character.items = std::move(made.items);
-                        character.corpse.clear();
-                        character.appearance.reset();
-                        character.panel = panel_stats(*scene, character.header, character.items, character.stats);
+                        static_cast<Character&>(character) = made_character(*scene, kUiToSaveClass[std::size_t(std::max(character.selected, 0))],
+                                                                            character.name, character.hardcore, character.expansion, town.rng);
                         set_map_seed(*scene, game_seed(character.header), character.header.active_difficulty());
                         town.enter();
                         town.save();
@@ -1262,7 +1242,10 @@ int run_windowed(std::vector<std::uint8_t>& framebuffer,
                                       ? (scene->act_pal.entries().empty() ? scene->pal : scene->act_pal)
                                   : screen == Screen::CharCreate ? scene->charselect_pal : scene->pal;
                 const auto& frame = scene->cursor.frame(0, mouse.down ? 7 : 0);
-                blit_sprite(framebuffer, frame, pal, mouse.x + cursor_dx + frame.offset_x,
+                // Co-op with two pads or more: the first player's cursor in their seat's colour.
+                const bool seat_colour = coop_game && std::ranges::count_if(gamepads.pads(), [](const Gamepads::Pad& pad) { return !pad.built_in; }) >= 2;
+                const auto& red = kSeatColours[0];
+                blit_sprite(framebuffer, frame, seat_colour ? tinted(pal, red[0], red[1], red[2]) : pal, mouse.x + cursor_dx + frame.offset_x,
                             mouse.y + frame.offset_y - int(frame.height) + 1);
             }
         } else {

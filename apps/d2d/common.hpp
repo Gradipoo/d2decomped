@@ -53,6 +53,10 @@ inline bool g_debug_collision = false;
 // through the supplied palette to real RGBA. Signed dest so negative offsets
 // clip cleanly (logo frames have ox down to -180).
 // `shade` scales the colour, 256 = as is (skill tree: greyed-out icons).
+// `base` coloured `rgb`: each entry's brightness times the colour (a co-op
+// player's cursor).
+[[nodiscard]] d2d::palette::Palette tinted(const d2d::palette::Palette& base, std::uint8_t red, std::uint8_t green, std::uint8_t blue);
+
 void blit_sprite(std::vector<std::uint8_t>& framebuffer,
                  const d2d::dc6::Frame& frame,
                  const d2d::palette::Palette& pal,

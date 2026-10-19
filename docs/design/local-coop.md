@@ -1,7 +1,6 @@
 # Local co-op — up to 4 pads, one screen
 
-Status: planned 2026-10-19. Phases 1 to 3 done (branch local-coop); a pad
-joining takes the next save that may (the roster panel is phase 4). Builds on
+Status: planned 2026-10-19. Phases 1 to 4 done (branch local-coop). Builds on
 [net-host.md](net-host.md) stages 1-2 (the N-player World and its rules) and
 [controller-plan.md](controller-plan.md) (one pad today).
 
@@ -44,6 +43,8 @@ PC or Mac with pads works the same way.
   60 s. The same pad reconnecting takes it back; otherwise the player leaves.
 - The lead quitting: the next player becomes lead and the game goes on. The
   difficulty stays (every player matched it on joining).
+
+![Player 2's roster over the game: Alpha greyed (playing), the green cursor on Beta](https://github.com/psi29a/d2decomped/raw/pr-assets/pr57-roster.png)
 
 **Cursors**
 

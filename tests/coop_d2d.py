@@ -6,9 +6,10 @@ Usage: coop_d2d.py <path-to-d2d>
 
 A headless d2d with three synthetic saves and devctl's virtual pads: a pad
 and the Steam Deck's own controls are in as the game begins (co-op; the
-Deck's never takes a seat), a second pad comes and joins with the next
-save, each pad walks its own player, the Deck's walks nobody, and a pad
-unplugged and back takes its seat again. Skips without the MPQs.
+Deck's never takes a seat), a second pad comes and picks a save on its
+roster, each pad walks its own player, the Deck's walks nobody, a pad
+unplugged and back takes its seat again, and a third pad makes a new
+character (class, typed name). Skips without the MPQs.
 """
 import atexit, os, platform, socket, struct, subprocess, sys, tempfile, time
 
@@ -82,10 +83,21 @@ frames(40)
 start = players()
 assert list(start) == ["Alpha"] and start["Alpha"][2] == -1, start   # the Deck's pad took no seat
 
-cmd("pad 2 plug")                  # a second pad: Beta joins at seat 1
+cmd("pad 2 plug")                  # a second pad: its roster, Alpha greyed (playing), the cursor on Beta
 frames(10)
+assert list(players()) == ["Alpha"]
+def roster():
+    rows = [line.split("\t") for line in cmd("debug roster").splitlines() if "\t" in line]
+    return {int(row[0]): (int(row[1]), int(row[2]), row[3].rstrip(",").split(","), row[4]) for row in rows}
+assert roster() == {1: (0, 1, ["*Alpha", "Beta", "Gamma", "New character"], "")}, roster()
+cmd("debug day 90"); frames(5)
+cmd("screenshot " + os.environ.get("COOP_SHOT", os.path.join(home, "roster.png")))   # COOP_SHOT: where to keep it
+def press(pad, button):
+    cmd(f"pad {pad} {button} down"); frames(3)
+    cmd(f"pad {pad} {button} up"); frames(3)
+press(2, "a")                      # Beta joins at seat 1
 joined = players()
-assert set(joined) == {"Alpha", "Beta"} and joined["Beta"][2] == 1, joined
+assert set(joined) == {"Alpha", "Beta"} and joined["Beta"][2] == 1 and roster() == {}, (joined, roster())
 
 walk(2)                            # the second pad walks Beta, not Alpha
 moved = players()
@@ -108,6 +120,20 @@ frames(10)
 back = players()
 assert set(back) == {"Alpha", "Beta"} and back["Beta"][2] == 1, back
 
+cmd("pad 3 plug")                  # a third pad makes a new Necromancer, Zed
+frames(10)
+assert roster()[2][2] == ["*Alpha", "*Beta", "Gamma", "New character"], roster()
+for _ in range(3): press(3, "dpdown")              # past the end: stays on New character
+press(3, "a")
+assert roster()[2][:2] == (1, 0), roster()          # the classes
+press(3, "dpdown"); press(3, "dpdown")              # Amazon, Sorceress, Necromancer
+press(3, "a")
+assert roster()[2][0] == 2, roster()                # the name
+cmd("text Zed"); frames(5)
+assert roster()[2][3] == "Zed", roster()
+press(3, "start")
+assert set(players()) == {"Alpha", "Beta", "Zed"} and players()["Zed"][2] == 2 and roster() == {}, (players(), roster())
+
 cmd("quit")
 proc.wait(timeout=20)
-print("OK: co-op pads: seats, a join, each pad its own player, the Deck's left out, a replug")
+print("OK: co-op pads: seats, the roster (a save, a new character), each pad its own player, the Deck's left out, a replug")

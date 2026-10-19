@@ -107,6 +107,19 @@ int charselect_max_scroll(int count) {
     return std::max(0, (count + 1) / 2 * 2 - kSlots);
 }
 
+std::string class_name(const Scene& scene, int save_cls) {
+    const int class_index = kSaveClassToUi[std::clamp(save_cls, 0, 6)];
+    if (auto found = lookup_string(scene, kClassKey[class_index])) return u16_to_latin1(*found);
+    return kClassKey[class_index];
+}
+
+std::string level_class_line(const Scene& scene, const d2d::d2s::Header& header) {
+    const std::string cls = class_name(scene, header.cls);
+    std::string level = "Level";
+    if (auto found = lookup_string(scene, std::uint16_t(0xfd9))) level = u16_to_latin1(*found);
+    return level + " " + std::to_string(header.level) + " " + cls;
+}
+
 int title_tier(const d2d::d2s::Header& header) {
     const int progression = header.progression;
     return header.expansion() ? (progression < 5 ? 0 : progression < 10 ? 1 : progression < 15 ? 2 : 3)
@@ -177,13 +190,8 @@ void render_charselect(std::vector<std::uint8_t>& framebuffer,
             draw_composite(framebuffer, scene.composite(header.cls, is_ghost ? kModeNU : kModeTN, header.look()),
                            pal, 0, elapsed_ms, x + 30, y + kSlotH - 1 - 13);
         }
-        const int class_index = kSaveClassToUi[header.cls];
-        std::string cls = kClassKey[class_index];
-        if (auto found = lookup_string(scene, kClassKey[class_index])) cls = u16_to_latin1(*found);
-        std::string level = "Level";
-        if (auto found = lookup_string(scene, std::uint16_t(0xfd9))) level = u16_to_latin1(*found);
         const std::string line1 = char_title(header) + header.name;
-        const std::string line2 = level + " " + std::to_string(header.level) + " " + cls;
+        const std::string line2 = level_class_line(scene, header);
         const int text_x = x + 76, line_height = scene.font.line_height();
         int text_y = y + 3;
         const auto& name_rgb = header.hardcore() ? kTextRed : kTextGold;

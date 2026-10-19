@@ -303,6 +303,19 @@ Character character_of_save(const Scene& scene, std::size_t index) {
     return character;
 }
 
+Character made_character(const Scene& scene, int save_cls, const std::string& name, bool hardcore, bool expansion, d2d::rules::Rng& rng) {
+    auto made = new_character(scene, save_cls, name, hardcore, expansion, rng);
+    Character character;
+    character.character_class = save_cls;
+    character.name = name;
+    character.expansion = expansion;
+    character.header = std::move(made.header);
+    character.stats = made.stats;
+    character.items = std::move(made.items);
+    character.panel = panel_stats(scene, character.header, character.items, character.stats);
+    return character;
+}
+
 void load_saves(Scene& scene, const fs::path& dir) {
     struct Entry { d2d::d2s::Header header; std::vector<d2d::d2s::Item> items; d2d::d2s::Stats stats; std::vector<d2d::d2s::Item> corpse, merc; };
     std::vector<Entry> out;

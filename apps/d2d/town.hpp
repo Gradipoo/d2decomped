@@ -248,6 +248,28 @@ struct Town {
     [[nodiscard]] bool coop_typing() const;
     // A seat's pad this frame: its field play, as that player's orders.
     void coop_pad(int seat, const pad::Sample& sample, float seconds);
+    // A pad's field play for `hero_there` (walk, hit, belt, run, weapons) out
+    // through `out`; the keys it pressed that open something (panels, the
+    // game menu; Up: the skill picker), which need the screen.
+    std::vector<pad::Key> field_play(PadPlayer& player_pad, pad::Mapper& mapper, const World::Player& hero_there, const pad::Sample& sample, float seconds,
+                                     const Send& out);
+    // Local co-op's screen (docs/design/local-coop.md): the player whose
+    // panels, menus, store and character the UI shows. A partner takes it by
+    // opening one (or an NPC opening to them) while the first player has
+    // nothing open; it's the first player's again once the partner's are shut.
+    int focus = 0;                                // that player's id; 0: the first player's
+    [[nodiscard]] int focus_id() const;
+    [[nodiscard]] World::Player& focused();
+    [[nodiscard]] bool focus_free() const;        // the first player's, with nothing open
+    [[nodiscard]] int focus_seat() const;         // the seat whose pad plays the UI (0: the first player's)
+    [[nodiscard]] int focus_colour() const;       // its colour (the cursor's)
+    void take_focus(int id);
+    std::vector<SDL_Keycode> focus_keys;          // the keys a partner took the screen with, for this frame's UI
+    // The first player's pad while a partner has the screen: field play only.
+    void lead_pad(const pad::Sample& sample, float seconds);
+    PadPlayer lead_field;
+    pad::Mapper lead_mapper;
+    std::vector<Command> lead_orders;
     // True when no panel, menu or dialog is up: the pad plays without a cursor.
     [[nodiscard]] bool pad_field() const;
     // An NPC's menu or speech, the game menu or a waypoint: B leaves, the d-pad steps the choices.
@@ -348,7 +370,7 @@ struct Town {
     // One InGame frame: keys, panels, clicks, walking, NPCs, then the render.
     // Esc with nothing open opens the game menu; its Exit saves and goes
     // back to the roster (screen).
-    void update(std::vector<std::uint8_t>& framebuffer, const Mouse& frame_mouse, const std::vector<SDL_Keycode>& keys_this_frame,
+    void update(std::vector<std::uint8_t>& framebuffer, const Mouse& frame_mouse, const std::vector<SDL_Keycode>& frame_keys,
                 Screen& screen, Audio& audio, std::uint32_t frame_ms, std::uint32_t last_ms);
 
     // The monster / ground item under the cursor (hovered_npc -10 - i / -1000 - i), or -1.

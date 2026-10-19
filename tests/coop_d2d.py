@@ -125,6 +125,24 @@ wide, tall = max(p[0] for p in iso) - min(p[0] for p in iso), max(p[1] for p in 
 assert wide <= 620 + 40 and tall <= 380 + 40, (spread, wide, tall)
 if os.environ.get("COOP_SHOT"): cmd("screenshot " + os.environ["COOP_SHOT"].replace(".png", "-leash.png"))
 
+# A partner's panel (one screen): Beta's Y opens their inventory, the screen
+# is Beta's while pad 0 still walks Alpha; Y again shuts it, the screen's Alpha's.
+def screen_name():
+    return cmd("state").split(" name=")[1].split(" hardcore=")[0]
+press(2, "y")
+frames(5)
+assert screen_name() == "Beta", cmd("state")[:300]
+cmd("pad 2 axis rightx 0.6"); frames(15); cmd("pad 2 axis rightx 0")   # the cursor out over the inventory
+if os.environ.get("COOP_SHOT"): cmd("screenshot " + os.environ["COOP_SHOT"].replace(".png", "-panel.png"))
+held = players()
+walk(0, 30)
+moved_alpha = players()
+assert abs(moved_alpha["Alpha"][0] - held["Alpha"][0]) + abs(moved_alpha["Alpha"][1] - held["Alpha"][1]) > 0.5, (held, moved_alpha)
+assert moved_alpha["Beta"][:2] == held["Beta"][:2], (held, moved_alpha)   # Beta's stick isn't Alpha's
+press(2, "y")
+frames(5)
+assert screen_name() == "Alpha", cmd("state")[:300]
+
 cmd("pad 2 unplug")                # held, then back: the same seat, no one new
 frames(10)
 assert set(players()) == {"Alpha", "Beta"}

@@ -557,6 +557,7 @@ int run_windowed(std::vector<std::uint8_t>& framebuffer,
     // plays the first player, each other one a player of its own.
     pad::Seats seats;
     bool coop_game = false, was_in_game = false;
+    int last_ui_seat = 0;
     std::uint32_t pad_last_ms = std::uint32_t(SDL_GetTicks());
     int pad_focus_key = 0;
     bool pad_in_use = false, pad_was_field = false, pad_cursor_hidden = false;   // the pad was the last to act; its field mode
@@ -793,7 +794,15 @@ int run_windowed(std::vector<std::uint8_t>& framebuffer,
             if (coop_game)
                 for (const auto& coop_player : town.coop)
                     town.coop_pad(coop_player.seat, gamepads.sample(SDL_JoystickID(std::max(seats.pad(coop_player.seat), 0))), pad_dt);
-            const pad::Sample first = coop_game ? gamepads.sample(SDL_JoystickID(std::max(seats.pad(0), 0))) : gamepads.sample();
+            // The screen's pad (a partner's while they have it) plays the UI; the first player's plays their field meanwhile.
+            const int ui_seat = coop_game ? town.focus_seat() : 0;
+            if (coop_game && ui_seat != 0) town.lead_pad(gamepads.sample(SDL_JoystickID(std::max(seats.pad(0), 0))), pad_dt);
+            const pad::Sample first = coop_game ? gamepads.sample(SDL_JoystickID(std::max(seats.pad(ui_seat), 0))) : gamepads.sample();
+            if (ui_seat != last_ui_seat) {                       // another pad: what it holds now isn't pressed now
+                pad_mapper = pad::Mapper{};
+                (void)pad_mapper.step(first, pad_context, 0);
+                last_ui_seat = ui_seat;
+            }
             const pad::Actions pad_actions = pad_mapper.step(first, pad_context, pad_dt);
             const int pad_side = (win.view_w - int(kScreenWidth)) / 2;   // widescreen's world beyond the 800x600 UI
             const bool pad_active = pad_actions.move_active || pad_actions.click_press || pad_actions.click_down || pad_actions.rclick_press
@@ -1252,7 +1261,7 @@ int run_windowed(std::vector<std::uint8_t>& framebuffer,
                 const auto& frame = scene->cursor.frame(0, mouse.down ? 7 : 0);
                 // Co-op with two pads or more: the first player's cursor in their seat's colour.
                 const bool seat_colour = coop_game && std::ranges::count_if(gamepads.pads(), [](const Gamepads::Pad& pad) { return !pad.built_in; }) >= 2;
-                const auto& lead = kSeatColours[std::size_t(std::clamp(town.lead_colour, 0, 3))];
+                const auto& lead = kSeatColours[std::size_t(std::clamp(town.focus_colour(), 0, 3))];
                 blit_sprite(framebuffer, frame, seat_colour ? tinted(pal, lead[0], lead[1], lead[2]) : pal, mouse.x + cursor_dx + frame.offset_x,
                             mouse.y + frame.offset_y - int(frame.height) + 1);
             }

@@ -6,6 +6,7 @@
 #include "audio.hpp"
 #include "common.hpp"
 #include "cursor.hpp"
+#include "gamepad.hpp"
 #include "gamepad_map.hpp"
 #include "ingame.hpp"
 #include "panels.hpp"
@@ -293,11 +294,14 @@ Lighting frame_light(const Scene& scene, const View& view, float cam_x, float ca
 
 // Town
 auto Town::publish() -> void {
+        auto& owner = focused();                        // local co-op: the screen's player
+        world.act_as(owner);
         auto out = world.view();
+        world.act_as(world.lead());
         out.sounds = std::move(world.cues.due);
         world.cues.due.clear();
-        out.events = std::move(hero.events);
-        hero.events.clear();
+        out.events = std::move(owner.events);
+        owner.events.clear();
         net.to_client = encode_view(*scene, out, view_enc);
         // D2D_VIEW_STATS=1: each View's size in the log (the replication budget).
         if (std::getenv("D2D_VIEW_STATS")) d2d::log::info("VIEWSTAT total={} monsters={} ground={} items={}", net.to_client.size(), out.monsters.size(), out.ground.size(), out.items.size());
@@ -355,6 +359,7 @@ auto Town::enter() -> void {
         world.enter(character);
         coop.clear();                             // a new game: its first player alone
         lead_colour = 0;
+        focus = 0;
         skillbar.new_game();
         publish();
         if (scene && level) load_automap(automap, automap_dir(world), character.name, scene->map_seed, level->layer);
@@ -801,9 +806,14 @@ auto Town::close_game_menu() -> void {
         mini.open = game_menu.restore_mini;
     }
 
-auto Town::update(std::vector<std::uint8_t>& framebuffer, const Mouse& frame_mouse, const std::vector<SDL_Keycode>& keys_this_frame,
+auto Town::update(std::vector<std::uint8_t>& framebuffer, const Mouse& frame_mouse, const std::vector<SDL_Keycode>& frame_keys,
                 Screen& screen, Audio& audio, std::uint32_t frame_ms, std::uint32_t last_ms) -> void {
         now_ms = frame_ms;
+        // A partner's screen with nothing of theirs open goes back to the first player.
+        if (focus_id() != hero.id && focus_keys.empty() && pad_field() && !game_menu.open && !automap.open && !waypoint.open) take_focus(hero.id);
+        auto keys_this_frame = frame_keys;               // and a partner's that took the screen
+        keys_this_frame.insert(keys_this_frame.end(), focus_keys.begin(), focus_keys.end());
+        focus_keys.clear();
         Mouse mouse = frame_mouse;             // the menu / mini-panel take their clicks from the rest
         // ESC handled globally in handle_sdl_events (returns to Title).
         // D2 movement: press or hold the left button on the ground
@@ -1517,6 +1527,7 @@ auto Town::coop_seat(int seat, int colour) -> void {
 auto Town::lead_leaves() -> int {
         const auto next = std::ranges::find_if(coop, [](const CoopPlayer& coop_player) { return coop_player.id > 0; });
         if (next == coop.end()) return -1;
+        take_focus(hero.id);
         if (scene && level) save_automap(automap, automap_dir(world), character.name, scene->map_seed, level->layer);
         if (const auto why = world.leave(hero.id); !why.empty()) d2d::log::warn("{}", why);
         // The next player's character is the screen's now (`hero` is slot [0], theirs).
@@ -1553,6 +1564,7 @@ auto Town::coop_typing() const -> bool {
 auto Town::coop_leave(int seat) -> void {
         const auto found = std::ranges::find(coop, seat, &CoopPlayer::seat);
         if (found == coop.end()) return;
+        if (found->id == focus_id()) take_focus(hero.id);   // their screen goes back first
         if (const auto why = world.leave(found->id); !why.empty()) d2d::log::warn("co-op seat {}: {}", seat, why);
         coop.erase(found);
     }
@@ -1579,11 +1591,26 @@ auto Town::coop_pad(int seat, const pad::Sample& sample, float seconds) -> void 
             return;
         }
         const auto in_world = std::ranges::find(world.players, coop_player.id, [](const auto& each) { return each->id; });
-        if (in_world == world.players.end()) return;
-        const auto& hero_there = **in_world;
-        const auto actions = coop_player.mapper.step(sample, pad::Context::Game, seconds);
-        coop_player.pad.move = { actions.move_x, actions.move_y, actions.move_active, actions.click_press, actions.click_down, actions.rclick_press };
-        const auto out = [&](const Command& command) { coop_player.orders.push_back(command); };
+        if (in_world == world.players.end() || coop_player.id == focus_id()) return;   // the screen's: main's pad pipeline plays it
+        const auto opens = field_play(coop_player.pad, coop_player.mapper, **in_world, sample, seconds,
+                                      [&](const Command& command) { coop_player.orders.push_back(command); });
+        // A panel, the game menu or the skill picker: the screen is theirs, when no one else has it.
+        if (opens.empty() || !focus_free()) return;
+        take_focus(coop_player.id);
+        for (const pad::Key key : opens)                // the keys that opened it, for this frame's UI
+            if (key == pad::Key::Up) pad_open_picker(); // field_play's stand-in for the picker
+            else focus_keys.push_back(pad_keycode(key));
+    }
+
+auto Town::lead_pad(const pad::Sample& sample, float seconds) -> void {
+        (void)field_play(lead_field, lead_mapper, hero, sample, seconds, [&](const Command& command) { lead_orders.push_back(command); });
+    }
+
+auto Town::field_play(PadPlayer& player_pad, pad::Mapper& mapper, const World::Player& hero_there, const pad::Sample& sample, float seconds,
+                      const Send& out) -> std::vector<pad::Key> {
+        const auto actions = mapper.step(sample, pad::Context::Game, seconds);
+        player_pad.move = { actions.move_x, actions.move_y, actions.move_active, actions.click_press, actions.click_down, actions.rclick_press };
+        std::vector<pad::Key> opens;
         for (const pad::Key key : actions.keys)
             switch (key) {
                 case pad::Key::ToggleRun:   out(cmd::Run{ !hero_there.running }); break;
@@ -1592,12 +1619,56 @@ auto Town::coop_pad(int seat, const pad::Sample& sample, float seconds) -> void 
                 case pad::Key::Belt3:       out(cmd::UseBelt{ 2 }); break;
                 case pad::Key::Belt4:       out(cmd::UseBelt{ 3 }); break;
                 case pad::Key::SwapWeapons: out(cmd::SwapWeapons{}); break;
-                default: break;                       // panels and menus: phase 5
+                case pad::Key::Inventory: case pad::Key::Character: case pad::Key::SkillTree: case pad::Key::QuestLog:
+                case pad::Key::Automap: case pad::Key::Escape:
+                    opens.push_back(key); break;
+                default: break;
             }
+        if (actions.skill_picker) opens.push_back(pad::Key::Up);          // the right stick's click: the picker
         const bool dead = hero_there.pmode == game::kModeDT || hero_there.pmode == game::kModeDD;
         const bool field = !game_menu.open;
-        pad_walk(coop_player.pad, hero_there.player, dead, field, out);
-        pad_act(coop_player.pad, hero_there.player, dead, field, int(hero_there.character.header.left_skill), int(hero_there.character.header.right_skill), out);
+        pad_walk(player_pad, hero_there.player, dead, field, out);
+        pad_act(player_pad, hero_there.player, dead, field, int(hero_there.character.header.left_skill), int(hero_there.character.header.right_skill), out);
+        return opens;
+    }
+
+auto Town::focus_id() const -> int { return focus > 0 ? focus : hero.id; }
+
+auto Town::focused() -> World::Player& {
+        const auto found = std::ranges::find(world.players, focus_id(), [](const auto& each) { return each->id; });
+        return found == world.players.end() ? hero : **found;
+    }
+
+auto Town::focus_free() const -> bool { return focus_id() == hero.id && pad_field() && !game_menu.open && !automap.open; }
+
+auto Town::focus_seat() const -> int {
+        const auto found = std::ranges::find(coop, focus_id(), &CoopPlayer::id);
+        return found == coop.end() ? 0 : found->seat;
+    }
+
+auto Town::focus_colour() const -> int {
+        const auto found = std::ranges::find(coop, focus_id(), &CoopPlayer::id);
+        return found == coop.end() ? lead_colour : found->colour;
+    }
+
+auto Town::take_focus(int id) -> void {
+        if (id == focus_id()) return;
+        // Whatever the last owner had open shuts (it's theirs, not the next one's).
+        inv_open = char_open = stash_open = cube_open = tree_open = belt_open = false;
+        quest_log.open = false; automap.open = false; skillbar.picking = 0;
+        npc_menu = {}; speech = {}; waypoint = {}; store = {}; menu_after_speech = -1;
+        focus = id == hero.id ? 0 : id;
+        auto& owner = focused();
+        static_cast<Character&>(character) = owner.character;
+        character.hardcore = owner.character.header.hardcore();
+        character.selected = kSaveClassToUi[std::clamp(int(owner.character.header.cls), 0, 6)];
+        skillbar.left = int(owner.character.header.left_skill); skillbar.right = int(owner.character.header.right_skill);
+        skillbar_set = int(owner.character.header.weapon_set);
+        quest_log.sent_known = false;
+        pad = {};
+        view_enc.reset();                             // the next View whole: another player's
+        publish();
+        d2d::log::info("co-op: the screen is {}'s", owner.character.name);
     }
 
 auto Town::pad_focus() const -> std::optional<PadFocus> {
@@ -2012,10 +2083,11 @@ auto Town::walk(const Mouse& mouse, bool over_ui, std::uint32_t frame_ms, std::u
             if (host_npc && host_npc->id != net_chat_npc) { net_chat_npc = host_npc->id; net_game->send_items({ c2s::npc_chat(true, 1, net_chat_npc) }); }
         }
         for (const auto& command : input(mouse, over_ui)) send(command);
+        // The screen's pad plays the screen's player (local co-op: a partner's while they have it).
         const Send to_world = [this](const Command& command) { send(command); };
         const bool field = pad_field() && !game_menu.open && !chat_typing && !trade_gold_typing;
-        pad_walk(pad, hero.player, view.dead, field, to_world);
-        pad_act(pad, hero.player, view.dead, pad_field(), skillbar.left, skillbar.right, to_world);
+        pad_walk(pad, focused().player, view.dead, field, to_world);
+        pad_act(pad, focused().player, view.dead, pad_field(), skillbar.left, skillbar.right, to_world);
         // Fixed ticks of kTickMs; after a stall, a few to catch up, then the
         // clock skips ahead (game.exe catches up one frame at most).
         if (world_ms == 0 || frame_ms - world_ms > 1000) world_ms = frame_ms - std::min<std::uint32_t>(frame_ms - last_ms, kTickMs);
@@ -2027,7 +2099,9 @@ auto Town::walk(const Mouse& mouse, bool over_ui, std::uint32_t frame_ms, std::u
         for (int ticks = 0; frame_ms - world_ms >= kTickMs && ticks < 5; ++ticks) {
             prev_x = view.player.x; prev_y = view.player.y;
             std::vector<Order> orders;
-            for (auto& command : net.receive()) orders.push_back({ hero.id, std::move(command) });
+            for (auto& command : net.receive()) orders.push_back({ focus_id(), std::move(command) });   // the screen's player's
+            for (auto& command : lead_orders) orders.push_back({ hero.id, std::move(command) });       // the first player's field play meanwhile
+            lead_orders.clear();
             for (auto& coop_player : coop) {                // the other co-op players' (their pads')
                 for (auto& command : coop_player.orders) orders.push_back({ coop_player.id, std::move(command) });
                 coop_player.orders.clear();
@@ -2041,6 +2115,17 @@ auto Town::walk(const Mouse& mouse, bool over_ui, std::uint32_t frame_ms, std::u
         // What the World said, handled once the View it came in is here
         // (the hire list's offers come with it).
         for (const auto& event : view.events) handle(event, frame_ms);
+        // A partner's: a window to open (an NPC talked to, the stash) takes
+        // the screen when it's free; the rest is the screen's business only.
+        for (auto& other : world.players) {
+            if (other->id == focus_id()) continue;
+            const auto said = std::exchange(other->events, {});
+            const auto opens = std::ranges::find_if(said, [](const Event& event) { return std::holds_alternative<ev::OpenUI>(event); });
+            if (opens == said.end() || !focus_free()) continue;
+            take_focus(other->id);
+            handle(*opens, frame_ms);
+            break;
+        }
         if (net_game) net_quests(frame_ms);
         if (frame_ms - world_ms >= kTickMs) world_ms = frame_ms - (frame_ms - world_ms) % kTickMs;
     }

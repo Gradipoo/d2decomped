@@ -137,14 +137,16 @@ void load_ui_sprites(Scene& scene, const d2d::mpq::Stack& mpqs) {
         }
         return values;
     };
+    auto sprite = [&](std::string_view path, auto& into) {
+        if (auto bytes = mpqs.try_read(path)) into = d2d::dc6::Sprite(*bytes);
+    };
     const auto types = txt("ItemTypes");
     if (auto bytes = mpqs.try_read(R"(data\global\monsters\RandTransforms.dat)"))
         scene.rand_transforms.assign(reinterpret_cast<const std::uint8_t*>(bytes->data()), reinterpret_cast<const std::uint8_t*>(bytes->data()) + bytes->size());
-    for (auto [path, into] : { std::pair{ R"(data\global\ui\PANEL\buysell.dc6)", &scene.store_panel },
-                               { R"(data\global\ui\PANEL\buyselltabs.dc6)", &scene.store_tabs },
-                               { R"(data\global\ui\PANEL\buysellbtn.dc6)", &scene.store_buttons },
-                               { R"(data\global\ui\PANEL\goldcoinbtn.dc6)", &scene.gold_coin } })
-        if (auto bytes = mpqs.try_read(path)) *into = d2d::dc6::Sprite(*bytes);
+    sprite(R"(data\global\ui\PANEL\buysell.dc6)", scene.store_panel);
+    sprite(R"(data\global\ui\PANEL\buyselltabs.dc6)", scene.store_tabs);
+    sprite(R"(data\global\ui\PANEL\buysellbtn.dc6)", scene.store_buttons);
+    sprite(R"(data\global\ui\PANEL\goldcoinbtn.dc6)", scene.gold_coin);
     for (std::size_t row = 0; row < types.size(); ++row) {
         const std::string code(types.get(row, "Code"));
         auto& graphics = scene.type_invgfx[code];
@@ -185,11 +187,10 @@ void load_ui_sprites(Scene& scene, const d2d::mpq::Stack& mpqs) {
         }
         if (auto bytes = mpqs.try_read(R"(data\global\ui\AutoMap\MaxiMap.dc6)")) scene.automap_cels = d2d::dc6::Sprite(*bytes);
     }
-    for (auto [path, into] : { std::pair{ R"(data\global\ui\menu\waygatebackground.dc6)", &scene.wp_bg },
-                               { R"(data\global\ui\menu\waygateicons.dc6)", &scene.wp_icons },
-                               { R"(data\global\ui\menu\waygatetabs.dc6)", &scene.wp_tabs[0] },
-                               { R"(data\global\ui\menu\expwaygatetabs.dc6)", &scene.wp_tabs[1] } })
-        if (auto bytes = mpqs.try_read(path)) *into = d2d::dc6::Sprite(*bytes);
+    sprite(R"(data\global\ui\menu\waygatebackground.dc6)", scene.wp_bg);
+    sprite(R"(data\global\ui\menu\waygateicons.dc6)", scene.wp_icons);
+    sprite(R"(data\global\ui\menu\waygatetabs.dc6)", scene.wp_tabs[0]);
+    sprite(R"(data\global\ui\menu\expwaygatetabs.dc6)", scene.wp_tabs[1]);
     if (auto bytes = mpqs.try_read(R"(data\local\FONT\LATIN\fontformal11.tbl)"))
         if (auto sheet_bytes = mpqs.try_read(R"(data\local\FONT\LATIN\fontformal11.dc6)"))
             scene.font_formal11 = d2d::font::Font(*bytes, d2d::dc6::Sprite(*sheet_bytes));
@@ -199,43 +200,41 @@ void load_ui_sprites(Scene& scene, const d2d::mpq::Stack& mpqs) {
     if (auto bytes = mpqs.try_read(R"(data\local\FONT\LATIN\font30.tbl)"))
         if (auto sheet_bytes = mpqs.try_read(R"(data\local\FONT\LATIN\font30.dc6)"))
             scene.font30 = d2d::font::Font(*bytes, d2d::dc6::Sprite(*sheet_bytes));
-    for (auto [spr, name] : { std::pair{ &scene.you_died, "youdiedhardcore" }, { &scene.you_died_inst, "youdiedinst" } })
-        if (auto bytes = mpqs.try_read(std::string(R"(data\local\UI\ENG\)") + name + ".dc6")) *spr = d2d::dc6::Sprite(*bytes);
+    sprite(R"(data\local\UI\ENG\youdiedhardcore.dc6)", scene.you_died);
+    sprite(R"(data\local\UI\ENG\youdiedinst.dc6)", scene.you_died_inst);
     for (const auto name : game_menu_images())
         if (!scene.menu_text.contains(std::string(name)))
             if (auto bytes = mpqs.try_read(std::string(R"(data\local\UI\ENG\)") + std::string(name) + ".dc6"))
                 scene.menu_text.emplace(std::string(name), d2d::dc6::Sprite(*bytes));
-    for (const auto& [path, into] : { std::pair{ R"(data\global\ui\CURSOR\pentspin.dc6)", &scene.pentspin },
-                               { R"(data\global\ui\Widgets\OptBar.dc6)", &scene.opt_bar },
-                               { R"(data\global\ui\Widgets\OptBarC.dc6)", &scene.opt_bar_c },
-                               { R"(data\global\ui\Widgets\OptSkull.dc6)", &scene.opt_skull },
-                               { R"(data\global\ui\PANEL\menubutton.dc6)", &scene.menu_button },
-                               { R"(data\global\ui\PANEL\minipanel_s.dc6)", &scene.minipanel },
-                               { R"(data\global\ui\PANEL\minipanelbtn.dc6)", &scene.minipanel_btn } })
-        if (auto bytes = mpqs.try_read(path)) *into = d2d::dc6::Sprite(*bytes);
+    sprite(R"(data\global\ui\CURSOR\pentspin.dc6)", scene.pentspin);
+    sprite(R"(data\global\ui\Widgets\OptBar.dc6)", scene.opt_bar);
+    sprite(R"(data\global\ui\Widgets\OptBarC.dc6)", scene.opt_bar_c);
+    sprite(R"(data\global\ui\Widgets\OptSkull.dc6)", scene.opt_skull);
+    sprite(R"(data\global\ui\PANEL\menubutton.dc6)", scene.menu_button);
+    sprite(R"(data\global\ui\PANEL\minipanel_s.dc6)", scene.minipanel);
+    sprite(R"(data\global\ui\PANEL\minipanelbtn.dc6)", scene.minipanel_btn);
     scene.unique_inv = keys("UniqueItems", "invfile", false);
     scene.set_inv    = keys("SetItems", "invfile", false);
-    for (auto [name, into] : { std::pair{ "font8", &scene.font_small }, { "font6", &scene.font_tiny } })
+    auto font = [&](const char* name, auto& into) {
         if (auto bytes = mpqs.try_read(std::string(R"(data\local\FONT\LATIN\)") + name + ".tbl"))
             if (auto sheet_bytes = mpqs.try_read(std::string(R"(data\local\FONT\LATIN\)") + name + ".dc6"))
-                *into = d2d::font::Font(*bytes, d2d::dc6::Sprite(*sheet_bytes));
-    for (auto [path, into] : { std::pair{ R"(data\global\ui\PANEL\800ctrlpnl7.dc6)", &scene.ctrl_panel },
-                               { R"(data\global\ui\PANEL\hlthmana.dc6)", &scene.globes },
-                               { R"(data\global\ui\PANEL\overlap.dc6)", &scene.globe_glass },
-                               { R"(data\global\ui\PANEL\runbutton.dc6)", &scene.run_button } })
-        if (auto bytes = mpqs.try_read(path)) *into = d2d::dc6::Sprite(*bytes);
+                into = d2d::font::Font(*bytes, d2d::dc6::Sprite(*sheet_bytes));
+    };
+    font("font8", scene.font_small);
+    font("font6", scene.font_tiny);
+    sprite(R"(data\global\ui\PANEL\800ctrlpnl7.dc6)", scene.ctrl_panel);
+    sprite(R"(data\global\ui\PANEL\hlthmana.dc6)", scene.globes);
+    sprite(R"(data\global\ui\PANEL\overlap.dc6)", scene.globe_glass);
+    sprite(R"(data\global\ui\PANEL\runbutton.dc6)", scene.run_button);
     if (auto bytes = mpqs.try_read(R"(data\global\ui\PANEL\invchar6.dc6)"))
         scene.inv_panel = d2d::dc6::Sprite(*bytes);
-    for (auto [path, into] : { std::pair{ R"(data\global\ui\PANEL\level.dc6)", &scene.level_button },
-                               { R"(data\global\ui\PANEL\levelsocket.dc6)", &scene.level_socket },
-                               { R"(data\global\ui\PANEL\skillpoints.dc6)", &scene.points_box } })
-        if (auto bytes = mpqs.try_read(path)) *into = d2d::dc6::Sprite(*bytes);
-    for (auto [path, page] : { std::pair{ R"(data\global\ui\PANEL\bank.dc6)", 0 },
-                            { R"(data\global\ui\PANEL\TradeStash.dc6)", 1 } })
-        if (auto bytes = mpqs.try_read(path)) scene.stash_panel[std::size_t(page)] = d2d::dc6::Sprite(*bytes);
-    for (auto [path, into] : { std::pair{ R"(data\global\ui\PANEL\trade.dc6)", &scene.trade_panel },
-                               { R"(data\global\ui\PANEL\tradebtn.dc6)", &scene.trade_button } })
-        if (auto bytes = mpqs.try_read(path)) *into = d2d::dc6::Sprite(*bytes);
+    sprite(R"(data\global\ui\PANEL\level.dc6)", scene.level_button);
+    sprite(R"(data\global\ui\PANEL\levelsocket.dc6)", scene.level_socket);
+    sprite(R"(data\global\ui\PANEL\skillpoints.dc6)", scene.points_box);
+    sprite(R"(data\global\ui\PANEL\bank.dc6)", scene.stash_panel[0]);
+    sprite(R"(data\global\ui\PANEL\TradeStash.dc6)", scene.stash_panel[1]);
+    sprite(R"(data\global\ui\PANEL\trade.dc6)", scene.trade_panel);
+    sprite(R"(data\global\ui\PANEL\tradebtn.dc6)", scene.trade_button);
     static constexpr const char* kClassIcon[7] = { "Amazon", "Sorceress", "Necromancer", "Paladin", "Barbarian", "Druid", "Assassin" };
     for (std::size_t class_index = 0; class_index < 7; ++class_index)
         if (auto bytes = mpqs.try_read(std::string(R"(data\global\ui\Hireables\)") + kClassIcon[class_index] + "Icon.dc6"))
@@ -253,10 +252,12 @@ void load_ui_sprites(Scene& scene, const d2d::mpq::Stack& mpqs) {
             scene.skill_icons[class_index] = d2d::dc6::Sprite(*bytes);
     }
     if (auto bytes = mpqs.try_read(R"(data\global\ui\SPELLS\Skillicon.dc6)")) scene.generic_skill_icons = d2d::dc6::Sprite(*bytes);
-    for (auto [sprite, file] : { std::pair{ &scene.quest_bg, "questbackground" }, { &scene.quest_tabs, "expquesttabs" },
-                                 { &scene.quest_tabs_classic, "questtabs" }, { &scene.quest_sockets, "questsockets" },
-                                 { &scene.quest_last, "questlast" }, { &scene.quest_done, "questdone" } })
-        if (auto bytes = mpqs.try_read(std::string(R"(data\global\ui\menu\)") + file + ".dc6")) *sprite = d2d::dc6::Sprite(*bytes);
+    sprite(R"(data\global\ui\menu\questbackground.dc6)", scene.quest_bg);
+    sprite(R"(data\global\ui\menu\expquesttabs.dc6)", scene.quest_tabs);
+    sprite(R"(data\global\ui\menu\questtabs.dc6)", scene.quest_tabs_classic);
+    sprite(R"(data\global\ui\menu\questsockets.dc6)", scene.quest_sockets);
+    sprite(R"(data\global\ui\menu\questlast.dc6)", scene.quest_last);
+    sprite(R"(data\global\ui\menu\questdone.dc6)", scene.quest_done);
     for (std::size_t i = 0; i < scene.quest_icons.size(); ++i)    // the names at 0x6da2c8: a1q1..a1q6, a2q1.., a4q1..3, a5q1..
         if (auto bytes = mpqs.try_read(std::format(R"(data\global\ui\menu\a{}q{}.dc6)", i < 6 ? 1 : i < 12 ? 2 : i < 18 ? 3 : i < 21 ? 4 : 5,
                                                i < 18 ? i % 6 + 1 : i < 21 ? i - 17 : i - 20)))
@@ -394,9 +395,13 @@ std::optional<Scene> load_scene(const fs::path& data_dir, const fs::path& patch_
         scene.popup_ok_cancel = d2d::dc6::Sprite(mpqs.read(R"(data\global\ui\FrontEnd\PopUpOKCancel2.dc6)"));
         scene.cancel_button = d2d::dc6::Sprite(mpqs.read(R"(data\global\ui\FrontEnd\CancelButtonBlank.dc6)"));
         scene.popup_ok = d2d::dc6::Sprite(mpqs.read(R"(data\global\ui\FrontEnd\PopUpOK.dc6)"));
-        for (auto [font, name] : { std::pair{ &scene.font42, "font42" }, { &scene.font_formal12, "fontformal12" }, { &scene.font24, "font24" } })
-            *font = d2d::font::Font(mpqs.read(std::string(R"(data\local\FONT\LATIN\)") + name + ".tbl"),
-                                    d2d::dc6::Sprite(mpqs.read(std::string(R"(data\local\FONT\LATIN\)") + name + ".dc6")));
+        auto font = [&](const char* name) {
+            return d2d::font::Font(mpqs.read(std::string(R"(data\local\FONT\LATIN\)") + name + ".tbl"),
+                                   d2d::dc6::Sprite(mpqs.read(std::string(R"(data\local\FONT\LATIN\)") + name + ".dc6")));
+        };
+        scene.font42 = font("font42");
+        scene.font_formal12 = font("fontformal12");
+        scene.font24 = font("font24");
         scene.cursor = d2d::dc6::Sprite(mpqs.read(R"(data\global\ui\CURSOR\ohand.dc6)"));
         scene.cursor_buysell = d2d::dc6::Sprite(mpqs.read(R"(data\global\ui\CURSOR\buysell.dc6)"));
         scene.class_anims = [&] {

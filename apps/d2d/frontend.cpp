@@ -16,7 +16,6 @@
 #include <cstdint>
 #include <span>
 #include <string>
-#include <tuple>
 #include <utility>
 #include <vector>
 
@@ -670,9 +669,11 @@ TitleUI other_multiplayer_ui(const Scene& scene) {
     menu.labels.reserve(3);
     menu.buttons.reserve(3);
     // ponytail: OPEN BATTLE.NET does nothing; d2d has no Battle.net.
-    for (const auto& [y, tbl_id, fallback, target] : { std::tuple{ 310, 0x13fb, "OPEN BATTLE.NET", Screen::OtherMultiplayer },
-                                                      { 350, 0x13fc, "TCP/IP GAME", Screen::TcpIp },
-                                                      { 568, 0x13ef, "CANCEL", Screen::Title } }) {
+    struct Entry { int y; int tbl_id; const char* fallback; Screen target; };
+    static constexpr Entry kEntries[] = { { 310, 0x13fb, "OPEN BATTLE.NET", Screen::OtherMultiplayer },
+                                          { 350, 0x13fc, "TCP/IP GAME", Screen::TcpIp },
+                                          { 568, 0x13ef, "CANCEL", Screen::Title } };
+    for (const auto& [y, tbl_id, fallback, target] : kEntries) {
         const auto found = lookup_string(scene, std::uint16_t(tbl_id));
         menu.labels.push_back(found ? u16_to_latin1(*found) : std::string(fallback));
         menu.buttons.push_back(Button{ 264, rec_top(y, 35), 272, 35, menu.labels.back().c_str(), &scene.btn_wide,

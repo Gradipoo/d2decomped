@@ -45,6 +45,9 @@ namespace d2d::game {
 
 namespace {
 
+// Up, right, down, left: where a boss's ring of bolts leaves.
+constexpr std::pair<float, float> kCompass[] = { { 0.f, -1.f }, { 1.f, 0.f }, { 0.f, 1.f }, { -1.f, 0.f } };
+
 // A state's end on a monster (its stat list off, FUN_006269f0: the
 // callback; FUN_005c3370 toggles an AI-swapping one's AI back).
 void end_state(const GameData& game_data, Monster& monster, Monster::SkillState& slot) {
@@ -1442,7 +1445,7 @@ auto Fight::boss_events(std::span<Foe> foes, std::uint32_t now_ms) -> void {
                 monster.scarab_due.erase(monster.scarab_due.begin());
                 d2d::log::info("{} lets off its bugs' lightning", monster.npc.name);
                 const auto ring = std::make_shared<std::vector<int>>();
-                for (const auto& [dir_x, dir_y] : { std::pair{ 0.f, -1.f }, { 1.f, 0.f }, { 0.f, 1.f }, { -1.f, 0.f } })
+                for (const auto& [dir_x, dir_y] : kCompass)
                     for (int k = 0; k < 2; ++k) {
                         const float angle = float(rng(51) - 25) * 3.14159265f / 180, cosine = std::cos(angle), sine = std::sin(angle);
                         boss_missile(monster, "buglightning", dir_x * cosine - dir_y * sine, dir_x * sine + dir_y * cosine, ring, now_ms, mlvl);
@@ -1453,7 +1456,7 @@ auto Fight::boss_events(std::span<Foe> foes, std::uint32_t now_ms) -> void {
                     monster.bolts_at = now_ms;
                     d2d::log::info("{} lets off charged bolts", monster.npc.name);
                     const auto ring = std::make_shared<std::vector<int>>();
-                    for (const auto& [dir_x, dir_y] : { std::pair{ 0.f, -1.f }, { 1.f, 0.f }, { 0.f, 1.f }, { -1.f, 0.f } })
+                    for (const auto& [dir_x, dir_y] : kCompass)
                         for (int k = 0; k < 2; ++k) {
                             const float angle = float(rng(51) - 25) * 3.14159265f / 180, cosine = std::cos(angle), sine = std::sin(angle);
                             boss_missile(monster, "lightunique", dir_x * cosine - dir_y * sine, dir_x * sine + dir_y * cosine, ring, now_ms);
@@ -4330,7 +4333,8 @@ auto Fight::shrine_missiles(int code, float x, float y, int clvl, std::uint32_t 
         if (found == game_data->missiles.end()) return;
         const auto& missile_info = found->second;
         const auto damage = d2d::rules::row_damage(missile_info.etype, missile_info.emin, missile_info.emax, missile_info.emin_lev, missile_info.emax_lev, missile_info.hitshift, missile_info.elen, missile_info.elen_lev, lvl);
-        for (const auto& [dx, dy] : { std::pair{ -6, 6 }, { -6, -6 }, { 0, 6 }, { 0, -6 }, { 6, 6 }, { 6, -6 } }) {
+        static constexpr std::pair<int, int> kBurst[] = { { -6, 6 }, { -6, -6 }, { 0, 6 }, { 0, -6 }, { 6, 6 }, { 6, -6 } };
+        for (const auto& [dx, dy] : kBurst) {
             const float dir_x = float(dx) / 5, dir_y = float(dy) / 5, speed = missile_speed(missile_info, lvl), distance = std::hypot(dir_x, dir_y);
             Missile missile{ &missile_info, x, y, dir_x / distance * speed, dir_y / distance * speed, direction32(dir_x, dir_y), now_ms, now_ms + std::uint32_t(std::max(missile_info.range, 1)) * 40, {} };
             missile.friendly = true; missile.row = damage; missile.burst = missile_info.hit_par1;

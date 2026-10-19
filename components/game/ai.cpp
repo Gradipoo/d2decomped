@@ -2041,7 +2041,9 @@ void make_boss(const GameData& game_data, Monster& monster, d2d::rules::Boss kin
     else if (kind == d2d::rules::Boss::champion) {                      // "Champion Zombie", "Ghostly Fallen" (FUN_004ac870)
         auto format = string_id(game_data, d2d::rules::kChampionFormat);
         if (format.empty()) format = "%0 %1";
-        for (const auto& [placeholder, value] : { std::pair{ std::string("%0"), string_id(game_data, d2d::rules::champion_word(mods)) }, { std::string("%1"), monster.npc.name } })
+        const std::pair<std::string, std::string> words[] = { { "%0", string_id(game_data, d2d::rules::champion_word(mods)) },
+                                                              { "%1", monster.npc.name } };
+        for (const auto& [placeholder, value] : words)
             if (const auto found = format.find(placeholder); found != std::string::npos) format.replace(found, placeholder.size(), value);
         monster.npc.name = format;
     }

@@ -213,7 +213,8 @@ void draw_char_panel(std::vector<std::uint8_t>& framebuffer, const Scene& scene,
             blit_sprite(framebuffer, frame_ref, pal, panel_x + x, panel_y + y - int(frame_ref.height) + 1);
         };
         dc6(scene.points_box, 0, 3, 364);
-        for (auto [id, label_y] : { std::pair{ 0xfeb, 355 }, { 0xfec, 363 } })
+        static constexpr std::pair<int, int> kPointLabels[] = { { 0xfeb, 355 }, { 0xfec, 363 } };    // string id, y
+        for (auto [id, label_y] : kPointLabels)
             if (auto found = lookup_string(scene, std::uint16_t(id))) text(font6, 11, 0x59 - 1, label_y, u16_to_latin1(*found));
         text(f16, 0x5c, 0x80 - 1, 360, std::to_string(pts));
         for (int i = 0; i < 4; ++i) {

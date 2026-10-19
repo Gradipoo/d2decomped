@@ -9,6 +9,8 @@
 //   +0x04 u32  version
 //   +0x08 u32  file size
 //   +0x0C u32  checksum
+//   +0x10 u32  the weapon switch's set showing: 0 I, 1 II (the hands in
+//              body slots 4 / 5 are always the set in use)
 //   +0x14 char name[16], NUL-padded
 //   +0x24 u8   status  (0x04 hardcore, 0x08 died, 0x20 expansion)
 //   +0x25 u8   progression (acts/difficulties beaten; drives the title)
@@ -64,6 +66,7 @@ struct Header {
     std::uint8_t  cls = 0;      // .d2s class id, see table above
     std::uint8_t  level = 0;
     std::uint32_t last_played = 0;
+    std::uint32_t weapon_set = 0;
     std::array<std::uint32_t, 16> hotkeys{};
     std::uint32_t left_skill = 0, right_skill = 0, left_swap = 0, right_swap = 0;
     std::array<std::uint8_t, 16> appearance{};
@@ -136,6 +139,7 @@ inline Header parse_header(std::span<const std::byte> bytes) {
     header.cls         = std::uint8_t(bytes[0x28]);
     header.level       = std::uint8_t(bytes[0x2B]);
     header.last_played = rd32(0x30);
+    header.weapon_set  = rd32(0x10);
     for (std::size_t i = 0; i < 16; ++i) header.hotkeys[i] = rd32(0x38 + i * 4);
     header.left_skill = rd32(0x78); header.right_skill = rd32(0x7C); header.left_swap = rd32(0x80); header.right_swap = rd32(0x84);
     std::memcpy(header.appearance.data(), bytes.data() + 0x88, 16);

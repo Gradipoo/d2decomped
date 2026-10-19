@@ -398,7 +398,7 @@ struct Fight {
     // those with no passiveitype join the sum, a mastery (342..344) only
     // when the weapon is its type, the best one (FUN_00645830), Weapon Block
     // (348) with two claws when either hand is (FUN_0057dca0, class HT2).
-    // ponytail: set bonuses and the weapon swap aren't counted; the throw
+    // ponytail: set bonuses aren't counted; the throw
     // masteries (345..347) wait for thrown weapons.
     [[nodiscard]] d2d::rules::Fighter player_fighter(d2d::rules::Fighter* kick = nullptr,
                                                      const d2d::rules::StatSum* states = nullptr,

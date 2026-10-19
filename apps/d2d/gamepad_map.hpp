@@ -25,7 +25,7 @@ enum class Context { Title, Menu, Game, Panel, Shop };
 // Keys the pad presses on the game's behalf: the adapter turns them into SDL
 // key events, so every screen's own key handling runs as for the keyboard.
 enum class Key { Escape, Return, Up, Down, Left, Right, Inventory, Character, SkillTree, QuestLog, Automap, ToggleRun,
-                 Belt1, Belt2, Belt3, Belt4 };
+                 Belt1, Belt2, Belt3, Belt4, SwapWeapons };
 
 struct Sample {                       // one frame of a pad: sticks -1..1, triggers 0..1
     float lx = 0, ly = 0, rx = 0, ry = 0, left_trigger = 0, right_trigger = 0;
@@ -113,6 +113,7 @@ public:
     // Sample: every button lets go, so nothing stays held.
     Actions step(const Sample& sample, Context context, float seconds) {
         Actions out;
+        const bool left_trigger_was = left_trigger_;
         left_trigger_ = hysteresis(sample.left_trigger, left_trigger_);
         right_trigger_ = hysteresis(sample.right_trigger, right_trigger_);
         auto held = sample.held;
@@ -126,7 +127,7 @@ public:
         out.click_release = !out.click_down && click_prev_;
         click_prev_ = out.click_down;
         if (game) {
-            const bool secondary = sample[Button::East] || left_trigger_;
+            const bool secondary = sample[Button::East];
             out.rclick_press = secondary && !secondary_prev_;
             secondary_prev_ = secondary;
         } else {
@@ -157,6 +158,7 @@ public:
             key(Button::North, Key::Inventory);
             key(Button::Back, Key::QuestLog);
             key(Button::LeftStick, Key::ToggleRun);
+            if (left_trigger_ && !left_trigger_was) out.keys.push_back(Key::SwapWeapons);
             if (shop) {
                 out.trade_press = pressed(Button::West);
                 out.tab_step = int(pressed(Button::RightShoulder)) - int(pressed(Button::LeftShoulder));

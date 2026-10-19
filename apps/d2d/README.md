@@ -44,7 +44,8 @@ default layout, by button position. The first pad connected plays.
 | Left stick | Walk (run follows the run toggle) | Move the cursor |
 | Right stick | Move the cursor; click: the skill picker (with a panel open: recentre). In the picker the d-pad hops, A on a skill button switches hands, A on a skill chooses it | Move the cursor |
 | A (south) / right trigger | Left click: attack or use what's in reach | Left click |
-| B (east) / left trigger | Right-hand skill | Back (Esc) |
+| B (east) | Right-hand skill | Back (Esc) |
+| Left trigger | Swap weapons (W) | |
 | Y (north) / X (west) | Inventory / character; in a store X buys or sells what the cursor is on | |
 | Left / right shoulder | Skill tree / automap; in a store the tab before / after | |
 | View (back) / Menu (start) | Quest log / game menu (Esc) | — / Enter |

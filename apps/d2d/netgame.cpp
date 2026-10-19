@@ -621,6 +621,10 @@ auto NetGame::move_to(float subtile_x, float subtile_y, bool run) -> void {
     walk_sent_ms = steady_ms();
 }
 
+auto NetGame::swap_weapons() -> void {
+    if (session.state() == d2d::net::JoinState::InGame) send({ d2d::net::d2gs::c2s::swap_weapons() });
+}
+
 auto NetGame::set_running(bool run) -> void {
     if (session.state() == d2d::net::JoinState::InGame) send({ d2d::net::d2gs::c2s::set_running(run) });
 }

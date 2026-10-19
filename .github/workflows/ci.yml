@@ -142,6 +142,10 @@ jobs:
         with:
           key: ${{ matrix.os }}
           max-size: 1G
+          # Only main saves: each branch run's ~1 GB copy pushed the repo past
+          # GitHub's 10 GB and evicted main's, so builds started cold. PRs
+          # restore main's.
+          save: ${{ github.ref == 'refs/heads/main' }}
           verbose: 2          # the stats list why a call wasn't cacheable
 
       # The Bink-only FFmpeg (apps/d2d/CMakeLists.txt): CMake skips building
@@ -152,6 +156,9 @@ jobs:
         with:
           path: build/ffmpeg-*
           key: ffmpeg-${{ runner.os }}-${{ hashFiles('apps/d2d/CMakeLists.txt') }}
+          # Any edit to that file changes the key; an older build/ffmpeg-<options>
+          # still matches when the FFmpeg version and options didn't change.
+          restore-keys: ffmpeg-${{ runner.os }}-
 
       - name: Configure (Linux/macOS)
         if: runner.os != 'Windows'

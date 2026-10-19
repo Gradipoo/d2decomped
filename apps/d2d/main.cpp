@@ -768,7 +768,7 @@ int run_windowed(std::vector<std::uint8_t>& framebuffer,
                 handle_sdl_events(key_event, mouse, screen, text_this_frame, backspace_this_frame, keys_this_frame, quit);
             }
             town.pad_move = screen == Screen::InGame
-                ? Town::PadMove{ pad_actions.move_x, pad_actions.move_y, pad_actions.move_active, pad_actions.run,
+                ? Town::PadMove{ pad_actions.move_x, pad_actions.move_y, pad_actions.move_active,
                                 pad_field && pad_actions.click_press, pad_field && pad_actions.click_down, pad_field && pad_actions.rclick_press }
                 : Town::PadMove{};
         }

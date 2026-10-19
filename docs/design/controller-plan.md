@@ -3,7 +3,7 @@
 Status: the first cut is in (PR #36, 2026-10-19): SDL3 gamepads with one
 default layout by button position (`apps/d2d/gamepad.*`, `gamepad_map.hpp`;
 the layout is in [apps/d2d/README.md](../../apps/d2d/README.md)), stick
-walking with walk/run by tilt, soft targeting in the field, menus by cursor
+walking by direction (run follows the run toggle), soft targeting in the field, menus by cursor
 and d-pad. Not yet: remapping, Steam Input / glyphs, a second pad, touch.
 The plan below was written 2026-10-15, before any controller code.
 
@@ -182,7 +182,7 @@ remappable.
 
 | Input | Candidate action |
 |---|---|
-| Left stick | Directional movement; magnitude selects walk/run |
+| Left stick | Directional movement; walk/run follows the run toggle (left-stick click) |
 | A / south face button | Primary action: attack with active left skill, otherwise contextual move/interact/pickup |
 | B / east face button | Cast active right-hand skill; cancel/back in menus |
 | Right stick | Aim/soft-target adjustment in the world; cursor movement in pointer-heavy panels |
@@ -202,14 +202,16 @@ left/right skill model should remain understandable for mouse players too.
 The current model sends a point destination and has a separate run toggle. A
 left-stick implementation needs to turn a direction vector into a stable
 world-space destination or movement intent, then keep updating it while the
-stick is held. Use a configurable dead zone and a walk/run magnitude threshold
-with hysteresis so running does not chatter near the threshold. Decide whether
+stick is held. Use a configurable dead zone. Decide whether
 stamina exhaustion overrides the requested run state, and expose that state to
 the HUD.
 
-Do not try to express continuous walking through repeated `R` key toggles. For
-controller movement, running should be derived from the current stick state;
-the existing keyboard/mouse toggle can remain as its own binding.
+Do not try to express continuous walking through repeated `R` key toggles.
+Tried and dropped: running by stick magnitude. Every push started as a walk
+until the stick reached the run threshold (about 80% of its travel), and it
+overrode an always-run toggle, which made movement feel late. The stick now
+gives direction only; walk/run is the run toggle (left-stick click), as with
+the mouse.
 
 ### Soft targeting and contextual primary action
 

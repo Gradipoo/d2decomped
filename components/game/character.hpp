@@ -137,6 +137,10 @@ struct PanelStats {
     // (strength .. max stamina, whole points): the panel shows the sum,
     // blue when it's more, red when less (FUN_004a7d00).
     std::array<std::int64_t, 12> bonus{};
+    // item_maxhp_percent / item_maxmana_percent (76, 77; ItemStatCost op 11):
+    // a share of the own maximum plus the items' flat +life / +mana, not of
+    // the attributes' (op 8) share. Fight::update_fighters adds it.
+    std::array<std::int64_t, 2> max_percent{}, max_flat{};
     std::array<d2d::rules::AttackLine, 2> attack{};   // the left / right skill's block, as the server sends it
 };
 
@@ -146,9 +150,9 @@ inline PanelStats panel_stats(const GameData& game_data, const d2d::d2s::Header&
     PanelStats panel;
     const auto lvl = stats.get(d2d::d2s::kLevel);
     if (lvl >= 0 && std::size_t(lvl) + 1 < game_data.exp_next.size()) panel.next = game_data.exp_next[std::size_t(lvl)];
-    std::array<std::int64_t, 64> sum{};
+    std::array<std::int64_t, d2d::d2s::kMaxManaPercent + 1> sum{};
     auto add = [&](const std::vector<d2d::d2s::ItemProp>& props) {
-        for (const auto& prop : props) if (prop.stat >= 0 && prop.stat < 64) sum[std::size_t(prop.stat)] += prop.value;
+        for (const auto& prop : props) if (prop.stat >= 0 && std::size_t(prop.stat) < sum.size()) sum[std::size_t(prop.stat)] += prop.value;
     };
     std::int64_t item_def = 0, per_level = 0;
     for (const auto& item : items) {
@@ -176,6 +180,8 @@ inline PanelStats panel_stats(const GameData& game_data, const d2d::d2s::Header&
         if (passive.stat == d2d::d2s::kSkillArmorPercent) skill_def += passive.value;
     }
     for (std::size_t i = 0; i < 12; ++i) panel.bonus[i] = sum[i];
+    panel.max_percent = { sum[d2d::d2s::kMaxLifePercent], sum[d2d::d2s::kMaxManaPercent] };
+    panel.max_flat = { sum[d2d::d2s::kMaxLife], sum[d2d::d2s::kMaxMana] };
     {                                                     // the attributes' share of life, stamina, mana (quarter points)
         const auto& gains = game_data.class_gains[std::size_t(header.cls % 7)];
         panel.bonus[d2d::d2s::kMaxLife] += sum[d2d::d2s::kVit] * gains.life_per_vit / 4;

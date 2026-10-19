@@ -260,6 +260,21 @@ int main() {
     fight.curses[0] = { 66, 1, 1000 * kTickMs };
     fight.update_fighters(26 * kTickMs);
     assert(fight.player_combat.dr_pct == uncursed.dr_pct - 100 && fight.player_combat.phys_pct == uncursed.phys_pct);
+    // Max mana % (item_maxmana_percent 77, op 11): a share of the own maximum
+    // plus the items' flat +mana, not of energy's (op 8).
+    {
+        const auto items = fight.character.items;
+        d2d::d2s::Item charm;
+        charm.code = "cm1"; charm.panel = 1; charm.props = { { d2d::d2s::kMaxMana, 0, 100 }, { d2d::d2s::kEne, 0, 10 }, { d2d::d2s::kMaxManaPercent, 0, 50 } };
+        fight.character.items = { charm };
+        fight.update_fighters(26 * kTickMs);
+        const std::int64_t own = fight.own_stats().values[d2d::d2s::kMaxMana], flat = own + 100 * 256;
+        const auto& gains = data->class_gains[std::size_t(fight.character.header.cls % 7)];
+        assert(fight.character.stats.values[d2d::d2s::kMaxMana] == flat + flat * 50 / 100 + 10 * gains.mana_per_energy / 4 * 256);
+        fight.character.items = items;
+        fight.update_fighters(26 * kTickMs);
+        assert(fight.character.stats.values[d2d::d2s::kMaxMana] == own);
+    }
     fight.chilled = 1000 * kTickMs;
     assert(fight.cure(26 * kTickMs) && !poisoned() && fight.curses[0].until == 0 && fight.chill_rate(26 * kTickMs) == -50);
     fight.update_fighters(26 * kTickMs);

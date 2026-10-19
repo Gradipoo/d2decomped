@@ -140,6 +140,7 @@ void view_units(const Scene& scene, const View& view, float camera_x, float came
         if (!in_view(other.unit.x, other.unit.y)) continue;
         const int mode = other.mode >= 0 ? other.mode : other.running ? kModeRN : other.unit.walking ? (in_town ? kModeTW : kModeWL) : (in_town ? kModeTN : kModeNU);
         out.push_back({ other.unit.x, other.unit.y, &scene.composite(other.cls, mode, other.gfx), other.unit.dir, &other.name, other.unit.mode_ms, -4000 - int(i) });
+        out.back().overlay_class = 1;                 // FUN_006223a0: a player's Height2
         dress(scene, out.back(), -2 - int(other.id & 0xffffff), other.states, clk);
     }
     auto shot = [&](const View::Shot& shot_state) {
@@ -214,7 +215,7 @@ std::pair<int, std::uint32_t> view_seq(const Scene& scene, int cls, const View& 
 }
 
 Lighting frame_light(const Scene& scene, const View& view, float cam_x, float cam_y, std::span<const View::Shot> effects , int ambient ,
-                     std::span<const Unit> units , const Unit* player_look , std::uint32_t now) {
+                     std::span<const Unit> units , const Unit* player_look , std::uint32_t now, const std::pair<float, float>* player_at) {
     Lighting lighting;
     if (!view.level || scene.act_lit[31].entries().empty()) return lighting;
     lighting.pal = &scene.act_lit;
@@ -252,7 +253,9 @@ Lighting frame_light(const Scene& scene, const View& view, float cam_x, float ca
     auto lamp = [&](std::uint64_t key, float x, float y, int radius, bool shadowed, int first = -1) {
         stamp8(x, y, eased(key, radius, first < 0 ? radius : first), shadowed);
     };
-    lamp(1, cam_x, cam_y, std::max(0, 13 + view.light_bonus), true);   // FUN_00460930: 13 + the bonus, capped at 18
+    const auto [player_x, player_y] = player_at ? *player_at : std::pair{ cam_x, cam_y };
+    lamp(1, player_x, player_y, std::max(0, 13 + view.light_bonus), true);   // FUN_00460930: 13 + the bonus, capped at 18
+    for (const auto& other : view.others) lamp(0x100000000ull + other.id, other.unit.x, other.unit.y, 13, true);   // every player's own (their bonus isn't sent)
     static constexpr std::array<std::string_view, 8> kModes{ "NU", "OP", "ON", "S1", "S2", "S3", "S4", "S5" };
     auto lit = [&](const Npc& npc, std::string_view mode) {
         const auto found = std::ranges::find(kModes, mode.empty() ? std::string_view(npc.mode) : mode);
@@ -351,6 +354,7 @@ auto Town::enter() -> void {
         game_menu.open = false;
         world.enter(character);
         coop.clear();                             // a new game: its first player alone
+        lead_colour = 0;
         skillbar.new_game();
         publish();
         if (scene && level) load_automap(automap, automap_dir(world), character.name, scene->map_seed, level->layer);
@@ -876,7 +880,8 @@ auto Town::update(std::vector<std::uint8_t>& framebuffer, const Mouse& frame_mou
                                                    { "music_volume", std::to_string(audio.music_volume) } });
             game_menu.volume_changed = false;
             if (action != GameMenu::kNone) close_game_menu();
-            if (action == GameMenu::kExit) { save(); screen = Screen::CharSelect; }
+            // Save and Exit: alone, the game ends; in local co-op the next player leads and it goes on.
+            if (action == GameMenu::kExit && (handed_over = lead_leaves()) < 0) { save(); screen = Screen::CharSelect; }
             hud_click = true;
         } else {
             // The mini-panel's buttons (FUN_0047ec50) and the HUD's button for it.
@@ -1499,13 +1504,34 @@ auto Town::pad_walk(PadPlayer& player_pad, const UnitState& unit, bool dead, boo
         player_pad.walking = walk;
     }
 
-auto Town::coop_seat(int seat) -> void {
+auto Town::coop_seat(int seat, int colour) -> void {
         if (!scene || std::ranges::contains(coop, seat, &CoopPlayer::seat)) return;
         std::vector<std::string> playing;
         for (const auto& in_game : world.players) playing.push_back(in_game->character.name);
         auto& waiting = coop.emplace_back();
         waiting.seat = seat;
+        waiting.colour = colour;
         waiting.roster = open_roster(*scene, playing, world.lead().character.header);
+    }
+
+auto Town::lead_leaves() -> int {
+        const auto next = std::ranges::find_if(coop, [](const CoopPlayer& coop_player) { return coop_player.id > 0; });
+        if (next == coop.end()) return -1;
+        if (scene && level) save_automap(automap, automap_dir(world), character.name, scene->map_seed, level->layer);
+        if (const auto why = world.leave(hero.id); !why.empty()) d2d::log::warn("{}", why);
+        // The next player's character is the screen's now (`hero` is slot [0], theirs).
+        static_cast<Character&>(character) = hero.character;
+        character.hardcore = hero.character.header.hardcore();
+        character.selected = kSaveClassToUi[std::clamp(int(hero.character.header.cls), 0, 6)];
+        skillbar.left = int(hero.character.header.left_skill); skillbar.right = int(hero.character.header.right_skill);
+        skillbar_set = int(hero.character.header.weapon_set);
+        const int seat = next->seat;
+        lead_colour = next->colour;
+        pad = next->pad;
+        coop.erase(next);
+        view_enc.reset();                             // the next View whole: another player's
+        publish();
+        return seat;
     }
 
 auto Town::coop_join(int seat, const Character& joining) -> void {
@@ -2194,8 +2220,23 @@ auto Town::draw_view(std::vector<std::uint8_t>& framebuffer, std::vector<std::ui
         // ponytail: the other units move at the tick rate, as game.exe draws them.
         const float blend = std::clamp(float(frame_ms - world_ms) / float(kTickMs), 0.f, 1.f);
         const bool jump = std::hypot(unit.x - prev_x, unit.y - prev_y) > 2.f;
-        cam_x = jump ? unit.x : prev_x + (unit.x - prev_x) * blend;
-        cam_y = jump ? unit.y : prev_y + (unit.y - prev_y) * blend;
+        const float hero_x = jump ? unit.x : prev_x + (unit.x - prev_x) * blend, hero_y = jump ? unit.y : prev_y + (unit.y - prev_y) * blend;
+        cam_x = hero_x; cam_y = hero_y;
+        if (!coop.empty()) {
+            // Local co-op: the camera eases to the party's middle (one screen,
+            // World::leash keeps it there); a jump (a level, a warp) snaps.
+            float sum_x = hero_x, sum_y = hero_y, count = 1;
+            for (const auto& other : view.others)
+                if (std::ranges::contains(coop, int(other.id), &CoopPlayer::id)) { sum_x += other.unit.x; sum_y += other.unit.y; ++count; }
+            const float want_x = sum_x / count, want_y = sum_y / count;
+            const float ease = std::clamp(float(frame_ms - party_ms) / 120.f, 0.f, 1.f);
+            party_ms = frame_ms;
+            const bool party_jump = jump || std::hypot(want_x - party_x, want_y - party_y) > 8.f;
+            party_x = party_jump ? want_x : party_x + (want_x - party_x) * ease;
+            party_y = party_jump ? want_y : party_y + (want_y - party_y) * ease;
+            cam_x = party_x; cam_y = party_y;
+        }
+        const std::pair<float, float> hero_at{ hero_x, hero_y };
         state_clock.now = frame_ms;
         view_units(*scene, view, cam_x, cam_y, &merc_label, extra, den_beams, frame_ms, &character.name, std::max(character.character_class, 0), &state_clock);
         // The host's overhead messages (0x26 type 5): a shrine's comes as
@@ -2246,7 +2287,7 @@ auto Town::draw_view(std::vector<std::uint8_t>& framebuffer, std::vector<std::ui
         std::uint32_t mode_ms = unit.mode_ms;
         float rate = pmode >= 0 && pmode != kModeDD ? view.prate : 1.f;
         if (!view.seq.empty() && attack_mode(pmode)) { std::tie(mode, mode_ms) = view_seq(*scene, int(cls), view, frame_ms); rate = 1.f; }   // an SQ skill's frame
-        const auto light = frame_light(*scene, view, cam_x, cam_y, den_beams, den_ambient(), extra, &player_look, frame_ms);
+        const auto light = frame_light(*scene, view, cam_x, cam_y, den_beams, den_ambient(), extra, &player_look, frame_ms, &hero_at);
         render_ingame(framebuffer, *scene, *view.level, ui_cls,
                       view.gfx,
                       character.name, character.hardcore,
@@ -2259,7 +2300,7 @@ auto Town::draw_view(std::vector<std::uint8_t>& framebuffer, std::vector<std::ui
                       nullptr, nullptr, nullptr, extra, rate, light.pal ? &light : nullptr, level->rain ? &rain : nullptr,
                       !(pmode == kModeDD && !view.corpses.empty()),    // dead, the corpse lies there instead
                       &player_look, alt_held || (SDL_GetModState() & SDL_KMOD_ALT) != 0,   // D2's "Show Items" (Alt)
-                      Hud{ view.poisoned, view.running, run_down, character.header.weapon_set != 0 }, wide);
+                      Hud{ view.poisoned, view.running, run_down, character.header.weapon_set != 0 }, wide, { hero_x - cam_x, hero_y - cam_y });
         view_overlays(framebuffer, *scene, view, hovered_monster());
         skillbar.draw(framebuffer, held ? -1 : mouse.x, held ? -1 : mouse.y);
         if (net_game && net_game->trade.state != 0) {
@@ -2296,7 +2337,7 @@ auto Town::draw_view(std::vector<std::uint8_t>& framebuffer, std::vector<std::ui
         mini.draw(framebuffer, *scene, left_open, inv_open || tree_open, mouse.x, mouse.y);
         if (game_menu.open) game_menu.draw(framebuffer, *scene);
         for (const auto& coop_player : coop)              // a joining pad's pick
-            if (coop_player.roster) draw_roster(framebuffer, *scene, *coop_player.roster, coop_player.seat);
+            if (coop_player.roster) draw_roster(framebuffer, *scene, *coop_player.roster, coop_player.seat, coop_player.colour);
     }
 
 

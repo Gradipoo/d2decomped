@@ -222,6 +222,13 @@ struct World {
             }
         }
     }
+    // One screen (local co-op): a step that spreads the party further than
+    // kLeashWidth x kLeashHeight screen pixels is undone, for whoever took
+    // it (they stand where they were, `before` the tick's moves).
+    // ponytail: walks only; a leap, charge, teleport or knockback can still
+    // spread it, and a later step back in is let through.
+    static constexpr float kLeashWidth = 620, kLeashHeight = 380;
+    void leash(std::span<const std::pair<float, float>> before);
     // The other players come to `destination` round (x, y) with their mercs
     // and pets (one screen, one level: docs/design/local-coop.md).
     void bring_party(const Level* from, const Level* destination, float x, float y, bool keep_map);
@@ -520,7 +527,8 @@ struct World {
     // isn't run; their save's quest bits are theirs as they come.
     Player& join(const Character& entering);
     // A player leaves: their character saved (save's message, "" written),
-    // gone from the game. The last player can't leave this way.
+    // gone from the game. The first player's place goes to the next player
+    // (their state moves into slot [0]). The last player can't leave this way.
     std::string leave(int id);
     // The entering character, refilled (enter / join).
     void take_character(const Character& entering);

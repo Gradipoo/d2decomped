@@ -201,13 +201,23 @@ void render_world(std::vector<std::uint8_t>& framebuffer,
     // game.exe's room-based mode (DAT_0072a968) isn't built.
     struct Fade { int from = 255, target = 255; std::uint32_t changed_at = 0; };
     static std::unordered_map<std::uint64_t, Fade> fades;
-    const int pcx = int(std::floor(cam_x)), pcy = int(std::floor(cam_y));
-    const auto [hole_x, hole_y] = iso_point(cam_x, cam_y);
-    const Hole hole{ hole_x, hole_y - 40, 70 };           // round the player's body
+    // The players (a player's Height2 units; the camera's point without one):
+    // walls before them fade, roofs over them open.
+    std::vector<std::pair<float, float>> players;
+    for (const auto& unit : units) if (unit.overlay_class == 1) players.emplace_back(unit.x, unit.y);
+    if (players.empty()) players.emplace_back(cam_x, cam_y);
+    Hole hole{ {}, 70 };                                  // round each player's body
+    for (const auto& [player_x, player_y] : players) {
+        const auto [hole_x, hole_y] = iso_point(player_x, player_y);
+        hole.at.emplace_back(hole_x, hole_y - 40);
+    }
     auto wall_alpha = [&](const void* level_key, int off, int type, int wall_index, int cell_x, int cell_y) {
         static constexpr std::uint16_t kFadeOnX = 1 << 1 | 1 << 4 | 1 << 5 | 1 << 7 | 1 << 8 | 1 << 10 | 1 << 12;
         static constexpr std::uint16_t kFadeOnY = 1 << 2 | 1 << 3 | 1 << 6 | 1 << 7 | 1 << 9 | 1 << 11 | 1 << 12;
-        const bool see = type < 16 && ((cell_x > pcx && cell_x < pcx + 4 && (kFadeOnX >> type & 1)) || (cell_y > pcy && cell_y < pcy + 4 && (kFadeOnY >> type & 1)));
+        const bool see = type < 16 && std::ranges::any_of(players, [&](const auto& player) {
+            const int pcx = int(std::floor(player.first)), pcy = int(std::floor(player.second));
+            return (cell_x > pcx && cell_x < pcx + 4 && (kFadeOnX >> type & 1)) || (cell_y > pcy && cell_y < pcy + 4 && (kFadeOnY >> type & 1));
+        });
         const int want = see ? 0x80 : 0xff;
         const auto key = std::uint64_t(reinterpret_cast<std::uintptr_t>(level_key)) * 1000003u ^ (std::uint64_t(off) << 12 | std::uint64_t(type) << 6 | std::uint64_t(wall_index));
         auto found = fades.find(key);

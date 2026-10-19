@@ -37,14 +37,19 @@ inline bool g_roof_cutout = true;
 inline bool g_autoparty = true;      // a joined game: invite the others, accept invites (deviations.md #7); off: --toggle autoparty=off
 inline bool g_autoloot = true;        // gold walked over is picked up (deviations.md #5); off: --toggle autoloot=off
 struct Hole {
-    int x = 0, y = 0, radius = 0;                   // screen centre and radius, pixels
-    // The alpha a pixel at (px, py) keeps: 0x40 in the inner half, rising to
-    // 0xff at the rim.
+    std::vector<std::pair<int, int>> at;            // screen centres (a player each: local co-op's several), pixels
+    int radius = 0;
+    // The alpha a pixel at (px, py) keeps: 0x40 in a hole's inner half,
+    // rising to 0xff at its rim.
     [[nodiscard]] int alpha(int pixel_x, int pixel_y, int base_alpha) const {
-        const int dx = pixel_x - x, dy = pixel_y - y, distance_sq = dx * dx + dy * dy;
-        if (distance_sq >= radius * radius) return base_alpha;
-        const float fraction = std::clamp((std::sqrt(float(distance_sq)) - float(radius) / 2) / (float(radius) / 2), 0.f, 1.f);
-        return std::min(base_alpha, 0x40 + int(float(0xff - 0x40) * fraction));
+        int out = base_alpha;
+        for (const auto& [x, y] : at) {
+            const int dx = pixel_x - x, dy = pixel_y - y, distance_sq = dx * dx + dy * dy;
+            if (distance_sq >= radius * radius) continue;
+            const float fraction = std::clamp((std::sqrt(float(distance_sq)) - float(radius) / 2) / (float(radius) / 2), 0.f, 1.f);
+            out = std::min(out, 0x40 + int(float(0xff - 0x40) * fraction));
+        }
+        return out;
     }
 };
 void blit_dt1_tile(std::vector<std::uint8_t>& framebuffer,

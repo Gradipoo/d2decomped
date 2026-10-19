@@ -213,6 +213,10 @@ int main() {
         assert(seats.expire(5000 + Seats::kHoldMs - 1).empty());
         assert((seats.expire(5000 + Seats::kHoldMs) == std::vector<int>{ 1 }) && !seats.used(1));
         assert(seats.connect("pad-e", 17) == 1 && seats.seat_of(17) == 1);
+        // A hand-over: seat 2's pad to seat 0, the colours with the pads.
+        assert(seats.colour(0) == 0 && seats.colour(2) == 2);
+        seats.swap(0, 2);
+        assert(seats.pad(0) == 16 && seats.colour(0) == 2 && seats.pad(2) == 10 && seats.colour(2) == 0);
     }
     return 0;
 }

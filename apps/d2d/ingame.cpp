@@ -85,7 +85,7 @@ void render_ingame(std::vector<std::uint8_t>& framebuffer,
                    const Unit* player_look ,     // its states' colour shift and overlays
                    bool show_items,               // Alt held: every ground item's name
                    const Hud& hud,
-                   std::vector<std::uint8_t>* wide) {
+                   std::vector<std::uint8_t>* wide, std::pair<float, float> player_offset) {
     // Widescreen: the world (and its labels) draw on `wide`; its centre
     // 800x600 is then copied into `framebuffer`, where the HUD and panels draw
     // as at 800x600. Mouse x is relative to that centre, so the world's is
@@ -105,13 +105,14 @@ void render_ingame(std::vector<std::uint8_t>& framebuffer,
         for (std::size_t i = 3; i < world.size(); i += 4) world[i] = 0xFF;
         set_phase(MainPhase::IngameFloor);   // render_world does floor+shadow+walls internally
         // Player: the camera follows them, so their feet sit on the camera
-        // point (kW/2, kViewY); render_world slots them into the
+        // point (kW/2, kViewY), off it by `player_offset` in local co-op
+        // (the camera on the party's middle); render_world slots them into the
         // wall pass by depth. Wears the loaded save's gear, or the
         // class's starting gear.
         std::vector<Unit> units;
         units.reserve(level.npcs.size() + 1);
         if (player_visible && class_idx >= 0 && class_idx < 7)
-            units.push_back({ cam_x, cam_y, &scene.composite(kUiToSaveClass[class_idx], player_mode, gfx),
+            units.push_back({ cam_x + player_offset.first, cam_y + player_offset.second, &scene.composite(kUiToSaveClass[class_idx], player_mode, gfx),
                               player_dir, nullptr, player_mode_ms });
         if (!units.empty()) {
             units.back().rate = player_rate;

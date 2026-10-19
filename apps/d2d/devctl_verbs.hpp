@@ -227,12 +227,12 @@ void register_game_verbs(d2d::devctl::Channel& channel, Window& win, Screen& scr
             return std::format("ok {} {:.2f} {:.2f} {} {} {} {}\n", town.level->id, town.player.x, town.player.y,
                                town.level->ds1.width(), town.level->ds1.height(), town.level->world_x, town.level->world_y);
         }
-        if (args.size() >= 2 && args[1] == "players") {   // the game's players (local co-op): id, name, cell, seat (-1: the first player's)
+        if (args.size() >= 2 && args[1] == "players") {   // the game's players (local co-op): id, name, cell, seat (-1: the first player's), mode (-1 none)
             std::string out;
             for (const auto& player : town.world.players) {
                 const auto coop_player = std::ranges::find(town.coop, player->id, &Town::CoopPlayer::id);
-                out += std::format("{}\t{}\t{:.2f}\t{:.2f}\t{}\n", player->id, player->character.name, player->player.x, player->player.y,
-                                   coop_player == town.coop.end() ? -1 : coop_player->seat);
+                out += std::format("{}\t{}\t{:.2f}\t{:.2f}\t{}\t{}\n", player->id, player->character.name, player->player.x, player->player.y,
+                                   coop_player == town.coop.end() ? -1 : coop_player->seat, player->pmode);
             }
             return out + "ok\n";
         }

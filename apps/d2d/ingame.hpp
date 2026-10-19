@@ -57,6 +57,7 @@ void render_ingame(std::vector<std::uint8_t>& framebuffer,
                    const Unit* player_look = nullptr,     // its states' colour shift and overlays
                    bool show_items = false,
                    const Hud& hud = {},             // the HUD's poison tint, run button
-                   std::vector<std::uint8_t>* wide = nullptr);   // widescreen: the world draws here, its centre 800 wide copied to framebuffer
+                   std::vector<std::uint8_t>* wide = nullptr,    // widescreen: the world draws here, its centre 800 wide copied to framebuffer
+                   std::pair<float, float> player_offset = {});  // the player off the camera's point, cells (local co-op's camera)
 
 }  // namespace d2d::client

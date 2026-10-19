@@ -28,7 +28,7 @@ namespace d2d::client {
 
 namespace {
 constexpr int kBoxWidth = 260, kLineHeight = 18, kTop = 90;
-int box_x(int seat) { return 15 + (std::clamp(seat, 1, 3) - 1) * (kBoxWidth + 2); }   // three across 800
+int box_x(int seat) { return 15 + std::clamp(seat - 1, 0, 2) * (kBoxWidth + 2); }   // three across 800 (seat 0, a hand-over's, takes the first)
 // The lines the stage shows (title first).
 std::vector<std::pair<std::string, bool>> lines(const Scene& scene, const Roster& roster) {
     std::vector<std::pair<std::string, bool>> out;
@@ -102,16 +102,16 @@ void roster_text(Roster& roster, std::string_view text, bool backspace) {
         if (roster.name.size() < 15 && (std::isalpha(static_cast<unsigned char>(letter)) || letter == '_' || letter == '-')) roster.name += letter;
 }
 
-void draw_roster(std::vector<std::uint8_t>& framebuffer, const Scene& scene, const Roster& roster, int seat) {
+void draw_roster(std::vector<std::uint8_t>& framebuffer, const Scene& scene, const Roster& roster, int seat, int colour_index) {
     const auto shown = lines(scene, roster);
     const int x = box_x(seat), height = (int(shown.size()) + 2) * kLineHeight + 8;
     shade_box(framebuffer, x, kTop, kBoxWidth, height);
     const auto& pal = scene.act_pal.entries().empty() ? scene.pal : scene.act_pal;
-    const auto& colour = kSeatColours[std::size_t(std::clamp(seat, 0, 3))];
+    const auto& colour = kSeatColours[std::size_t(std::clamp(colour_index, 0, 3))];
     const int cell = scene.font.sheet().frames_per_direction() > 0 ? int(scene.font.sheet().frame(0, 0).height) : 16;
     const char* title = roster.stage == Roster::Stage::character ? "choose a character" : roster.stage == Roster::Stage::cls ? "choose a class" : "type a name";
     int base = kTop + kLineHeight;
-    scene.font.draw_tinted(framebuffer, kScreenWidth, kScreenHeight, pal, x + 10, base - cell + 1, std::format("Player {}: {}", seat + 1, title), colour[0], colour[1], colour[2]);
+    scene.font.draw_tinted(framebuffer, kScreenWidth, kScreenHeight, pal, x + 10, base - cell + 1, std::format("Player {}: {}", colour_index + 1, title), colour[0], colour[1], colour[2]);
     for (std::size_t i = 0; i < shown.size(); ++i) {
         base += kLineHeight;
         const auto& [text, usable] = shown[i];

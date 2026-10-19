@@ -130,8 +130,10 @@ std::pair<int, std::uint32_t> view_seq(const Scene& scene, int cls, const View& 
 // (FUN_004755a0: +0x18 toward +0x1c); a new light starts at its first
 // radius (FUN_00474160; an overlay's InitRadius).
 // ponytail: light quality is taken as high (2: shadows on).
+// `player_at`: where the player stands when it isn't the camera's point (local co-op's camera).
 Lighting frame_light(const Scene& scene, const View& view, float cam_x, float cam_y, std::span<const View::Shot> effects = {}, int ambient = -1,
-                     std::span<const Unit> units = {}, const Unit* player_look = nullptr, std::uint32_t now = 0);
+                     std::span<const Unit> units = {}, const Unit* player_look = nullptr, std::uint32_t now = 0,
+                     const std::pair<float, float>* player_at = nullptr);
 
 struct Town {
     const Scene* scene = nullptr;
@@ -204,6 +206,8 @@ struct Town {
     std::uint32_t world_ms = 0;            // the World's clock: when it last ticked
     float prev_x = 0, prev_y = 0;          // the player a tick before: the camera slides between the two
     float cam_x = 0, cam_y = 0;            // where the camera is this frame
+    float party_x = 0, party_y = 0;        // local co-op: the camera's eased point, toward the party's middle
+    std::uint32_t party_ms = 0;            // when it last eased
     // A gamepad playing a hero in the field (no cursor): the left stick walks
     // towards a screen direction (unit length), walking or running as the run
     // toggle says; `attack` / `attack_down` / `alt` are its buttons, which
@@ -226,10 +230,16 @@ struct Town {
     // docs/design/local-coop.md): their World player (id 0 while their
     // roster is up), pad and orders.
     // ponytail: they play the field only; panels and menus wait for phase 5.
-    struct CoopPlayer { int seat = 0, id = 0; PadPlayer pad; pad::Mapper mapper; std::vector<Command> orders; std::optional<Roster> roster; };
+    struct CoopPlayer { int seat = 0, id = 0, colour = 0; PadPlayer pad; pad::Mapper mapper; std::vector<Command> orders; std::optional<Roster> roster; };
     std::vector<CoopPlayer> coop;
-    // A pad took seat `seat`: its roster comes up (a held seat's player stays).
-    void coop_seat(int seat);
+    int lead_colour = 0;                          // the first player's seat colour (pad::Seats::colour)
+    // A pad took seat `seat` (its colour `colour`): its roster comes up (a held seat's player stays).
+    void coop_seat(int seat, int colour);
+    // The first player leaves a co-op game: saved, the next joined player
+    // leads (World::leave); their seat, for their pad to play the first
+    // player's part, or -1 (no one to lead: the game ends as alone).
+    int lead_leaves();
+    int handed_over = -1;                         // the seat a hand-over in the game menu gave seat 0 (main swaps the pads)
     // A seat's player joins with `character` / leaves (saved).
     void coop_join(int seat, const Character& joining);
     void coop_leave(int seat);

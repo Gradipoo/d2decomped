@@ -79,18 +79,20 @@ games and run a dedicated server; and support high-DPI displays and remappable c
 ## Steam Deck
 
 Steam Deck support is experimental: there is no Flathub listing yet. The
-Deck's own controls work as a gamepad. Download and extract the `d2decomped-x86_64` artifact from a
-successful [CI workflow run](https://github.com/psi29a/d2decomped/actions/workflows/ci.yml),
-switch to Desktop Mode, then run:
+Deck's own controls work as a gamepad. In Desktop Mode:
 
-```sh
-cd ~/Downloads
-unzip -o d2decomped-x86_64.zip
-flatpak install --user --bundle ./d2decomped-x86_64.flatpak
-```
+1. Download `d2decomped-x86_64.flatpak` from the
+   [latest release](https://github.com/psi29a/d2decomped/releases/latest).
+2. Open it to install with Discover, or run
+   `flatpak install --user ~/Downloads/d2decomped-x86_64.flatpak`.
+3. In Steam, choose Games → Add a Non-Steam Game to My Library… and pick
+   D2Decomp, so it launches from Gaming Mode.
 
-To launch from Gaming Mode, add D2Decomp to Steam as a non-Steam game in
-Desktop Mode. You must provide your own Diablo II + Lord of Destruction data.
+You must provide your own Diablo II + Lord of Destruction data; point the
+launcher at it (a D2 install folder or the ISOs).
+
+Text boxes (character name, TCP/IP address, chat) open Steam's on-screen
+keyboard in Gaming Mode; if one doesn't, press STEAM + X.
 
 ## Build and run
 

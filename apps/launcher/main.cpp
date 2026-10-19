@@ -142,6 +142,9 @@ static QString normalize_pick(const QString& picked) {
     return info.isFile() ? info.absolutePath() : info.absoluteFilePath();
 }
 
+// Steam sets this for games started from Gaming Mode / Big Picture.
+static bool steam_gamepad_ui() { return qEnvironmentVariableIsSet("SteamGamepadUI"); }
+
 static QFileDialog::Options macos_dlg_opts() {
 #ifdef Q_OS_MACOS
     return QFileDialog::DontUseNativeDialog;
@@ -641,6 +644,13 @@ public:
     // (Qt drops the queued call once we're gone).
     ~MainWindow() override { QThreadPool::globalInstance()->waitForDone(); saveSettings(); }
 
+    // Steam's Gaming Mode / Big Picture: no keyboard, and Steam ends the
+    // session when the process it started exits. Usable data → straight
+    // into d2d, no window; otherwise the launcher shows as usual.
+    bool launchForSteam() {
+        return launch_->isEnabled() && launch();
+    }
+
 private:
     void loadSettings() {
         QSettings settings;
@@ -850,24 +860,38 @@ private:
     // d2d reads `data` / `patch` from d2d.cfg, which persist() keeps current.
     // Config is flushed first, then the launcher gets out of the way; d2d
     // raises its own window (window.hpp) so it lands in front.
-    void launch() {
-        if (!persist()) return;
+    bool launch() {
+        if (!persist()) return false;
         const QString engine = engineBinaryPath();
-        QProcess process;
-        process.setProgram(engine);
-        process.setWorkingDirectory(QFileInfo(engine).absolutePath());
+        auto* process = new QProcess(qApp);
+        process->setProgram(engine);
+        process->setWorkingDirectory(QFileInfo(engine).absolutePath());
         if (crashReports_->isChecked() && *d2::kSentryDsn != '\0') {
-            process.setArguments({ "--send-crash-reports" });
+            process->setArguments({ "--send-crash-reports" });
             auto environment = QProcessEnvironment::systemEnvironment();
             environment.insert("SENTRY_DSN", QString::fromUtf8(d2::kSentryDsn));
             environment.insert("D2D_CRASH_NOTES", crashNotes_->text());
-            process.setProcessEnvironment(environment);
+            process->setProcessEnvironment(environment);
         }
-        if (!process.startDetached()) {
+        // Under Steam's gamepad UI, stay alive until d2d exits: Steam ends
+        // the session (and raises its own UI) when its child exits.
+        const bool wait = steam_gamepad_ui();
+        bool started = false;
+        if (wait) {
+            process->setProcessChannelMode(QProcess::ForwardedChannels);
+            connect(process, &QProcess::finished, qApp, &QApplication::quit);
+            process->start();
+            started = process->waitForStarted();
+        } else {
+            started = process->startDetached();
+        }
+        if (!started || !wait) process->deleteLater();
+        if (!started) {
             QMessageBox::warning(this, tr("Launch"), tr("Could not start %1").arg(engine));
-            return;
+            return false;
         }
-        close();
+        if (wait) hide(); else close();
+        return true;
     }
 
     void fetchPatch() {
@@ -996,7 +1020,7 @@ int main(int argc, char** argv) {
     QApplication::setApplicationName("D2 Launcher");
 
     MainWindow window;
-    window.show();
+    if (!steam_gamepad_ui() || !window.launchForSteam()) window.show();
     return app.exec();
 }
 

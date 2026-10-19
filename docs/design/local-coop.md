@@ -1,7 +1,7 @@
 # Local co-op — up to 4 pads, one screen
 
-Status: planned 2026-10-19. Phases 1 to 4 and 5a (camera, leash, the lead's
-hand-over) done (branch local-coop); 5b (panels for players 2-4) next. Builds on
+Status: planned 2026-10-19. Phases 1 to 5 done (branch local-coop, PR #57);
+phase 6 (death and resurrection) next. Builds on
 [net-host.md](net-host.md) stages 1-2 (the N-player World and its rules) and
 [controller-plan.md](controller-plan.md) (one pad today).
 
@@ -63,6 +63,13 @@ PC or Mac with pads works the same way.
   level.
 - Panels (inventory, stash, store, skill tree, roster): one player owns the
   open panel until it closes; the others keep playing.
+  A partner takes the screen (`Town::take_focus`) by opening a panel, the
+  game menu or the skill picker, or by an NPC or the stash opening to them,
+  while the first player has nothing open: the UI shows their character and
+  their pad drives the cursor, while the first player's pad plays the field.
+  The screen is the first player's again once the partner's is all shut.
+
+![Player 2's inventory, the screen theirs, the green cursor on it](https://github.com/psi29a/d2decomped/raw/pr-assets/pr57-panel.png)
 
 **Death and resurrection** (decided 2026-10-19)
 

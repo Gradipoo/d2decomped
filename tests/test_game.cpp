@@ -6,6 +6,7 @@
 #include <ai.hpp>
 #include <character.hpp>
 #include <character_store.hpp>
+#include <combat.hpp>
 #include <d2s_items.hpp>
 #include <d2s_write.hpp>
 #include <drops.hpp>

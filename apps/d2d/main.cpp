@@ -424,6 +424,14 @@ int run_windowed(std::vector<std::uint8_t>& framebuffer,
                  d2d::devctl::Channel& channel,
                  std::atomic<std::uint64_t>& frame_count,
                  std::atomic<bool>& quit) {
+    // A Steam Deck has no keyboard: SDL_StartTextInput opens Steam's own
+    // (steam://open/keyboard), which SDL does on X11 only. Steam's env asks
+    // for it in Gaming Mode; Desktop Mode doesn't, and may hand us Wayland.
+    // An SDL_VIDEO_DRIVER or SDL_ENABLE_STEAM_SCREEN_KEYBOARD in the env still wins.
+    if (std::getenv("SteamDeck") || std::getenv("SteamGamepadUI")) {
+        SDL_SetHint(SDL_HINT_VIDEO_DRIVER, "x11,wayland");
+        SDL_SetHint(SDL_HINT_ENABLE_STEAM_SCREEN_KEYBOARD, "1");
+    }
     if (!SDL_Init(SDL_INIT_VIDEO)) {
         d2d::log::error("SDL_Init: {}", SDL_GetError());
         return 1;
@@ -697,7 +705,19 @@ int run_windowed(std::vector<std::uint8_t>& framebuffer,
         // switch itself shows up there.
         if (const bool want = screen == Screen::CharCreate || (screen == Screen::InGame && town.chat_typing)
                            || (screen == Screen::TcpIp && tcpip.box_open); want != text_active) {
-            if (want) SDL_StartTextInput(win.window);
+            if (want) {
+                // The field being typed in, so Steam's keyboard opens clear of it.
+                const int side = screen == Screen::InGame ? (win.view_w - int(kScreenWidth)) / 2 : 0;
+                const SDL_Rect field = screen == Screen::CharCreate ? SDL_Rect{ 319, rec_top(519, 26), 169, 26 }
+                                     : screen == Screen::TcpIp      ? SDL_Rect{ 300, rec_top(268, 20), 200, 20 }
+                                     : SDL_Rect{ 0x7f + side, int(kScreenHeight) - 0x67, int(kScreenWidth) - 0xff, 0x2f };   // the chat line
+                float left = 0, top = 0, right = 0, bottom = 0;
+                SDL_RenderCoordinatesToWindow(win.renderer, float(field.x), float(field.y), &left, &top);
+                SDL_RenderCoordinatesToWindow(win.renderer, float(field.x + field.w), float(field.y + field.h), &right, &bottom);
+                const SDL_Rect area{ int(left), int(top), int(right - left), int(bottom - top) };
+                SDL_SetTextInputArea(win.window, &area, 0);
+                SDL_StartTextInput(win.window);
+            }
             else      SDL_StopTextInput(win.window);
             text_active = want;
         }

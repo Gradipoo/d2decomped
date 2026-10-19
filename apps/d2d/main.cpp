@@ -62,6 +62,7 @@
 #include <format>
 #include <fstream>
 #include <future>
+#include <initializer_list>
 #include <functional>
 #include <ios>
 #include <iterator>

@@ -12,6 +12,7 @@
 #include <cstdint>
 #include <span>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace d2d::client::pad {
@@ -231,7 +232,7 @@ public:
         for (std::size_t seat = 0; seat < seats_.size(); ++seat)
             if (seats_[seat].used && seats_[seat].pad < 0 && seats_[seat].key == key) { seats_[seat].pad = pad; seats_[seat].gone_at = 0; return int(seat); }
         for (std::size_t seat = 0; seat < seats_.size(); ++seat)
-            if (!seats_[seat].used) { seats_[seat] = { key, pad, true, 0 }; return int(seat); }
+            if (!seats_[seat].used) { seats_[seat] = { key, pad, true, 0, int(seat) }; return int(seat); }
         return -1;
     }
     // Pad `pad` went: its seat, held from now (-1: it had none).
@@ -254,10 +255,17 @@ public:
     [[nodiscard]] int pad(int seat) const { return seat >= 0 && seat < kMost && seats_[std::size_t(seat)].used ? seats_[std::size_t(seat)].pad : -1; }
     [[nodiscard]] bool present(int seat) const { return pad(seat) >= 0; }
     [[nodiscard]] bool used(int seat) const { return seat >= 0 && seat < kMost && seats_[std::size_t(seat)].used; }
+    // The seat's colour (0..3: red, green, blue, magenta): its first seat's,
+    // kept as the pad moves seat.
+    [[nodiscard]] int colour(int seat) const { return seat >= 0 && seat < kMost && seats_[std::size_t(seat)].used ? seats_[std::size_t(seat)].colour : std::clamp(seat, 0, kMost - 1); }
+    // Seats `first` and `second` change pads (a lead's hand-over: the next
+    // player's pad to seat 0).
+    void swap(int first, int second) { std::swap(seats_[std::size_t(first)], seats_[std::size_t(second)]); }
+    void release(int seat) { if (seat >= 0 && seat < kMost) seats_[std::size_t(seat)] = {}; }
     void clear() { seats_ = {}; }
 
 private:
-    struct Seat { std::string key; int pad = -1; bool used = false; std::uint32_t gone_at = 0; };
+    struct Seat { std::string key; int pad = -1; bool used = false; std::uint32_t gone_at = 0; int colour = 0; };
     std::array<Seat, kMost> seats_{};
 };
 

@@ -647,7 +647,7 @@ int run_windowed(std::vector<std::uint8_t>& framebuffer,
     Town town(scene ? &*scene : nullptr, character, g_start_cam_x, g_start_cam_y);
     // A pad's seat; a new seat's player picks their character (Town::coop_seat's roster).
     const auto take_seat = [&](const Gamepads::Pad& pad) {
-        if (const int seat = seats.connect(pad.key, int(pad.id)); seat > 0) town.coop_seat(seat);
+        if (const int seat = seats.connect(pad.key, int(pad.id)); seat > 0) town.coop_seat(seat, seats.colour(seat));
     };
     // The characters' saves (character_store.hpp): the World writes through
     // it when the player leaves the game or quits; the roster is read again.
@@ -777,8 +777,16 @@ int run_windowed(std::vector<std::uint8_t>& framebuffer,
             } else if (in_game && coop_game) {
                 for (const auto& pad : pad_changes.came) if (!pad.built_in) take_seat(pad);
                 for (const auto gone : pad_changes.went) if (const int seat = seats.disconnect(int(gone), pad_now); seat >= 0) d2d::log::info("co-op: seat {} held", seat);
-                // ponytail: seat 0 (the first player) stays when its pad's gone; the lead's hand-over is phase 5's.
-                for (const int seat : seats.expire(pad_now)) if (seat > 0) town.coop_leave(seat);
+                for (const int seat : seats.expire(pad_now)) {
+                    if (seat > 0) { town.coop_leave(seat); continue; }
+                    // The first player's pad gone for good: the next player leads (or they play on alone).
+                    if (const int next = town.lead_leaves(); next > 0) { seats.swap(0, next); seats.release(next); }
+                }
+            }
+            if (town.handed_over > 0) {                          // Save and Exit handed the game on: the next pad to seat 0, the leaver's to a roster
+                seats.swap(0, town.handed_over);
+                town.coop_seat(town.handed_over, seats.colour(town.handed_over));
+                town.handed_over = -1;
             }
             if (!in_game) coop_game = false;
             was_in_game = in_game;
@@ -1244,8 +1252,8 @@ int run_windowed(std::vector<std::uint8_t>& framebuffer,
                 const auto& frame = scene->cursor.frame(0, mouse.down ? 7 : 0);
                 // Co-op with two pads or more: the first player's cursor in their seat's colour.
                 const bool seat_colour = coop_game && std::ranges::count_if(gamepads.pads(), [](const Gamepads::Pad& pad) { return !pad.built_in; }) >= 2;
-                const auto& red = kSeatColours[0];
-                blit_sprite(framebuffer, frame, seat_colour ? tinted(pal, red[0], red[1], red[2]) : pal, mouse.x + cursor_dx + frame.offset_x,
+                const auto& lead = kSeatColours[std::size_t(std::clamp(town.lead_colour, 0, 3))];
+                blit_sprite(framebuffer, frame, seat_colour ? tinted(pal, lead[0], lead[1], lead[2]) : pal, mouse.x + cursor_dx + frame.offset_x,
                             mouse.y + frame.offset_y - int(frame.height) + 1);
             }
         } else {

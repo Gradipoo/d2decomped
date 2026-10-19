@@ -106,6 +106,35 @@ auto World::add_player() -> Player& {
     return player;
 }
 
+auto World::leash(std::span<const std::pair<float, float>> before) -> void {
+    if (players.size() < 2 || before.size() != players.size()) return;
+    // The party on screen: its spread in screen pixels (isometric: a cell is
+    // 160 x 80, x - y across, x + y down).
+    const auto spread = [&](std::size_t moved_back) {
+        float least_x = 1e9f, most_x = -1e9f, least_y = 1e9f, most_y = -1e9f;
+        for (std::size_t i = 0; i < players.size(); ++i) {
+            const auto [x, y] = i == moved_back ? before[i] : std::pair{ players[i]->player.x, players[i]->player.y };
+            const float screen_x = (x - y) * 80, screen_y = (x + y) * 40;
+            least_x = std::min(least_x, screen_x); most_x = std::max(most_x, screen_x);
+            least_y = std::min(least_y, screen_y); most_y = std::max(most_y, screen_y);
+        }
+        return std::pair{ most_x - least_x, most_y - least_y };
+    };
+    const auto too_far = [&](std::pair<float, float> span) { return span.first > kLeashWidth || span.second > kLeashHeight; };
+    if (!too_far(spread(players.size()))) return;
+    // Whoever pulled it further than it was stays where they were.
+    for (std::size_t i = 0; i < players.size(); ++i) {
+        const auto now = spread(players.size()), back = spread(i);
+        if (back.first < now.first || back.second < now.second) {
+            auto& unit = players[i]->player;
+            std::tie(unit.x, unit.y) = before[i];
+            unit.walking = false; unit.path.clear();
+            players[i]->target_x = unit.x; players[i]->target_y = unit.y;
+        }
+        if (!too_far(spread(players.size()))) return;
+    }
+}
+
 auto World::bring_party(const Level* from, const Level* destination, float x, float y, bool keep_map) -> void {
     static constexpr std::array<std::pair<float, float>, 4> kAround{ { { 1, 0 }, { 0, 1 }, { -1, 0 }, { 0, -1 } } };
     std::size_t around = 0;
@@ -916,15 +945,26 @@ auto World::leave(int id) -> std::string {
         const auto found = std::ranges::find(players, id, [](const auto& player) { return player->id; });
         if (found == players.end()) return "no such player";
         if (players.size() == 1) return "the last player stays";
-        Player& was = *actor;
+        Player* const was = actor;
         act_as(**found);
         const auto why = save();
         d2d::log::info("{} leaves the game (player {})", actor->character.name, id);
         portal[(*found)->portal_pair] = portal[(*found)->portal_pair + 1] = {};   // their town portal closes
+        if (found == players.begin()) {
+            // The first player: the next one takes their place (slot [0], what
+            // the client's `hero` is), the game goes on.
+            Player* const next = players[1].get();
+            std::erase(fight.heroes, next);
+            *players.front() = std::move(*next);
+            players.erase(players.begin() + 1);
+            act_as(was == next || was == players.front().get() ? lead() : *was);
+            d2d::log::info("{} leads the game now", lead().character.name);
+            return why;
+        }
         std::erase(fight.heroes, found->get());
-        const bool was_leaving = &was == found->get();
+        const bool was_leaving = was == found->get();
         players.erase(found);
-        act_as(was_leaving ? lead() : was);
+        act_as(was_leaving ? lead() : *was);
         return why;
     }
 
@@ -2308,6 +2348,8 @@ auto World::tick(std::span<const Order> orders, std::uint32_t now_ms, std::uint3
         // swing or a flinch holds the player in place until it ends, and
         // an attack goes on while the button's held (the left skill sent
         // again).
+        std::vector<std::pair<float, float>> before;    // where each player stood (the leash)
+        for (const auto& player : players) before.emplace_back(player->player.x, player->player.y);
         each_player([&](Player& player) {
             std::vector<Command> cmds;                  // this player's
             for (const auto& order : orders) if (order.player == player.id) cmds.push_back(order.command);
@@ -2419,6 +2461,7 @@ auto World::tick(std::span<const Order> orders, std::uint32_t now_ms, std::uint3
             }
             }
         });
+        leash(before);
         // The world goes on with the player dead (game.exe runs the rooms
         // around the corpse till the respawn): monsters see the dead player
         // as not alive (Fight::world) and think on.

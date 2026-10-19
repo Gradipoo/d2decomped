@@ -50,8 +50,8 @@ struct RosterChoice { int save = -1; int cls = 0; std::string name; };
 void roster_text(Roster& roster, std::string_view text, bool backspace);
 [[nodiscard]] inline bool roster_typing(const Roster& roster) { return roster.stage == Roster::Stage::name; }
 
-// Seat `seat`'s box (1..3 across the screen), its pick marked and the
-// seat's cursor on it.
-void draw_roster(std::vector<std::uint8_t>& framebuffer, const Scene& scene, const Roster& roster, int seat);
+// Seat `seat`'s box (0..3 across the screen), its pick marked by the
+// seat's cursor in its colour (0..3, kSeatColours).
+void draw_roster(std::vector<std::uint8_t>& framebuffer, const Scene& scene, const Roster& roster, int seat, int colour);
 
 }  // namespace d2d::client

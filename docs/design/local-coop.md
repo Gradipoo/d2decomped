@@ -1,6 +1,7 @@
 # Local co-op — up to 4 pads, one screen
 
-Status: planned 2026-10-19. Phases 1 to 4 done (branch local-coop). Builds on
+Status: planned 2026-10-19. Phases 1 to 4 and 5a (camera, leash, the lead's
+hand-over) done (branch local-coop); 5b (panels for players 2-4) next. Builds on
 [net-host.md](net-host.md) stages 1-2 (the N-player World and its rules) and
 [controller-plan.md](controller-plan.md) (one pad today).
 

@@ -1,6 +1,6 @@
 # Local co-op — up to 4 pads, one screen
 
-Status: planned 2026-10-19, no code yet. Builds on
+Status: planned 2026-10-19. Phases 1 and 2 done (branch local-coop). Builds on
 [net-host.md](net-host.md) stages 1-2 (the N-player World and its rules) and
 [controller-plan.md](controller-plan.md) (one pad today).
 
@@ -61,6 +61,24 @@ PC or Mac with pads works the same way.
 - Panels (inventory, stash, store, skill tree, roster): one player owns the
   open panel until it closes; the others keep playing.
 
+**Death and resurrection** (decided 2026-10-19)
+
+- A player who dies while a partner lives becomes a ghost: drawn
+  translucent, floating along with the party; it can't attack, pick up,
+  trade or be hit. Its body stays where it fell.
+- D2's death penalty applies (experience, gold), but the gear stays on the
+  player: no corpse holds it, so there is no corpse run.
+- Every co-op player has a **Resurrect** skill. Put on the right button
+  and used on a body, it channels for 10 s: a gold aura round the body,
+  faint at first, glowing brighter and strobing faster until the dead
+  rises there.
+- Moving, using another skill or a hit that makes the channeller flinch
+  (get-hit) cancels it; its progress is lost.
+- A ghost nobody raised is revived when the party reaches a town.
+- Everyone dead: everyone respawns in town, as in single player.
+- The skill exists only in co-op. A save never stores it on a button (the
+  previous right skill is written instead), so .d2s files stay game.exe's.
+
 ## Fidelity
 
 - Co-op on one screen is a d2d addition; it goes in
@@ -82,6 +100,7 @@ PC or Mac with pads works the same way.
 | 3 | Pads become players: up to 4 open, one `pad::Mapper` each, hotplug opens a slot, the 60 s hold. Tell the Deck's built-in controller from external pads (below). | 2-3 days |
 | 4 | The roster panel and tinted cursors: pick or make a character in-game, the join rules above. | 3-4 days |
 | 5 | One screen: the centroid camera with its leash, party warps, panel ownership, per-player saves, the lead hand-over. | 3-4 days |
+| 6 | Death and resurrection: ghosts, the Resurrect skill and its channel, the gold aura, revival in town. | 3-4 days |
 
 Not needed for co-op: net-host.md item 2 (room activation for players on
 different levels). One screen keeps the party on one level.

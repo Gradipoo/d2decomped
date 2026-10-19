@@ -212,12 +212,23 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           python3 -c "import json; print('\n'.join(sorted({e['file'] for e in json.load(open('build/compile_commands.json')) if '/_deps/' not in e['file'] and '/build/' not in e['file']})))" > tidy_files.txt
+          # A PR: its files; a push to main: the push's (a failed compare,
+          # e.g. after a force push, or a tag tidies everything).
+          changed=""
           if [ "${{ github.event_name }}" = "pull_request" ]; then
-            gh pr view "${{ github.event.pull_request.number }}" --json files --jq '.files[].path' \
-                | grep -E '\.(cpp|hpp)$' > changed.txt || true
+            changed=$(gh pr view "${{ github.event.pull_request.number }}" --json files --jq '.files[].path') || exit 1
+          elif [ "${{ github.ref }}" = "refs/heads/main" ]; then
+            changed=$(gh api "repos/${{ github.repository }}/compare/${{ github.event.before }}...${{ github.sha }}" \
+                --jq '.files[].filename') || changed=""
+          fi
+          # gh pr view lists 100 files at most, compare 300: a list that full
+          # may be cut short, so tidy everything.
+          if [ "$(grep -c . <<< "$changed")" -ge 100 ]; then changed=""; fi
+          if [ -n "$changed" ]; then
+            grep -E '\.(cpp|hpp)$' <<< "$changed" > changed.txt || true
             python3 tools/tidy-pr-select.py > tidy_files.txt
-            if [ ! -s tidy_files.txt ]; then echo "PR needs no tidy pass" && exit 0; fi
-            echo "PR mode: $(wc -l < tidy_files.txt) files to tidy"
+            if [ ! -s tidy_files.txt ]; then echo "Nothing to tidy" && exit 0; fi
+            echo "Changed-files mode: $(wc -l < tidy_files.txt) files to tidy"
             cat tidy_files.txt
           fi
           xargs -P $(nproc) -n 1 clang-tidy -p build --quiet --extra-arg=-Wno-unknown-warning-option < tidy_files.txt

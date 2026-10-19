@@ -825,8 +825,9 @@ auto World::enter(const Character& entering) -> void {
         character.expansion = entering.expansion; character.header = entering.header; character.merc_items = entering.merc_items;
         // A new game starts at full life, mana and stamina, whatever the
         // save held (D2's "save and exit to heal").
-        for (const auto& [cur, max] : { std::pair{ d2d::d2s::kLife, d2d::d2s::kMaxLife }, { d2d::d2s::kMana, d2d::d2s::kMaxMana },
-                                        { d2d::d2s::kStamina, d2d::d2s::kMaxStamina } })
+        static constexpr std::pair<d2d::d2s::StatId, d2d::d2s::StatId> kRefill[] = {
+            { d2d::d2s::kLife, d2d::d2s::kMaxLife }, { d2d::d2s::kMana, d2d::d2s::kMaxMana }, { d2d::d2s::kStamina, d2d::d2s::kMaxStamina } };
+        for (const auto& [cur, max] : kRefill)
             character.stats.values[cur] = character.stats.values[max];
         held.reset();
         store = {};

@@ -81,8 +81,9 @@ struct Crowd {
             if (other == self || !other->shape.stamps() || !(other->shape.bit() & mover.mask)) continue;
             const int other_x = int(std::floor(other->x * 5)), other_y = int(std::floor(other->y * 5));
             if (covers(other_x, other_y)) return true;
+            static constexpr std::pair<int, int> kNeighbours[] = { { 1, 0 }, { -1, 0 }, { 0, 1 }, { 0, -1 } };
             if (other->shape.box())
-                for (const auto& [step_x, step_y] : { std::pair{ 1, 0 }, { -1, 0 }, { 0, 1 }, { 0, -1 } })
+                for (const auto& [step_x, step_y] : kNeighbours)
                     if (covers(other_x + step_x, other_y + step_y)) return true;
         }
         return false;

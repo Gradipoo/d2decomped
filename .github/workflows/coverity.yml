@@ -45,8 +45,10 @@ jobs:
       - name: Configure
         run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_CXX_STANDARD=23
 
-      - name: Build FFmpeg (not scanned)
-        run: cmake --build build --config RelWithDebInfo --target ffmpeg_build
+      # Sentry/Crashpad is ~300 of the ~430 TUs; captured, the tarball hit 545M
+      # and scan.coverity.com refused it (413). Built first, cov-build skips it.
+      - name: Build FFmpeg and Sentry (not scanned)
+        run: cmake --build build --config RelWithDebInfo --target ffmpeg_build sentry crashpad_handler
 
       - name: Build with cov-build
         run: cov-build --dir cov-int cmake --build build --config RelWithDebInfo -- -k 0
@@ -66,23 +68,16 @@ jobs:
         if: github.ref == 'refs/heads/main'
         run: tar czf d2decomped.tgz cov-int
 
-      # Since C++23 the tarball is ~5x bigger and the form POST to /builds gets
-      # 413 (or 502). The init/PUT/enqueue flow sends it to a signed URL instead.
       - name: Upload to Coverity Scan
         if: github.ref == 'refs/heads/main'
         run: |
           ls -lh d2decomped.tgz
-          api="https://scan.coverity.com/projects/psi29a%2Fd2decomped/builds"
-          curl -sS --fail -o init.json \
+          curl -sS --fail \
             --form token="$COVERITY_TOKEN" \
             --form email="psi29a@gmail.com" \
-            --form file_name=d2decomped.tgz \
+            --form file=@d2decomped.tgz \
             --form version="$GITHUB_SHA" \
             --form description="main build" \
-            "$api/init"
-          curl -sS --fail -X PUT --header 'Content-Type: application/json' \
-            --upload-file d2decomped.tgz "$(jq -r .url init.json)"
-          curl -sS --fail -X PUT --form token="$COVERITY_TOKEN" \
-            "$api/$(jq -r .build_id init.json)/enqueue"
+            "https://scan.coverity.com/builds?project=psi29a%2Fd2decomped"
         env:
           COVERITY_TOKEN: ${{ secrets.COVERITY_SCAN_TOKEN }}

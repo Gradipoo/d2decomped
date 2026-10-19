@@ -189,6 +189,12 @@ inline std::vector<std::uint8_t> encode_view(const GameData& game_data, const Vi
             for (const auto look_byte : other.gfx) chunk.u8(look_byte);
             chunk.u16(int(other.states.size()));
             for (const auto state : other.states) chunk.str(state);
+            chunk.u8(other.ghost);
+        }
+        chunk.u8(view.ghost).u8(view.all_dead).u16(int(view.bodies.size()));
+        for (const auto& body : view.bodies) {
+            chunk.f32(body.x).f32(body.y).u8(body.dir).i32(body.id).u8(body.cls).f32(body.raised).u8(body.raisers);
+            for (const auto look_byte : body.gfx) chunk.u8(look_byte);
         }
         wire::section(out, enc.section[1], std::move(chunk.bytes));
     }
@@ -384,7 +390,16 @@ inline bool apply_view(const GameData& game_data, std::span<const std::uint8_t> 
             other.cls = byte(); other.name = input.str(); other.id = u32(); other.mode = i32(); other.running = byte() != 0;
             for (auto& look_byte : other.gfx) look_byte = std::uint8_t(byte());
             for (int states = u16(); states > 0 && input.ok; --states) other.states.push_back(wire::intern(input.str()));
+            other.ghost = byte() != 0;
             view.others.push_back(std::move(other));
+        }
+        view.ghost = byte() != 0; view.all_dead = byte() != 0;
+        view.bodies.clear();
+        for (int count = u16(); count > 0 && input.ok; --count) {
+            View::Body lying;
+            lying.x = f32(); lying.y = f32(); lying.dir = byte(); lying.id = i32(); lying.cls = byte(); lying.raised = f32(); lying.raisers = byte();
+            for (auto& look_byte : lying.gfx) look_byte = std::uint8_t(byte());
+            view.bodies.push_back(lying);
         }
     });
     body([&] {

@@ -37,7 +37,7 @@ Everything else is registered by the host binary via `Channel::on()`.
 | `rclick <x> <y>`            | `ok`                   | Same with the right button (opens the Horadric Cube item). |
 | `pad [n] axis <stick> <v>` | `ok`                   | Virtual pad n (0..3, default 0): a stick axis (`leftx`, `lefty`, `rightx`, `righty`) at -1..1. |
 | `pad <n> plug [deck]` / `pad <n> unplug` | `ok`     | Plug virtual pad n in (`deck`: with the Steam Deck's own controls' ids, 0x28de / 0x1205) or pull it out (co-op seats). |
-| `debug players`            | `<id>\t<name>\t<x>\t<y>\t<seat>\t<pmode>` per player, `ok` | The game's players (local co-op): cell, co-op seat (-1: the first player), mode (-1 none). |
+| `debug players`            | `<id>\t<name>\t<x>\t<y>\t<seat>\t<pmode>\t<ghost>` per player, `ok` | The game's players (local co-op): cell, co-op seat (-1: the first player), mode (-1 none), a ghost (1). |
 | `debug roster`             | `<seat>\t<stage>\t<pick>\t<entries,>\t<name>` per open roster, `ok` | Each joining pad's roster: stage (0 character, 1 class, 2 name), the line picked, entries (`*` greyed), the name typed. |
 | `pad [n] <button> down\|up` | `ok`                   | Holds a button of virtual pad n (0..3, default 0; plugged in at its first use) down or lets it go (`a`, `b`, `x`, `y`, `dpleft`, `leftshoulder`, `lefttrigger`, ...: SDL's names; a trigger goes all the way); plugged in on first use. Press = down, a frame, up. |
 | `save`                      | `ok` / `err <why>`     | Save the character now (character_store.hpp), as leaving the game does. |
@@ -55,7 +55,7 @@ Everything else is registered by the host binary via `Channel::on()`.
 | `debug clearinv`            | `ok`                   | Empty the inventory grid (tests that need room, whatever the save carries). |
 | `debug stat <id> <v>`       | `ok`                   | Set character stat 0..15 (12 level, 14 gold, 15 stash gold, ...). |
 | `debug attack`              | `ok dmg=<min>-<max> ar=… def=… block=… dr=…%+… mdr=… res=f/l/c/p cb=… ds=… ow=… ll=… ml=… ias=… wsm=… frw=… fhr=… fbr=… thorns=…+…l cold=… fire=… light=… crit=… def_melee=… def_missile=… dodge=… avoid=… evade=…` | The player as combat sees them (components/rules Fighter). |
-| `debug die`                 | `ok`                   | The player dies where they stand (death penalty, then a corpse). |
+| `debug die [id]`            | `ok`                   | The player (or player `id`, local co-op) dies where they stand (death penalty, then a corpse; in co-op a ghost). |
 | `debug corpses`             | `<level>\t<x>\t<y>\t<items>` per corpse, `ok` | The player's corpses. |
 | `debug rain [state]`       | `ok state= density= drops= splashes= wind=` | The weather; with a state (0 clear, 1 rising, 2 full, 3 falling) it starts that state next tick. |
 | `debug walls <x> <y>`      | `ok w<type>...`        | The current level's wall tiles at cell (x, y): each wall layer's orientation (h: hidden), or layer:orientation of the tiles game.exe picked. |

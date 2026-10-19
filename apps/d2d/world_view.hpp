@@ -143,6 +143,7 @@ struct Unit {
     int overlay_class = 0;               // Overlay.txt's Height: FUN_006223a0 (players 1, monsters OverlayHeight - 1)
     std::uint16_t says = 0;              // string id over its head (UnitState::says)
     bool shadow = true;                  // a composite casts one (players, monsters; MonStats2 Shadow), objects don't
+    bool spirit = false;                 // local co-op's ghost: pale, half see-through, no shadow (docs/design/local-coop.md)
 };
 
 // `trans`: a missile's Missiles.txt Trans, its draw mode (0 opaque).
@@ -226,9 +227,10 @@ template <class Fn> void composite_frames(const Scene::PlayerAnim& anim, int dir
     }
 }
 
+// `trans`: every layer's draw mode instead of its own (-1: its own).
 void draw_composite(std::vector<std::uint8_t>& framebuffer, const Scene::PlayerAnim& anim,
                     const d2d::palette::Palette& pal, int dir_want,
-                    std::uint32_t elapsed_ms, int anchor_x, int anchor_y);
+                    std::uint32_t elapsed_ms, int anchor_x, int anchor_y, int trans = -1);
 
 // A unit's shadow (driver +0x90, 0x5122e0 → FUN_00608d60): each frame
 // from its bottom row up, every other row, a row up and a pixel left each
@@ -241,8 +243,4 @@ void shadow_composite(std::vector<std::uint8_t>& framebuffer, const Scene::Playe
                       int anchor_x, int anchor_y, std::vector<std::uint16_t>& mask, std::uint16_t id);
 
 // Draws a composite frame, feet at the anchor.
-void draw_composite(std::vector<std::uint8_t>& framebuffer, const Scene::PlayerAnim& anim,
-                    const d2d::palette::Palette& pal, int dir_want,
-                    std::uint32_t elapsed_ms, int anchor_x, int anchor_y);
-
 }  // namespace d2d::client

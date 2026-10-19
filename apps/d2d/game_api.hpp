@@ -34,6 +34,7 @@ namespace wire = game::wire;
 using game::Character;
 using game::CharacterStore;
 using game::Command;
+using game::kResurrectSkill;
 using game::Cues;
 using game::Event;
 using game::Fight;

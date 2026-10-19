@@ -85,7 +85,7 @@ void render_ingame(std::vector<std::uint8_t>& framebuffer,
                    const Unit* player_look ,     // its states' colour shift and overlays
                    bool show_items,               // Alt held: every ground item's name
                    const Hud& hud,
-                   std::vector<std::uint8_t>* wide, std::pair<float, float> player_offset) {
+                   std::vector<std::uint8_t>* wide, std::pair<float, float> player_offset, bool player_spirit) {
     // Widescreen: the world (and its labels) draw on `wide`; its centre
     // 800x600 is then copied into `framebuffer`, where the HUD and panels draw
     // as at 800x600. Mouse x is relative to that centre, so the world's is
@@ -118,6 +118,7 @@ void render_ingame(std::vector<std::uint8_t>& framebuffer,
             units.back().rate = player_rate;
             units.back().overlay_class = 1;                 // FUN_006223a0: a player's Height2
             if (player_look) { units.back().shift = player_look->shift; units.back().overs = player_look->overs; }
+            if (player_spirit) { units.back().spirit = true; units.back().shadow = false; }
         }
         // An object in a mode its CycleAnim doesn't loop (a chest's OP) stops on the last frame.
         // unverified (source: objects.txt's CycleAnim0..7 columns): not yet traced to the object anim code.

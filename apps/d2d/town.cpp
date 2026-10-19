@@ -41,6 +41,7 @@
 #include <cstdlib>
 #include <filesystem>
 #include <format>
+#include <numbers>
 #include <initializer_list>
 #include <optional>
 #include <span>
@@ -107,6 +108,11 @@ void view_units(const Scene& scene, const View& view, float camera_x, float came
         out.push_back(unit);
     }
     for (const auto& fire : view.fires) out.push_back({ fire.x, fire.y, &scene.npc_anim(*fire.npc, fire.npc->mode), 0, nullptr, fire.born, -2 });
+    // Local co-op's fallen: their bodies where they fell, lying as a corpse lies.
+    for (const auto& body : view.bodies) {
+        const auto& anim = scene.composite(body.cls, kModeDT, body.gfx);
+        out.push_back({ body.x, body.y, &anim, body.dir, nullptr, now_ms - (anim.length_ms() - 1), -5000 - body.id });
+    }
     // The player's corpses: lying (DT's last frame, as the dead player is
     // drawn), in what they wore; named by the player (-3000 - which).
     for (const auto& corpse : view.corpses) {
@@ -142,6 +148,7 @@ void view_units(const Scene& scene, const View& view, float camera_x, float came
         const int mode = other.mode >= 0 ? other.mode : other.running ? kModeRN : other.unit.walking ? (in_town ? kModeTW : kModeWL) : (in_town ? kModeTN : kModeNU);
         out.push_back({ other.unit.x, other.unit.y, &scene.composite(other.cls, mode, other.gfx), other.unit.dir, &other.name, other.unit.mode_ms, -4000 - int(i) });
         out.back().overlay_class = 1;                 // FUN_006223a0: a player's Height2
+        if (other.ghost) { out.back().spirit = true; out.back().shadow = false; }   // local co-op's dead, walking along
         dress(scene, out.back(), -2 - int(other.id & 0xffffff), other.states, clk);
     }
     auto shot = [&](const View::Shot& shot_state) {
@@ -170,6 +177,39 @@ void view_units(const Scene& scene, const View& view, float camera_x, float came
     }
 }
 
+// Local co-op's Resurrect (docs/design/local-coop.md): a gold aura round a
+// body being raised, on the ground (an isometric ellipse) with a soft rim,
+// a column of light and flecks rising; faint and slow at first, brighter and
+// strobing faster (0.6 Hz to 5 Hz) as the channel's share done grows.
+void draw_raise_aura(std::vector<std::uint8_t>& framebuffer, int centre_x, int centre_y, float raised, std::uint32_t now_ms) {
+    const float progress = std::clamp(raised, 0.f, 1.f), seconds = float(now_ms) / 1000.f;
+    const float freq = 0.6f + 4.4f * std::pow(progress, 1.5f);
+    const float strobe = 0.5f + 0.5f * std::sin(2 * std::numbers::pi_v<float> * freq * seconds);
+    const float level = (0.18f + 0.82f * progress) * (0.65f + 0.35f * strobe);
+    const float radius_x = 34 + 18 * progress, radius_y = 15 + 8 * progress, column = 14 + 10 * progress;
+    constexpr std::array<float, 3> kGold{ 255, 196, 72 };
+    const auto add = [&](int x, int y, float light) {
+        if (x < 0 || x >= int(kScreenWidth) || y < 0 || y >= int(kScreenHeight) - 48 || light <= 0) return;   // not over the HUD
+        auto* pixel = &framebuffer[(std::size_t(y) * kScreenWidth + std::size_t(x)) * 4];
+        for (std::size_t k = 0; k < 3; ++k) pixel[k] = std::uint8_t(std::min(255.f, float(pixel[k]) + kGold[k] * 1.1f * light));
+    };
+    for (int y = centre_y - 100; y <= centre_y + int(radius_y * 1.4f); ++y)
+        for (int x = centre_x - int(radius_x * 1.4f); x <= centre_x + int(radius_x * 1.4f); ++x) {
+            const float dx = float(x - centre_x) / radius_x, dy = float(y - centre_y) / radius_y, apart = std::hypot(dx, dy);
+            const float glow = std::pow(std::max(1 - apart, 0.f), 1.6f), halo = std::exp(-(apart - 1) * (apart - 1) / 0.05f) * 0.45f;
+            const float rising = std::clamp(float(centre_y + 6 - y) / 90.f, 0.f, 1.f) * std::clamp(float(y - (centre_y - 95)) / 95.f, 0.f, 1.f);
+            const float beam = std::pow(std::max(1 - std::abs(float(x - centre_x)) / column, 0.f), 2.f) * rising;
+            add(x, y, (glow + halo) * level + beam * level * progress * 0.55f);
+        }
+    d2d::rules::Rng flecks{ now_ms / 50 + 1 };                // a few each frame, drifting up
+    for (int k = 0; k < int(14 * progress); ++k) {
+        const int x = centre_x + int(flecks.range(-int(radius_x * 0.6f), int(radius_x * 0.6f)));
+        const int y = centre_y - int(flecks.range(0, int(70 * progress)));
+        for (int fleck_y = y - 1; fleck_y <= y; ++fleck_y)
+            for (int fleck_x = x - 1; fleck_x <= x; ++fleck_x) add(fleck_x, fleck_y, level * 0.9f);
+    }
+}
+
 void view_overlays(std::vector<std::uint8_t>& framebuffer, const Scene& scene, const View& view, int hovered) {
     if (hovered >= 0) draw_monster_bar(framebuffer, scene, view.monsters[std::size_t(hovered)]);
     else if (const int attacked = view.monster(view.attack); attacked >= 0) draw_monster_bar(framebuffer, scene, view.monsters[std::size_t(attacked)]);
@@ -179,7 +219,7 @@ void view_overlays(std::vector<std::uint8_t>& framebuffer, const Scene& scene, c
     // 0x13e6 "Death takes its toll of %d Gold" (when goldlost > 0), and in
     // Nightmare / Hell (softcore) 0x13e7 "You have lost experience".
     // ponytail: FUN_00502680's anchor taken as the cel's bottom, centred.
-    if (view.pmode == kModeDD) {
+    if (view.pmode == kModeDD && (!view.ghost || view.all_dead)) {   // local co-op's ghost: no death screen while a partner lives
         const auto& pal = scene.act_pal.entries().empty() ? scene.pal : scene.act_pal;
         int y = int(kScreenHeight) / 2 - 0x5e;
         for (const auto* spr : { &scene.you_died, &scene.you_died_inst }) {
@@ -809,6 +849,7 @@ auto Town::close_game_menu() -> void {
 auto Town::update(std::vector<std::uint8_t>& framebuffer, const Mouse& frame_mouse, const std::vector<SDL_Keycode>& frame_keys,
                 Screen& screen, Audio& audio, std::uint32_t frame_ms, std::uint32_t last_ms) -> void {
         now_ms = frame_ms;
+        skillbar.coop = world.players.size() > 1;           // Resurrect on the right-hand picker
         // A partner's screen with nothing of theirs open goes back to the first player.
         if (focus_id() != hero.id && focus_keys.empty() && pad_field() && !game_menu.open && !automap.open && !waypoint.open) take_focus(hero.id);
         auto keys_this_frame = frame_keys;               // and a partner's that took the screen
@@ -857,7 +898,7 @@ auto Town::update(std::vector<std::uint8_t>& framebuffer, const Mouse& frame_mou
             if (key == SDLK_TAB) automap.open = !automap.open;  // D2's automap toggle
             if (key == SDLK_C) { char_open = !char_open; if (char_open) stash_open = cube_open = quest_log.open = false; }
             if (key == SDLK_Q) toggle_quest_log();
-            if (key == SDLK_ESCAPE && view.dead) { send(cmd::Resurrect{}); continue; }
+            if (key == SDLK_ESCAPE && view.dead && (!view.ghost || view.all_dead)) { send(cmd::Resurrect{}); continue; }
             if (key >= SDLK_1 && key <= SDLK_4) net.send(cmd::UseBelt{ int(key - SDLK_1), (SDL_GetModState() & SDL_KMOD_SHIFT) != 0 });
             if (key == SDLK_ESCAPE && skillbar.picking) { skillbar.picking = 0; continue; }   // the picker first
             // Esc (0x4690b0): the NPC's windows first, then the game menu
@@ -1415,7 +1456,7 @@ auto Town::hovered_ground() const -> int {
 
 auto Town::input(const Mouse& mouse, bool over_ui) const -> std::vector<Command> {
         std::vector<Command> out;
-        if (view.dead) {                                     // a click, once the death has played, respawns
+        if (view.dead && (!view.ghost || view.all_dead)) {   // a click, once the death has played, respawns
             if (mouse.press_this_frame) out.push_back(cmd::Resurrect{});
             return out;
         }
@@ -1425,6 +1466,10 @@ auto Town::input(const Mouse& mouse, bool over_ui) const -> std::vector<Command>
         const float iso_u = float(mouse.x - int(kScreenWidth) / 2) / (kIsoW / 2);
         const float iso_v = float(mouse.y - kViewY) / (kIsoH / 2);
         const float world_x = cam_x + (iso_u + iso_v) / 2, world_y = cam_y + (iso_v - iso_u) / 2;
+        if (view.ghost) {                                    // a ghost only walks
+            if (mouse.press_this_frame || mouse.down) out.push_back(cmd::Move{ world_x, world_y, mouse.press_this_frame });
+            return out;
+        }
         const int hovered_monster_index = hovered_monster();
         const bool live = hovered_monster_index >= 0 && view.monsters[std::size_t(hovered_monster_index)].alive();
         if (mouse.press_this_frame) {
@@ -1440,7 +1485,11 @@ auto Town::input(const Mouse& mouse, bool over_ui) const -> std::vector<Command>
             else
                 out.push_back(cmd::Move{ world_x, world_y, false });
         }
-        if (mouse.rpress_this_frame) out.push_back(cmd::UseSkill{ skillbar.right, world_x, world_y, live ? view.monsters[std::size_t(hovered_monster_index)].id : -1 });
+        if (mouse.rpress_this_frame && skillbar.right == kResurrectSkill) {   // co-op: the body nearest the click
+            if (const auto* body = body_near(world_x, world_y, 1.5f)) out.push_back(cmd::UseSkill{ kResurrectSkill, body->x, body->y, body->id });
+        } else if (mouse.rpress_this_frame) {
+            out.push_back(cmd::UseSkill{ skillbar.right, world_x, world_y, live ? view.monsters[std::size_t(hovered_monster_index)].id : -1 });
+        }
         return out;
     }
 
@@ -1462,6 +1511,10 @@ auto Town::pad_act(PadPlayer& player_pad, const UnitState& unit, bool dead, bool
         const bool want = move.attack || move.attack_down || move.alt;
         if (!want || dead || !field) { if (!want) player_pad.target = -1; return; }
         const float hero_x = unit.x, hero_y = unit.y, face_x = player_pad.face_x, face_y = player_pad.face_y;
+        if (move.alt && right_skill == kResurrectSkill) {    // co-op: the body nearest, in reach
+            if (const auto* body = body_near(hero_x, hero_y, 4.f)) out(cmd::UseSkill{ kResurrectSkill, body->x, body->y, body->id });
+            return;
+        }
         std::vector<pad::Candidate> monsters;
         for (const auto& monster : view.monsters)
             if (monster.alive()) monsters.push_back({ monster.id, monster.unit.x, monster.unit.y });
@@ -1627,12 +1680,19 @@ auto Town::field_play(PadPlayer& player_pad, pad::Mapper& mapper, const World::P
         if (actions.skill_picker) opens.push_back(pad::Key::Up);          // the right stick's click: the picker
         const bool dead = hero_there.pmode == game::kModeDT || hero_there.pmode == game::kModeDD;
         const bool field = !game_menu.open;
-        pad_walk(player_pad, hero_there.player, dead, field, out);
+        pad_walk(player_pad, hero_there.player, dead && !hero_there.ghost, field, out);   // a ghost walks
         pad_act(player_pad, hero_there.player, dead, field, int(hero_there.character.header.left_skill), int(hero_there.character.header.right_skill), out);
         return opens;
     }
 
 auto Town::focus_id() const -> int { return focus > 0 ? focus : hero.id; }
+
+auto Town::body_near(float x, float y, float reach) const -> const View::Body* {
+        const View::Body* best = nullptr;
+        for (const auto& body : view.bodies)
+            if (const float apart = std::hypot(body.x - x, body.y - y); apart <= reach && (!best || apart < std::hypot(best->x - x, best->y - y))) best = &body;
+        return best;
+    }
 
 auto Town::focused() -> World::Player& {
         const auto found = std::ranges::find(world.players, focus_id(), [](const auto& each) { return each->id; });
@@ -2086,7 +2146,7 @@ auto Town::walk(const Mouse& mouse, bool over_ui, std::uint32_t frame_ms, std::u
         // The screen's pad plays the screen's player (local co-op: a partner's while they have it).
         const Send to_world = [this](const Command& command) { send(command); };
         const bool field = pad_field() && !game_menu.open && !chat_typing && !trade_gold_typing;
-        pad_walk(pad, focused().player, view.dead, field, to_world);
+        pad_walk(pad, focused().player, view.dead && !view.ghost, field, to_world);   // a ghost walks
         pad_act(pad, focused().player, view.dead, pad_field(), skillbar.left, skillbar.right, to_world);
         // Fixed ticks of kTickMs; after a stall, a few to catch up, then the
         // clock skips ahead (game.exe catches up one frame at most).
@@ -2367,8 +2427,9 @@ auto Town::draw_view(std::vector<std::uint8_t>& framebuffer, std::vector<std::ui
         const bool town = d2d::rules::level_ids::is_town(level->id);                       // TN/TW in town, NU/WL outside
         // A dead player has no DD composite: DT held on its last frame.
         const auto cls = std::max(character.character_class, 0);
-        if (pmode == kModeDD) unit.mode_ms = frame_ms - (scene->composite(cls, kModeDT, view.gfx).length_ms() - 1);
-        int mode = pmode == kModeDD ? kModeDT : pmode >= 0 ? pmode : unit.walking ? (run_on ? kModeRN : town ? kModeTW : kModeWL) : town ? kModeTN : kModeNU;
+        if (pmode == kModeDD && !view.ghost) unit.mode_ms = frame_ms - (scene->composite(cls, kModeDT, view.gfx).length_ms() - 1);
+        int mode = view.ghost ? (unit.walking ? (town ? kModeTW : kModeWL) : town ? kModeTN : kModeNU)   // a ghost walks along, its body lies apart
+                 : pmode == kModeDD ? kModeDT : pmode >= 0 ? pmode : unit.walking ? (run_on ? kModeRN : town ? kModeTW : kModeWL) : town ? kModeTN : kModeNU;
         std::uint32_t mode_ms = unit.mode_ms;
         float rate = pmode >= 0 && pmode != kModeDD ? view.prate : 1.f;
         if (!view.seq.empty() && attack_mode(pmode)) { std::tie(mode, mode_ms) = view_seq(*scene, int(cls), view, frame_ms); rate = 1.f; }   // an SQ skill's frame
@@ -2385,7 +2446,12 @@ auto Town::draw_view(std::vector<std::uint8_t>& framebuffer, std::vector<std::ui
                       nullptr, nullptr, nullptr, extra, rate, light.pal ? &light : nullptr, level->rain ? &rain : nullptr,
                       !(pmode == kModeDD && !view.corpses.empty()),    // dead, the corpse lies there instead
                       &player_look, alt_held || (SDL_GetModState() & SDL_KMOD_ALT) != 0,   // D2's "Show Items" (Alt)
-                      Hud{ view.poisoned, view.running, run_down, character.header.weapon_set != 0 }, wide, { hero_x - cam_x, hero_y - cam_y });
+                      Hud{ view.poisoned, view.running, run_down, character.header.weapon_set != 0 }, wide, { hero_x - cam_x, hero_y - cam_y }, view.ghost);
+        for (const auto& body : view.bodies)                       // local co-op: a body being raised
+            if (body.raisers > 0 || body.raised > 0) {
+                const float dx = body.x - cam_x, dy = body.y - cam_y;
+                draw_raise_aura(framebuffer, int(kScreenWidth) / 2 + int(std::lround((dx - dy) * (kIsoW / 2))), kViewY + int(std::lround((dx + dy) * (kIsoH / 2))), body.raised, frame_ms);
+            }
         view_overlays(framebuffer, *scene, view, hovered_monster());
         skillbar.draw(framebuffer, held ? -1 : mouse.x, held ? -1 : mouse.y);
         if (net_game && net_game->trade.state != 0) {

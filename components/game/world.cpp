@@ -106,6 +106,54 @@ auto World::add_player() -> Player& {
     return player;
 }
 
+auto World::anyone_alive() const -> bool {
+    return std::ranges::any_of(players, [](const auto& player) { return player->pmode != kModeDT && player->pmode != kModeDD; });
+}
+
+auto World::become_ghost(Player& player) -> void {
+    player.ghost = true;
+    player.body = Player::Body{ level, player.player.x, player.player.y, player.player.dir, fight.gfx() };
+    player.raising = -1;
+    d2d::log::info("{} is a ghost", player.character.name);
+}
+
+auto World::revive(Player& player, std::uint32_t now_ms) -> void {
+    Player& was = *actor;
+    act_as(player);
+    player.ghost = false;
+    player.body.reset();
+    player.last_pmode = -1;
+    player.player.walking = false; player.player.path.clear();
+    player.target_x = player.player.x; player.target_y = player.player.y;
+    fight.revive(now_ms);                                // full life and mana, no potions or poison working
+    d2d::log::info("{} is alive again", player.character.name);
+    act_as(was);
+}
+
+auto World::raise_step(float elapsed, std::uint32_t now_ms) -> void {
+    for (auto& lying : players) if (lying->body) lying->body->raisers = 0;
+    for (auto& raiser : players) {
+        if (raiser->raising < 0) continue;
+        const auto lying = std::ranges::find(players, raiser->raising, [](const auto& each) { return each->id; });
+        const bool hit = raiser->pmode == kModeGH || raiser->pmode == kModeDT || raiser->pmode == kModeDD;   // a flinch (or dying) breaks it
+        if (lying == players.end() || !(*lying)->body || (*lying)->body->level != level || hit) { raiser->raising = -1; continue; }
+        auto& body = *(*lying)->body;
+        if (std::hypot(body.x - raiser->player.x, body.y - raiser->player.y) > kRaiseReach) continue;   // still walking up
+        raiser->player.walking = false; raiser->player.path.clear();
+        raiser->target_x = raiser->player.x; raiser->target_y = raiser->player.y;
+        ++body.raisers;
+    }
+    for (auto& lying : players) {
+        if (!lying->body) continue;
+        auto& body = *lying->body;
+        body.raised = body.raisers == 0 ? 0 : body.raised + float(body.raisers) * elapsed / kRaiseSeconds;   // nobody on it: lost
+        if (body.raised < 1) continue;
+        lying->player.x = body.x; lying->player.y = body.y; lying->player.dir = body.dir;
+        for (auto& raiser : players) if (raiser->raising == lying->id) raiser->raising = -1;
+        revive(*lying, now_ms);
+    }
+}
+
 auto World::leash(std::span<const std::pair<float, float>> before) -> void {
     if (players.size() < 2 || before.size() != players.size()) return;
     // The party on screen: its spread in screen pixels (isometric: a cell is
@@ -198,8 +246,15 @@ auto World::view() const -> View {
                 for (const auto& state : player->self_states)
                     if (const auto* skill = now < state.until ? game_data->skills.get(state.skill) : nullptr) states.push_back(skill->aurastate);
                 view.others.push_back({ player->player, cls, player->character.name, std::uint32_t(player->id),
-                                        player->character.appearance ? *player->character.appearance : game_data->starting_gear[std::size_t(cls)], player->pmode, player->running, std::move(states) });
+                                        player->character.appearance ? *player->character.appearance : game_data->starting_gear[std::size_t(cls)],
+                                        player->ghost ? -1 : player->pmode, player->running, std::move(states), player->ghost });
             }
+        for (const auto& player : players)
+            if (player->body && player->body->level == level)
+                view.bodies.push_back({ player->body->x, player->body->y, player->body->dir, player->body->gfx, player->id, std::max(player->character.character_class, 0),
+                                        player->body->raised, player->body->raisers });
+        view.ghost = actor->ghost;
+        view.all_dead = players.size() > 1 && !anyone_alive();
         if (level == fight.mon_level) {
             // What's near the player (D2 sends the units of the rooms round
             // each player). ponytail: a radius of 28 cells, not rooms; waits for
@@ -279,6 +334,7 @@ auto World::save() -> std::string {
         if (!characters) return "no character store";
         stow_held(*game_data, actor->character.items, actor->held);                  // the item in hand goes back first
         auto header = actor->character.header;
+        if (header.right_skill == std::uint32_t(kResurrectSkill)) header.right_skill = actor->right_before;   // co-op's only: never in a save
         header.level = std::uint8_t(std::clamp<std::int64_t>(actor->character.stats.get(d2d::d2s::kLevel), 1, 99));
         header.last_played = std::uint32_t(std::time(nullptr));
         header.map_id = game_data->map_seed;
@@ -2100,6 +2156,8 @@ auto World::apply(const Command& command, std::uint32_t now_ms) -> void {
             return;
         }
         if (const auto* select = std::get_if<cmd::SelectSkill>(&command)) {
+            if (select->skill == kResurrectSkill && (select->left || players.size() < 2)) return;   // the right button's, in co-op
+            if (select->skill == kResurrectSkill && actor->character.header.right_skill != std::uint32_t(kResurrectSkill)) actor->right_before = actor->character.header.right_skill;
             (select->left ? actor->character.header.left_skill : actor->character.header.right_skill) = std::uint32_t(select->skill);
             if (!select->left) if (const auto* skill = game_data->skills.get(select->skill)) actor->aura = skill->aura ? select->skill : 0;
             return;
@@ -2164,7 +2222,7 @@ auto World::apply(const Command& command, std::uint32_t now_ms) -> void {
             if (actor->store.npc >= 0 && !actor->store.gamble) stocks[actor->store.npc] = actor->store;   // what the trade left in the vendor's stock
             return;
         }
-        if (actor->pmode >= 0) return;
+        if (actor->pmode >= 0 && !actor->ghost) return;   // busy (a ghost, dead, only walks: the tick lets nothing else through)
         const bool in_moor = !in_town(level);
         auto walk_to = [&](float x, float y, bool fresh) {
             actor->target_x = x; actor->target_y = y;
@@ -2177,7 +2235,15 @@ auto World::apply(const Command& command, std::uint32_t now_ms) -> void {
             for (std::size_t i = 0; i < level->warps.size(); ++i)
                 if (std::hypot(level->warps[i].x + 0.5f - x, level->warps[i].y + 0.5f - y) < 2.f) actor->take_warp = int(i);
         };
-        if (const auto* move = std::get_if<cmd::Move>(&command)) { walk_to(move->x, move->y, move->fresh); return; }
+        if (const auto* move = std::get_if<cmd::Move>(&command)) { actor->raising = -1; walk_to(move->x, move->y, move->fresh); return; }
+        if (const auto* use = std::get_if<cmd::UseSkill>(&command); use && use->skill == kResurrectSkill) {   // co-op: up to the body, then the channel
+            const auto lying = std::ranges::find_if(players, [&](const auto& other) { return other->id == use->unit && other->body && other->body->level == level; });
+            if (lying == players.end() || fight.dead()) return;
+            actor->raising = use->unit;
+            walk_to((*lying)->body->x, (*lying)->body->y, true);
+            return;
+        }
+        if (std::holds_alternative<cmd::UseSkill>(command)) actor->raising = -1;
         if (const auto* pickup = std::get_if<cmd::Pickup>(&command)) {                  // walk to it, pick it up
             const int ground_index = loot.index_of(pickup->item);
             if (ground_index < 0) return;
@@ -2364,15 +2430,20 @@ auto World::tick(std::span<const Order> orders, std::uint32_t now_ms, std::uint3
                 return std::holds_alternative<cmd::Move>(command) || (use_skill && use_skill->left);
             });
             const bool resurrect = std::ranges::any_of(cmds, [](const Command& command) { return std::holds_alternative<cmd::Resurrect>(command); });
-            if (fight.player_modes(button, now_ms, elapsed) && resurrect) respawn(now_ms);
+            // Back in camp after dying: alone, or in co-op once no one's left alive.
+            if (fight.player_modes(button, now_ms, elapsed) && resurrect && (players.size() == 1 || !anyone_alive())) respawn(now_ms);
             if (actor->pmode != actor->last_pmode) {                 // death's stages: the penalty as it starts, the corpse as it ends
                 if (actor->pmode == kModeDT) death_penalty(now_ms);
-                if (actor->pmode == kModeDD) make_corpse();
+                if (actor->pmode == kModeDD) { if (players.size() > 1) become_ghost(player); else make_corpse(); }   // co-op: a ghost, the gear kept
                 actor->last_pmode = actor->pmode;
             }
-            if (!fight.dead()) {
-            const bool busy = actor->pmode >= 0;
-            for (const auto& command : cmds) if (!std::holds_alternative<cmd::Resurrect>(command)) apply(command, now_ms);
+            if (!fight.dead() || actor->ghost) {
+            const bool busy = actor->pmode >= 0 && !actor->ghost;
+            for (const auto& command : cmds) {
+                if (std::holds_alternative<cmd::Resurrect>(command)) continue;
+                if (actor->ghost && !std::holds_alternative<cmd::Move>(command) && !std::holds_alternative<cmd::Run>(command)) continue;   // a ghost only walks
+                apply(command, now_ms);
+            }
             // Close enough to the stash: open it with the inventory.
             // ponytail: 2 cells, not D2's per-object operate range.
             if (actor->interact_npc >= 0) {
@@ -2425,7 +2496,7 @@ auto World::tick(std::span<const Order> orders, std::uint32_t now_ms, std::uint3
                     actor->target_x = ground_item.x; actor->target_y = ground_item.y; actor->player.walking = true;
                 }
             }
-            if (autoloot_gold && !fight.dead())                  // d2d: walking over gold picks it up (game.exe wants a click)
+            if (autoloot_gold && !fight.dead() && !actor->ghost)  // d2d: walking over gold picks it up (game.exe wants a click)
                 for (std::size_t i = loot.ground.size(); i-- > 0;)
                     if (const auto& ground_item = loot.ground[i]; ground_item.item.code == "gld" && std::hypot(ground_item.x - actor->player.x, ground_item.y - actor->player.y) <= 0.5f) {
                         if (loot.index_of(actor->pick_item) == int(i)) actor->pick_item = -1;
@@ -2433,7 +2504,7 @@ auto World::tick(std::span<const Order> orders, std::uint32_t now_ms, std::uint3
                     }
             bool to_unit = actor->interact_npc >= 0 && std::size_t(actor->interact_npc) < level->npcs.size() && level->npcs[std::size_t(actor->interact_npc)].root == "monsters";
             if (const auto target = fight.engage(now_ms)) { std::tie(actor->target_x, actor->target_y) = *target; actor->player.walking = true; to_unit = true; }
-            if (actor->player.walking && actor->pmode < 0) {
+            if (actor->player.walking && (actor->pmode < 0 || actor->ghost)) {
                 // A route to the target (path type 7), re-planned when the
                 // target moves off its end (dragging, a walking NPC) and when
                 // it ran out short of it (FUN_006503f0's last test).
@@ -2525,6 +2596,9 @@ auto World::tick(std::span<const Order> orders, std::uint32_t now_ms, std::uint3
         reopen_doors();
         grow_states(npc_states, *level);
         each_player([&](Player&) { if (!fight.dead()) fight.apply_regen(now_ms, last_ms); });
+        raise_step(elapsed, now_ms);
+        if (in_town(level))                                      // the party in a town: its ghosts are up again
+            each_player([&](Player& player) { if (player.ghost) revive(player, now_ms); });
     }
 
 }  // namespace d2d::game

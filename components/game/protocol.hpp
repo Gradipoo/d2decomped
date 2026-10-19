@@ -18,6 +18,11 @@
 
 namespace d2d::game {
 
+// d2d's co-op Resurrect (docs/design/local-coop.md): a skill only local
+// co-op has, used on a fallen partner's body (UseSkill's unit: their player
+// id). Past Skills.txt's ids; never saved on a button.
+inline constexpr int kResurrectSkill = 0x7ffe;
+
 namespace cmd {
 // 0x01 / 0x03: walk or run to (x, y) cells. `fresh`: a new click, not a
 // held button re-aiming (it drops the attack or pick-up under way).

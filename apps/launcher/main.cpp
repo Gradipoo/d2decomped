@@ -646,9 +646,12 @@ public:
 
     // Steam's Gaming Mode / Big Picture: no keyboard, and Steam ends the
     // session when the process it started exits. Usable data → straight
-    // into d2d, no window; otherwise the launcher shows as usual.
+    // into d2d, no window; otherwise the launcher shows as usual, and a
+    // first run's scan that finds a usable install launches once it lands.
     bool launchForSteam() {
-        return launch_->isEnabled() && launch();
+        if (launch_->isEnabled()) return launch();
+        steam_retry_ = true;
+        return false;
     }
 
 private:
@@ -731,6 +734,7 @@ private:
         }
         fillList();
         refresh();
+        if (std::exchange(steam_retry_, false) && launch_->isEnabled()) launch();
     }
 
     // Every install found, plus the chosen one (browsed / installed) if the
@@ -1020,6 +1024,7 @@ private:
     QLineEdit* crashNotes_{};
     QPushButton* upgrade_{};
     QString latest_url_;
+    bool steam_retry_{};   // launchForSteam found nothing yet: try once after the scan
     Q_OBJECT
 };
 

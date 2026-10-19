@@ -177,11 +177,19 @@ inline std::vector<std::uint8_t> encode_view(const GameData& game_data, const Vi
         for (const int buff : view.buffs) chunk.i32(buff);
         wire::section(out, enc.section[0], std::move(chunk.bytes));
     }
-    // 1: pets, 2: missiles.
+    // 1: pets and the other players, 2: missiles.
     {
         wire::Out chunk;
         chunk.u16(int(view.pets.size()));
         for (const auto& pet : view.pets) { wire::npc(chunk, pet.npc); wire::unit(chunk, pet.unit); chunk.str(pet.mode); }
+        chunk.u16(int(view.others.size()));
+        for (const auto& other : view.others) {
+            wire::unit(chunk, other.unit);
+            chunk.u8(other.cls).str(other.name).u32(other.id).i32(other.mode).u8(other.running);
+            for (const auto look_byte : other.gfx) chunk.u8(look_byte);
+            chunk.u16(int(other.states.size()));
+            for (const auto state : other.states) chunk.str(state);
+        }
         wire::section(out, enc.section[1], std::move(chunk.bytes));
     }
     {
@@ -368,6 +376,15 @@ inline bool apply_view(const GameData& game_data, std::span<const std::uint8_t> 
             auto npc = wire::npc(input);
             const auto unit = wire::unit(input);
             view.pets.push_back({ std::move(npc), unit, wire::intern(input.str()) });
+        }
+        view.others.clear();
+        for (int count = u16(); count > 0 && input.ok; --count) {
+            View::OtherPlayer other;
+            other.unit = wire::unit(input);
+            other.cls = byte(); other.name = input.str(); other.id = u32(); other.mode = i32(); other.running = byte() != 0;
+            for (auto& look_byte : other.gfx) look_byte = std::uint8_t(byte());
+            for (int states = u16(); states > 0 && input.ok; --states) other.states.push_back(wire::intern(input.str()));
+            view.others.push_back(std::move(other));
         }
     });
     body([&] {

@@ -1915,7 +1915,9 @@ auto Town::walk(const Mouse& mouse, bool over_ui, std::uint32_t frame_ms, std::u
         bool ticked = false;
         for (int ticks = 0; frame_ms - world_ms >= kTickMs && ticks < 5; ++ticks) {
             prev_x = view.player.x; prev_y = view.player.y;
-            world.tick(net.receive(), world_ms + kTickMs, world_ms);
+            std::vector<Order> orders;
+            for (auto& command : net.receive()) orders.push_back({ hero.id, std::move(command) });
+            world.tick(orders, world_ms + kTickMs, world_ms);
             world_ms += kTickMs;
             ticked = true;
         }

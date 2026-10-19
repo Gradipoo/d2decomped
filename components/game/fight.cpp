@@ -1370,7 +1370,7 @@ auto Fight::prg(const d2d::rules::Skill& skill, ServerDoFunction func, int count
         if ((func == ServerDoFunction::kReleaseNova || func == ServerDoFunction::kReleaseScatter) && missile_info) {
             auto put = [&](float x, float y, float velocity_x, float velocity_y, int range) {
                 Missile missile{ missile_info, x, y, velocity_x, velocity_y, direction32(velocity_x, velocity_y), now_ms, now_ms + std::uint32_t(std::max(range, 1)) * 40, {} };
-                missile.friendly = true; missile.skill = skill.id; missile.level = lvl;
+                missile.friendly = true; missile.caster = actor->id; missile.skill = skill.id; missile.level = lvl;
                 missiles.push_back(missile);
                 return missiles.size() - 1;
             };
@@ -1781,7 +1781,7 @@ auto Fight::merc_turn(std::uint32_t now_ms, float elapsed, const Crowd& crowd, b
                     Missile missile{ &missile_info, unit.x, unit.y, dx / distance * speed, dy / distance * speed, direction32(dx, dy), now_ms, now_ms + std::uint32_t(missile_info.range) * 40, {} };
                     missile.to = { target.unit.x, target.unit.y };
                     const auto fighter = merc_fighter();                    // its bow's damage and attack rating with its gear
-                    missile.min = fighter.min; missile.max = fighter.max; missile.attack_rating = fighter.attack_rating; missile.level = actor->merc_st.level; missile.friendly = true;
+                    missile.min = fighter.min; missile.max = fighter.max; missile.attack_rating = fighter.attack_rating; missile.level = actor->merc_st.level; missile.friendly = true; missile.caster = actor->id;
                     missiles.push_back(missile);
                 } else if (target.alive() && distance <= kMeleeReach + 0.3f) {
                     // A melee skill (Jab, Bash, Stun) builds its hit as the
@@ -2263,7 +2263,7 @@ auto Fight::launch(const GameData::MissileInfo& missile_info, const d2d::rules::
                     int range, std::uint32_t now_ms) -> Missile& {
         const float speed = missile_speed(missile_info, lvl), distance = std::max(std::hypot(dx, dy), 0.01f);
         Missile missile{ &missile_info, x, y, dx / distance * speed, dy / distance * speed, direction32(dx, dy), now_ms, now_ms + std::uint32_t(std::max(range, 1)) * 40, {} };
-        missile.friendly = true; missile.skill = skill.id; missile.level = lvl; missile.by_merc = casting_merc;
+        missile.friendly = true; missile.caster = actor->id; missile.skill = skill.id; missile.level = lvl; missile.by_merc = casting_merc;
         pending.push_back(missile);
         return pending.back();
     }
@@ -2399,11 +2399,10 @@ auto Fight::land_range(const GameData::MissileInfo& missile_info, float dx, floa
         return std::max(int(std::hypot(dx, dy) / per_frame), 1);
     }
 
-auto Fight::missile_tick(std::uint32_t now_ms) -> void {
+auto Fight::player_shots(std::uint32_t now_ms) -> void {
         const int frame = int(now_ms / 40);
         if (frame == actor->last_frame) return;
         actor->last_frame = frame;
-        burned.clear();
         std::erase_if(actor->strafe, [&](const std::pair<int, std::uint32_t>& strafed) {
             if (now_ms < strafed.second) return false;
             const auto* skill = game_data->skills.get(actor->swing_skill);
@@ -2428,9 +2427,17 @@ auto Fight::missile_tick(std::uint32_t now_ms) -> void {
                     launch(missile_info, *skill, lvl, actor->player.x, actor->player.y, actor->cast_x - actor->player.x, actor->cast_y - actor->player.y, missile_info.range, now_ms);
             }
         }
+    }
+
+auto Fight::missile_tick(std::uint32_t now_ms) -> void {
+        const int frame = int(now_ms / 40);
+        if (frame == missile_frame) return;
+        missile_frame = frame;
+        burned.clear();
         for (std::size_t k = 0; k < missiles.size(); ++k) {
             auto& missile = missiles[k];
             if (!missile.friendly || missile.skill < 0 || !missile.info) continue;   // the player's side's (a monster's carries its skill too)
+            if (Hero* caster = hero_of(missile.caster)) act_as(*caster);              // its caster's skills, credit and leech
             const auto* skill = game_data->skills.get(missile.skill);
             if (!skill) continue;
             const int age = int(now_ms - missile.born) / 40;
@@ -3084,7 +3091,7 @@ auto Fight::trap_fire(Pet& pet, std::size_t target, std::uint32_t now_ms) -> voi
             const float aim_x = dx * std::cos(angle) - dy * std::sin(angle), aim_y = dx * std::sin(angle) + dy * std::cos(angle);
             Missile x{ &missile_info, monster.unit.x, monster.unit.y, aim_x / dist * speed, aim_y / dist * speed, direction32(aim_x, aim_y), now_ms,
                        now_ms + std::uint32_t(std::max(missile_info.range, 1)) * 40, {} };
-            x.friendly = true; x.level = pet.shot_level;
+            x.friendly = true; x.caster = actor->id; x.level = pet.shot_level;
             x.skill = owner != game_data->skills.by_name.end() ? owner->second : skill->id;
             if (skill->srvdofunc == ServerDoFunction::kMonsterBreath) { x.velocity_x = dx / dist * speed; x.velocity_y = dy / dist * speed; x.dies = now_ms + std::uint32_t(4 + 3 * j) * 40; }
             missiles.push_back(x);
@@ -3197,7 +3204,7 @@ auto Fight::pets_turn(std::uint32_t now_ms, float elapsed, const Crowd& crowd) -
                         const float dx = monsters[monster_index].unit.x - unit.x, dy = monsters[monster_index].unit.y - unit.y, distance = std::max(std::hypot(dx, dy), 0.01f);
                         x.velocity_x = dx / distance * missile_speed(*missile_info, pet.ranged_level); x.velocity_y = dy / distance * missile_speed(*missile_info, pet.ranged_level);
                         x.dir = direction32(dx, dy); x.to = { monsters[monster_index].unit.x, monsters[monster_index].unit.y };
-                        x.friendly = true; x.level = pet.ranged_level; x.skill = pet.ranged;
+                        x.friendly = true; x.caster = actor->id; x.level = pet.ranged_level; x.skill = pet.ranged;
                         if (const auto* missile_skill_row = skill_named(missile_info->skill)) x.skill = missile_skill_row->id;   // 'hydra' carries the Hydra skill's damage
                         pending.push_back(x);
                     } else if (monsters[monster_index].targetable() && std::hypot(monsters[monster_index].unit.x - unit.x, monsters[monster_index].unit.y - unit.y) <= kMeleeReach + 0.3f) {
@@ -3932,7 +3939,7 @@ auto Fight::pet_cast(Pet& pet, std::uint32_t now_ms, const Crowd& crowd) -> void
             const float dx = foe.unit.x - monster.unit.x, dy = foe.unit.y - monster.unit.y, distance = std::max(std::hypot(dx, dy), 0.01f);
             x.velocity_x = dx / distance * missile_speed(*missile_info, pet.ranged_level); x.velocity_y = dy / distance * missile_speed(*missile_info, pet.ranged_level);
             x.dir = direction32(dx, dy); x.to = { foe.unit.x, foe.unit.y };
-            x.friendly = true; x.level = pet.ranged_level; x.skill = pet.ranged;
+            x.friendly = true; x.caster = actor->id; x.level = pet.ranged_level; x.skill = pet.ranged;
             if (const auto* missile_skill_row = skill_named(missile_info->skill)) x.skill = missile_skill_row->id;
             pending.push_back(x);
             return;
@@ -4045,65 +4052,103 @@ auto Fight::crowd(Crowd& crowd_out) -> void {
             if (pet.monster.alive() && pet.where == level) crowd_out.units.push_back(&pet.monster.unit);
     }
 
+auto Fight::player_foe(std::uint32_t now_ms) -> Foe {
+        Foe foe{ actor->player.x, actor->player.y, int(actor->character.stats.get(d2d::d2s::kLevel)), !dead(), actor->player.walking, actor->player_combat };
+        foe.running = actor->owner_mode == 3;                   // RN (World: walking with run on and stamina)
+        foe.life_pct = int(std::int64_t(actor->character.stats.get(d2d::d2s::kLife)) * 100 / std::max<std::int64_t>(actor->character.stats.get(d2d::d2s::kMaxLife), 1));
+        // Diablo's score of the player (FUN_005e8530).
+        const auto stat = [&](int id) { return int(actor->psum[std::size_t(id)]); };
+        auto& pick = foe.pick;
+        pick.damage_resist = stat(0x24); pick.magic_resist = stat(0x25); pick.fire_resist = stat(0x27); pick.light_resist = stat(0x29); pick.cold_resist = stat(0x2b);
+        pick.max_damage = stat(0x16) + stat(0x31) + stat(0x33) + stat(0x35) + stat(0x37) + (stat(0x3a) >> 8);
+        pick.state_b = now_ms < actor->chilled;
+        const auto hand = [&](std::uint32_t id, int& out_id, int& out_level, int& out_rank) {
+            const auto* skill = game_data->skills.get(int(id));
+            out_id = skill ? skill->id : -1; out_level = skill && skill_level ? skill_level(skill->id) : skill ? 1 : 0; out_rank = skill ? skill->attack_rank : 0;
+        };
+        hand(actor->character.header.left_skill, pick.left_skill, pick.left_level, pick.left_rank);
+        hand(actor->character.header.right_skill, pick.right_skill, pick.right_level, pick.right_rank);
+        on_foe_states(foe, 0, now_ms);
+        return foe;
+    }
+
+auto Fight::merc_foe(std::uint32_t now_ms) -> Foe {
+        Foe foe{ actor->merc ? actor->merc->unit.x : 0, actor->merc ? actor->merc->unit.y : 0, actor->merc_st.level, actor->merc && actor->merc->mode != "DT",
+                 actor->merc && actor->merc->unit.walking, merc_fighter() };
+        foe.pet = true;                                  // the merc: its MonStats class's size
+        foe.life_pct = actor->merc ? int(std::int64_t(actor->merc->hit_points) * 100 / std::max(merc_max_life(), 1)) : 0;
+        if (const int row = actor->merc_npc ? game_data->monsters.row(actor->merc_npc->id) : -1; row >= 0)
+            foe.size = game_data->monsters.types[std::size_t(row)].size, foe.threat = game_data->monsters.types[std::size_t(row)].threat;
+        // The merc's curse: its damageresist (Amplify Damage's -100 %).
+        // ponytail: its other aurastats (Weaken's damagepercent) aren't on the merc's fighter.
+        int curse_dr = 0;
+        if (const auto* skill = now_ms < actor->curses[1].until ? game_data->skills.get(actor->curses[1].skill) : nullptr)
+            for (std::size_t i = 0; i < skill->aurastat.size(); ++i)
+                if (skill->aurastat[i] == d2d::d2s::kDamageResist) curse_dr += calc(*skill, skill->aura_calc[i], actor->curses[1].level);
+        foe.fighter.dr_pct += curse_dr;
+        if (actor->merc) {                                          // its stats for Diablo's score: base + gear + curse, raw (no penalty or cap)
+            const auto sum = merc_gear().sum;
+            const auto stat = [&](int id) { return int(sum[std::size_t(id)]); };
+            int aura_level = 0;
+            for (std::size_t k = 0; k < actor->merc_ids.size(); ++k) if (actor->merc_ids[k] == actor->merc_aura) aura_level = actor->merc_levels[k];
+            foe.pick = unit_pick(*game_data, { stat(0x24) + curse_dr, stat(0x25), actor->merc_st.resist + stat(0x27), actor->merc_st.resist + stat(0x29), actor->merc_st.resist + stat(0x2b) },
+                                 actor->merc_aura, aura_level);
+            foe.pick.max_damage = stat(0x16) + stat(0x31) + stat(0x33) + stat(0x35) + stat(0x37) + (stat(0x3a) >> 8);   // 0x16 holds no base (merc_fighter)
+        }
+        on_foe_states(foe, 1, now_ms);
+        return foe;
+    }
+
+// The states on the player (k 0) or the merc (1) the AIs read (their skills'
+// +0x82), and the zealots' spare (FUN_0065c310(pcdata +0x10 + diff * 4,
+// 0x15, 0): a pet's owner's, FUN_0058f090).
+auto Fight::on_foe_states(Foe& foe, std::size_t k, std::uint32_t now_ms) const -> void {
+        for (const auto* held : { &actor->curses[k], &actor->marks[k] })
+            if (const auto* skill = now_ms < held->until ? game_data->skills.get(held->skill) : nullptr) foe.states.push_back(skill->auratarget);
+        foe.a3q5_done = zealots_spare();
+    }
+
+auto Fight::zealots_spare() const -> bool {
+        return d2d::rules::quest::bit(actor->character.header.quests[std::size_t(std::clamp(actor->character.header.active_difficulty(), 0, 2))], 0x15, 0);
+    }
+
+auto Fight::near_players(float x, float y) const -> bool {
+        return std::ranges::any_of(heroes, [&](const Hero* hero) { return std::abs(x - hero->player.x) < 30 && std::abs(y - hero->player.y) < 30; });
+    }
+
 auto Fight::world(bool in_moor, std::uint32_t now_ms, float elapsed, const Crowd& crowd) -> void {
-        // Monsters think while the player is near (D2 runs the rooms
-        // around each player); what they hit comes off the player's life,
-        // and a hit of a twelfth of max life or more makes them flinch (GH).
+        Hero& acting = *actor;
+        // Monsters think while a player is near (D2 runs the rooms around
+        // each player); what they hit comes off that player's life, and a hit
+        // of a twelfth of max life or more makes them flinch (GH).
         if (in_moor) {
-            std::vector<Foe> foes{ Foe{ actor->player.x, actor->player.y, int(actor->character.stats.get(d2d::d2s::kLevel)), !dead(), actor->player.walking, actor->player_combat },
-                                   Foe{ actor->merc ? actor->merc->unit.x : 0, actor->merc ? actor->merc->unit.y : 0, actor->merc_st.level, actor->merc && actor->merc->mode != "DT",
-                                        actor->merc && actor->merc->unit.walking, merc_fighter() } };
-            foes[0].running = actor->owner_mode == 3;                   // RN (World: walking with run on and stamina)
-            foes[0].life_pct = int(std::int64_t(actor->character.stats.get(d2d::d2s::kLife)) * 100 / std::max<std::int64_t>(actor->character.stats.get(d2d::d2s::kMaxLife), 1));
-            {                                                    // Diablo's score of the player (FUN_005e8530)
-                const auto stat = [&](int id) { return int(actor->psum[std::size_t(id)]); };
-                auto& pick = foes[0].pick;
-                pick.damage_resist = stat(0x24); pick.magic_resist = stat(0x25); pick.fire_resist = stat(0x27); pick.light_resist = stat(0x29); pick.cold_resist = stat(0x2b);
-                pick.max_damage = stat(0x16) + stat(0x31) + stat(0x33) + stat(0x35) + stat(0x37) + (stat(0x3a) >> 8);
-                pick.state_b = now_ms < actor->chilled;
-                const auto hand = [&](std::uint32_t id, int& out_id, int& out_level, int& out_rank) {
-                    const auto* skill = game_data->skills.get(int(id));
-                    out_id = skill ? skill->id : -1; out_level = skill && skill_level ? skill_level(skill->id) : skill ? 1 : 0; out_rank = skill ? skill->attack_rank : 0;
-                };
-                hand(actor->character.header.left_skill, pick.left_skill, pick.left_level, pick.left_rank);
-                hand(actor->character.header.right_skill, pick.right_skill, pick.right_level, pick.right_rank);
+            // Each player's side: the player and the merc, then everyone's
+            // pets; the monsters (Confuse, Attract) after them.
+            struct Side { Hero* hero; std::size_t at = 0, pets = 0; };
+            std::vector<Side> sides;
+            std::vector<Foe> foes;
+            for (Hero* hero : heroes) {
+                act_as(*hero);
+                sides.push_back({ hero, foes.size() });
+                foes.push_back(player_foe(now_ms));
+                foes.push_back(merc_foe(now_ms));
             }
-            foes[1].pet = true;                                  // the merc: its MonStats class's size
-            foes[1].life_pct = actor->merc ? int(std::int64_t(actor->merc->hit_points) * 100 / std::max(merc_max_life(), 1)) : 0;
-            if (const int row = actor->merc_npc ? game_data->monsters.row(actor->merc_npc->id) : -1; row >= 0)
-                foes[1].size = game_data->monsters.types[std::size_t(row)].size, foes[1].threat = game_data->monsters.types[std::size_t(row)].threat;
-            // The merc's curse: its damageresist (Amplify Damage's -100 %).
-            // ponytail: its other aurastats (Weaken's damagepercent) aren't on the merc's fighter.
-            int curse_dr = 0;
-            if (const auto* skill = now_ms < actor->curses[1].until ? game_data->skills.get(actor->curses[1].skill) : nullptr)
-                for (std::size_t i = 0; i < skill->aurastat.size(); ++i)
-                    if (skill->aurastat[i] == d2d::d2s::kDamageResist) curse_dr += calc(*skill, skill->aura_calc[i], actor->curses[1].level);
-            foes[1].fighter.dr_pct += curse_dr;
-            if (actor->merc) {                                          // its stats for Diablo's score: base + gear + curse, raw (no penalty or cap)
-                const auto sum = merc_gear().sum;
-                const auto stat = [&](int id) { return int(sum[std::size_t(id)]); };
-                int aura_level = 0;
-                for (std::size_t k = 0; k < actor->merc_ids.size(); ++k) if (actor->merc_ids[k] == actor->merc_aura) aura_level = actor->merc_levels[k];
-                foes[1].pick = unit_pick(*game_data, { stat(0x24) + curse_dr, stat(0x25), actor->merc_st.resist + stat(0x27), actor->merc_st.resist + stat(0x29), actor->merc_st.resist + stat(0x2b) },
-                                         actor->merc_aura, aura_level);
-                foes[1].pick.max_damage = stat(0x16) + stat(0x31) + stat(0x33) + stat(0x35) + stat(0x37) + (stat(0x3a) >> 8);   // 0x16 holds no base (merc_fighter)
-            }
-            for (std::size_t k = 0; k < 2; ++k)                  // the states on them the AIs read (their skills' +0x82)
-                for (const auto* held : { &actor->curses[k], &actor->marks[k] })
-                    if (const auto* skill = now_ms < held->until ? game_data->skills.get(held->skill) : nullptr) foes[k].states.push_back(skill->auratarget);
             monster_auras(foes, now_ms);
-            for (const auto& pet : actor->pets) foes.push_back(pet_foe(pet));
-            // FUN_0065c310(pcdata +0x10 + diff * 4, 0x15, 0): the zealots' spare (a pet's owner's, FUN_0058f090).
-            const bool a3q5 = d2d::rules::quest::bit(actor->character.header.quests[std::size_t(std::clamp(actor->character.header.active_difficulty(), 0, 2))], 0x15, 0);
-            for (auto& foe : foes) foe.a3q5_done = a3q5;
+            for (auto& side : sides) {
+                act_as(*side.hero);
+                side.pets = foes.size();
+                for (const auto& pet : actor->pets) foes.push_back(pet_foe(pet));
+                for (std::size_t k = side.pets; k < foes.size(); ++k) foes[k].a3q5_done = zealots_spare();
+            }
             // With Confuse or Attract about, every monster is a foe too, after
-            // the player's list (lists 8 / 9, FUN_005dd0b0 mode 5's units),
-            // hit as the player is (combat.md). Its death drops; the player
+            // the players' lists (lists 8 / 9, FUN_005dd0b0 mode 5's units),
+            // hit as a player is (combat.md). Its death drops; the player
             // gets the experience when the killer or the dead one carries
             // its curse (FUN_0057e7b0: the stat list's owner, flag 0x800).
             // ponytail: a monster's missiles, poison and Mana Burn reach only
-            // the player's side; monsters block as the player does.
-            const std::size_t sides = foes.size();
+            // the players' side; monsters block as a player does; the
+            // experience is the first player's.
+            const std::size_t allies = foes.size();
             if (std::ranges::any_of(monsters, [](const Monster& monster) { return monster.align || monster.set_kind; }))
                 for (const auto& monster : monsters) {
                     const auto target = monster.target(*game_data);
@@ -4118,33 +4163,41 @@ auto Fight::world(bool in_moor, std::uint32_t now_ms, float elapsed, const Crowd
                     foe.pick.state_b = now_ms < monster.chill_until;   // state 0xb, cold
                 }
             std::vector<Monster> born;
+            act_as(*heroes.front());
             for (std::size_t i = 0; i < monsters.size(); ++i) {
                 auto& monster = monsters[i];
-                if (std::abs(monster.unit.x - actor->player.x) < 30 && std::abs(monster.unit.y - actor->player.y) < 30
+                if (near_players(monster.unit.x, monster.unit.y)
                     && monster_update(*game_data, *level, monster, foes, rng, now_ms, elapsed, crowd, missiles, monsters, &born, &area_seen, &open_door))
-                    killed(i, now_ms);                           // on the player's thorns
+                    killed(i, now_ms);                           // on a player's thorns
             }
             const auto cursed = [&](const Monster& monster) { return monster.curse.skill >= 0 && now_ms < monster.curse.until; };
-            for (std::size_t i = sides; i < foes.size(); ++i)
-                if (const auto monster_index = i - sides; hurt(*game_data, monsters[monster_index], soak(monsters[monster_index], foes[i].physical, foes[i].damage), now_ms))
+            for (std::size_t i = allies; i < foes.size(); ++i)
+                if (const auto monster_index = i - allies; hurt(*game_data, monsters[monster_index], soak(monsters[monster_index], foes[i].physical, foes[i].damage), now_ms))
                     killed(monster_index, now_ms, cursed(monsters[monster_index]) || std::ranges::any_of(foes[i].melee_by, cursed, [](const Monster* attacker) -> const Monster& { return *attacker; }));
-            if (foes[0].blessed) actor->wisp_blessing = { foes[0].blessed, now_ms + 0x1a5e00u * 40 };   // FUN_006251f0: 0x1a5e00 frames
-            foes.resize(sides);
+            for (const auto& side : sides)
+                if (foes[side.at].blessed) side.hero->wisp_blessing = { foes[side.at].blessed, now_ms + 0x1a5e00u * 40 };   // FUN_006251f0: 0x1a5e00 frames
+            foes.resize(allies);
             for (auto& young : born) add_monster(std::move(young));
             boss_events(foes, now_ms);
             monster_dots(now_ms, elapsed);
-            monster_states(now_ms);
-            buff_events(foes[0], now_ms);
-            if (actor->merc) merc_buff_events(foes[1], now_ms);
-            buff_tick(now_ms);
-            aura_pulse(now_ms);
-            for (auto& monster : monsters) monster.in_aura = monster.alive() && in_aura(monster);   // its auratargetstate shows (states.md)
-            for (std::size_t k = 0; k < actor->pets.size(); ++k) pet_hurt(actor->pets[k], foes[2 + k].damage, now_ms);
-            pets_turn(now_ms, elapsed, crowd);
+            for (auto& monster : monsters) monster.in_aura = false;
+            for (const auto& side : sides) {
+                act_as(*side.hero);
+                monster_states(now_ms);
+                buff_events(foes[side.at], now_ms);
+                if (actor->merc) merc_buff_events(foes[side.at + 1], now_ms);
+                buff_tick(now_ms);
+                aura_pulse(now_ms);
+                for (auto& monster : monsters) monster.in_aura = monster.in_aura || (monster.alive() && in_aura(monster));   // its auratargetstate shows (states.md)
+                for (std::size_t k = 0; k < actor->pets.size(); ++k) pet_hurt(actor->pets[k], foes[side.pets + k].damage, now_ms);
+                pets_turn(now_ms, elapsed, crowd);
+                player_shots(now_ms);
+            }
             missile_tick(now_ms);
             // The merc's arrows strike the first live monster they reach.
             const auto reach = [&](float x, float y) { return missile_rooms(*game_data, *level, x, y); };
             missiles_update(*level, missiles, foes, rng, now_ms, reach, [&](Missile& missile) {
+                if (Hero* caster = hero_of(missile.caster)) act_as(*caster);
                 const bool moving = missile.velocity_x != 0 || missile.velocity_y != 0;
                 for (std::size_t i = 0; i < monsters.size(); ++i) {
                     auto& monster = monsters[i];
@@ -4168,122 +4221,139 @@ auto Fight::world(bool in_moor, std::uint32_t now_ms, float elapsed, const Crowd
                 }
                 return false;
             }, [&](int owner) { const int index = monster_index(owner); return index >= 0 && monsters[std::size_t(index)].alive(); });
-            return_fire(foes[0], now_ms);                          // the missiles that reached the player just now
+            for (const auto& side : sides) {
+                act_as(*side.hero);
+                return_fire(foes[side.at], now_ms);              // the missiles that reached the player just now
+            }
             std::ranges::move(pending, std::back_inserter(missiles));
             pending.clear();
-            if (actor->merc && foes[1].damage > 0 && actor->merc->mode != "DT") {
-                actor->merc->hit_points -= foes[1].damage;
-                auto& unit = actor->merc->unit;
-                const auto mode = actor->merc->hit_points <= 0 ? std::string_view("DT") : foes[1].damage * 12 >= merc_max_life() ? std::string_view("GH") : actor->merc->mode;
-                if (mode != actor->merc->mode) {
-                    actor->merc->mode = mode; unit.mode_ms = now_ms; unit.walking = false; unit.path.clear();
-                    actor->merc->mode_until = now_ms + game_data->npc_timing(actor->merc->npc, mode).length_ms();
-                }
-            }
             for (auto& monster : monsters)
-                if (std::abs(monster.unit.x - actor->player.x) < 30 && std::abs(monster.unit.y - actor->player.y) < 30) monster_sounds(monster, now_ms);
-            auto& foe = foes[0];
-            // Poison works on the player over its ticks (a negative potion).
-            // One poison at a time: a new one at least as strong replaces it
-            // (and its length), a weaker one is ignored (FUN_0057ac50).
-            if (foe.poison > 0 && foe.poison_ticks > 0) {
-                const Regen poison{ -foe.poison / 40.0, 0, now_ms + std::uint32_t(foe.poison_ticks) * 40, true };
-                const auto old = std::ranges::find_if(actor->regen, [](const Regen& regen_entry) { return regen_entry.poison; });
-                if (old == actor->regen.end()) actor->regen.push_back(poison);
-                else if (poison.life <= old->life) *old = poison;
+                if (near_players(monster.unit.x, monster.unit.y)) monster_sounds(monster, now_ms);
+            for (const auto& side : sides) {
+                act_as(*side.hero);
+                hurt_side(std::span(foes).subspan(side.at, 2), now_ms);
             }
-            if (foe.chill_ticks > 0) actor->chilled = std::max(actor->chilled, now_ms + std::uint32_t(foe.chill_ticks) * 40);   // only ever lengthened (FUN_0057af80)
-            if (foe.stun_ticks > 0) actor->stunned = now_ms + std::uint32_t(std::min(foe.stun_ticks, 250)) * 40;          // state 21, a new one's length (FUN_0057aae0)
-            // Knockback (result flag 8: FUN_0057cee0's player branch, mode 0x13,
-            // FUN_0057f090): path type 8, 5 subtiles on from the attacker;
-            // with no room it stays (FUN_0057f020, NU).
-            // The KB mode is drawn as GH (PlrMode.txt "Knock back": GH), the
-            // player sliding there over it.
-            // ponytail: an even slide over the GH length (FHR's); the path's own
-            // pace (FUN_00554ca0) isn't traced.
-            if (actor->leap) {                                          // Leap's flight, then its landing's knockback (FUN_005da120, FUN_0056bad0)
-                const float done = std::clamp(float(now_ms - actor->leap->start) / float(std::max<std::uint32_t>(actor->leap->lands - actor->leap->start, 1)), 0.f, 1.f);
-                actor->player.x = actor->leap->from_x + (actor->leap->to_x - actor->leap->from_x) * done; actor->player.y = actor->leap->from_y + (actor->leap->to_y - actor->leap->from_y) * done;
-                actor->player.goal_x = actor->player.x; actor->player.goal_y = actor->player.y;
-                if (now_ms >= actor->leap->lands) {
-                    if (const auto* skill = game_data->skills.get(actor->leap->skill)) {
-                        const float radius = float(calc(*skill, skill->calc[0], actor->leap->level));
-                        for (std::size_t j = 0; j < monsters.size(); ++j)
-                            if (monsters[j].targetable() && std::hypot(monsters[j].unit.x - actor->player.x, monsters[j].unit.y - actor->player.y) * 5 <= radius) {
-                                d2d::rules::Blow blow{ .hit = true };
-                                blow.knockback = true;
-                                land(j, blow, true, now_ms);
-                            }
+        }
+        for (Hero* hero : heroes) {
+            act_as(*hero);
+            if (!in_moor) {                                      // pets follow the player about camp
+                const auto save_class = std::size_t(std::max(actor->character.character_class, 0));
+                for (auto& pet : actor->pets)
+                    if (pet.where == level && pet.monster.alive()) {
+                        pet_follow(*level, pet.monster.unit, actor->player.x, actor->player.y, cells_per_sec(float(game_data->run_velocity[save_class])) * 1.1f, now_ms, elapsed, crowd);
+                        if (const std::string_view want = pet.monster.unit.walking ? "WL" : "NU"; pet.monster.mode != want) set_mode(*game_data, pet.monster, want, now_ms);
                     }
-                    actor->leap.reset();
-                }
             }
-            if (actor->knock) {
-                if (actor->pmode == kModeGH) {
-                    const float done = std::clamp(float(now_ms - actor->player.mode_ms) / float(std::max<std::uint32_t>(actor->pmode_until - actor->player.mode_ms, 1)), 0.f, 1.f);
-                    actor->player.x = (*actor->knock)[0] + ((*actor->knock)[2] - (*actor->knock)[0]) * done; actor->player.y = (*actor->knock)[1] + ((*actor->knock)[3] - (*actor->knock)[1]) * done;
-                }
-                if (actor->pmode != kModeGH || now_ms >= actor->pmode_until) actor->knock.reset();   // done, or cut short
-            }
-            if (foe.knocked_from && !attack_mode(actor->pmode) && actor->pmode != kModeBL) {
-                const auto [from_x, from_y] = *foe.knocked_from;
-                const float dx = actor->player.x - from_x, dy = actor->player.y - from_y, distance = std::max(std::hypot(dx, dy), 0.01f);
-                if (const float next_x = actor->player.x + dx / distance, next_y = actor->player.y + dy / distance; !level->unit_blocked(next_x, next_y, actor->player.shape)) {
-                    actor->knock = std::array{ actor->player.x, actor->player.y, next_x, next_y };
-                    set_pmode(kModeGH, now_ms);
-                }
-            }
-            for (std::size_t k = 0; k < 2; ++k)                  // a monster's curse: its auralen (dimvision / terror's over AiCurseDivisor)
-                if (const auto* skill = game_data->skills.get(foes[k].cursed.skill)) {
-                    int length = calc(*skill, skill->auralen, foes[k].cursed.level);
-                    if (const int divisor = game_data->curse_divisor[std::size_t(std::clamp(game_difficulty, 0, 2))]; divisor != 0 && (skill->auratarget == "dimvision" || skill->auratarget == "terror"))
-                        length /= divisor;
-                    actor->curses[k] = { skill->id, foes[k].cursed.level, now_ms + std::uint32_t(std::max(length, 25)) * 40 };
-                    d2d::log::info("{} cursed: {} level {}", k ? "the merc" : "the player", skill->name, foes[k].cursed.level);
-                }
-            for (std::size_t k = 0; k < 2; ++k)
-                if (const auto* skill = game_data->skills.get(foes[k].marked.skill)) {
-                    if (now_ms >= actor->marks[k].until) d2d::log::info("{} marked: {}", k ? "the merc" : "the player", skill->auratarget);
-                    actor->marks[k] = { skill->id, foes[k].marked.level, now_ms + std::uint32_t(std::max(calc(*skill, skill->auralen, foes[k].marked.level), 5)) * 40 };
-                }
-            if (foe.mana_burn > 0) {                             // Mana Burn
-                actor->character.stats.values[d2d::d2s::kMana] = std::max<std::int64_t>(actor->character.stats.values[d2d::d2s::kMana] - (std::int64_t(foe.mana_burn) << 8), 0);
-                d2d::log::info("mana burn: -{} mana", foe.mana_burn);
-            }
-            if (foe.blocked && actor->pmode < 0) set_pmode(kModeBL, now_ms);   // a block plays out (FBR)
-            for (int landed = 0; landed < foe.hits; ++landed) wear_armor();
-            foe.damage = absorb(foe);
-            foe.damage += int(actor->self_hurt >> 8);
-            actor->self_hurt &= 255;
-            using namespace d2d::d2s;
-            bool died = false;
-            if (foe.damage > 0 && !dead()) {                    // a dead player takes no more (no second death)
-                actor->character.stats.values[kLife] -= std::int64_t(foe.damage) << 8;
-                if (actor->character.stats.values[kLife] <= 0) { die(now_ms); died = true; }
-            }
-            // Stunned, every landed hit is a get-hit, however small, even one
-            // absorbed to nothing (FUN_0057cee0: state 21 skips FUN_0057cb00's
-            // too-small test; result flag 4 is the hit landing, FUN_0057ec10,
-            // before any damage). That's all a stun does to a player: no input
-            // is refused.
-            const bool big = foe.damage > 0 && std::int64_t(foe.damage) * 12 >= actor->character.stats.fixed(kMaxLife);
-            if (!died && (big || (foe.hits > 0 && now_ms < actor->stunned)) && !attack_mode(actor->pmode) && actor->pmode != kModeBL) set_pmode(kModeGH, now_ms);
+            if (actor->merc && actor->merc_npc) merc_turn(now_ms, elapsed, crowd, !in_moor);
         }
-        if (!in_moor) {                                      // pets follow the player about camp
-            const auto save_class = std::size_t(std::max(actor->character.character_class, 0));
-            for (auto& pet : actor->pets)
-                if (pet.where == level && pet.monster.alive()) {
-                    pet_follow(*level, pet.monster.unit, actor->player.x, actor->player.y, cells_per_sec(float(game_data->run_velocity[save_class])) * 1.1f, now_ms, elapsed, crowd);
-                    if (const std::string_view want = pet.monster.unit.walking ? "WL" : "NU"; pet.monster.mode != want) set_mode(*game_data, pet.monster, want, now_ms);
-                }
+        act_as(acting);
+    }
+
+// What the monsters did to the acting player (`side` [0]) and their merc ([1])
+// this frame: the merc's life and flinch, then the player's poison, chill,
+// stun, knockback, curses, Mana Burn, block, armour wear and life.
+auto Fight::hurt_side(std::span<Foe> side, std::uint32_t now_ms) -> void {
+        if (actor->merc && side[1].damage > 0 && actor->merc->mode != "DT") {
+            actor->merc->hit_points -= side[1].damage;
+            auto& unit = actor->merc->unit;
+            const auto mode = actor->merc->hit_points <= 0 ? std::string_view("DT") : side[1].damage * 12 >= merc_max_life() ? std::string_view("GH") : actor->merc->mode;
+            if (mode != actor->merc->mode) {
+                actor->merc->mode = mode; unit.mode_ms = now_ms; unit.walking = false; unit.path.clear();
+                actor->merc->mode_until = now_ms + game_data->npc_timing(actor->merc->npc, mode).length_ms();
+            }
         }
-        if (actor->merc && actor->merc_npc) merc_turn(now_ms, elapsed, crowd, !in_moor);
+        auto& foe = side[0];
+        // Poison works on the player over its ticks (a negative potion).
+        // One poison at a time: a new one at least as strong replaces it
+        // (and its length), a weaker one is ignored (FUN_0057ac50).
+        if (foe.poison > 0 && foe.poison_ticks > 0) {
+            const Regen poison{ -foe.poison / 40.0, 0, now_ms + std::uint32_t(foe.poison_ticks) * 40, true };
+            const auto old = std::ranges::find_if(actor->regen, [](const Regen& regen_entry) { return regen_entry.poison; });
+            if (old == actor->regen.end()) actor->regen.push_back(poison);
+            else if (poison.life <= old->life) *old = poison;
+        }
+        if (foe.chill_ticks > 0) actor->chilled = std::max(actor->chilled, now_ms + std::uint32_t(foe.chill_ticks) * 40);   // only ever lengthened (FUN_0057af80)
+        if (foe.stun_ticks > 0) actor->stunned = now_ms + std::uint32_t(std::min(foe.stun_ticks, 250)) * 40;          // state 21, a new one's length (FUN_0057aae0)
+        // Knockback (result flag 8: FUN_0057cee0's player branch, mode 0x13,
+        // FUN_0057f090): path type 8, 5 subtiles on from the attacker;
+        // with no room it stays (FUN_0057f020, NU).
+        // The KB mode is drawn as GH (PlrMode.txt "Knock back": GH), the
+        // player sliding there over it.
+        // ponytail: an even slide over the GH length (FHR's); the path's own
+        // pace (FUN_00554ca0) isn't traced.
+        if (actor->leap) {                                          // Leap's flight, then its landing's knockback (FUN_005da120, FUN_0056bad0)
+            const float done = std::clamp(float(now_ms - actor->leap->start) / float(std::max<std::uint32_t>(actor->leap->lands - actor->leap->start, 1)), 0.f, 1.f);
+            actor->player.x = actor->leap->from_x + (actor->leap->to_x - actor->leap->from_x) * done; actor->player.y = actor->leap->from_y + (actor->leap->to_y - actor->leap->from_y) * done;
+            actor->player.goal_x = actor->player.x; actor->player.goal_y = actor->player.y;
+            if (now_ms >= actor->leap->lands) {
+                if (const auto* skill = game_data->skills.get(actor->leap->skill)) {
+                    const float radius = float(calc(*skill, skill->calc[0], actor->leap->level));
+                    for (std::size_t j = 0; j < monsters.size(); ++j)
+                        if (monsters[j].targetable() && std::hypot(monsters[j].unit.x - actor->player.x, monsters[j].unit.y - actor->player.y) * 5 <= radius) {
+                            d2d::rules::Blow blow{ .hit = true };
+                            blow.knockback = true;
+                            land(j, blow, true, now_ms);
+                        }
+                }
+                actor->leap.reset();
+            }
+        }
+        if (actor->knock) {
+            if (actor->pmode == kModeGH) {
+                const float done = std::clamp(float(now_ms - actor->player.mode_ms) / float(std::max<std::uint32_t>(actor->pmode_until - actor->player.mode_ms, 1)), 0.f, 1.f);
+                actor->player.x = (*actor->knock)[0] + ((*actor->knock)[2] - (*actor->knock)[0]) * done; actor->player.y = (*actor->knock)[1] + ((*actor->knock)[3] - (*actor->knock)[1]) * done;
+            }
+            if (actor->pmode != kModeGH || now_ms >= actor->pmode_until) actor->knock.reset();   // done, or cut short
+        }
+        if (foe.knocked_from && !attack_mode(actor->pmode) && actor->pmode != kModeBL) {
+            const auto [from_x, from_y] = *foe.knocked_from;
+            const float dx = actor->player.x - from_x, dy = actor->player.y - from_y, distance = std::max(std::hypot(dx, dy), 0.01f);
+            if (const float next_x = actor->player.x + dx / distance, next_y = actor->player.y + dy / distance; !level->unit_blocked(next_x, next_y, actor->player.shape)) {
+                actor->knock = std::array{ actor->player.x, actor->player.y, next_x, next_y };
+                set_pmode(kModeGH, now_ms);
+            }
+        }
+        for (std::size_t k = 0; k < 2; ++k)                  // a monster's curse: its auralen (dimvision / terror's over AiCurseDivisor)
+            if (const auto* skill = game_data->skills.get(side[k].cursed.skill)) {
+                int length = calc(*skill, skill->auralen, side[k].cursed.level);
+                if (const int divisor = game_data->curse_divisor[std::size_t(std::clamp(game_difficulty, 0, 2))]; divisor != 0 && (skill->auratarget == "dimvision" || skill->auratarget == "terror"))
+                    length /= divisor;
+                actor->curses[k] = { skill->id, side[k].cursed.level, now_ms + std::uint32_t(std::max(length, 25)) * 40 };
+                d2d::log::info("{} cursed: {} level {}", k ? "the merc" : "the player", skill->name, side[k].cursed.level);
+            }
+        for (std::size_t k = 0; k < 2; ++k)
+            if (const auto* skill = game_data->skills.get(side[k].marked.skill)) {
+                if (now_ms >= actor->marks[k].until) d2d::log::info("{} marked: {}", k ? "the merc" : "the player", skill->auratarget);
+                actor->marks[k] = { skill->id, side[k].marked.level, now_ms + std::uint32_t(std::max(calc(*skill, skill->auralen, side[k].marked.level), 5)) * 40 };
+            }
+        if (foe.mana_burn > 0) {                             // Mana Burn
+            actor->character.stats.values[d2d::d2s::kMana] = std::max<std::int64_t>(actor->character.stats.values[d2d::d2s::kMana] - (std::int64_t(foe.mana_burn) << 8), 0);
+            d2d::log::info("mana burn: -{} mana", foe.mana_burn);
+        }
+        if (foe.blocked && actor->pmode < 0) set_pmode(kModeBL, now_ms);   // a block plays out (FBR)
+        for (int landed = 0; landed < foe.hits; ++landed) wear_armor();
+        foe.damage = absorb(foe);
+        foe.damage += int(actor->self_hurt >> 8);
+        actor->self_hurt &= 255;
+        using namespace d2d::d2s;
+        bool died = false;
+        if (foe.damage > 0 && !dead()) {                    // a dead player takes no more (no second death)
+            actor->character.stats.values[kLife] -= std::int64_t(foe.damage) << 8;
+            if (actor->character.stats.values[kLife] <= 0) { die(now_ms); died = true; }
+        }
+        // Stunned, every landed hit is a get-hit, however small, even one
+        // absorbed to nothing (FUN_0057cee0: state 21 skips FUN_0057cb00's
+        // too-small test; result flag 4 is the hit landing, FUN_0057ec10,
+        // before any damage). That's all a stun does to a player: no input
+        // is refused.
+        const bool big = foe.damage > 0 && std::int64_t(foe.damage) * 12 >= actor->character.stats.fixed(kMaxLife);
+        if (!died && (big || (foe.hits > 0 && now_ms < actor->stunned)) && !attack_mode(actor->pmode) && actor->pmode != kModeBL) set_pmode(kModeGH, now_ms);
     }
 
 auto Fight::monster_auras(std::vector<Foe>& foes, std::uint32_t now_ms) -> void {
         for (auto& monster : monsters) monster.aura_dmg = monster.aura_th = 0;
         for (auto& aura_monster : monsters) {
-            if (!aura_monster.alive() || !aura_monster.aura || std::abs(aura_monster.unit.x - actor->player.x) >= 30 || std::abs(aura_monster.unit.y - actor->player.y) >= 30) continue;
+            if (!aura_monster.alive() || !aura_monster.aura || !near_players(aura_monster.unit.x, aura_monster.unit.y)) continue;
             const auto* skill = game_data->skills.get(aura_monster.aura);
             if (!skill) continue;
             const d2d::rules::CalcEnv env{ [](int) { return 0; }, [](int) { return 0; }, [](int) { return 0; }, aura_monster.stats.level, &rng };
@@ -4345,7 +4415,7 @@ auto Fight::shrine_missiles(int code, float x, float y, int clvl, std::uint32_t 
         for (const auto& [dx, dy] : kBurst) {
             const float dir_x = float(dx) / 5, dir_y = float(dy) / 5, speed = missile_speed(missile_info, lvl), distance = std::hypot(dir_x, dir_y);
             Missile missile{ &missile_info, x, y, dir_x / distance * speed, dir_y / distance * speed, direction32(dir_x, dir_y), now_ms, now_ms + std::uint32_t(std::max(missile_info.range, 1)) * 40, {} };
-            missile.friendly = true; missile.row = damage; missile.burst = missile_info.hit_par1;
+            missile.friendly = true; missile.caster = actor->id; missile.row = damage; missile.burst = missile_info.hit_par1;
             pending.push_back(missile);
         }
     }

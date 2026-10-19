@@ -160,6 +160,7 @@ struct Fight {
     // and merc, and everything their combat keeps from frame to frame. The
     // World's Player adds the rest of their state; `actor` is the one acting.
     struct Hero {
+        int id = 0;                        // the player's unit id in the game (World::join): 1, 2 ...
         Character character;               // the World's own copy (the client's is a copy of the View's)
         UnitState player;                  // DS1 cells (x.5 = a cell centre)
         std::optional<Monster> merc;       // the save's mercenary, a monster on the player's side (merc_turn)
@@ -337,7 +338,17 @@ struct Fight {
     using Regen = Hero::Regen;
     using Boost = Hero::Boost;
     using Blessing = Hero::Blessing;
-    Hero* actor = nullptr;                    // the player acting now (World::act_as)
+    // The players in the game (the World's, join order) and the one acting
+    // now: the acting player's state is what `actor` points at, and the loot
+    // drops and picks up for them too.
+    std::vector<Hero*> heroes;
+    Hero* actor = nullptr;
+    void act_as(Hero& hero) { actor = &hero; loot.character = &hero.character; loot.player = &hero.player; }
+    // The player of that id, or null (gone).
+    [[nodiscard]] Hero* hero_of(int id) const {
+        const auto found = std::ranges::find(heroes, id, &Hero::id);
+        return found == heroes.end() ? nullptr : *found;
+    }
     // The acting player's level in a skill: points, and with item bonuses
     // (Town points these at its SkillBar).
     std::function<int(int)> skill_base, skill_level;
@@ -806,6 +817,10 @@ struct Fight {
     // ponytail: a burner hits a monster once a frame however many overlap
     // (by skill); the maker leaves one a frame (not per subtile); a Bone
     // Spirit cast at nothing seeks the monster nearest the cast point.
+    // The acting player's own shots this frame: Strafe's arrows due, a
+    // channelled skill's (Inferno, Blade Fury).
+    void player_shots(std::uint32_t now_ms);
+    int missile_frame = -1;                // the frame missile_tick last ran
     void missile_tick(std::uint32_t now_ms);
     // An element in 256ths a frame on monster i (a burner's): less its
     // resistance, gathered until whole points come off (no hit recovery).
@@ -985,6 +1000,14 @@ struct Fight {
     // One frame of the fight outside town (`in_moor`: in the level whose
     // monsters these are), and the merc's turn (following, in town).
     void world(bool in_moor, std::uint32_t now_ms, float elapsed, const Crowd& crowd);
+    // The acting player and their merc as the monsters see them this frame.
+    [[nodiscard]] Foe player_foe(std::uint32_t now_ms);
+    [[nodiscard]] Foe merc_foe(std::uint32_t now_ms);
+    void on_foe_states(Foe& foe, std::size_t k, std::uint32_t now_ms) const;
+    [[nodiscard]] bool zealots_spare() const;
+    // Whether (x, y) is within 30 cells of a player (the rooms in play).
+    [[nodiscard]] bool near_players(float x, float y) const;
+    void hurt_side(std::span<Foe> side, std::uint32_t now_ms);
     // Bosses' auras (Aura Enchanted), each at its level within its
     // aurarange: Might, Blessed Aim, Fanaticism add their damage / to-hit %
     // to the monsters there; Conviction cuts the foes' resistances and

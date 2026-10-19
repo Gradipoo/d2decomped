@@ -472,5 +472,53 @@ int main() {
         assert(set_props(*data, worn).empty());
         std::printf("OK: Sets.txt partial and full bonuses\n");
     }
+    // Local co-op (docs/design/local-coop.md): a second player joins beside
+    // the first and moves on their own orders; each one's View shows the
+    // other; a level change takes the party; the Blood Moor's monsters go at
+    // whoever is near; the second leaves.
+    {
+        World coop(&*data, -1, -1);
+        coop.enter(character);
+        auto second_character = character;
+        second_character.name = "Second";
+        auto& second = coop.join(second_character);
+        assert(coop.players.size() == 2 && second.id == 2 && coop.actor == &coop.lead() && coop.fight.heroes.size() == 2);
+        assert(std::hypot(second.player.x - coop.lead().player.x, second.player.y - coop.lead().player.y) < 3);
+        {
+            ViewEncoder encoder;
+            View received;
+            assert(apply_view(*data, encode_view(*data, coop.view(), encoder), received));
+            assert(received.others.size() == 1 && received.others[0].name == "Second" && received.others[0].id == 2);
+        }
+        const float lead_x = coop.lead().player.x, lead_y = coop.lead().player.y;
+        const auto [goal_x, goal_y] = coop.level->nearest_free(second.player.x + 4, second.player.y);
+        const float start_gap = std::hypot(goal_x - second.player.x, goal_y - second.player.y);
+        const std::vector<Order> walk{ { second.id, cmd::Move{ goal_x, goal_y, true } } };
+        for (std::uint32_t tick = 1; tick <= 50; ++tick) coop.tick(tick == 1 ? std::span<const Order>(walk) : std::span<const Order>{}, tick * kTickMs, (tick - 1) * kTickMs);
+        assert(coop.lead().player.x == lead_x && coop.lead().player.y == lead_y);
+        assert(std::hypot(goal_x - second.player.x, goal_y - second.player.y) < start_gap / 2);
+
+        const auto* blood_moor = data->level(d2d::rules::level_ids::kBloodMoor);
+        coop.arrive(blood_moor, float(blood_moor->ds1.width()) / 2, float(blood_moor->ds1.height()) / 2, "a test");
+        assert(coop.level == blood_moor && !blood_moor->unit_blocked(second.player.x, second.player.y));
+        assert(std::hypot(second.player.x - coop.lead().player.x, second.player.y - coop.lead().player.y) < 3);
+        // The second by a monster, the first 20 cells off: it's the second who's hit.
+        std::uint32_t now_ms = 60 * kTickMs;
+        for (int warm = 0; warm < 5; ++warm, now_ms += kTickMs) coop.tick({}, now_ms + kTickMs, now_ms);
+        const auto prey = std::ranges::find_if(coop.fight.monsters, [&](const Monster& monster) {
+            return monster.alive() && !blood_moor->unit_blocked(monster.unit.x + 1, monster.unit.y); });
+        assert(prey != coop.fight.monsters.end());
+        std::tie(second.player.x, second.player.y) = blood_moor->nearest_free(prey->unit.x + 1, prey->unit.y);
+        second.target_x = second.player.x; second.target_y = second.player.y;
+        std::tie(coop.lead().player.x, coop.lead().player.y) = blood_moor->nearest_free(prey->unit.x + 20, prey->unit.y);
+        coop.lead().target_x = coop.lead().player.x; coop.lead().target_y = coop.lead().player.y;
+        const auto full = second.character.stats.get(d2d::d2s::kMaxLife);
+        for (int frame = 0; frame < 250 && second.character.stats.get(d2d::d2s::kLife) >= full; ++frame, now_ms += kTickMs) coop.tick({}, now_ms + kTickMs, now_ms);
+        assert(second.character.stats.get(d2d::d2s::kLife) < full);
+
+        assert(coop.leave(second.id) == "no character store" && coop.players.size() == 1 && coop.fight.heroes.size() == 1);
+        assert(coop.leave(coop.lead().id) == "the last player stays");
+        std::printf("OK: two players: their own orders, the other in the View, the party arrives together, monsters go at the near one\n");
+    }
     return 0;
 }

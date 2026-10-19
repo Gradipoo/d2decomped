@@ -157,6 +157,20 @@ int main() {
         actions = mapper.step(with(Button::RightStick), Context::Panel, 0.016f);
         assert(!actions.skill_picker && actions.recentre_cursor);
     }
+    // The left trigger swaps weapons in the game, once per pull (hysteresis); B alone is the right-hand skill.
+    {
+        Mapper mapper;
+        Sample pulled; pulled.left_trigger = 1.f;
+        Actions actions = mapper.step(pulled, Context::Game, 0.016f);
+        assert(has(actions, Key::SwapWeapons) && !actions.rclick_press);
+        Sample eased; eased.left_trigger = 0.4f;    // between release (0.3) and press (0.5): still held
+        assert(!has(mapper.step(eased, Context::Game, 0.016f), Key::SwapWeapons));
+        assert(!has(mapper.step(pulled, Context::Game, 0.016f), Key::SwapWeapons));
+        mapper.step(Sample{}, Context::Game, 0.016f);
+        assert(has(mapper.step(pulled, Context::Game, 0.016f), Key::SwapWeapons));
+        assert(!has(mapper.step(Sample{}, Context::Menu, 0.016f), Key::SwapWeapons));
+        assert(mapper.step(with(Button::East), Context::Game, 0.016f).rclick_press);
+    }
     // Hops: along the row before off it, never behind or onto the spot the cursor's on.
     {
         const std::vector<Point> grid{ { 0, 0 }, { 29, 0 }, { 58, 0 }, { 20, 29 }, { 0, 29 } };

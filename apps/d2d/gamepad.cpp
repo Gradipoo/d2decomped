@@ -88,6 +88,7 @@ SDL_Keycode pad_keycode(pad::Key key) {
         case Key::Belt2:     return SDLK_2;
         case Key::Belt3:     return SDLK_3;
         case Key::Belt4:     return SDLK_4;
+        case Key::SwapWeapons: return SDLK_W;
     }
     return SDLK_UNKNOWN;
 }

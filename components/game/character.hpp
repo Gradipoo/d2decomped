@@ -126,9 +126,10 @@ inline std::vector<d2d::d2s::ItemProp> gear_props(const GameData& game_data, con
 // The char panel's computed values (stat 30 next level, 31 defence,
 // resistances 39/43/41/45), as FUN_004a7d00 shows them. From the save's
 // base stats and gear.
-// ponytail: equipped slots 1..10 (the primary weapon set), socket
-// bonuses, set bonus lists (set_bonus_props) and charms, the passives
-// with no weapon type (Iron Skin's defense %, Natural Resistance); no auras.
+// Equipped slots 1..10: the weapon set in use (a switch moves its hands
+// into 4 / 5, weapon-switch.md).
+// ponytail: socket bonuses, set bonus lists (set_bonus_props) and charms,
+// the passives with no weapon type (Iron Skin's defense %, Natural Resistance); no auras.
 struct PanelStats {
     std::int64_t next = -1, defense = 0;
     std::array<std::int64_t, 4> res{};           // fire, cold, lightning, poison

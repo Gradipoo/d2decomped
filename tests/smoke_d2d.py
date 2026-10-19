@@ -282,6 +282,16 @@ try:
         assert state()["picker"] == "1", "A on the left skill button didn't switch pickers"
         press("a")
         assert state()["picker"] == "0", "A didn't choose the left skill"
+        # The weapon switch (expansion): W, then the pad's left trigger, trade
+        # the hands (body slot 4) for the switch's (11) and back.
+        def sword_slot():
+            return [l for l in cmd("items").splitlines() if l.startswith("[ssd ")][0].split("slot=")[1].split()[0]
+        cmd("debug equip ssd 4"); frames(2)
+        wset = state()["wset"]
+        cmd("key w"); frames(4)
+        assert state()["wset"] != wset and sword_slot() == "11", "W didn't switch weapons"
+        press("lefttrigger"); frames(2)
+        assert state()["wset"] == wset and sword_slot() == "4", "the left trigger didn't switch back"
 
         # Hire at Kashya: the list, then a rogue follows.
         near("Kashya")

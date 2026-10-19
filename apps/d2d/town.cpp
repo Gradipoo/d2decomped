@@ -300,6 +300,11 @@ auto Town::publish() -> void {
         cues.due.insert(cues.due.end(), view.sounds.begin(), view.sounds.end());
         if (!view.has_character) return;
         character.header = view.header; character.stats = view.stats; character.items = view.items;
+        // A weapon switch brought the other set's skills: the buttons take them.
+        if (int(view.header.weapon_set) != skillbar_set) {
+            skillbar.left = int(view.header.left_skill); skillbar.right = int(view.header.right_skill);
+            skillbar_set = int(view.header.weapon_set);
+        }
         character.expansion = view.header.expansion();
         character.panel = panel_stats(*scene, character.header, character.items, character.stats);
         character.panel.attack = view.attack_lines;
@@ -369,6 +374,8 @@ auto Town::send(const Command& command) -> void {
             net_game->move_to(subtile_x(move->x), subtile_y(move->y), view.running);
         } else if (const auto* run = std::get_if<cmd::Run>(&command)) {
             net_game->set_running(run->running);
+        } else if (std::holds_alternative<cmd::SwapWeapons>(command)) {
+            net_game->swap_weapons();
         } else if (const auto* use = std::get_if<cmd::UseSkill>(&command)) {
             const auto* skill = scene->skills.get(use->skill);
             const bool melee = skill && !self_cast(*skill) && !world.fight.missile_skill(*skill) && !Fight::spot_skill(*skill) && !world.fight.summon_skill(*skill);
@@ -817,6 +824,7 @@ auto Town::update(std::vector<std::uint8_t>& framebuffer, const Mouse& frame_mou
             if (key == SDLK_I) { inv_open = !inv_open; if (inv_open) tree_open = false; }
             if (key == SDLK_T) { tree_open = !tree_open; if (tree_open) inv_open = false; }   // both right-hand panels
             if (key == SDLK_R) send(cmd::Run{ !view.running });       // D2's run/walk toggle
+            if (key == SDLK_W && character.expansion) send(cmd::SwapWeapons{});   // D2's "Swap Weapons" key
             skillbar.key(key, mouse.x, mouse.y);                // F1-F8
             if (key == SDLK_GRAVE) belt_open = !belt_open;      // D2's "Show Belt" key
             if (key == SDLK_TAB) automap.open = !automap.open;  // D2's automap toggle
@@ -2148,7 +2156,7 @@ auto Town::draw_view(std::vector<std::uint8_t>& framebuffer, std::vector<std::ui
                       nullptr, nullptr, nullptr, extra, rate, light.pal ? &light : nullptr, level->rain ? &rain : nullptr,
                       !(pmode == kModeDD && !view.corpses.empty()),    // dead, the corpse lies there instead
                       &player_look, alt_held || (SDL_GetModState() & SDL_KMOD_ALT) != 0,   // D2's "Show Items" (Alt)
-                      Hud{ view.poisoned, view.running, run_down }, wide);
+                      Hud{ view.poisoned, view.running, run_down, character.header.weapon_set != 0 }, wide);
         view_overlays(framebuffer, *scene, view, hovered_monster());
         skillbar.draw(framebuffer, held ? -1 : mouse.x, held ? -1 : mouse.y);
         if (net_game && net_game->trade.state != 0) {

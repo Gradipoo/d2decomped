@@ -80,6 +80,8 @@ inline auto move_to(std::uint16_t x, std::uint16_t y, bool run) -> Bytes {
 
 // 0x53 / 0x54: run / walk from now on.
 inline auto set_running(bool run) -> Bytes { return { static_cast<std::uint8_t>(run ? 0x53 : 0x54) }; }
+// 0x60: the weapon switch (FUN_0054ce70).
+inline auto swap_weapons() -> Bytes { return { 0x60 }; }
 
 // 0x40: the player's quest words again (the host's FUN_00546040 answers
 // 0x28 type 6, then 0x29).

@@ -177,6 +177,7 @@ inline std::vector<std::byte> write_save(std::span<const std::byte> original, co
     // on "if" and the join is refused (B4 7, FUN_0056a7e0's 0x14). d2d's
     // own saves before this had 0 there: written every time, they mend.
     bytes[0x29] = std::byte{ 0x10 }; bytes[0x2A] = std::byte{ 0x1E };
+    w32(0x10, header.weapon_set);
     w32(0x30, header.last_played);
     for (std::size_t i = 0; i < 16; ++i) w32(0x38 + i * 4, header.hotkeys[i]);
     w32(0x78, header.left_skill); w32(0x7C, header.right_skill); w32(0x80, header.left_swap); w32(0x84, header.right_swap);

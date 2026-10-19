@@ -15,6 +15,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <span>
 #include <tuple>
 #include <utility>
 #include <vector>
@@ -428,6 +429,27 @@ inline std::int64_t kill_exp(int exp, int clvl, int mlvl) {
     if (clvl > mlvl + 5) return std::int64_t(exp) * kPenalty[std::min(clvl - mlvl - 6, 4)] / 100;
     if (mlvl > clvl + 5) return std::int64_t(exp) * clvl / mlvl;
     return exp;
+}
+
+// A kill's experience shared by the party members who share it
+// (FUN_0057e6c0), by their character levels: two or more make the total
+// the kill's + (n - 1) x exp x 89 / 256 (32-bit, rounded toward zero), and
+// each member's share is its level x (total / the levels' sum), the
+// quotient a float (x87 FSTP) and the product truncated (_ftol). Each share
+// then takes its member's level penalty (kill_exp). One member (or none):
+// the kill's, unshared.
+// ponytail: the quotient is a double rounded to float, not x87 extended
+// precision rounded to float (a tie could round differently).
+inline std::vector<std::int64_t> party_shares(int exp, std::span<const int> levels) {
+    if (levels.size() < 2) return std::vector<std::int64_t>(levels.size(), exp);
+    const auto grown = std::int32_t(std::uint32_t(levels.size() - 1) * std::uint32_t(exp) * 0x59u);
+    const std::int32_t total = grown / 256 + exp;
+    std::int64_t sum = 0;
+    for (const int level : levels) sum += level;
+    const float share = sum > 0 ? float(double(total) / double(sum)) : 0.f;
+    std::vector<std::int64_t> out;
+    for (const int level : levels) out.push_back(std::int64_t(double(level) * double(share)));
+    return out;
 }
 
 // Adds experience; every level reached (exp_next[level] = experience for

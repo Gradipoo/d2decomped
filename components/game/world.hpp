@@ -178,6 +178,7 @@ struct World {
         bool had_gidbinn = false;
         bool had_figurine = false, had_bird = false;   // the Golden Bird's items, last tick (its pickups)
         std::int64_t gold_lost = 0;            // goldlost (175), as the last death set it
+        std::size_t portal_pair = 0;           // their town portal in World::portal: [pair] where it was cast, [pair + 1] in town
     };
     using Corpse = Player::Corpse;
     // The players, in join order; [0] is there from the start. `actor` is the
@@ -194,6 +195,32 @@ struct World {
         Player& was = *actor;
         for (auto& player : players) { act_as(*player); each(*player); }
         act_as(was);
+    }
+    // A quest step (a kill's, an object's, a tick's) for the party (local
+    // co-op, one screen): what it gave the acting player's quest bits, every
+    // other player who hasn't done that quest (bits 0 and 1 clear) gets too.
+    // game.exe gives party and area credit quest by quest (quests-act*.md:
+    // FUN_00540510's callbacks, the players in the level); one screen puts
+    // every player in the level and the party, so it comes to this.
+    // ponytail: one rule for every quest; a quest whose callback asks more
+    // (an act, a bit besides 0 and 1) isn't told apart.
+    template <class Step> void credit_party(Step&& step) {
+        if (players.size() == 1) { step(); return; }
+        Player& mover = *actor;
+        const auto difficulty = std::size_t(std::clamp(mover.character.header.active_difficulty(), 0, 2));
+        const auto before = mover.character.header.quests[difficulty];
+        step();
+        const auto& after = mover.character.header.quests[difficulty];
+        for (auto& other : players) {
+            if (other.get() == &mover) continue;
+            auto& theirs = other->character.header.quests[difficulty];
+            for (std::size_t word = 0; word + 1 < theirs.size(); word += 2) {
+                const int quest = int(word / 2);
+                if (d2d::rules::quest::bit(theirs, quest, 0) || d2d::rules::quest::bit(theirs, quest, 1)) continue;
+                theirs[word] |= std::uint8_t(after[word] & ~before[word]);
+                theirs[word + 1] |= std::uint8_t(after[word + 1] & ~before[word + 1]);
+            }
+        }
     }
     // The other players come to `destination` round (x, y) with their mercs
     // and pets (one screen, one level: docs/design/local-coop.md).
@@ -219,15 +246,17 @@ struct World {
     // a3q6's record (0x14, a3q6.cpp): +0xc 2 once Mephisto's dead; the
     // bridge's event 7 (FUN_005bcac0) every 24 frames from then.
     std::uint32_t bridge_check = 0;
-    // The player's town portal: [0] where it was cast, [1] its twin in town
-    // (FUN_0056d130 / FUN_0056cf40); a new one closes the old pair. [2]:
+    // The first player's town portal: [0] where it was cast, [1] its twin in
+    // town (FUN_0056d130 / FUN_0056cf40); a new one closes the old pair. [2]:
     // the Cairn Stones' portal to Tristram (object 60, FUN_005a9930), [3]
     // its twin in Tristram back to them; [4] the Arcane Sanctuary's way to
     // the Canyon of the Magi (object 60, FUN_0056d130), [5] its twin; [6]
     // the true tomb's way down to Duriel (object 100, OperateFn 43: one
-    // way). A portal's other end is k ^ 1.
+    // way). From [8] on, the other players' town portals, a pair each
+    // (Player::portal_pair). A portal's other end is k ^ 1.
     struct Portal { const Level* level = nullptr; float x = 0, y = 0; std::uint32_t born = 0; };
-    std::array<Portal, 8> portal{};
+    static constexpr std::size_t kGamePortals = 8;
+    std::vector<Portal> portal = std::vector<Portal>(kGamePortals);
     std::uint32_t now = 0;                 // the tick's time
     const CharacterStore* characters = nullptr;   // where the character is saved
     // A vendor's stock lasts the game (the NPC's own inventory, server
@@ -355,6 +384,12 @@ struct World {
     // tent.
     World(const GameData* loaded_data, int start_x, int start_y) : game_data(loaded_data), level(loaded_data ? &loaded_data->town : nullptr) {
         act_as(add_player());
+        loot.gold_sharers = [this] {
+            std::vector<Character*> others;
+            for (const auto& player : players)
+                if (player.get() != actor && player->pmode != kModeDT && player->pmode != kModeDD) others.push_back(&player->character);
+            return others;
+        };
         const bool have_world = level && !level->dt1s.empty();
         actor->player.x = (start_x >= 0 ? float(start_x) : have_world ? float(level->ds1.width() / 2) : 0.f) + 0.5f;
         actor->player.y = (start_y >= 0 ? float(start_y) : have_world ? float(level->ds1.height() / 2) : 0.f) + 0.5f;

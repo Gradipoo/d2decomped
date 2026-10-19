@@ -137,18 +137,18 @@ inline std::string tc_upgrade(const Tables& tables, std::string name, int lvl) {
 }
 
 namespace detail {
-// One class's picks (a frame of FUN_0055a6d0's stack); false once `max`
-// items dropped (the whole roll stops).
+// One class's picks (a frame of FUN_0055a6d0's stack), NoDrop for `shares`
+// players; false once `max` items dropped (the whole roll stops).
 inline bool roll_class(const Tables& tables, const TreasureClass& treasure, std::array<int, 4> mod, int ilvl, Rng& rng, std::vector<Drop>& out,
-                       int& count, int max, int players, int magic_find, int depth, int forced = 0) {
+                       int& count, int max, int shares, int magic_find, int depth, int forced = 0) {
     for (int i = 0; i < 4; ++i) mod[std::size_t(i)] = std::max(mod[std::size_t(i)], treasure.mod[std::size_t(i)]);
     int total = 0;
     for (const auto& [name, chance] : treasure.items) total += chance;
     if (total == 0) return true;
     int nodrop = treasure.nodrop;
-    // More players (a lone killer: 1 + (players - 1) / 2) shrink NoDrop to
-    // total * p^n / (1 - p^n), p = nodrop / (nodrop + total).
-    if (const int shares = 1 + (players - 1) / 2; nodrop != 0 && shares > 1) {
+    // More players (roll_drops' n) shrink NoDrop to total * p^n / (1 - p^n),
+    // p = nodrop / (nodrop + total).
+    if (nodrop != 0 && shares > 1) {
         const double empty = double(nodrop) / double(nodrop + total);
         double all_empty = empty;
         for (int i = 1; i < shares; ++i) all_empty *= empty;
@@ -166,7 +166,7 @@ inline bool roll_class(const Tables& tables, const TreasureClass& treasure, std:
         for (const auto& [name, chance] : treasure.items) {
             if (roll >= chance) { roll -= chance; continue; }
             if (const auto sub = tables.treasure.find(name); sub != tables.treasure.end()) {
-                if (depth < 64 && !roll_class(tables, sub->second, mod, ilvl, rng, out, count, max, players, magic_find, depth + 1, forced)) return false;
+                if (depth < 64 && !roll_class(tables, sub->second, mod, ilvl, rng, out, count, max, shares, magic_find, depth + 1, forced)) return false;
             } else if (name.starts_with("gld")) {
                 const auto multiplier_at = name.find("mul=");
                 out.push_back({ "gld", forced ? forced : 2, 0, multiplier_at == std::string::npos ? 0 : std::atoi(name.c_str() + multiplier_at + 4) });
@@ -194,12 +194,16 @@ inline bool roll_class(const Tables& tables, const TreasureClass& treasure, std:
 // King's classes only, a later-game level) and the m4 / m5 flag draws (bin +0x30 / +0x32,
 // always 0) aren't here; every item counts (game.exe doesn't count one
 // FUN_00555da0 finds no floor for, but Loot::drop_at always places one).
+// With `players` in the game and `nearby` of the killer's party on its
+// level (FUN_005408e0; a lone killer 1), NoDrop rolls for n = nearby +
+// (players - nearby) / 2 (drops.md "Rolling").
+// ponytail: the dropper's stat 100 cap (FUN_0044be50 == 1) isn't applied.
 inline void roll_drops(const Tables& tables, const std::string& treasure_class, int ilvl, Rng& rng, std::vector<Drop>& out,
-                       int players = 1, int magic_find = 0, int max = 6, int forced = 0) {
+                       int players = 1, int magic_find = 0, int max = 6, int forced = 0, int nearby = 1) {
     const auto found = tables.treasure.find(treasure_class);
     if (found == tables.treasure.end()) return;
     int count = 0;
-    detail::roll_class(tables, found->second, {}, ilvl, rng, out, count, max, players, magic_find, 0, forced);
+    detail::roll_class(tables, found->second, {}, ilvl, rng, out, count, max, nearby + (players - nearby) / 2, magic_find, 0, forced);
 }
 
 // One chest round (FUN_00585b90): its class `tc` (chest_tc) off the

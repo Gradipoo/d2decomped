@@ -23,6 +23,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <string>
 #include <tuple>
 #include <unordered_map>
@@ -38,6 +39,9 @@ struct Loot {
     Cues& cues;
     Character* character = nullptr;        // the acting player's (World::act_as)
     UnitState* player = nullptr;
+    // The picker's party alive on the level besides them (World's): they
+    // share the gold picked up.
+    std::function<std::vector<Character*>()> gold_sharers;
     // An item on the ground (gold: code "gld", `gold` coins).
     struct GroundItem {
         int id = -1;                         // its unit id (the server's)
@@ -73,7 +77,8 @@ struct Loot {
     // draws on it between the death and FUN_0055a6d0; Find Item rolls on
     // from where the kill left it). Magic and better come unidentified;
     // each lands where drop_at finds room.
-    void drop(Monster& monster, d2d::rules::Rng& game_seed, std::uint32_t now_ms) {
+    // `players` in the game, `nearby` of the killer's party on its level (NoDrop).
+    void drop(Monster& monster, d2d::rules::Rng& game_seed, std::uint32_t now_ms, int players = 1, int nearby = 1) {
         const int diff = character->header.active_difficulty();
         // Champions drop from TreasureClass2, uniques from 3, superuniques
         // from their SuperUniques TC (for the difficulty).
@@ -102,7 +107,7 @@ struct Loot {
         if (now_ms < blessed_until) magic_find += blessed_find;   // the wisps' dance (Fight::wisp_blessing)
         constexpr int kMost = 6;
         std::vector<d2d::rules::Drop> drops;
-        d2d::rules::roll_drops(game_data->rules, rolled, monster.stats.level, monster.seed, drops, 1, magic_find, kMost);
+        d2d::rules::roll_drops(game_data->rules, rolled, monster.stats.level, monster.seed, drops, players, magic_find, kMost, 0, nearby);
         // FUN_0055a6d0 counts the drop before FUN_005589a0 (0x55af4c): the
         // one that fills the count leaves without gold find. A Hell Bovine's
         // drops are flagged 1 (FUN_0055a550): the Cow King set (29) drops.
@@ -195,12 +200,26 @@ struct Loot {
         using namespace d2d::d2s;
         auto& ground_item = ground[index];
         if (ground_item.item.code == "gld") {
-            const auto cap = character->stats.get(kLevel) * 10000, room = std::max<std::int64_t>(cap - character->stats.get(kGold), 0);
-            const auto taken = std::min<std::int64_t>(ground_item.gold, room);
-            if (taken <= 0) return;
+            const auto room = [](const Character& who) { return std::max<std::int64_t>(who.stats.get(kLevel) * 10000 - who.stats.get(kGold), 0); };
+            // Shared (FUN_00540900): with the party alive on the level, each
+            // other member gets pile / members (to what their purse holds), the
+            // picker the rest; what the picker's purse can't hold stays.
+            // ponytail: game.exe shares only gold no player owns; a player's own
+            // dropped gold is shared here too.
+            std::int64_t pile = ground_item.gold;
+            if (const auto sharers = gold_sharers ? gold_sharers() : std::vector<Character*>{}; !sharers.empty()) {
+                const std::int64_t share = pile / std::int64_t(sharers.size() + 1);
+                for (Character* other : sharers) {
+                    const auto given = std::min(share, room(*other));
+                    other->stats.values[kGold] += given;
+                    pile -= given;
+                }
+            }
+            const auto taken = std::min(pile, room(*character));
+            if (pile == ground_item.gold && taken <= 0) return;
             character->stats.values[kGold] += taken;
             cues.cue("item_gold", 0, player->x, player->y);
-            if ((ground_item.gold -= int(taken)) > 0) { ground_item.label = std::to_string(ground_item.gold) + " Gold"; return; }
+            if ((ground_item.gold = int(pile - taken)) > 0) { ground_item.label = std::to_string(ground_item.gold) + " Gold"; return; }
         } else {
             const auto& lay = game_data->inv_layout[std::size_t(std::max(character->character_class, 0))];
             const int boxes = game_data->belts[std::size_t(belt_index(*game_data, character->items))].boxes;

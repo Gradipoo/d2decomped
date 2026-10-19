@@ -44,16 +44,16 @@ auto World::seal_boss(const Level& where, int superunique, int x, int y) -> void
         const int diff = actor->character.header.active_difficulty();
         const auto& row = game_data->superuniques[std::size_t(superunique)];
         const auto [at_x, at_y] = where.nearest_free((float(x) + 0.5f) / 5, (float(y) + 0.5f) / 5);
-        auto boss = make_monster(*game_data, row.type, at_x, at_y, fight.rng, diff, false);
-        make_boss(*game_data, boss, d2d::rules::Boss::superunique, row.mods, superunique, 0, diff, fight.rng);
+        auto boss = make_monster(*game_data, row.type, at_x, at_y, fight.rng, diff, false, int(players.size()));
+        make_boss(*game_data, boss, d2d::rules::Boss::superunique, row.mods, superunique, 0, diff, fight.rng, int(players.size()));
         boss.aware = true;
         const int minion = game_data->monsters.types[std::size_t(row.type)].minion[0] >= 0 ? game_data->monsters.types[std::size_t(row.type)].minion[0] : row.type;
         const int count = row.min_grp + int(fight.rng.next() % std::uint32_t(std::max(row.max_grp - row.min_grp + 1, 1)));
         fight.add_monster(std::move(boss), &where);
         for (int i = 0; i < count; ++i) {
             const auto [minion_x, minion_y] = where.nearest_free(at_x + float(i % 3 - 1) * 0.6f, at_y + float(i / 3 - 1) * 0.6f);
-            auto follower = make_monster(*game_data, minion, minion_x, minion_y, fight.rng, diff, false);
-            make_boss(*game_data, follower, d2d::rules::Boss::minion, {}, -1, 0, diff, fight.rng);
+            auto follower = make_monster(*game_data, minion, minion_x, minion_y, fight.rng, diff, false, int(players.size()));
+            make_boss(*game_data, follower, d2d::rules::Boss::minion, {}, -1, 0, diff, fight.rng, int(players.size()));
             follower.aware = true;
             fight.add_monster(std::move(follower), &where);
         }
@@ -259,7 +259,7 @@ auto World::act4_update(std::uint32_t now_ms) -> void {
             if (start != sanctuary->npcs.end()) {
                 const int diff = actor->character.header.active_difficulty();
                 const auto [at_x, at_y] = sanctuary->nearest_free(start->x, start->y);
-                auto diablo = make_monster(*game_data, d2d::rules::TerrorQuest::kDiablo, at_x, at_y, fight.rng, diff);
+                auto diablo = make_monster(*game_data, d2d::rules::TerrorQuest::kDiablo, at_x, at_y, fight.rng, diff, true, int(players.size()));
                 if (const auto boss = d2d::rules::act_boss(diablo.type, game_data->monsters.types[std::size_t(diablo.type)].base)) {   // FUN_005b1cf0
                     diablo.boss = d2d::rules::Boss::unique;
                     diablo.mods = boss->mods;

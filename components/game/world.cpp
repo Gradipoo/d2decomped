@@ -95,6 +95,13 @@ auto World::act_as(Player& player) -> void {
 auto World::add_player() -> Player& {
     auto& player = *players.emplace_back(std::make_unique<Player>());
     player.id = players.size() > 1 ? players[players.size() - 2]->id + 1 : 1;
+    // The first player's town portal is [0] / [1]; the others' the first free pair from [8].
+    for (std::size_t pair = kGamePortals; players.size() > 1; pair += 2)
+        if (std::ranges::none_of(players, [&](const auto& other) { return other.get() != &player && other->portal_pair == pair; })) {
+            player.portal_pair = pair;
+            if (portal.size() < pair + 2) portal.resize(pair + 2);
+            break;
+        }
     fight.heroes.push_back(&player);
     return player;
 }
@@ -650,7 +657,7 @@ auto World::operate(int npc_index, std::uint32_t now_ms, int force ) -> void {  
             if (best >= 0) {                               // FUN_005a4940: FUN_005a0760 (champions allowed), FUN_005a2120
                 auto& monster = fight.monsters[std::size_t(best)];
                 const auto boss = d2d::rules::roll_boss(game_data->umods, game_data->monsters.types[std::size_t(monster.type)], diff, true, rng);
-                make_boss(*game_data, monster, boss.kind, boss.mods, -1, boss.name_seed, diff, rng);
+                make_boss(*game_data, monster, boss.kind, boss.mods, -1, boss.name_seed, diff, rng, int(players.size()));
                 d2d::log::info("warping shrine: {} is now a {}", monster.npc.name, boss.kind == d2d::rules::Boss::champion ? "champion" : "unique");
             }
         }
@@ -809,7 +816,7 @@ auto World::spring_trap(int trap, float x, float y, int alvl, std::uint32_t now_
             const int count = undead ? undead : int(rng.next() & 1) + 1;
             for (int k = 0; k < count; ++k) {
                 const auto [free_x, free_y] = level->nearest_free(x + float(k) * 0.4f, y + 0.4f);
-                auto monster = make_monster(*game_data, type, free_x, free_y, rng, diff);
+                auto monster = make_monster(*game_data, type, free_x, free_y, rng, diff, true, int(players.size()));
                 // Its unit seed: a step of the game seed (FUN_00552df0), what its drops roll off.
                 // ponytail: its look doesn't draw on it first, as spawn_monsters' does
                 // (monster spawning: agent D's).
@@ -908,6 +915,7 @@ auto World::leave(int id) -> std::string {
         act_as(**found);
         const auto why = save();
         d2d::log::info("{} leaves the game (player {})", actor->character.name, id);
+        portal[(*found)->portal_pair] = portal[(*found)->portal_pair + 1] = {};   // their town portal closes
         std::erase(fight.heroes, found->get());
         const bool was_leaving = &was == found->get();
         players.erase(found);
@@ -919,6 +927,7 @@ auto World::enter(const Character& entering) -> void {
         act_as(lead());                               // a new game: its first player alone
         players.resize(1);
         fight.heroes.assign(1, &lead());
+        lead().portal_pair = 0;
         take_character(entering);
         stocks.clear();
         for (auto& list : hire_lists) list.clear();
@@ -987,7 +996,7 @@ auto World::new_game() -> void {
         treasure.clear();
         cain_walk = {};
         cain_portal = {};
-        portal = {};
+        std::ranges::fill(portal, Portal{});
         actor->take_portal = -1;
         actor->take_corpse = -1;
         actor->last_pmode = -1;
@@ -1726,8 +1735,8 @@ auto World::open_portal_at(float portal_x, float portal_y, std::uint32_t now_ms)
         const auto& town = *act_town;
         const auto [spot_x, spot_y] = level->nearest_free(portal_x, portal_y);
         const auto [town_x, town_y] = town.nearest_free(town.portal_spot.first, town.portal_spot.second);
-        portal[0] = { level, spot_x, spot_y, now_ms };
-        portal[1] = { &town, town_x, town_y, now_ms };
+        portal[actor->portal_pair] = { level, spot_x, spot_y, now_ms };
+        portal[actor->portal_pair + 1] = { &town, town_x, town_y, now_ms };
         cues.cue("object_townportal", now_ms, spot_x, spot_y);
         d2d::log::info("town portal: {} ({:.1f}, {:.1f}) <-> {} ({:.1f}, {:.1f})", level_name(*level), spot_x, spot_y, level_name(town), town_x, town_y);
     }
@@ -1761,14 +1770,14 @@ auto World::use_portal(std::uint32_t now_ms) -> void {
             arrive(lair, to_x, to_y, "the way down to Duriel");
             return;
         }
-        if (actor->take_portal >= 3) {                       // back to the Cairn Stones; the Canyon's pair
+        if (actor->take_portal >= 3 && std::size_t(actor->take_portal) < kGamePortals) {   // back to the Cairn Stones; the Canyon's pair
             const auto& twin = portal[std::size_t(actor->take_portal ^ 1)];
             actor->take_portal = -1;
             if (!twin.level) { d2d::log::info("not implemented: the portal's far level isn't built"); return; }
             arrive(twin.level, twin.x, twin.y + 0.6f, "a quest portal");
             return;
         }
-        const auto& other_end = portal[std::size_t(1 - actor->take_portal)];
+        const auto& other_end = portal[std::size_t(actor->take_portal ^ 1)];
         actor->take_portal = -1;
         arrive(other_end.level, other_end.x, other_end.y + 0.6f, "a town portal");
     }
@@ -2250,8 +2259,7 @@ auto World::tick(std::span<const Order> orders, std::uint32_t now_ms, std::uint3
         if (now_ms - day_at > 1000) day_at = now_ms;
         for (; now_ms - day_at >= kTickMs; day_at += kTickMs) {
             day.step(act());
-            act1_tick();
-            act2_tick();
+            credit_party([&] { act1_tick(); act2_tick(); });
             each_player([&](Player&) { stamina_frame(); });
         }
         each_player([&](Player& player) {
@@ -2320,7 +2328,7 @@ auto World::tick(std::span<const Order> orders, std::uint32_t now_ms, std::uint3
                 const float npc_x = npc.path.empty() ? npc.x : state.x, npc_y = npc.path.empty() ? npc.y : state.y;
                 if (std::hypot(npc_x - actor->player.x, npc_y - actor->player.y) < 2.f) {
                     if (operable(npc.operate_fn) || npc.operate_fn == d2d::rules::operate_fn::kMoldyTome || npc.operate_fn == d2d::rules::ToolsQuest::kStand || quest_object(npc.operate_fn)) {
-                        operate(actor->interact_npc, now_ms);
+                        credit_party([&] { operate(actor->interact_npc, now_ms); });
                     } else if (npc.operate_fn == d2d::rules::operate_fn::kStash) {
                         actor->events.push_back(ev::OpenUI{ ev::OpenUI::stash, actor->interact_npc });
                     } else if (npc.operate_fn == d2d::rules::operate_fn::kWaypoint) {
@@ -2427,7 +2435,7 @@ auto World::tick(std::span<const Order> orders, std::uint32_t now_ms, std::uint3
         for (auto& player : players)
             player->owner_mode = !player->player.walking ? 1 : player->running && player->character.stats.values[d2d::d2s::kStamina] > 0 ? 3 : in_moor ? 2 : 6;
         fight.world(in_moor, now_ms, elapsed, crowd);
-        den_count(now_ms);                                      // the merc's or a missile's kill counts with the player dead
+        credit_party([&] { den_count(now_ms); });                // the merc's or a missile's kill counts with the player dead
         if (den_log_at && now_ms >= den_log_at) { den.log = 5; den_log_at = 0; }
         each_player([&](Player&) {
             if (!fight.dead()) {
@@ -2442,16 +2450,22 @@ auto World::tick(std::span<const Order> orders, std::uint32_t now_ms, std::uint3
             }
         });
         for (const auto& kill : hosted_quests ? std::vector<Fight::Kill>{} : fight.kills) {
-            act1_kill(kill, now_ms);
-            act2_kill(kill, now_ms);
-            act3_kill(kill, now_ms);
-            act4_kill(kill, now_ms);
+            const auto killer = std::ranges::find(players, kill.killer, [](const auto& player) { return player->id; });
+            act_as(killer == players.end() ? lead() : **killer);   // the hooks read the killer's quests
+            credit_party([&] {
+                act1_kill(kill, now_ms);
+                act2_kill(kill, now_ms);
+                act3_kill(kill, now_ms);
+                act4_kill(kill, now_ms);
+            });
         }
+        act_as(lead());
         fight.kills.clear();
-        loot.blessed_find = actor->wisp_blessing.find; loot.blessed_until = actor->wisp_blessing.until;
-        act2_update();
-        act3_update(now_ms);
-        act4_update(now_ms);
+        credit_party([&] {
+            act2_update();
+            act3_update(now_ms);
+            act4_update(now_ms);
+        });
         each_player([&](Player&) { cross_level(); });
         for (const auto& player : players) fight.rooms_up(*level, player->player.x, player->player.y, false);
         reopen_doors();

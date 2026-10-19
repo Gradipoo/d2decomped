@@ -343,7 +343,11 @@ struct Fight {
     // drops and picks up for them too.
     std::vector<Hero*> heroes;
     Hero* actor = nullptr;
-    void act_as(Hero& hero) { actor = &hero; loot.character = &hero.character; loot.player = &hero.player; }
+    void act_as(Hero& hero) {
+        actor = &hero;
+        loot.character = &hero.character; loot.player = &hero.player;
+        loot.blessed_find = hero.wisp_blessing.find; loot.blessed_until = hero.wisp_blessing.until;
+    }
     // The player of that id, or null (gone).
     [[nodiscard]] Hero* hero_of(int id) const {
         const auto found = std::ranges::find(heroes, id, &Hero::id);
@@ -655,7 +659,13 @@ struct Fight {
     // experience, its pack may scatter, it drops its loot.
     // ponytail: the merc's own experience share isn't kept.
     void killed(std::size_t monster_index, std::uint32_t now_ms, bool credit = true);
-    struct Kill { int type; float x, y; int level; int super = -1; int id = -1; };   // super: its SuperUniques row; id: its unit id
+    // The players in the game and those of them alive (the party on the
+    // level: one screen), for NoDrop (Loot::drop); alone, 1 and 1.
+    [[nodiscard]] std::pair<int, int> drop_counts();
+    // The acting player's share of a kill: its level penalty (kill_exp),
+    // item_addexperience, the experience (levels gained, their sound).
+    void gain_exp(std::int64_t share, const Monster& monster, std::uint32_t now_ms);
+    struct Kill { int type; float x, y; int level; int super = -1; int id = -1; int killer = 0; };   // super: its SuperUniques row; id: its unit id; killer: the player's (Hero::id), 0 a monster's
     std::vector<Kill> kills;                       // since the World last looked (its quests' death hooks)
 
     // The merc as a fighter: its hireling damage, attack rating, defense.

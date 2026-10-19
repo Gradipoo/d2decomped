@@ -128,8 +128,9 @@ next one. The launcher (`d2d-launcher`) finds an installed Diablo II and writes 
 (and `patch =` for a non-1.14d install, pointing at `LODPatch_114d.exe`)
 into `d2d.cfg`. That file lives in `~/Library/Preferences/d2d` on macOS,
 `~/.config/d2d` on Linux, and `Documents\My Games\d2d` on Windows.
-Your install is read in place and never changed. Its Fullscreen and
-Widescreen boxes set `fullscreen =` and `widescreen =`. Launch saves the
+Your install is read in place and never changed. Its Fullscreen,
+Widescreen and Skip intro movies boxes set `fullscreen =`, `widescreen =` and
+`video =`. Launch saves the
 settings, starts d2d and closes the launcher.
 
 ## License

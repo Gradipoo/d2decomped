@@ -523,21 +523,13 @@ public:
                 &MainWindow::fetchPatch);
 
         // d2d.cfg's `fullscreen`, the same key d2d's Alt+Enter writes.
-        fullscreen_ = new QCheckBox(tr("Fullscreen"), this);
+        fullscreen_ = cfgCheckBox(tr("Fullscreen"), "fullscreen", "1", "0");
         fullscreen_->setToolTip(tr("Borderless fullscreen (Alt+Enter switches in game)"));
-        connect(fullscreen_, &QCheckBox::toggled, this, [this](bool checked) {
-            const auto cfg = d2d::userdir::user_dir("d2d") / "d2d.cfg";
-            if (!d2d::userdir::save_cfg(cfg, { { "fullscreen", checked ? "1" : "0" } }))
-                QMessageBox::warning(this, tr("Settings"), tr("Could not write %1").arg(from_path(cfg)));
-        });
-
-        widescreen_ = new QCheckBox(tr("Widescreen"), this);
+        widescreen_ = cfgCheckBox(tr("Widescreen"), "widescreen", "1", "0");
         widescreen_->setToolTip(tr("Widen the in-game view to the window's aspect ratio; menus and panels keep their 800x600 layout."));
-        connect(widescreen_, &QCheckBox::toggled, this, [this](bool checked) {
-            const auto cfg = d2d::userdir::user_dir("d2d") / "d2d.cfg";
-            if (!d2d::userdir::save_cfg(cfg, { { "widescreen", checked ? "1" : "0" } }))
-                QMessageBox::warning(this, tr("Settings"), tr("Could not write %1").arg(from_path(cfg)));
-        });
+        // `video = 0` is d2d's --no-video, so the box is the inverse.
+        skipVideo_ = cfgCheckBox(tr("Skip intro movies"), "video", "0", "1");
+        skipVideo_->setToolTip(tr("Start at the main menu without the logo and intro cinematics."));
 
         crashReports_ = new QCheckBox(
             tr("Automatically send crash reports and the last game frame to Sentry"), this);
@@ -614,6 +606,7 @@ public:
         btnRow->addStretch();
         btnRow->addWidget(fullscreen_);
         btnRow->addWidget(widescreen_);
+        btnRow->addWidget(skipVideo_);
         btnRow->addSpacing(12);   // macOS clips the checkbox label against the default button
         btnRow->addWidget(launch_);
         layout->addLayout(btnRow);
@@ -652,6 +645,17 @@ public:
     }
 
 private:
+    // A box that writes `key = on|off` to d2d.cfg as it's toggled.
+    QCheckBox* cfgCheckBox(const QString& text, const char* key, const char* on, const char* off) {
+        auto* box = new QCheckBox(text, this);
+        connect(box, &QCheckBox::toggled, this, [this, key, on, off](bool checked) {
+            const auto cfg = d2d::userdir::user_dir("d2d") / "d2d.cfg";
+            if (!d2d::userdir::save_cfg(cfg, { { key, checked ? on : off } }))
+                QMessageBox::warning(this, tr("Settings"), tr("Could not write %1").arg(from_path(cfg)));
+        });
+        return box;
+    }
+
     void loadSettings() {
         QSettings settings;
         path_ = settings.value("game/dataPath").toString();
@@ -660,9 +664,10 @@ private:
         d2d::userdir::load_cfg(d2d::userdir::user_dir("d2d") / "d2d.cfg", cfg);
         if (patch_path_.isEmpty())   // a hand-set `patch =` in d2d.cfg counts
             patch_path_ = QString::fromStdString(cfg["patch"]);
-        const QSignalBlocker quiet(fullscreen_), quiet_widescreen(widescreen_);   // loading isn't a change to write back
+        const QSignalBlocker quiet(fullscreen_), quiet_widescreen(widescreen_), quiet_video(skipVideo_);   // loading isn't a change to write back
         fullscreen_->setChecked(cfg["fullscreen"] == "1");
         widescreen_->setChecked(cfg["widescreen"] == "1");
+        skipVideo_->setChecked(cfg["video"] == "0");
         source_ = settings.value("game/source", "manual").toString();
         const QSignalBlocker crashReportsQuiet(crashReports_);
         crashReports_->setChecked(settings.value("privacy/sendCrashReports", false).toBool());
@@ -1003,6 +1008,7 @@ private:
     QPushButton* launch_{};
     QCheckBox* fullscreen_{};
     QCheckBox* widescreen_{};
+    QCheckBox* skipVideo_{};
     QCheckBox* crashReports_{};
     QLineEdit* crashNotes_{};
     QPushButton* upgrade_{};

@@ -271,3 +271,35 @@ d2d: `rules::stamina_drain` / `stamina_regen` (combat.hpp) from
 `World::stamina_frame`, each 40 ms frame; `draw_hud` (panels.cpp) with
 the poison frame, bars, run button and texts; the button's press /
 release in `Town::update`.
+
+## Stat totals and ItemStatCost ops (FUN_00626200)
+
+`FUN_00626200(ECX statlist, EDX stat << 16 | param)` is a stat's total.
+It starts from `FUN_00624fe0`, the stat summed over the unit's stat
+lists (its own, the items', the states'), with no ops. If the
+ItemStatCost record (0x144 bytes, table at `[0x744304] + 0xbcc`;
+`op` +0x54, `op param` +0x55, `op base` +0x56, `op stat1..3` +0x58)
+has ops onto it (+0x52), it walks the 16 six-byte entries at +0xe0
+(the source stat at -2, its op at +2, its param at +3). The two that
+matter for the maxima:
+
+- op 8 / 9 (energy → max mana, vitality → max life / stamina): adds
+  CharStats' per-point byte (+0x48 mana, +0x46 life, +0x47 stamina) ×
+  (the source's total − the unit's own value) × 0x40. Only the
+  attribute *above* the character's own counts: the own points' share
+  is already in the saved maximum.
+- op 11 (item_maxhp_percent 76, item_maxmana_percent 77; players and
+  monsters only): adds `FUN_00483360(raw, pct, 100)`, a 64-bit-safe
+  raw × pct / 100. Here raw is the no-op sum above, and pct is the % stat's
+  total, so the items' % and Battle Orders' state % add up into one
+  percentage of one base. The op 8 share is not in raw.
+
+Checked live 2026-10-19: Miriam (sorceress, 409 own max mana, +466 flat
+from charms, rings, belt and boots, +27 energy, +42% from belt and
+gloves): (409 + 466) × 42% = 367, + 875 + 54 = 1296, the game.exe
+host's figure.
+
+d2d: `panel_stats` (character.hpp) sums the items' 76 / 77 into
+`PanelStats::max_percent` and their flat +life / +mana into `max_flat`;
+`Fight::update_fighters` takes one % of own + flat, split into the
+items' part (`item_max`) and Battle Orders' (`bo_life` / `bo_mana`).

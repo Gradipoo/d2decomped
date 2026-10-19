@@ -270,7 +270,16 @@ int main() {
         fight.update_fighters(26 * kTickMs);
         const std::int64_t own = fight.own_stats().values[d2d::d2s::kMaxMana], flat = own + 100 * 256;
         const auto& gains = data->class_gains[std::size_t(fight.character.header.cls % 7)];
-        assert(fight.character.stats.values[d2d::d2s::kMaxMana] == flat + flat * 50 / 100 + 10 * gains.mana_per_energy / 4 * 256);
+        const std::int64_t energy = 10 * gains.mana_per_energy / 4 * 256;
+        assert(fight.character.stats.values[d2d::d2s::kMaxMana] == flat + flat * 50 / 100 + energy);
+        // Battle Orders' % (a state's 77) adds to the items': one % of the
+        // same raw maximum, mana up with it.
+        const auto mana = fight.character.stats.values[d2d::d2s::kMana];
+        fight.boost = { 0, { { d2d::d2s::kMaxManaPercent, 20 } }, 1000 * kTickMs };
+        fight.update_fighters(26 * kTickMs);
+        assert(fight.character.stats.values[d2d::d2s::kMaxMana] == flat + flat * 70 / 100 + energy);
+        assert(fight.character.stats.values[d2d::d2s::kMana] == std::min(mana + (flat * 70 / 100 - flat * 50 / 100), flat + flat * 70 / 100 + energy));
+        fight.boost = {};
         fight.character.items = items;
         fight.update_fighters(26 * kTickMs);
         assert(fight.character.stats.values[d2d::d2s::kMaxMana] == own);

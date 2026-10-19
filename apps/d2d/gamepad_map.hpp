@@ -33,10 +33,8 @@ struct Sample {                       // one frame of a pad: sticks -1..1, trigg
 };
 
 struct Config {
-    float deadzone = 0.25f;           // radial, both sticks
+    float deadzone = 0.15f;           // radial, both sticks
     float cursor_speed = 650.f;       // game pixels per second at full tilt
-    float run_above = 0.75f;          // stick tilt (past the dead zone, 0..1): at or above it the hero runs...
-    float walk_below = 0.55f;          // ...and under this walks again
     float trigger_press = 0.5f, trigger_release = 0.3f;
     float walk_reach = 6.f;           // tiles ahead a held stick walks towards
 };
@@ -47,8 +45,7 @@ struct Actions {
     bool  rclick_press = false;
     bool  recentre_cursor = false;
     bool  move_active = false;                     // the left stick walks the hero...
-    float move_x = 0, move_y = 0;                  // ...towards this screen direction (unit length)
-    bool  run = false;                             // at full tilt
+    float move_x = 0, move_y = 0;                  // ...towards this screen direction (unit length); walk or run is the run toggle's
     std::vector<Key> keys;
 };
 
@@ -129,11 +126,6 @@ public:
             const auto [dir_x, dir_y, tilt_move] = dead(sample.lx, sample.ly);
             out.move_active = tilt_move > 0;
             out.move_x = dir_x; out.move_y = dir_y;
-            if (out.move_active) running_ = running_ ? tilt_move >= config_.walk_below : tilt_move >= config_.run_above;
-            else running_ = false;
-            out.run = running_;
-        } else {
-            running_ = false;
         }
 
         const auto key = [&](Button which, Key press) { if (pressed(which)) out.keys.push_back(press); };
@@ -174,7 +166,7 @@ private:
 
     Config config_;
     std::array<bool, std::size_t(Button::Count)> prev_{};
-    bool click_prev_ = false, secondary_prev_ = false, left_trigger_ = false, right_trigger_ = false, running_ = false;
+    bool click_prev_ = false, secondary_prev_ = false, left_trigger_ = false, right_trigger_ = false;
 };
 
 }  // namespace d2d::client::pad

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // The gamepad's action mapping (apps/d2d/gamepad_map.hpp): dead zones, the
-// walk/run switch, click edges, per-screen keys, and a pad that goes away.
+// walk direction, click edges, per-screen keys, and a pad that goes away.
 #include "gamepad_map.hpp"
 
 #include <algorithm>
@@ -20,28 +20,16 @@ int main() {
     // Inside the dead zone nothing moves.
     {
         Mapper mapper;
-        Sample drift; drift.lx = 0.1f; drift.ly = -0.1f; drift.rx = 0.2f;
+        Sample drift; drift.lx = 0.1f; drift.ly = -0.08f; drift.rx = 0.12f;
         const Actions actions = mapper.step(drift, Context::Game, 0.016f);
         assert(!actions.move_active && actions.cursor_dx == 0 && actions.cursor_dy == 0);
     }
-    // The left stick walks in the game, towards its direction; a light push walks, a full one runs.
+    // The left stick walks in the game, towards its direction, from a light push on.
     {
         Mapper mapper;
-        Sample light; light.lx = 0.5f;
-        Actions actions = mapper.step(light, Context::Game, 0.016f);
-        assert(actions.move_active && !actions.run && actions.move_x > 0.99f && std::abs(actions.move_y) < 1e-4f);
-        Sample full; full.lx = 1.f;
-        actions = mapper.step(full, Context::Game, 0.016f);
-        assert(actions.run);
-        // Hysteresis: easing a little off full stays running; only well under it walks again.
-        Sample mid; mid.lx = 0.8f;    // tilt (0.8-0.25)/0.75 = 0.73: between walk_below and run_above
-        actions = mapper.step(mid, Context::Game, 0.016f);
-        assert(actions.run);
-        Sample low; low.lx = 0.55f;   // tilt 0.4
-        actions = mapper.step(low, Context::Game, 0.016f);
-        assert(actions.move_active && !actions.run);
-        actions = mapper.step(mid, Context::Game, 0.016f);
-        assert(!actions.run);         // from walking, 0.73 is under run_above
+        Sample light; light.lx = 0.2f;
+        const Actions actions = mapper.step(light, Context::Game, 0.016f);
+        assert(actions.move_active && actions.move_x > 0.99f && std::abs(actions.move_y) < 1e-4f);
     }
     // In the menus the left stick is a cursor, not a walk.
     {
@@ -79,7 +67,7 @@ int main() {
         Sample held = with(Button::South); held.lx = 1.f;
         assert(mapper.step(held, Context::Game, 0.016f).move_active);
         const Actions gone = mapper.step(Sample{}, Context::Game, 0.016f);
-        assert(gone.click_release && !gone.click_down && !gone.move_active && !gone.run);
+        assert(gone.click_release && !gone.click_down && !gone.move_active);
     }
     // East right-clicks in the game; in a menu it's Esc, except on the title, where Esc quits.
     {

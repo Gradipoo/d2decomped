@@ -1469,10 +1469,8 @@ auto Town::pad_walk() -> void {
         const bool walk = pad_field() && pad_move.active && !view.dead && !game_menu.open && !chat_typing && !trade_gold_typing;
         if (walk) {
             const auto step = pad::world_step(pad_move.x, pad_move.y, kIsoW, kIsoH, 6.f);
-            // Running follows the tilt: a Run toggle only when it changes (R still flips it by hand).
-            if (!pad_walking ? pad_move.run != view.running : pad_move.run != pad_ran) send(cmd::Run{ pad_move.run });
+            // Walk or run is the run toggle's (R, the left stick's click), as with the mouse.
             send(cmd::Move{ world.player.x + step.x, world.player.y + step.y, !pad_walking });
-            pad_ran = pad_move.run;
         } else if (pad_walking) {
             send(cmd::Move{ world.player.x, world.player.y, true });   // stick centred: stop here, not at the old destination
         }

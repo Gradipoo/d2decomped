@@ -140,13 +140,14 @@ struct Town {
     Cues cues{ scene };                    // the world's sounds the View brought, due to play
     // The World's state by name, for the devctl verbs (admin and tests, on
     // the server's side); the client itself reads only `view`.
-    UnitState& player = world.player;
+    World::Player& hero = *world.players[0];   // this client's player
+    UnitState& player = hero.player;
     std::vector<UnitState>& npc_states = world.npc_states;
-    std::optional<Monster>& merc = world.merc;
+    std::optional<Monster>& merc = hero.merc;
     Loot& loot = world.loot;
     Fight& fight = world.fight;
-    float& target_x = world.target_x;
-    float& target_y = world.target_y;
+    float& target_x = hero.target_x;
+    float& target_y = hero.target_y;
     LocalTransport net;                    // the commands to the World, as their wire form (single player)
     View view;                             // what the World told the client after its last tick
     ViewEncoder view_enc;                  // the host's memory of what this client was sent

@@ -34,10 +34,10 @@ namespace d2d::game {
 struct Loot {
     const GameData* game_data;
     const Level* const& level;             // Town's: where drops land
-    Character& character;
-    UnitState& player;
     d2d::rules::Rng& rng;
     Cues& cues;
+    Character* character = nullptr;        // the acting player's (World::act_as)
+    UnitState* player = nullptr;
     // An item on the ground (gold: code "gld", `gold` coins).
     struct GroundItem {
         int id = -1;                         // its unit id (the server's)
@@ -74,7 +74,7 @@ struct Loot {
     // from where the kill left it). Magic and better come unidentified;
     // each lands where drop_at finds room.
     void drop(Monster& monster, d2d::rules::Rng& game_seed, std::uint32_t now_ms) {
-        const int diff = character.header.active_difficulty();
+        const int diff = character->header.active_difficulty();
         // Champions drop from TreasureClass2, uniques from 3, superuniques
         // from their SuperUniques TC (for the difficulty).
         const auto difficulty_index = std::size_t(std::clamp(diff, 0, 2));
@@ -87,7 +87,7 @@ struct Loot {
         // FUN_005a6600: TreasureClass4 while its quest isn't done; then
         // FUN_0055afa0 moves it on by the monster's level past normal.
         const auto& quest_tc = type_info.tc_quest[difficulty_index];
-        const auto& header = character.header;
+        const auto& header = character->header;
         const bool quest_open = type_info.tc_quest_id && !quest_tc.empty() && !header.quest_flag(diff, type_info.tc_quest_id, 15)
                                 && !header.quest_flag(diff, type_info.tc_quest_id, 1) && !header.quest_flag(diff, type_info.tc_quest_id, type_info.tc_quest_cp);
         const auto rolled = d2d::rules::tc_upgrade(game_data->rules, quest_open ? quest_tc : treasure_class, diff > 0 && !type_info.tc_fixed ? monster.stats.level : 0);
@@ -95,7 +95,7 @@ struct Loot {
         // ponytail: one player; the player's kills only (no minion's owner,
         // FUN_0058f0d0), gear only (no skill / state find).
         int magic_find = 0, gold_find = 0;
-        for (const auto& prop : gear_props(*game_data, character.items)) {
+        for (const auto& prop : gear_props(*game_data, character->items)) {
             if (prop.stat == d2d::d2s::kMagicFind) magic_find += prop.value;
             if (prop.stat == d2d::d2s::kGoldFind) gold_find += prop.value;
         }
@@ -132,9 +132,9 @@ struct Loot {
                 d2d::rules::Rng unit_seed{ game_seed.next() }, item_seed{ game_seed.next() };
                 const int quality = dropped.quality ? dropped.quality : d2d::rules::stand_quality(game_data->rules, dropped.code, ilvl, item_seed);
                 ground_item.item = d2d::rules::generate_item(game_data->rules, dropped.code, ilvl, quality, item_seed, &unit_seed, &found_uniques, bovine,
-                                                            character.header.active_difficulty());
+                                                            character->header.active_difficulty());
                 ground_item.item.identified = quality <= 3;
-                const auto lines = item_lines(*game_data, ground_item.item, int(character.stats.get(d2d::d2s::kLevel)));
+                const auto lines = item_lines(*game_data, ground_item.item, int(character->stats.get(d2d::d2s::kLevel)));
                 if (!lines.empty()) { ground_item.label = lines[0].text; ground_item.rgb = lines[0].rgb; }
             }
             land(std::move(ground_item), now_ms, onto);
@@ -166,7 +166,7 @@ struct Loot {
         GroundItem ground_item;
         std::tie(ground_item.x, ground_item.y) = level->nearest_free(x, y);
         ground_item.now_ms = now_ms;
-        const auto lines = item_lines(*game_data, item, int(character.stats.get(d2d::d2s::kLevel)));
+        const auto lines = item_lines(*game_data, item, int(character->stats.get(d2d::d2s::kLevel)));
         if (!lines.empty()) { ground_item.label = lines[0].text; ground_item.rgb = lines[0].rgb; }
         ground_item.item = std::move(item);
         ground_item.item.location = d2d::d2s::item_location::kGround;
@@ -195,24 +195,24 @@ struct Loot {
         using namespace d2d::d2s;
         auto& ground_item = ground[index];
         if (ground_item.item.code == "gld") {
-            const auto cap = character.stats.get(kLevel) * 10000, room = std::max<std::int64_t>(cap - character.stats.get(kGold), 0);
+            const auto cap = character->stats.get(kLevel) * 10000, room = std::max<std::int64_t>(cap - character->stats.get(kGold), 0);
             const auto taken = std::min<std::int64_t>(ground_item.gold, room);
             if (taken <= 0) return;
-            character.stats.values[kGold] += taken;
-            cues.cue("item_gold", 0, player.x, player.y);
+            character->stats.values[kGold] += taken;
+            cues.cue("item_gold", 0, player->x, player->y);
             if ((ground_item.gold -= int(taken)) > 0) { ground_item.label = std::to_string(ground_item.gold) + " Gold"; return; }
         } else {
-            const auto& lay = game_data->inv_layout[std::size_t(std::max(character.character_class, 0))];
-            const int boxes = game_data->belts[std::size_t(belt_index(*game_data, character.items))].boxes;
-            const auto taken = d2d::rules::pick_up(game_data->rules, character.items, ground_item.item, lay.cols ? lay.cols : 10, lay.rows ? lay.rows : 4, boxes);
+            const auto& lay = game_data->inv_layout[std::size_t(std::max(character->character_class, 0))];
+            const int boxes = game_data->belts[std::size_t(belt_index(*game_data, character->items))].boxes;
+            const auto taken = d2d::rules::pick_up(game_data->rules, character->items, ground_item.item, lay.cols ? lay.cols : 10, lay.rows ? lay.rows : 4, boxes);
             if (taken == d2d::rules::Pickup::kNoRoom) {
                 static constexpr std::array<const char*, 7> kCantCarry{ "amazon_cantcarry_1", "sorceress_cantcarry_1", "necromancer_cantcarry_1",
                     "paladin_cantcarry_1", "barbarian_cantcarry_1", "druid_cantcarry_1", "assassin_cant_carry" };
                 d2d::log::info("no room for {}", ground_item.label);
-                cues.cue(kCantCarry[std::size_t(std::clamp(character.character_class, 0, 6))], 0, player.x, player.y);
+                cues.cue(kCantCarry[std::size_t(std::clamp(character->character_class, 0, 6))], 0, player->x, player->y);
             }
             if (taken != d2d::rules::Pickup::kGone) return;
-            cues.cue("item_pickup", 0, player.x, player.y);
+            cues.cue("item_pickup", 0, player->x, player->y);
         }
         ground.erase(ground.begin() + std::ptrdiff_t(index));
     }

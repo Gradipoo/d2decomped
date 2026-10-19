@@ -41,7 +41,7 @@ constexpr std::uint32_t kFlashFrames = 27;   // object 131's InitFn 59: event 7 
 // (FUN_00545c30 -> FUN_0054e600).
 auto World::seal_boss(const Level& where, int superunique, int x, int y) -> void {
         if (std::size_t(superunique) >= game_data->superuniques.size()) return;
-        const int diff = character.header.active_difficulty();
+        const int diff = actor->character.header.active_difficulty();
         const auto& row = game_data->superuniques[std::size_t(superunique)];
         const auto [at_x, at_y] = where.nearest_free((float(x) + 0.5f) / 5, (float(y) + 0.5f) / 5);
         auto boss = make_monster(*game_data, row.type, at_x, at_y, fight.rng, diff, false);
@@ -78,7 +78,7 @@ auto World::act4_join() -> void {
         forge_inited = false;
         seal_bosses.clear();
         fortress_warp_done = end_movie = game_closed = false;
-        had_soulstone = carries(d2d::rules::HellforgeQuest::kStone);
+        actor->had_soulstone = carries(d2d::rules::HellforgeQuest::kStone);
         act4_chain();
     }
 
@@ -107,24 +107,24 @@ auto World::act4_talk(std::vector<d2d::rules::QuestMsg>& out, int hc_idx) -> voi
         std::ranges::copy(d2d::rules::Act4Opening::talk(quests(), hc_idx), std::back_inserter(out));
         std::ranges::copy(izual.talk(quests(), hc_idx), std::back_inserter(out));
         std::ranges::copy(hellforge.talk(quests(), hc_idx, carries(d2d::rules::HellforgeQuest::kStone)), std::back_inserter(out));
-        std::ranges::copy(terror.talk(quests(), hc_idx, character.header.expansion()), std::back_inserter(out));
+        std::ranges::copy(terror.talk(quests(), hc_idx, actor->character.header.expansion()), std::back_inserter(out));
     }
 
 auto World::act4_said(int hc_idx, int message_string) -> void {
         d2d::rules::Act4Opening::said(quests(), hc_idx, message_string);
         // The Fallen Angel's reward (FUN_005b39a0): 2 skill points (FUN_006272b0 stat 5).
         if (const auto heard = izual.said(quests(), hc_idx, message_string); heard.skill_points || heard.chain) {
-            character.stats.values[d2d::d2s::kSkillPts] += heard.skill_points;
+            actor->character.stats.values[d2d::d2s::kSkillPts] += heard.skill_points;
             if (heard.skill_points) d2d::log::info("The Fallen Angel: Tyrael's reward, +{} skill points", heard.skill_points);
             if (heard.chain) act4_chain();
         }
         // The Hellforge (FUN_005b6100): Cain's soulstone (FUN_005466b0 "mss "), his reward.
         if (const auto heard = hellforge.said(quests(), hc_idx, message_string); heard.gives_stone || heard.chain) {
-            if (heard.gives_stone) { give_item(d2d::rules::HellforgeQuest::kStone, now); had_soulstone = true; d2d::log::info("The Hellforge: Cain's soulstone"); }
+            if (heard.gives_stone) { give_item(d2d::rules::HellforgeQuest::kStone, now); actor->had_soulstone = true; d2d::log::info("The Hellforge: Cain's soulstone"); }
             if (heard.chain) act4_chain();
         }
         // Terror's End (FUN_005b4670): LoD, Tyrael's portal 5 cells east of him (FUN_005b45e0).
-        if (terror.said(quests(), hc_idx, message_string, character.header.expansion()).portal && game_data->builder) {
+        if (terror.said(quests(), hc_idx, message_string, actor->character.header.expansion()).portal && game_data->builder) {
             const auto tyrael = std::ranges::find(level->npcs, d2d::rules::TerrorQuest::kTyrael, &Npc::hc_idx);
             if (tyrael != level->npcs.end()) {
                 auto& here = const_cast<Level&>(*level);            // GameData owns its levels mutable (gamedata.cpp)
@@ -138,7 +138,7 @@ auto World::act4_said(int hc_idx, int message_string) -> void {
 
 auto World::act4_alert(int hc_idx) -> bool {
         return d2d::rules::Act4Opening::alert(quests(), hc_idx) || izual.alert(quests(), hc_idx) || hellforge.alert(quests(), hc_idx)
-            || terror.alert(quests(), hc_idx, character.header.expansion());
+            || terror.alert(quests(), hc_idx, actor->character.header.expansion());
     }
 
 auto World::act4_kill(const Fight::Kill& kill, std::uint32_t now_ms) -> void {
@@ -154,7 +154,7 @@ auto World::act4_kill(const Fight::Kill& kill, std::uint32_t now_ms) -> void {
         }
         if (std::ranges::contains(d2d::rules::TerrorQuest::kSealBosses, kill.super) && terror.boss_died()) diablo_release(now_ms);
         if (kill.type == d2d::rules::TerrorQuest::kDiablo && !terror.dead) {   // FUN_005b52e0 -> FUN_005b4d20
-            const bool expansion = character.header.expansion();
+            const bool expansion = actor->character.header.expansion();
             terror.diablo_died(quests(), expansion);
             // Classic: the next difficulty opens (FUN_00538680); with bit 13 the
             // client plays the end on leaving (S->C 0x5d -> FUN_004a2cb0: DAT_007a0604);
@@ -210,7 +210,7 @@ auto World::act4_update(std::uint32_t now_ms) -> void {
         // player it's for (act4_detail::told).
         for (auto [news, quest] : { std::pair{ &izual.news, d2d::rules::IzualQuest::kQuest }, { &hellforge.news, d2d::rules::HellforgeQuest::kQuest },
                                     { &terror.news, d2d::rules::TerrorQuest::kQuest } })
-            if (std::exchange(*news, false) && d2d::rules::act4_detail::told(quests(), quest)) events.push_back(ev::QuestNews{ quest });
+            if (std::exchange(*news, false) && d2d::rules::act4_detail::told(quests(), quest)) actor->events.push_back(ev::QuestNews{ quest });
         // The seals' bosses at their flash's event 7 (FUN_005b5750 -> FUN_00545c30).
         const Level* sanctuary = game_data->level(d2d::rules::level_ids::kChaosSanctuary);
         for (auto due = seal_bosses.begin(); due != seal_bosses.end();)
@@ -235,7 +235,7 @@ auto World::act4_update(std::uint32_t now_ms) -> void {
                     hellforge.forge_seen();
                 }
         if (gems_at && now_ms >= gems_at && forge) {
-            const int diff = std::clamp(character.header.active_difficulty(), 0, 2);
+            const int diff = std::clamp(actor->character.header.active_difficulty(), 0, 2);
             const auto& area_levels = game_data->area_level;
             const int alvl = std::size_t(river->id) < area_levels.size() ? area_levels[std::size_t(river->id)][std::size_t(diff)] : 1;
             const auto& table = d2d::rules::HellforgeQuest::kGems[std::size_t(gem_rounds == 4 ? 2 : gem_rounds == 1 ? 0 : 1)];
@@ -245,7 +245,7 @@ auto World::act4_update(std::uint32_t now_ms) -> void {
             if (--gem_rounds > 0) gems_at = now_ms + d2d::rules::HellforgeQuest::kRoundFrames * kTickMs;
             else {
                 gems_at = 0;
-                if (character.header.expansion()) {
+                if (actor->character.header.expansion()) {
                     const int rune = d2d::rules::HellforgeQuest::kRuneFirst[std::size_t(diff)] + fight.spawning.quests(11);
                     loot.put({ .code = std::format("r{:02}", rune) }, forge->x, forge->y, alvl, fight.spawning.game, now_ms, false, 0, river);
                     d2d::log::info("The Hellforge: the rune r{:02}", rune);
@@ -257,7 +257,7 @@ auto World::act4_update(std::uint32_t now_ms) -> void {
         if (diablo_at && now_ms >= diablo_at && sanctuary && !terror.diablo_made) {
             const auto start = std::ranges::find(sanctuary->npcs, d2d::rules::object_ids::kDiabloStart, &Npc::object_id);
             if (start != sanctuary->npcs.end()) {
-                const int diff = character.header.active_difficulty();
+                const int diff = actor->character.header.active_difficulty();
                 const auto [at_x, at_y] = sanctuary->nearest_free(start->x, start->y);
                 auto diablo = make_monster(*game_data, d2d::rules::TerrorQuest::kDiablo, at_x, at_y, fight.rng, diff);
                 if (const auto boss = d2d::rules::act_boss(diablo.type, game_data->monsters.types[std::size_t(diablo.type)].base)) {   // FUN_005b1cf0
@@ -292,9 +292,9 @@ auto World::act4_update(std::uint32_t now_ms) -> void {
         }
         // The soulstone picked up (LAB_005b5a90): the Hellforge open.
         // ponytail: polled from what's carried, not the item event.
-        if (const bool stone = carries(d2d::rules::HellforgeQuest::kStone); stone != had_soulstone) {
+        if (const bool stone = carries(d2d::rules::HellforgeQuest::kStone); stone != actor->had_soulstone) {
             if (stone) hellforge.stone_picked(quests());
-            had_soulstone = stone;
+            actor->had_soulstone = stone;
         }
     }
 
@@ -307,7 +307,7 @@ auto World::act4_operate(int npc_index, std::uint32_t now_ms) -> bool {
         // FrameCnt3 starts the gems (act4_update).
         if (object.operate_fn == kHellforge) {
             if (hosted_quests) return true;
-            const bool in_hand = std::ranges::any_of(character.items, [](const d2d::d2s::Item& item) {
+            const bool in_hand = std::ranges::any_of(actor->character.items, [](const d2d::d2s::Item& item) {
                 return item.code == d2d::rules::HellforgeQuest::kHammer && item.location == d2d::d2s::item_location::kEquipped
                     && (item.slot == d2d::d2s::body_location::kRightArm || item.slot == d2d::d2s::body_location::kLeftArm); });
             const auto struck = hellforge.operate(quests(), carries(d2d::rules::HellforgeQuest::kStone), in_hand);
@@ -347,7 +347,7 @@ auto World::act4_operate(int npc_index, std::uint32_t now_ms) -> bool {
         // in this game: word 0x1c bits 0 and 13, then to Harrogath (109).
         // ponytail: Act 5 isn't built; it stops here.
         if (object.operate_fn == kLastPortal) {
-            if (!character.header.expansion() || (!d2d::rules::quest::bit(quests(), d2d::rules::TerrorQuest::kQuest, 0) && !d2d::rules::quest::bit(quests(), d2d::rules::TerrorQuest::kQuest, 13))) return true;
+            if (!actor->character.header.expansion() || (!d2d::rules::quest::bit(quests(), d2d::rules::TerrorQuest::kQuest, 0) && !d2d::rules::quest::bit(quests(), d2d::rules::TerrorQuest::kQuest, 13))) return true;
             if (!d2d::rules::quest::bit(quests(), 0x1c, 0)) { d2d::rules::quest::set(quests(), 0x1c, 0); d2d::rules::quest::set(quests(), 0x1c, 13); }
             d2d::log::info("Tyrael's portal: Harrogath (Act 5) isn't built yet");
             return true;

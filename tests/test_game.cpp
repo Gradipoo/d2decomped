@@ -181,18 +181,18 @@ int main() {
     std::printf("OK: %s in level %d at (%.1f, %.1f)\n", character.name.c_str(), view.level->id, view.player.x, view.player.y);
 
     // d2d's autoloot (deviations.md #5): gold under the player goes into the purse.
-    const auto purse = world.character.stats.get(d2d::d2s::kGold);
-    world.loot.put({ .code = "gld", .gold = 7 }, world.player.x, world.player.y, 1, world.fight.spawning.game, 26 * kTickMs);
-    std::tie(world.loot.ground.back().x, world.loot.ground.back().y) = std::pair{ world.player.x, world.player.y };
+    const auto purse = world.actor->character.stats.get(d2d::d2s::kGold);
+    world.loot.put({ .code = "gld", .gold = 7 }, world.actor->player.x, world.actor->player.y, 1, world.fight.spawning.game, 26 * kTickMs);
+    std::tie(world.loot.ground.back().x, world.loot.ground.back().y) = std::pair{ world.actor->player.x, world.actor->player.y };
     world.tick({}, 26 * kTickMs, 25 * kTickMs);
-    assert(world.character.stats.get(d2d::d2s::kGold) == purse + 7 && world.loot.ground.empty());
+    assert(world.actor->character.stats.get(d2d::d2s::kGold) == purse + 7 && world.loot.ground.empty());
     {   // A vendor's stock and Kashya's hire list last the game, not one opening.
         const auto& npcs = world.level->npcs;
         const auto index_of = [&](int hc_idx) { return int(std::ranges::find(npcs, hc_idx, &Npc::hc_idx) - npcs.begin()); };
         const int charsi = index_of(d2d::rules::monster_ids::kCharsi), kashya = index_of(d2d::rules::monster_ids::kKashya);
         auto codes = [&] {
             std::vector<std::string> out;
-            for (const auto& tab : world.store.tabs) for (const auto& item : tab) out.push_back(item.code + std::to_string(item.id));
+            for (const auto& tab : world.actor->store.tabs) for (const auto& item : tab) out.push_back(item.code + std::to_string(item.id));
             return out;
         };
         world.apply(d2d::game::cmd::OpenTrade{ charsi }, 27 * kTickMs);
@@ -211,7 +211,7 @@ int main() {
         auto seed = world.fight.spawning.game;
         d2d::rules::Rng unit{ seed.next() };
         const int coins = d2d::rules::gold_amount(10, 0, unit);
-        world.loot.put({ .code = "gld" }, world.player.x, world.player.y, 10, world.fight.spawning.game, 27 * kTickMs, false, 50);
+        world.loot.put({ .code = "gld" }, world.actor->player.x, world.actor->player.y, 10, world.fight.spawning.game, 27 * kTickMs, false, 50);
         assert(!world.loot.ground.empty() && world.loot.ground.back().gold == coins * 150 / 100);
         world.loot.ground.pop_back();
     }
@@ -248,47 +248,48 @@ int main() {
     // A healer's / well's cure (FUN_00578d30 / FUN_00585720): poison and the
     // curses go, chill stays; a thawing potion's takes the chill.
     auto& fight = world.fight;
-    const auto poisoned = [&] { return std::ranges::any_of(fight.regen, &Fight::Regen::poison); };
-    fight.regen.push_back({ -1.0, 0, 1000 * kTickMs, true });
+    auto& hero = *world.actor;
+    const auto poisoned = [&] { return std::ranges::any_of(hero.regen, &Fight::Regen::poison); };
+    hero.regen.push_back({ -1.0, 0, 1000 * kTickMs, true });
     // A monster's curse on the player is a self state's aurastats: Weaken's
     // damagepercent -33 (par5) comes off the damage %, Amplify Damage's -100 off DR.
     fight.update_fighters(26 * kTickMs);
-    const auto uncursed = fight.player_combat;
-    fight.curses[0] = { 72, 1, 1000 * kTickMs };
+    const auto uncursed = hero.player_combat;
+    hero.curses[0] = { 72, 1, 1000 * kTickMs };
     fight.update_fighters(26 * kTickMs);
-    assert(fight.player_combat.phys_pct == uncursed.phys_pct - 33);
-    fight.curses[0] = { 66, 1, 1000 * kTickMs };
+    assert(hero.player_combat.phys_pct == uncursed.phys_pct - 33);
+    hero.curses[0] = { 66, 1, 1000 * kTickMs };
     fight.update_fighters(26 * kTickMs);
-    assert(fight.player_combat.dr_pct == uncursed.dr_pct - 100 && fight.player_combat.phys_pct == uncursed.phys_pct);
+    assert(hero.player_combat.dr_pct == uncursed.dr_pct - 100 && hero.player_combat.phys_pct == uncursed.phys_pct);
     // Max mana % (item_maxmana_percent 77, op 11): a share of the own maximum
     // plus the items' flat +mana, not of energy's (op 8).
     {
-        const auto items = fight.character.items;
+        const auto items = hero.character.items;
         d2d::d2s::Item charm;
         charm.code = "cm1"; charm.panel = 1; charm.props = { { d2d::d2s::kMaxMana, 0, 100 }, { d2d::d2s::kEne, 0, 10 }, { d2d::d2s::kMaxManaPercent, 0, 50 } };
-        fight.character.items = { charm };
+        hero.character.items = { charm };
         fight.update_fighters(26 * kTickMs);
         const std::int64_t own = fight.own_stats().values[d2d::d2s::kMaxMana], flat = own + 100 * 256;
-        const auto& gains = data->class_gains[std::size_t(fight.character.header.cls % 7)];
+        const auto& gains = data->class_gains[std::size_t(hero.character.header.cls % 7)];
         const std::int64_t energy = 10 * gains.mana_per_energy / 4 * 256;
-        assert(fight.character.stats.values[d2d::d2s::kMaxMana] == flat + flat * 50 / 100 + energy);
+        assert(hero.character.stats.values[d2d::d2s::kMaxMana] == flat + flat * 50 / 100 + energy);
         // Battle Orders' % (a state's 77) adds to the items': one % of the
         // same raw maximum, mana up with it.
-        const auto mana = fight.character.stats.values[d2d::d2s::kMana];
-        fight.boost = { 0, { { d2d::d2s::kMaxManaPercent, 20 } }, 1000 * kTickMs };
+        const auto mana = hero.character.stats.values[d2d::d2s::kMana];
+        hero.boost = { 0, { { d2d::d2s::kMaxManaPercent, 20 } }, 1000 * kTickMs };
         fight.update_fighters(26 * kTickMs);
-        assert(fight.character.stats.values[d2d::d2s::kMaxMana] == flat + flat * 70 / 100 + energy);
-        assert(fight.character.stats.values[d2d::d2s::kMana] == std::min(mana + (flat * 70 / 100 - flat * 50 / 100), flat + flat * 70 / 100 + energy));
-        fight.boost = {};
-        fight.character.items = items;
+        assert(hero.character.stats.values[d2d::d2s::kMaxMana] == flat + flat * 70 / 100 + energy);
+        assert(hero.character.stats.values[d2d::d2s::kMana] == std::min(mana + (flat * 70 / 100 - flat * 50 / 100), flat + flat * 70 / 100 + energy));
+        hero.boost = {};
+        hero.character.items = items;
         fight.update_fighters(26 * kTickMs);
-        assert(fight.character.stats.values[d2d::d2s::kMaxMana] == own);
+        assert(hero.character.stats.values[d2d::d2s::kMaxMana] == own);
     }
-    fight.chilled = 1000 * kTickMs;
-    assert(fight.cure(26 * kTickMs) && !poisoned() && fight.curses[0].until == 0 && fight.chill_rate(26 * kTickMs) == -50);
+    hero.chilled = 1000 * kTickMs;
+    assert(fight.cure(26 * kTickMs) && !poisoned() && hero.curses[0].until == 0 && fight.chill_rate(26 * kTickMs) == -50);
     fight.update_fighters(26 * kTickMs);
     assert(!fight.cure(26 * kTickMs));
-    fight.regen.push_back({ -1.0, 0, 1000 * kTickMs, true });
+    hero.regen.push_back({ -1.0, 0, 1000 * kTickMs, true });
     fight.potion("yps", 26 * kTickMs);
     fight.potion("wms", 26 * kTickMs);
     assert(!poisoned() && fight.chill_rate(26 * kTickMs) == 0);
@@ -305,7 +306,7 @@ int main() {
     const auto cain_index = std::size_t(cain_npc - tristram->npcs.begin());
     const auto* camp = world.level;
     world.level = tristram;
-    std::tie(world.player.x, world.player.y) = tristram->nearest_free(gibbet->x + 2, gibbet->y + 2);
+    std::tie(world.actor->player.x, world.actor->player.y) = tristram->nearest_free(gibbet->x + 2, gibbet->y + 2);
     world.swap_npcs(camp);
     assert(world.npc_states[cain_index].hidden);
     world.operate(int(gibbet - tristram->npcs.begin()), 26 * kTickMs);
@@ -367,22 +368,22 @@ int main() {
     const auto shrine_index = int(shrine - moor->npcs.begin());
     world.level = moor;
     world.swap_npcs(tristram);
-    auto& stats = world.character.stats.values;
+    auto& stats = world.actor->character.stats.values;
     stats[d2d::d2s::kStamina] = 0;
     world.cues.due.clear();
     world.operate(shrine_index, 900 * kTickMs, 14);
-    assert(stats[d2d::d2s::kStamina] == stats[d2d::d2s::kMaxStamina] && world.shrine_code(world.fight.boost.shrine) == 14);
+    assert(stats[d2d::d2s::kStamina] == stats[d2d::d2s::kMaxStamina] && world.shrine_code(world.actor->boost.shrine) == 14);
     assert(std::ranges::count(world.cues.due, data->sound_index.at("shrine_recharge"), &Cues::Cue::sound) == 1);
     world.tick({}, 901 * kTickMs, 900 * kTickMs);
     assert(world.npc_states[std::size_t(shrine_index)].says == 3683 + shrine->shrine && world.view().boost_code == 14);
-    const int fire = world.fight.player_combat.res[0];
+    const int fire = world.actor->player_combat.res[0];
     stats[d2d::d2s::kStamina] = 0;
     world.operate(shrine_index, 902 * kTickMs, 8);
     world.tick({}, 903 * kTickMs, 902 * kTickMs);
     assert(stats[d2d::d2s::kStamina] == stats[d2d::d2s::kMaxStamina] && world.view().boost_code == 8);
-    assert(world.fight.player_combat.res[0] == std::min(fire + 75, int(world.character.panel.res_cap[0])) && world.fight.boost.until == (902 + 3600) * kTickMs);
+    assert(world.actor->player_combat.res[0] == std::min(fire + 75, int(world.actor->character.panel.res_cap[0])) && world.actor->boost.until == (902 + 3600) * kTickMs);
     world.tick({}, (902 + 3600) * kTickMs, (901 + 3600) * kTickMs);
-    assert(world.fight.boost.shrine == 0 && world.fight.player_combat.res[0] == fire);
+    assert(world.actor->boost.shrine == 0 && world.actor->player_combat.res[0] == fire);
     std::printf("OK: shrines: stamina filled, one state at a time, resist fire for 3600 frames\n");
 
     // A chest's trap fires at its event 4, 35 frames after it opened
@@ -392,7 +393,7 @@ int main() {
         return std::ranges::count_if(world.fight.missiles, [&](const auto& missile) { return missile.info && missile.info->name == name; });
     };
     world.fight.missiles.clear();
-    world.arm_trap(1, world.player.x + 1, world.player.y, 1, 4600 * kTickMs);
+    world.arm_trap(1, world.actor->player.x + 1, world.actor->player.y, 1, 4600 * kTickMs);
     world.tick({}, (4600 + 34) * kTickMs, (4600 + 33) * kTickMs);
     assert(world.fight.missiles.empty() && world.traps.size() == 1);
     world.tick({}, (4600 + 35) * kTickMs, (4600 + 34) * kTickMs);
@@ -408,10 +409,10 @@ int main() {
     const int tome_index = int(tome - tower_level->npcs.begin());
     world.level = tower_level;
     world.swap_npcs(moor);
-    world.events.clear();
+    world.actor->events.clear();
     world.operate(tome_index, 4700 * kTickMs);
-    assert(world.tower.state == 0 && world.events.size() == 1);
-    const auto* told = std::get_if<d2d::game::ev::Speech>(&world.events[0]);
+    assert(world.tower.state == 0 && world.actor->events.size() == 1);
+    const auto* told = std::get_if<d2d::game::ev::Speech>(&world.actor->events[0]);
     assert(told && told->npc == tome_index && told->string == d2d::rules::TowerQuest::kTome);
     world.apply(d2d::game::cmd::QuestMessage{ tome_index, d2d::rules::TowerQuest::kTome }, 4701 * kTickMs);
     assert(world.tower.state == 2);

@@ -142,10 +142,6 @@ inline int skill_level(const GameData& game_data, const Character& character, in
 struct Fight {
     const GameData* game_data;
     const Level* const& level;             // Town's: where the player is
-    Character& character;
-    UnitState& player;
-    std::optional<Monster>& merc;          // the save's mercenary, a monster on the player's side (World's)
-    const Npc* const& merc_npc;
     d2d::rules::Rng& rng;
     Loot& loot;
     Cues& cues;
@@ -160,21 +156,193 @@ struct Fight {
     const Level* mon_level = nullptr;                // whose monsters `monsters` are
     AreaSeen area_seen;                              // their spawn areas' "seen" flags (ai.cpp search_target)
     OpenDoor open_door;                              // a monster's door at a think (the world's doors)
-    // The player's / merc's curse from a monster (do 30, FUN_005c37c0: one
-    // at a time, the newest): a Cursed boss's Amplify Damage, the
-    // Summoner's Weaken. The player's aurastats join its self states'.
-    struct Curse { int skill = -1, level = 0; std::uint32_t until = 0; };
-    std::array<Curse, 2> curses{};
-    // A missile hit's state on the player / merc (hit 19, FUN_005ab110: the
-    // skill's auratargetstate for auralen frames, at least 5, with its
-    // aurastats): the finger mage's fingermagecurse (0x54).
-    std::array<Curse, 2> marks{};
-    std::uint32_t chilled = 0;                       // the player's chill (state 11, a monster's cold) runs out
-    // The player's stun (state 21, FUN_0057aae0: a monster's Smite) runs out.
-    // It stops nothing; every hit while it runs is a get-hit (FUN_0057cee0).
-    std::uint32_t stunned = 0;
+    // One player in the fight (docs/design/local-coop.md): their unit, character
+    // and merc, and everything their combat keeps from frame to frame. The
+    // World's Player adds the rest of their state; `actor` is the one acting.
+    struct Hero {
+        Character character;               // the World's own copy (the client's is a copy of the View's)
+        UnitState player;                  // DS1 cells (x.5 = a cell centre)
+        std::optional<Monster> merc;       // the save's mercenary, a monster on the player's side (merc_turn)
+        const Npc* merc_npc = nullptr;
+        // The player's / merc's curse from a monster (do 30, FUN_005c37c0: one
+        // at a time, the newest): a Cursed boss's Amplify Damage, the
+        // Summoner's Weaken. The player's aurastats join its self states'.
+        struct Curse { int skill = -1, level = 0; std::uint32_t until = 0; };
+        std::array<Curse, 2> curses{};
+        // A missile hit's state on the player / merc (hit 19, FUN_005ab110: the
+        // skill's auratargetstate for auralen frames, at least 5, with its
+        // aurastats): the finger mage's fingermagecurse (0x54).
+        std::array<Curse, 2> marks{};
+        std::uint32_t chilled = 0;                       // the player's chill (state 11, a monster's cold) runs out
+        // The player's stun (state 21, FUN_0057aae0: a monster's Smite) runs out.
+        // It stops nothing; every hit while it runs is a get-hit (FUN_0057cee0).
+        std::uint32_t stunned = 0;
+        std::vector<std::pair<int, std::uint32_t>> strafe;   // Strafe's arrows to come: target, when
+        int channel = -1, last_frame = -1;     // Inferno's skill while its cast lasts
+        // The monster being attacked (walked up to, then struck), the player's
+        // non-walking mode (A1 attack, GH get-hit, BL block, DT dying, DD dead;
+        // -1 none) and when it ends.
+        int   attack_mon = -1;
+        int   pmode = -1;
+        std::uint32_t pmode_until = 0;
+        // Knocked back (mode 0x13, drawn as GH: PlrMode.txt): from, to, cells.
+        std::optional<std::array<float, 4>> knock;
+        // Leap in flight (do 77): from, to, its start and landing, its skill and level.
+        struct Leap { float from_x = 0, from_y = 0, to_x = 0, to_y = 0; std::uint32_t start = 0, lands = 0; int skill = -1, level = 1; };
+        std::optional<Leap> leap;
+        bool  pstruck = false;                 // this swing's hit is resolved
+        float prate = 1.f;                     // the mode's animation rate (attack speed, FHR, FBR)
+        d2d::rules::Fighter player_combat;                // the player in a fight, as of this frame
+        d2d::rules::Fighter pf_kick;           // the same without the weapon (kicks: FUN_00646280 takes it off)
+        d2d::rules::StatSum psum{};            // the player's stats (gear, passives) as of this frame
+        float cast_x = 0, cast_y = 0;          // where a missile skill was sent
+        int aura = 0;                          // the aura on (Town: the right skill when it's one)
+        // The player's summons (skills.md "Summons"): a Monster of the skill's
+        // summon row on the player's side, the skill that raised it, and the
+        // monster it's after.
+        // A trap (do 45) shoots instead: its skill (a monster skill whose
+        // missile carries the player's), at its level, `shots` times.
+        struct Charge { int skill = 0, level = 0, count = 0; std::uint32_t until = 0; };   // see `charges`
+        struct SelfState { int skill = 0, level = 0; std::uint32_t until = 0; };
+        struct Pet {
+            Monster monster; int skill = 0; int target = -1; int shot_skill = -1, shot_level = 0, shots = 0;
+            // Its sumskills d2d uses (FUN_0056deb0 at their sumsk calcs): a
+            // missile it shoots (the skeletal mage's, the hydra's), an aura it
+            // runs (Fire Golem's Holy Fire, the totems').
+            int ranged = -1, ranged_level = 0, aura = -1, aura_level = 0;
+            std::uint32_t aura_next = 0;
+            // What the summoning skill's stats gave it (FUN_005c4470).
+            std::array<int, 4> res{};                  // fire, lightning, cold, poison
+            int thorns = 0, fire_lo = 0, fire_hi = 0, speed_pct = 0;
+            const Level* where = nullptr;              // the level it's on (pets follow the player across)
+            std::uint32_t until = 0;                   // it goes then (Decoy, Revive, Hydra; 0 never)
+            int variant = 0;                           // a skeletal mage's element (its +0xf, FUN_005ce0b0)
+            int hits = 0;                              // a Raven's attacks left (0: no count)
+            bool idle = false, mirror = false;         // Decoy stands; a Shadow Warrior swings the owner's blow
+            bool chase = false;                        // walking at its target (FUN_005ded40)
+            std::array<int, 3> ctrl{};                 // its AI control's +0x14 / +0x18 / +0x1c (rules::PetBrain)
+            int cast = -1;                             // the skill its attack mode does (a traced think's), -1 a swing
+            float cast_x = 0, cast_y = 0;              // a skill at a spot (a wolf's Teleport)
+            // A Shadow's skills in its list's order (pet-ai.md "Their skill lists")
+            // and the Shadow Master's left skill (FUN_00643bc0; -1 none).
+            std::vector<d2d::rules::ShadowListed> skill_list;
+            int left_skill = -1;
+            std::vector<Charge> charges;               // a Shadow's charge-ups' charges (as the player's)
+            std::vector<SelfState> buffs;              // a Shadow's self states (Burst of Speed, Fade, Venom, Cloak, Blade Shield)
+            std::unordered_map<int, int> buff_stats;   // their aurastats summed (pet_buffs)
+            int bo_life = 0;                           // a war cry's maxhp percent on its life (pet_buffs)
+            std::uint32_t blade_next = 0;              // its Blade Shield's next strike
+        };
+        // What a Shadow summons while the pets take their turns (traps, Blade
+        // Sentinel), made once they're done.
+        struct PetSummon { int skill = 0, level = 0; float x = 0, y = 0; };
+        std::vector<PetSummon> pet_summons;
+        std::vector<Pet> pets;
+        std::uint32_t aura_next = 0;           // its next pulse
+        // The skill the player attacks with (Skills.txt id; 0 Attack), the one
+        // this swing uses (Attack when it's not built or can't be paid for),
+        // and the strikes still to come (Dragon Talon's kicks, Zeal's hits).
+        int   attack_skill = 0, swing_skill = 0, kicks_left = 0;
+        std::int64_t self_hurt = 0;            // life (256ths) the player's own skills cost (Sacrifice), taken with the monsters' hits
+        // An SQ skill's sequence while it plays (sequences.hpp, for the weapon
+        // class): its frames, each seq_frame_ms long, and the hits (event 1)
+        // already struck.
+        std::span<const d2d::rules::SeqFrame> seq{};
+        std::uint32_t seq_frame_ms = 40;
+        int seq_struck = 0;
+        bool seq_loop = false;                 // Whirlwind's plays over until it arrives
+        // A skill that moves the player (Whirlwind, Charge, Leap Attack):
+        // toward (tx, ty) at `speed` cells/s while `on`; `fly` ignores walls
+        // (a leap); whirl_next is Whirlwind's next hit time (FUN_005d9320).
+        struct SkillMove { float target_x = 0, target_y = 0, speed = 0; bool active = false, fly = false; };
+        SkillMove smove;
+        float move_x = 0, move_y = 0;          // where the click sent a moving skill
+        std::uint32_t whirl_next = 0;
+        // A charge-up's charges (FUN_005d3320: its aurastate, the skill and
+        // level in stats 0x15e / 0x15f, the count, at most 3, in aurastat1),
+        // until auralencalc ticks after the last one.
+        std::vector<Charge> charges;
+        // Self states from a swing (aurastate): Concentrate's lasts while its
+        // swing does (made with no length; its removal isn't traced), Berserk's
+        // calc2 ticks (FUN_005d97f0, 10 when that's 0).
+        std::vector<SelfState> self_states;
+        int absorb_pool = 0, absorb_skill = -1;        // Bone / Cyclone Armor's damage left to absorb
+        std::uint32_t blaze_frame = 0, storm_next = 0; // Blaze's last flame, Thunder Storm's next bolt
+        int storm_last = -1;                            // the unit id Thunder Storm struck last (FUN_00644560)
+        std::uint32_t storm_frame = 0;                 // the last frame buff_tick ran its paced strikes
+        std::uint32_t blade_next = 0;                  // Blade Shield's next strike
+        std::int64_t bo_life = 0, bo_mana = 0;         // Battle Orders' life and mana on the maxima (256ths)
+        // What worn items (and passives) put on the maxima (256ths): the
+        // character's own, as a save keeps them, are the maxima less these.
+        std::array<std::int64_t, 3> item_max{};        // life, mana, stamina
+        // The merc in a fight: its stats (hireling.txt at its level), the
+        // monster it's after and whether it's walking at it. The rest is its
+        // Monster's (World::merc): life, mode (NU / WL / RN follow, A1 attack,
+        // GH, DT), mode_until, struck, its seed (+0x20, the think's rolls),
+        // next_act (its next think), move_pct (a move's pace).
+        d2d::rules::MercStats merc_st;
+        int   merc_target = -1;
+        bool  merc_chase = false;
+        // Its hireling skills (Skills.txt ids, levels: rules::merc_skill_levels),
+        // the AI control's +0x14 (the attack think's chance growth), the aura it
+        // started (FUN_005701b0: running from then, its effect not built) and
+        // the skill (and level) its attack mode carries (-1: a plain blow).
+        std::array<int, 6> merc_ids{}, merc_levels{};
+        int   merc_growth = 0, merc_aura = -1, merc_skill = -1, merc_skill_level = 0;
+        // An SQ skill's sequence while it plays (Jab: MonSeq seq_act2guardjab,
+        // its MonStats Sk*mode), and the sequence frames already past.
+        const std::vector<GameData::MonSeqFrame>* merc_seq = nullptr;
+        int   merc_seq_done = 0;
+        // A self cast's state on the merc (Frozen Armor, do 18 FUN_005c9480):
+        // the skill, its level, until when. Its aurastats go on its fighter
+        // (skill_armor_percent), melee strikers freeze (merc_buff_events), and
+        // the pick passes it over while it runs (FUN_005e4d30, its state on).
+        struct MercBuff { int skill = -1, level = 0; std::uint32_t until = 0; } merc_buff;
+        // A war cry's state on it (hit 18, FUN_005ab0b0 -> FUN_005d8290: Shout's
+        // defense %, Battle Orders' life %, Battle Command's), apart from its own.
+        MercBuff merc_cry;
+        // What the merc's think reads of the player: its mode (2 walk, 3 run, 6
+        // walk in town, 1 else) and footsteps (player data +0xa0 / +0xa8, 20
+        // subtile spots, `footstep_cursor` the next to write), World's to fill.
+        int   owner_mode = 1;
+        std::array<std::pair<int, int>, 20> footsteps{};
+        int   footstep_cursor = 0;
+        std::uint32_t footstep_ms = 0;
+        // Where the player last arrived through a warp (player data +0x148 /
+        // +0x14c, FUN_00554ea0; subtiles): a pet near it steps out of the crowd.
+        std::pair<int, int> warp_spot{};
+        // Potions working: life / mana (8.8 fixed) a millisecond, until when.
+        struct Regen { double life = 0, mana = 0; std::uint32_t until = 0; bool poison = false; };
+        std::vector<Regen> regen;
+        // A shrine's boost (Shrines.txt booster: its stats, FUN_00583b30), one
+        // at a time, until when.
+        struct Boost { int shrine = 0; std::vector<std::pair<int, int>> stats; std::uint32_t until = 0; } boost;
+        double merc_heal_rate = 0, merc_heal_acc = 0;  // the merc's healthpot: life per ms, its fraction
+        std::uint32_t merc_heal_until = 0;
+        double regen_acc_life = 0, regen_acc_mana = 0;
+        std::uint32_t need_mana_until = 0;
+        bool portal_due = false;                       // Town Portal's action frame came
+        // The wisps' dance's blessing on the player (FUN_005f39b0): stat 0x50
+        // (magic find) for 0x1a5e00 frames, the last one's.
+        struct Blessing { int find = 0; std::uint32_t until = 0; } wisp_blessing;
+    };
+    using Curse = Hero::Curse;
+    using Leap = Hero::Leap;
+    using Charge = Hero::Charge;
+    using SelfState = Hero::SelfState;
+    using Pet = Hero::Pet;
+    using PetSummon = Hero::PetSummon;
+    using SkillMove = Hero::SkillMove;
+    using MercBuff = Hero::MercBuff;
+    using Regen = Hero::Regen;
+    using Boost = Hero::Boost;
+    using Blessing = Hero::Blessing;
+    Hero* actor = nullptr;                    // the player acting now (World::act_as)
+    // The acting player's level in a skill: points, and with item bonuses
+    // (Town points these at its SkillBar).
+    std::function<int(int)> skill_base, skill_level;
     // Chill's -50 attackrate / velocitypercent (FUN_0057af80 -> FUN_00623f50).
-    [[nodiscard]] int chill_rate(std::uint32_t now_ms) const { return now_ms < chilled ? -50 : 0; }
+    [[nodiscard]] int chill_rate(std::uint32_t now_ms) const { return now_ms < actor->chilled ? -50 : 0; }
     // A healer's and a well's cure (FUN_00578d30 / FUN_00585720): poison
     // (state 2), freeze (state 1: a player's is chill, FUN_0057b230, so
     // none) and the curses (FUN_00578c20, the states flagged at
@@ -189,161 +357,18 @@ struct Fight {
     Spawning spawning;                                   // the game's rooms in play and what they spawned (new_game)
     std::vector<Missile> missiles;         // in flight in the Blood Moor
     std::vector<Missile> pending;          // made this frame, joining `missiles` after its update
-    std::vector<std::pair<int, std::uint32_t>> strafe;   // Strafe's arrows to come: target, when
     std::vector<std::pair<int, int>> burned;             // this frame's burns: monster, skill
-    int channel = -1, last_frame = -1;     // Inferno's skill while its cast lasts
-    // The monster being attacked (walked up to, then struck), the player's
-    // non-walking mode (A1 attack, GH get-hit, BL block, DT dying, DD dead;
-    // -1 none) and when it ends.
-    int   attack_mon = -1;
-    int   pmode = -1;
-    std::uint32_t pmode_until = 0;
-    // Knocked back (mode 0x13, drawn as GH: PlrMode.txt): from, to, cells.
-    std::optional<std::array<float, 4>> knock;
-    // Leap in flight (do 77): from, to, its start and landing, its skill and level.
-    struct Leap { float from_x = 0, from_y = 0, to_x = 0, to_y = 0; std::uint32_t start = 0, lands = 0; int skill = -1, level = 1; };
-    std::optional<Leap> leap;
-    bool  pstruck = false;                 // this swing's hit is resolved
-    float prate = 1.f;                     // the mode's animation rate (attack speed, FHR, FBR)
-    d2d::rules::Fighter player_combat;                // the player in a fight, as of this frame
-    d2d::rules::Fighter pf_kick;           // the same without the weapon (kicks: FUN_00646280 takes it off)
-    d2d::rules::StatSum psum{};            // the player's stats (gear, passives) as of this frame
-    float cast_x = 0, cast_y = 0;          // where a missile skill was sent
-    int aura = 0;                          // the aura on (Town: the right skill when it's one)
-    // The player's summons (skills.md "Summons"): a Monster of the skill's
-    // summon row on the player's side, the skill that raised it, and the
-    // monster it's after.
-    // A trap (do 45) shoots instead: its skill (a monster skill whose
-    // missile carries the player's), at its level, `shots` times.
-    struct Charge { int skill = 0, level = 0, count = 0; std::uint32_t until = 0; };   // see `charges`
-    struct SelfState { int skill = 0, level = 0; std::uint32_t until = 0; };
-    struct Pet {
-        Monster monster; int skill = 0; int target = -1; int shot_skill = -1, shot_level = 0, shots = 0;
-        // Its sumskills d2d uses (FUN_0056deb0 at their sumsk calcs): a
-        // missile it shoots (the skeletal mage's, the hydra's), an aura it
-        // runs (Fire Golem's Holy Fire, the totems').
-        int ranged = -1, ranged_level = 0, aura = -1, aura_level = 0;
-        std::uint32_t aura_next = 0;
-        // What the summoning skill's stats gave it (FUN_005c4470).
-        std::array<int, 4> res{};                  // fire, lightning, cold, poison
-        int thorns = 0, fire_lo = 0, fire_hi = 0, speed_pct = 0;
-        const Level* where = nullptr;              // the level it's on (pets follow the player across)
-        std::uint32_t until = 0;                   // it goes then (Decoy, Revive, Hydra; 0 never)
-        int variant = 0;                           // a skeletal mage's element (its +0xf, FUN_005ce0b0)
-        int hits = 0;                              // a Raven's attacks left (0: no count)
-        bool idle = false, mirror = false;         // Decoy stands; a Shadow Warrior swings the owner's blow
-        bool chase = false;                        // walking at its target (FUN_005ded40)
-        std::array<int, 3> ctrl{};                 // its AI control's +0x14 / +0x18 / +0x1c (rules::PetBrain)
-        int cast = -1;                             // the skill its attack mode does (a traced think's), -1 a swing
-        float cast_x = 0, cast_y = 0;              // a skill at a spot (a wolf's Teleport)
-        // A Shadow's skills in its list's order (pet-ai.md "Their skill lists")
-        // and the Shadow Master's left skill (FUN_00643bc0; -1 none).
-        std::vector<d2d::rules::ShadowListed> skill_list;
-        int left_skill = -1;
-        std::vector<Charge> charges;               // a Shadow's charge-ups' charges (as the player's)
-        std::vector<SelfState> buffs;              // a Shadow's self states (Burst of Speed, Fade, Venom, Cloak, Blade Shield)
-        std::unordered_map<int, int> buff_stats;   // their aurastats summed (pet_buffs)
-        int bo_life = 0;                           // a war cry's maxhp percent on its life (pet_buffs)
-        std::uint32_t blade_next = 0;              // its Blade Shield's next strike
-    };
-    // What a Shadow summons while the pets take their turns (traps, Blade
-    // Sentinel), made once they're done.
-    struct PetSummon { int skill = 0, level = 0; float x = 0, y = 0; };
-    std::vector<PetSummon> pet_summons;
-    std::vector<Pet> pets;
-    std::uint32_t aura_next = 0;           // its next pulse
-    // The skill the player attacks with (Skills.txt id; 0 Attack), the one
-    // this swing uses (Attack when it's not built or can't be paid for),
-    // and the strikes still to come (Dragon Talon's kicks, Zeal's hits).
-    int   attack_skill = 0, swing_skill = 0, kicks_left = 0;
-    std::int64_t self_hurt = 0;            // life (256ths) the player's own skills cost (Sacrifice), taken with the monsters' hits
-    // An SQ skill's sequence while it plays (sequences.hpp, for the weapon
-    // class): its frames, each seq_frame_ms long, and the hits (event 1)
-    // already struck.
-    std::span<const d2d::rules::SeqFrame> seq{};
-    std::uint32_t seq_frame_ms = 40;
-    int seq_struck = 0;
-    bool seq_loop = false;                 // Whirlwind's plays over until it arrives
-    // A skill that moves the player (Whirlwind, Charge, Leap Attack):
-    // toward (tx, ty) at `speed` cells/s while `on`; `fly` ignores walls
-    // (a leap); whirl_next is Whirlwind's next hit time (FUN_005d9320).
-    struct SkillMove { float target_x = 0, target_y = 0, speed = 0; bool active = false, fly = false; };
-    SkillMove smove;
-    float move_x = 0, move_y = 0;          // where the click sent a moving skill
-    std::uint32_t whirl_next = 0;
     std::vector<int> told;                 // skills logged as not built yet
-    // A charge-up's charges (FUN_005d3320: its aurastate, the skill and
-    // level in stats 0x15e / 0x15f, the count, at most 3, in aurastat1),
-    // until auralencalc ticks after the last one.
-    std::vector<Charge> charges;
-    // Self states from a swing (aurastate): Concentrate's lasts while its
-    // swing does (made with no length; its removal isn't traced), Berserk's
-    // calc2 ticks (FUN_005d97f0, 10 when that's 0).
-    std::vector<SelfState> self_states;
-    int absorb_pool = 0, absorb_skill = -1;        // Bone / Cyclone Armor's damage left to absorb
-    std::uint32_t blaze_frame = 0, storm_next = 0; // Blaze's last flame, Thunder Storm's next bolt
-    int storm_last = -1;                            // the unit id Thunder Storm struck last (FUN_00644560)
-    std::uint32_t storm_frame = 0;                 // the last frame buff_tick ran its paced strikes
-    std::uint32_t blade_next = 0;                  // Blade Shield's next strike
-    std::int64_t bo_life = 0, bo_mana = 0;         // Battle Orders' life and mana on the maxima (256ths)
-    // What worn items (and passives) put on the maxima (256ths): the
-    // character's own, as a save keeps them, are the maxima less these.
-    std::array<std::int64_t, 3> item_max{};        // life, mana, stamina
     // The stats as a save keeps them: the maxima without items or Battle Orders.
     [[nodiscard]] d2d::d2s::Stats own_stats() const;
-    // The player's level in a skill: points, and with item bonuses (Town
-    // points these at its SkillBar).
-    std::function<int(int)> skill_base, skill_level;
-    // The merc in a fight: its stats (hireling.txt at its level), the
-    // monster it's after and whether it's walking at it. The rest is its
-    // Monster's (World::merc): life, mode (NU / WL / RN follow, A1 attack,
-    // GH, DT), mode_until, struck, its seed (+0x20, the think's rolls),
-    // next_act (its next think), move_pct (a move's pace).
-    d2d::rules::MercStats merc_st;
-    int   merc_target = -1;
-    bool  merc_chase = false;
-    // Its hireling skills (Skills.txt ids, levels: rules::merc_skill_levels),
-    // the AI control's +0x14 (the attack think's chance growth), the aura it
-    // started (FUN_005701b0: running from then, its effect not built) and
-    // the skill (and level) its attack mode carries (-1: a plain blow).
-    std::array<int, 6> merc_ids{}, merc_levels{};
-    int   merc_growth = 0, merc_aura = -1, merc_skill = -1, merc_skill_level = 0;
-    // An SQ skill's sequence while it plays (Jab: MonSeq seq_act2guardjab,
-    // its MonStats Sk*mode), and the sequence frames already past.
-    const std::vector<GameData::MonSeqFrame>* merc_seq = nullptr;
-    int   merc_seq_done = 0;
-    // A self cast's state on the merc (Frozen Armor, do 18 FUN_005c9480):
-    // the skill, its level, until when. Its aurastats go on its fighter
-    // (skill_armor_percent), melee strikers freeze (merc_buff_events), and
-    // the pick passes it over while it runs (FUN_005e4d30, its state on).
-    struct MercBuff { int skill = -1, level = 0; std::uint32_t until = 0; } merc_buff;
-    // A war cry's state on it (hit 18, FUN_005ab0b0 -> FUN_005d8290: Shout's
-    // defense %, Battle Orders' life %, Battle Command's), apart from its own.
-    MercBuff merc_cry;
     [[nodiscard]] int merc_cry_stat(int stat) const;
     void merc_buff_events(Foe& foe, std::uint32_t now_ms);
-    // What the merc's think reads of the player: its mode (2 walk, 3 run, 6
-    // walk in town, 1 else) and footsteps (player data +0xa0 / +0xa8, 20
-    // subtile spots, `footstep_cursor` the next to write), World's to fill.
-    int   owner_mode = 1;
-    std::array<std::pair<int, int>, 20> footsteps{};
-    int   footstep_cursor = 0;
-    std::uint32_t footstep_ms = 0;
-    // Where the player last arrived through a warp (player data +0x148 /
-    // +0x14c, FUN_00554ea0; subtiles): a pet near it steps out of the crowd.
-    std::pair<int, int> warp_spot{};
     // A footstep at subtile (x, y): written over the oldest, the cursor on.
     void footstep(int x, int y, std::uint32_t now_ms) {
-        footsteps[std::size_t(footstep_cursor)] = { x, y };
-        footstep_cursor = footstep_cursor >= 0x13 ? 0 : footstep_cursor + 1;
-        footstep_ms = now_ms;
+        actor->footsteps[std::size_t(actor->footstep_cursor)] = { x, y };
+        actor->footstep_cursor = actor->footstep_cursor >= 0x13 ? 0 : actor->footstep_cursor + 1;
+        actor->footstep_ms = now_ms;
     }
-    // Potions working: life / mana (8.8 fixed) a millisecond, until when.
-    struct Regen { double life = 0, mana = 0; std::uint32_t until = 0; bool poison = false; };
-    std::vector<Regen> regen;
-    // A shrine's boost (Shrines.txt booster: its stats, FUN_00583b30), one
-    // at a time, until when.
-    struct Boost { int shrine = 0; std::vector<std::pair<int, int>> stats; std::uint32_t until = 0; } boost;
 
     // A fresh game at `difficulty`: its monsters, nothing in flight.
     void new_game(int difficulty);
@@ -367,8 +392,6 @@ struct Fight {
     // ponytail: no class bonus or doubling for it; antidote / thawing are
     // spent and do nothing (the merc's poison and chill aren't kept).
     void feed_merc(int col, std::uint32_t now_ms);
-    double merc_heal_rate = 0, merc_heal_acc = 0;  // the merc's healthpot: life per ms, its fraction
-    std::uint32_t merc_heal_until = 0;
     void drink_item(int id, std::uint32_t now_ms);
     void potion(const std::string& code, std::uint32_t now_ms);
     // Potions and poison, then the steady regeneration: replenish life
@@ -376,7 +399,6 @@ struct Fight {
     // max mana over CharStats ManaRegen seconds, a frame at a time). Poison
     // is negative hpregen, and the player's regen tick (FUN_00580610) never
     // takes life below 1: poison can't kill a player (docs/research/re/combat.md).
-    double regen_acc_life = 0, regen_acc_mana = 0;
     void apply_regen(std::uint32_t now_ms, std::uint32_t last_ms);
     // A monster's new mode sounds off (MonSounds.txt): an attack's cry (at
     // its chance) and weapon, get-hit, death, each after its delay in ticks.
@@ -438,7 +460,6 @@ struct Fight {
     // (DAT_007a0498) is skipped.
     // ponytail: FUN_004b9e90's guard (a voice already playing) isn't kept.
     void need_mana(std::uint32_t now_ms);
-    std::uint32_t need_mana_until = 0;
     // An SQ skill plays its sequence (FUN_00663310: seqnum's frames for
     // the weapon class) at the attack's speed; with no frames for the
     // weapon it swings once.
@@ -571,7 +592,7 @@ struct Fight {
     // What the charges add to a finishing blow (FUN_005d3ba0 / FUN_005d3ac0,
     // at the higher of the stored level and today's).
     // ponytail: aurastat2's progressive_tohit (par4) isn't given.
-    void add_charges(d2d::rules::Fighter& fighter, d2d::rules::Swing& swing) { add_charges(charges, fighter, swing, true); }
+    void add_charges(d2d::rules::Fighter& fighter, d2d::rules::Swing& swing) { add_charges(actor->charges, fighter, swing, true); }
     void add_charges(const std::vector<Charge>& held, d2d::rules::Fighter& fighter, d2d::rules::Swing& swing, bool player_levels);
     // A row with no Skill: its own element at level lvl, the weapon at its
     // SrcDamage.
@@ -591,7 +612,7 @@ struct Fight {
     // ponytail: 37 (Claws of Thunder's bolts, FUN_005d4150), 40 / 41 / 143
     // (Royal Strike, level 30, past Act 1; Fists of Fire's first) are
     // logged once; 39's points come from d2d's rng.
-    void release(std::size_t monster_index, std::uint32_t now_ms) { release(charges, monster_index, now_ms, true); }
+    void release(std::size_t monster_index, std::uint32_t now_ms) { release(actor->charges, monster_index, now_ms, true); }
     void release(std::vector<Charge>& held, std::size_t monster_index, std::uint32_t now_ms, bool player_levels);
     void prg(const d2d::rules::Skill& skill, ServerDoFunction func, int count, int lvl, float target_x, float target_y, std::uint32_t now_ms);
     // Dragon Tail's kick hit: fire, (calc1 + fire mastery) % of the kick's
@@ -890,7 +911,7 @@ struct Fight {
     // ponytail: the variant is rolled at the raise; where game.exe sets it
     // isn't traced.
     [[nodiscard]] const GameData::MissileInfo* pet_missile(const d2d::rules::Skill& skill, int variant = 0) const;
-    void summon(const d2d::rules::Skill& skill, std::uint32_t now_ms) { summon(skill, skill_level ? skill_level(skill.id) : 1, cast_x, cast_y, now_ms); }
+    void summon(const d2d::rules::Skill& skill, std::uint32_t now_ms) { summon(skill, skill_level ? skill_level(skill.id) : 1, actor->cast_x, actor->cast_y, now_ms); }
     void summon(const d2d::rules::Skill& skill, int lvl, float x, float y, std::uint32_t now_ms);
     [[nodiscard]] static int pet_buff_stat(const Pet& pet, int stat) { const auto found = pet.buff_stats.find(stat); return found == pet.buff_stats.end() ? 0 : found->second; }
     void pet_buffs(Pet& pet);
@@ -939,10 +960,6 @@ struct Fight {
     // checked). A level 24 skill: past Act 1.
     // Reading a scroll or a tome (Skills.txt 219 / 220): its skill cast,
     // no mana, anywhere but in town (checkfunc 5).
-    bool portal_due = false;                       // Town Portal's action frame came
-    // The wisps' dance's blessing on the player (FUN_005f39b0): stat 0x50
-    // (magic find) for 0x1a5e00 frames, the last one's.
-    struct Blessing { int find = 0; std::uint32_t until = 0; } wisp_blessing;
     bool cast_scroll(int skill, std::uint32_t now_ms);
     bool cast(int skill, std::uint32_t now_ms);
     // Frenzy's state (FUN_005d8c70): each hit that lands raises it a level,

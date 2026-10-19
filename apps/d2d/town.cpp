@@ -291,8 +291,8 @@ auto Town::publish() -> void {
         auto out = world.view();
         out.sounds = std::move(world.cues.due);
         world.cues.due.clear();
-        out.events = std::move(world.events);
-        world.events.clear();
+        out.events = std::move(hero.events);
+        hero.events.clear();
         net.to_client = encode_view(*scene, out, view_enc);
         // D2D_VIEW_STATS=1: each View's size in the log (the replication budget).
         if (std::getenv("D2D_VIEW_STATS")) d2d::log::info("VIEWSTAT total={} monsters={} ground={} items={}", net.to_client.size(), out.monsters.size(), out.ground.size(), out.items.size());
@@ -393,12 +393,12 @@ auto Town::send(const Command& command) -> void {
                 // target again once the swing here is over, as game.exe's
                 // client, which runs its own copy of the mode.
                 const bool again = use->unit == net_attack && use->skill == net_attack_skill;
-                if (!again || world.fight.pmode < 0) net_game->skill_on(use->skill, use->left, 1, std::uint32_t(use->unit));
+                if (!again || hero.pmode < 0) net_game->skill_on(use->skill, use->left, 1, std::uint32_t(use->unit));
                 net_attack = use->unit;
                 net_attack_skill = use->skill;
                 const auto& monster = target->second;
                 if (melee) {
-                    if (std::hypot(monster.unit.x - world.player.x, monster.unit.y - world.player.y) > 1.6f) net.send(cmd::Move{ monster.unit.x, monster.unit.y, use->left });
+                    if (std::hypot(monster.unit.x - hero.player.x, monster.unit.y - hero.player.y) > 1.6f) net.send(cmd::Move{ monster.unit.x, monster.unit.y, use->left });
                     else world.display_swing(use->skill, monster.unit.x, monster.unit.y, world_ms);
                     return;
                 }
@@ -459,22 +459,22 @@ auto Town::send(const Command& command) -> void {
             net_game->log.note("a trade with no host NPC: not made (d2d's own store would make it here only)");
             return;
         } else if (const auto* buy = std::get_if<cmd::Buy>(&command); buy && net_game->trade_npc) {
-            const auto& tab = world.store.tabs[std::size_t(std::clamp(buy->tab >= 0 ? buy->tab : store.tab, 0, 3))];
+            const auto& tab = hero.store.tabs[std::size_t(std::clamp(buy->tab >= 0 ? buy->tab : store.tab, 0, 3))];
             if (buy->stock >= 0 && std::size_t(buy->stock) < tab.size()) {
                 const auto& item = tab[std::size_t(buy->stock)];
-                const int cost = d2d::rules::item_price(scene->rules, item, world.store.npc_id, false, world.store.header, store.reduced);
+                const int cost = d2d::rules::item_price(scene->rules, item, hero.store.npc_id, false, hero.store.header, store.reduced);
                 net_game->buying = true;
                 net_game->send_items({ d2d::net::d2gs::c2s::buy(net_game->trade_npc, std::uint32_t(item.id), 0, std::uint32_t(cost)) });
             }
             return;                                         // the host's item comes to us; its gold change too
         } else if (const auto* sell = std::get_if<cmd::Sell>(&command); sell && net_game->trade_npc) {
-            auto found = std::ranges::find(world.character.items, sell->item, &d2d::d2s::Item::id);
-            const d2d::d2s::Item* item = found != world.character.items.end() ? &*found : world.held && world.held->id == sell->item ? &*world.held : nullptr;
+            auto found = std::ranges::find(hero.character.items, sell->item, &d2d::d2s::Item::id);
+            const d2d::d2s::Item* item = found != hero.character.items.end() ? &*found : hero.held && hero.held->id == sell->item ? &*hero.held : nullptr;
             if (const std::uint32_t id = item ? net_game->host_item(*item) : 0) {
-                const int cost = d2d::rules::item_price(scene->rules, *item, world.store.npc_id, true, world.store.header);
+                const int cost = d2d::rules::item_price(scene->rules, *item, hero.store.npc_id, true, hero.store.header);
                 net_game->send_items({ d2d::net::d2gs::c2s::sell(net_game->trade_npc, id, 0, std::uint32_t(cost)) });
-                if (found != world.character.items.end()) world.character.items.erase(found);
-                else world.held.reset();
+                if (found != hero.character.items.end()) hero.character.items.erase(found);
+                else hero.held.reset();
                 net_cursor = 0;
             }
             return;                                         // gold from the host
@@ -512,10 +512,10 @@ auto Town::send(const Command& command) -> void {
                 net_interact_pending = interact->npc;
                 net_game->log.note("no host unit for " + npc.name + " yet: walking there");
             }
-        } else if (interact && interact->npc <= -3000 && std::size_t(-3000 - interact->npc) < world.corpses.size()) {
+        } else if (interact && interact->npc <= -3000 && std::size_t(-3000 - interact->npc) < hero.corpses.size()) {
             // Our corpse: the host's corpse unit (0x8e) nearest d2d's, its
             // items back as the host hands them (FUN_00548b00 case 0).
-            const auto& corpse = world.corpses[std::size_t(-3000 - interact->npc)];
+            const auto& corpse = hero.corpses[std::size_t(-3000 - interact->npc)];
             float best = 10.f;
             for (const std::uint32_t id : net_game->corpses)
                 if (const auto unit = net_game->units.find(id); unit != net_game->units.end())
@@ -592,22 +592,22 @@ auto Town::net_items(const Command& command) -> void {
         using namespace d2d::d2s;
         namespace c2s = d2d::net::d2gs::c2s;
         auto local = [&](int id) -> const Item* {
-            const auto found = std::ranges::find(world.character.items, id, &Item::id);
-            return found == world.character.items.end() ? nullptr : &*found;
+            const auto found = std::ranges::find(hero.character.items, id, &Item::id);
+            return found == hero.character.items.end() ? nullptr : &*found;
         };
         auto host = [&](const Item* item) -> std::uint32_t {
             const std::uint32_t id = item ? net_game->host_item(*item) : 0;
             if (item && !id) net_game->log.note("no host id for our " + item->code + " (not sent)");
             return id;
         };
-        const std::uint32_t held_id = world.held ? (net_cursor ? net_cursor : net_game->host_item(*world.held)) : 0;
+        const std::uint32_t held_id = hero.held ? (net_cursor ? net_cursor : net_game->host_item(*hero.held)) : 0;
         if (const auto* use = std::get_if<cmd::UseItem>(&command)) {
             const auto* item = local(use->item);
             if (const auto id = host(item); id && item->location == item_location::kBelt) net_game->send_items({ c2s::use_belt(id) });
-            else if (id) net_game->send_items({ c2s::use_item(id, std::uint16_t((world.player.x + float(level->world_x)) * 5.f), std::uint16_t((world.player.y + float(level->world_y)) * 5.f)) });
+            else if (id) net_game->send_items({ c2s::use_item(id, std::uint16_t((hero.player.x + float(level->world_x)) * 5.f), std::uint16_t((hero.player.y + float(level->world_y)) * 5.f)) });
         } else if (const auto* belt_use = std::get_if<cmd::UseBelt>(&command)) {
-            const auto found = std::ranges::find_if(world.character.items, [&](const Item& item) { return item.location == item_location::kBelt && item.column == belt_use->slot; });
-            if (found != world.character.items.end()) if (const auto id = host(&*found)) net_game->send_items({ c2s::use_belt(id) });
+            const auto found = std::ranges::find_if(hero.character.items, [&](const Item& item) { return item.location == item_location::kBelt && item.column == belt_use->slot; });
+            if (found != hero.character.items.end()) if (const auto id = host(&*found)) net_game->send_items({ c2s::use_belt(id) });
         } else if (const auto* to_cursor = std::get_if<cmd::ToCursor>(&command)) {
             const auto* item = local(to_cursor->item);
             if (const auto id = host(item)) {
@@ -617,10 +617,10 @@ auto Town::net_items(const Command& command) -> void {
             }
         } else if (const auto* to_grid = std::get_if<cmd::ToGrid>(&command); to_grid && held_id) {
             // What's under the held item's footprint there: a swap (0x1f).
-            const auto info = scene->rules.item_info.find(world.held->code);
+            const auto info = scene->rules.item_info.find(hero.held->code);
             const int width = info != scene->rules.item_info.end() ? info->second.width : 1, height = info != scene->rules.item_info.end() ? info->second.height : 1;
             const Item* under = nullptr;
-            for (const auto& item : world.character.items) {
+            for (const auto& item : hero.character.items) {
                 if (item.location != item_location::kStored || item.panel != to_grid->panel) continue;
                 const auto item_size = scene->rules.item_info.find(item.code);
                 const int item_w = item_size != scene->rules.item_info.end() ? item_size->second.width : 1, item_h = item_size != scene->rules.item_info.end() ? item_size->second.height : 1;
@@ -630,8 +630,8 @@ auto Town::net_items(const Command& command) -> void {
             if (under) { if (const auto target = host(under)) net_game->send_items({ c2s::swap_grid(held_id, target, std::uint32_t(to_grid->col), std::uint32_t(to_grid->row)) }); net_cursor = net_game->host_item(*under); }
             else { net_game->send_items({ c2s::cursor_to_grid(held_id, std::uint32_t(to_grid->col), std::uint32_t(to_grid->row), buffer) }); net_cursor = 0; }
         } else if (const auto* to_body = std::get_if<cmd::ToBody>(&command); to_body && held_id) {
-            const auto worn = std::ranges::find_if(world.character.items, [&](const Item& item) { return item.location == item_location::kEquipped && item.slot == to_body->slot; });
-            const bool swap = worn != world.character.items.end();
+            const auto worn = std::ranges::find_if(hero.character.items, [&](const Item& item) { return item.location == item_location::kEquipped && item.slot == to_body->slot; });
+            const bool swap = worn != hero.character.items.end();
             net_game->send_items({ c2s::equip(held_id, std::uint32_t(to_body->slot), swap) });
             net_cursor = swap ? net_game->host_item(*worn) : 0;
         } else if (const auto* to_belt = std::get_if<cmd::ToBelt>(&command); to_belt && held_id) {
@@ -915,19 +915,19 @@ auto Town::update(std::vector<std::uint8_t>& framebuffer, const Mouse& frame_mou
                     trade_gold_typing = std::string{};
                 } else if (click == TradeClick::kDecline) {
                     if (trade.state == 2) net_game->trade_answer(false); else net_game->trade_cancel();
-                } else if (click == TradeClick::kOurGrid && world.held) {
+                } else if (click == TradeClick::kOurGrid && hero.held) {
                     const auto& grid = scene->trade_layout[1];
                     const int column = (mouse.x - grid.grid_x) / grid.box_w, row = (mouse.y - grid.grid_y) / grid.box_h;
-                    if (const std::uint32_t held_id = net_cursor ? net_cursor : net_game->host_item(*world.held)) {
+                    if (const std::uint32_t held_id = net_cursor ? net_cursor : net_game->host_item(*hero.held)) {
                         net_game->send_items({ d2d::net::d2gs::c2s::cursor_to_grid(held_id, std::uint32_t(column), std::uint32_t(row), 2) });
-                        auto offered = *world.held;
+                        auto offered = *hero.held;
                         offered.location = d2d::d2s::item_location::kStored;
                         offered.panel = 101;
                         offered.column = column;
                         offered.row = row;
                         offered.id = int(held_id);
                         trade.ours.push_back(std::move(offered));
-                        world.held.reset();
+                        hero.held.reset();
                         net_cursor = 0;
                     }
                 }
@@ -1438,7 +1438,7 @@ auto Town::pad_act() -> void {
         }
         const bool want = pad_move.attack || pad_move.attack_down || pad_move.alt;
         if (!want || view.dead || !pad_field()) { if (!want) pad_target = -1; return; }
-        const float hero_x = world.player.x, hero_y = world.player.y;
+        const float hero_x = hero.player.x, hero_y = hero.player.y;
         std::vector<pad::Candidate> monsters;
         for (const auto& monster : view.monsters)
             if (monster.alive()) monsters.push_back({ monster.id, monster.unit.x, monster.unit.y });
@@ -1484,9 +1484,9 @@ auto Town::pad_walk() -> void {
         if (walk) {
             const auto step = pad::world_step(pad_move.x, pad_move.y, kIsoW, kIsoH, 6.f);
             // Walk or run is the run toggle's (R, the left stick's click), as with the mouse.
-            send(cmd::Move{ world.player.x + step.x, world.player.y + step.y, !pad_walking });
+            send(cmd::Move{ hero.player.x + step.x, hero.player.y + step.y, !pad_walking });
         } else if (pad_walking) {
-            send(cmd::Move{ world.player.x, world.player.y, true });   // stick centred: stop here, not at the old destination
+            send(cmd::Move{ hero.player.x, hero.player.y, true });   // stick centred: stop here, not at the old destination
         }
         pad_walking = walk;
     }
@@ -1618,9 +1618,9 @@ auto Town::walk(const Mouse& mouse, bool over_ui, std::uint32_t frame_ms, std::u
                 if (!inside(*level, to_x, to_y))
                     d2d::log::info("net: the host put us at {}, {}, off level {} (the warp asked for: {})", net_game->self_x, net_game->self_y, level->id, net_warp_to);
                 if (inside(*level, to_x, to_y)) {
-                    world.player.x = to_x;
-                    world.player.y = to_y;
-                    world.player.walking = false;
+                    hero.player.x = to_x;
+                    hero.player.y = to_y;
+                    hero.player.walking = false;
                 } else if (const Level* landed = [&]() -> const Level* {
                                // The warp asked for, else the last 0x03's area, else the
                                // act's level that holds the spot (a quest's door: Duriel's lair).
@@ -1645,13 +1645,13 @@ auto Town::walk(const Mouse& mouse, bool over_ui, std::uint32_t frame_ms, std::u
             // couldn't (a door only d2d opened, a wall the host's path won't
             // take); 2 s that far apart and d2d goes back to where the host has us.
             if (level && net_game->host_x > 0) {
-                const float drift = std::hypot((world.player.x + float(level->world_x)) * 5.f - net_game->host_x, (world.player.y + float(level->world_y)) * 5.f - net_game->host_y);
+                const float drift = std::hypot((hero.player.x + float(level->world_x)) * 5.f - net_game->host_x, (hero.player.y + float(level->world_y)) * 5.f - net_game->host_y);
                 const float back_x = net_game->host_x / 5.f - float(level->world_x), back_y = net_game->host_y / 5.f - float(level->world_y);
                 if (drift < 15.f || back_x < 0 || back_y < 0 || back_x >= float(level->ds1.width()) || back_y >= float(level->ds1.height())) net_drift_ms = 0;
                 else if (net_drift_ms == 0) net_drift_ms = frame_ms;
                 else if (frame_ms - net_drift_ms > 2000) {
                     d2d::log::info("net: {:.0f} subtiles from the host's player; back to it", drift);
-                    world.player.x = back_x; world.player.y = back_y; world.player.walking = false;
+                    hero.player.x = back_x; hero.player.y = back_y; hero.player.walking = false;
                     net_drift_ms = 0;
                 }
             }
@@ -1663,7 +1663,7 @@ auto Town::walk(const Mouse& mouse, bool over_ui, std::uint32_t frame_ms, std::u
             // Our quest words as the host has them (0x28): the quest log
             // and the NPCs' talk read these.
             if (net_game->quest_words) {
-                world.character.header.quests[std::size_t(std::clamp(world.character.header.active_difficulty(), 0, 2))] = *net_game->quest_words;
+                hero.character.header.quests[std::size_t(std::clamp(hero.character.header.active_difficulty(), 0, 2))] = *net_game->quest_words;
                 net_game->quest_words.reset();
             }
             for (const int quest : net_game->quest_news) quest_log_notify(quest_log, quest);
@@ -1676,11 +1676,11 @@ auto Town::walk(const Mouse& mouse, bool over_ui, std::uint32_t frame_ms, std::u
             // shares stay on top (Fight::own_stats).
             for (const auto& change : net_game->stat_changes) {
                 if (change.id < 0 || change.id > 15) continue;
-                auto& value = world.character.stats.values[std::size_t(change.id)];
+                auto& value = hero.character.stats.values[std::size_t(change.id)];
                 value = change.add ? value + change.value : change.value;
                 if (!change.add && (change.id == d2d::d2s::kMaxLife || change.id == d2d::d2s::kMaxMana || change.id == d2d::d2s::kMaxStamina)) {
                     const auto which = std::size_t(change.id - d2d::d2s::kMaxLife) / 2;   // life, mana, stamina
-                    value += world.fight.item_max[which] + std::array<std::int64_t, 3>{ world.fight.bo_life, world.fight.bo_mana, 0 }[which];
+                    value += hero.item_max[which] + std::array<std::int64_t, 3>{ hero.bo_life, hero.bo_mana, 0 }[which];
                 }
                 if (std::getenv("D2D_NET_STATS")) d2d::log::info("net stat {} = {}", change.id, value);
             }
@@ -1689,14 +1689,14 @@ auto Town::walk(const Mouse& mouse, bool over_ui, std::uint32_t frame_ms, std::u
             // it, so it keeps matching the host's item.
             for (auto& item : net_game->picked) {
                 item.id = world.next_item_id++;
-                world.character.items.push_back(std::move(item));
-                world.cues.cue("item_pickup", 0, world.player.x, world.player.y);
+                hero.character.items.push_back(std::move(item));
+                world.cues.cue("item_pickup", 0, hero.player.x, hero.player.y);
             }
             net_game->picked.clear();
             // A trade's end: the host sends our items again (a cancel, all
             // of them, new ids; live 2026-10-05): one item a spot, the last.
             if (net_game->trade_settling()) {
-                auto& items = world.character.items;
+                auto& items = hero.character.items;
                 for (std::size_t later = items.size(); later-- > 0;)
                     for (std::size_t earlier = 0; earlier < later; ++earlier)
                         if (items[earlier].location == items[later].location && items[earlier].panel == items[later].panel && items[earlier].column == items[later].column
@@ -1707,13 +1707,13 @@ auto Town::walk(const Mouse& mouse, bool over_ui, std::uint32_t frame_ms, std::u
                         }
             }
             // The open store shows the host's stock (its ids, for 0x32), by tab.
-            if (world.store.npc >= 0 && net_game->trade_npc && net_game->store_items.size() != net_store_shown) {
+            if (hero.store.npc >= 0 && net_game->trade_npc && net_game->store_items.size() != net_store_shown) {
                 net_store_shown = net_game->store_items.size();
-                for (auto& tab : world.store.tabs) tab.clear();
+                for (auto& tab : hero.store.tabs) tab.clear();
                 for (const auto& [id, stocked] : net_game->store_items) {
                     auto item = stocked;
                     item.id = int(id);
-                    world.store.tabs[std::size_t(std::clamp(item.panel - 1, 0, 3))].push_back(std::move(item));   // page 2 weapons, 4 misc (Akara's, recorded)
+                    hero.store.tabs[std::size_t(std::clamp(item.panel - 1, 0, 3))].push_back(std::move(item));   // page 2 weapons, 4 misc (Akara's, recorded)
                 }
             }
             // Once, a while in: how many of our items the host's match (the net
@@ -1721,12 +1721,12 @@ auto Town::walk(const Mouse& mouse, bool over_ui, std::uint32_t frame_ms, std::u
             if (!net_items_checked && net_game->steady_now() > 3000 && !net_game->own_items.empty()) {
                 net_items_checked = true;
                 int matched = 0;
-                for (const auto& item : world.character.items) {
+                for (const auto& item : hero.character.items) {
                     if (net_game->host_item(item)) ++matched;
                     else net_game->log.note("our " + item.code + " (location " + std::to_string(item.location) + ", panel " + std::to_string(item.panel) + " at "
                                             + std::to_string(item.column) + "," + std::to_string(item.row) + ", slot " + std::to_string(item.slot) + ") has no host item");
                 }
-                d2d::log::info("net: {} of our {} items match the host's ({} it has)", matched, world.character.items.size(), net_game->own_items.size());
+                d2d::log::info("net: {} of our {} items match the host's ({} it has)", matched, hero.character.items.size(), net_game->own_items.size());
             }
             // d2d's walks of its own (up to an NPC, an object, an item, a melee
             // target): the host's player follows where ours is, every 300 ms
@@ -1734,9 +1734,9 @@ auto Town::walk(const Mouse& mouse, bool over_ui, std::uint32_t frame_ms, std::u
             // Not while a warp or portal is being taken: ours may already
             // be in the next area, the host's isn't yet.
             const bool area_change = (net_operate != 0 && net_operate_moves) || frame_ms < net_moving_until || net_game->holding();
-            if (world.player.walking && frame_ms - net_follow_ms >= 300 && !area_change) {
+            if (hero.player.walking && frame_ms - net_follow_ms >= 300 && !area_change) {
                 net_follow_ms = frame_ms;
-                net_game->move_to((world.player.x + float(level->world_x)) * 5.f, (world.player.y + float(level->world_y)) * 5.f, view.running);
+                net_game->move_to((hero.player.x + float(level->world_x)) * 5.f, (hero.player.y + float(level->world_y)) * 5.f, view.running);
             }
             // A trade walked to: asked for once the host has us within 6.
             if (net_trade_pending >= 0) {
@@ -1849,15 +1849,15 @@ auto Town::walk(const Mouse& mouse, bool over_ui, std::uint32_t frame_ms, std::u
                 if (found == net_game->ground.end()) {
                     net_pick = -1;
                 } else if (std::hypot(net_game->host_x - float(found->second.x), net_game->host_y - float(found->second.y)) < 4.f
-                           || (!world.player.walking && std::hypot((world.player.x + float(level->world_x)) * 5.f - float(found->second.x),
-                                                                   (world.player.y + float(level->world_y)) * 5.f - float(found->second.y)) < 4.f)) {
+                           || (!hero.player.walking && std::hypot((hero.player.x + float(level->world_x)) * 5.f - float(found->second.x),
+                                                                   (hero.player.y + float(level->world_y)) * 5.f - float(found->second.y)) < 4.f)) {
                     net_game->pick_up(found->first);
                     net_pick = -1;
                 }
             }
             // A warp d2d's player set off for: the host's warp unit there (0x13).
-            if (world.take_warp >= 0 && world.take_warp != net_warp_sent && std::size_t(world.take_warp) < level->warps.size()) {
-                const auto& warp = level->warps[std::size_t(world.take_warp)];
+            if (hero.take_warp >= 0 && hero.take_warp != net_warp_sent && std::size_t(hero.take_warp) < level->warps.size()) {
+                const auto& warp = level->warps[std::size_t(hero.take_warp)];
                 if (const auto* unit = net_game->nearest(5, -1, (warp.unit_x + float(level->world_x)) * 5.f, (warp.unit_y + float(level->world_y)) * 5.f, 15.f)) {
                     net_operate_type = 5; net_operate = unit->id; net_operate_ms = frame_ms; net_operate_moves = true; net_operate_waypoint = -1;   // as an object's: once the host has us there, stopped
                     // Its mouth: where one comes out (the free spot nearest the unit,
@@ -1870,7 +1870,7 @@ auto Town::walk(const Mouse& mouse, bool over_ui, std::uint32_t frame_ms, std::u
                     net_warp_to = warp.destination;
                 }
             }
-            net_warp_sent = world.take_warp;
+            net_warp_sent = hero.take_warp;
         }
         // The skill buttons: a change goes to the World (0x3c), which runs a
         // right-button aura (a Paladin's).

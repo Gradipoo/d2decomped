@@ -124,8 +124,8 @@ auto World::leash(std::span<const std::pair<float, float>> before) -> void {
     if (!too_far(spread(players.size()))) return;
     // Whoever pulled it further than it was stays where they were.
     for (std::size_t i = 0; i < players.size(); ++i) {
-        const auto now = spread(players.size()), back = spread(i);
-        if (back.first < now.first || back.second < now.second) {
+        const auto stretched = spread(players.size()), back = spread(i);
+        if (back.first < stretched.first || back.second < stretched.second) {
             auto& unit = players[i]->player;
             std::tie(unit.x, unit.y) = before[i];
             unit.walking = false; unit.path.clear();
@@ -2351,6 +2351,12 @@ auto World::tick(std::span<const Order> orders, std::uint32_t now_ms, std::uint3
         std::vector<std::pair<float, float>> before;    // where each player stood (the leash)
         for (const auto& player : players) before.emplace_back(player->player.x, player->player.y);
         each_player([&](Player& player) {
+            // Local co-op: players walk through each other (one screen; a
+            // partner in the way would wall them in). Monsters still meet every player.
+            Crowd walk_crowd = crowd;
+            std::erase_if(walk_crowd.units, [&](const UnitState* unit) {
+                return unit != &player.player && std::ranges::any_of(players, [&](const auto& other) { return &other->player == unit; });
+            });
             std::vector<Command> cmds;                  // this player's
             for (const auto& order : orders) if (order.player == player.id) cmds.push_back(order.command);
             const bool button = std::ranges::any_of(cmds, [](const Command& command) {
@@ -2435,7 +2441,7 @@ auto World::tick(std::span<const Order> orders, std::uint32_t now_ms, std::uint3
                 // 5 subtiles off SP2.
                 const auto subtile = [](float value) { return int(std::floor(value * 5)); };
                 if (actor->player.path.empty() || std::hypot(actor->player.goal_x - actor->target_x, actor->player.goal_y - actor->target_y) > 0.3f) {
-                    actor->player.path = player_walk(*level, actor->player.x, actor->player.y, actor->target_x, actor->target_y, to_unit, crowd, &actor->player);
+                    actor->player.path = player_walk(*level, actor->player.x, actor->player.y, actor->target_x, actor->target_y, to_unit, walk_crowd, &actor->player);
                     actor->player.goal_x = actor->target_x; actor->player.goal_y = actor->target_y;
                 }
                 const auto save_class = std::size_t(std::max(actor->character.character_class, 0));
@@ -2445,7 +2451,7 @@ auto World::tick(std::span<const Order> orders, std::uint32_t now_ms, std::uint3
                 const int base = actor->running && actor->character.stats.values[d2d::d2s::kStamina] > 0 ? game_data->run_velocity[save_class] * 100 / walk : 100;
                 const float vel = float(walk * std::max(base + d2d::rules::effective_speed(actor->player_combat.frw, 150) + fight.chill_rate(now_ms), 25)) / 100.f;
                 const float before_x = actor->player.x, before_y = actor->player.y;
-                actor->player.walking = follow_path(*level, actor->player, cells_per_sec(vel) * elapsed, crowd);
+                actor->player.walking = follow_path(*level, actor->player, cells_per_sec(vel) * elapsed, walk_crowd);
                 // The merc's think reads the player's footsteps (FUN_00580c20): walking or
                 // running, 25 ms on from the last, over 45 (squared) from it.
                 if (const int step_x = int(std::floor(actor->player.x * 5)), step_y = int(std::floor(actor->player.y * 5)); now_ms > actor->footstep_ms + 25) {

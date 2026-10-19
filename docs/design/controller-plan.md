@@ -1,8 +1,11 @@
 # Controller support — Steam Deck first, Android ready, Switch later
 
-Status: implementation plan; no controller code has been added yet. Written
-2026-10-15 after a preliminary review of the current input path and the
-reference projects and APIs below.
+Status: the first cut is in (PR #36, 2026-10-19): SDL3 gamepads with one
+default layout by button position (`apps/d2d/gamepad.*`, `gamepad_map.hpp`;
+the layout is in [apps/d2d/README.md](../../apps/d2d/README.md)), stick
+walking with walk/run by tilt, soft targeting in the field, menus by cursor
+and d-pad. Not yet: remapping, Steam Input / glyphs, a second pad, touch.
+The plan below was written 2026-10-15, before any controller code.
 
 ## Goal
 

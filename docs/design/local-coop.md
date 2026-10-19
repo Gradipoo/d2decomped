@@ -72,8 +72,11 @@ PC or Mac with pads works the same way.
   and used on a body, it channels for 10 s: a gold aura round the body,
   faint at first, glowing brighter and strobing faster until the dead
   rises there.
-- Moving, using another skill or a hit that makes the channeller flinch
-  (get-hit) cancels it; its progress is lost.
+- Others can join in: every player channelling on the body adds the same
+  speed (two: 5 s, three: about 3.3 s). The progress is the body's.
+- Moving, using another skill or a hit that makes a channeller flinch
+  (get-hit) takes that player out; the progress is lost only when nobody
+  is channelling any more.
 - A ghost nobody raised is revived when the party reaches a town.
 - Everyone dead: everyone respawns in town, as in single player.
 - The skill exists only in co-op. A save never stores it on a button (the

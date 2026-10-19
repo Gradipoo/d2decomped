@@ -37,6 +37,7 @@
 #include <map>
 #include <memory>
 #include <optional>
+#include <span>
 #include <string>
 #include <string_view>
 #include <tuple>
@@ -146,6 +147,9 @@ struct View {
 // docs/research/re/network.md).
 constexpr std::uint32_t kTickMs = 40;
 
+// A command and the player who sent it (Fight::Hero::id).
+struct Order { int player = 0; Command command; };
+
 struct World {
     // A player in the game (docs/design/local-coop.md): their fight (Hero:
     // unit, character, merc, combat), where they're headed, what they hold
@@ -181,6 +185,19 @@ struct World {
     std::vector<std::unique_ptr<Player>> players;
     Player* actor = nullptr;
     void act_as(Player& player);
+    [[nodiscard]] Player& lead() const { return *players.front(); }
+    // A new player's slot: the next unit id, in the fight's list.
+    Player& add_player();
+    // `each` for every player in turn, acting as them; the one acting
+    // before acts again after.
+    template <class Each> void each_player(Each&& each) {
+        Player& was = *actor;
+        for (auto& player : players) { act_as(*player); each(*player); }
+        act_as(was);
+    }
+    // The other players come to `destination` round (x, y) with their mercs
+    // and pets (one screen, one level: docs/design/local-coop.md).
+    void bring_party(const Level* from, const Level* destination, float x, float y, bool keep_map);
     const GameData* game_data = nullptr;
     const Level* level = nullptr;          // where the player is: the town, the Blood Moor, the Den of Evil
     std::vector<UnitState> npc_states;     // the level's NPCs as they patrol
@@ -337,7 +354,7 @@ struct World {
     // map's middle; then the nearest free spot so we never start inside a
     // tent.
     World(const GameData* loaded_data, int start_x, int start_y) : game_data(loaded_data), level(loaded_data ? &loaded_data->town : nullptr) {
-        act_as(*players.emplace_back(std::make_unique<Player>()));
+        act_as(add_player());
         const bool have_world = level && !level->dt1s.empty();
         actor->player.x = (start_x >= 0 ? float(start_x) : have_world ? float(level->ds1.width() / 2) : 0.f) + 0.5f;
         actor->player.y = (start_y >= 0 ? float(start_y) : have_world ? float(level->ds1.height() / 2) : 0.f) + 0.5f;
@@ -454,6 +471,21 @@ struct World {
     // World takes its copy, the merc comes along, a fresh game; the Act 1
     // quest-gated NPCs (Cain) are there once their quest is done.
     void enter(const Character& entering);
+    // Another player joins the game under way (docs/design/local-coop.md):
+    // their character (full life, as entering), beside the first player,
+    // their merc along. The one acting stays.
+    // ponytail: the quests' join for a player (game.exe's +0xd4 callback)
+    // isn't run; their save's quest bits are theirs as they come.
+    Player& join(const Character& entering);
+    // A player leaves: their character saved (save's message, "" written),
+    // gone from the game. The last player can't leave this way.
+    std::string leave(int id);
+    // The entering character, refilled (enter / join).
+    void take_character(const Character& entering);
+    // The save's corpse (its corpse list, FUN_00533850) by (x, y).
+    // ponytail: where game.exe puts it isn't traced; the save's x / y
+    // aren't read.
+    void lay_save_corpse(const Character& entering, float x, float y);
 
     void new_game();
 
@@ -588,7 +620,7 @@ struct World {
     const Level* wanted_near = nullptr;               // whose neighbours were last asked for
     d2d::rules::Day day;
     std::uint32_t day_at = 0;                         // when the day last stepped
-    void tick(const std::vector<Command>& cmds, std::uint32_t now_ms, std::uint32_t last_ms);
+    void tick(std::span<const Order> orders, std::uint32_t now_ms, std::uint32_t last_ms);
 
 };
 

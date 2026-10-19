@@ -87,9 +87,35 @@ static bool room_near_holds(const Level& level, int from_x, int from_y, int x, i
 
 auto World::act_as(Player& player) -> void {
     actor = &player;
-    fight.actor = &player;
-    loot.character = &player.character;
-    loot.player = &player.player;
+    fight.act_as(player);
+}
+
+auto World::add_player() -> Player& {
+    auto& player = *players.emplace_back(std::make_unique<Player>());
+    player.id = players.size() > 1 ? players[players.size() - 2]->id + 1 : 1;
+    fight.heroes.push_back(&player);
+    return player;
+}
+
+auto World::bring_party(const Level* from, const Level* destination, float x, float y, bool keep_map) -> void {
+    static constexpr std::array<std::pair<float, float>, 4> kAround{ { { 1, 0 }, { 0, 1 }, { -1, 0 }, { 0, -1 } } };
+    std::size_t around = 0;
+    Player* const mover = actor;
+    each_player([&](Player& player) {
+        if (&player == mover) return;
+        const auto [spot_x, spot_y] = destination->nearest_free(x + kAround[around % 4].first, y + kAround[around % 4].second);
+        ++around;
+        fight.pets_cross(from, destination, player.player.x - spot_x, player.player.y - spot_y);
+        player.events.push_back(ev::LevelChanged{ from, keep_map });
+        player.player.x = spot_x; player.player.y = spot_y;
+        player.player.walking = false; player.player.path.clear();
+        player.target_x = spot_x; player.target_y = spot_y;
+        if (player.merc) {
+            player.merc->unit.path.clear();
+            std::tie(player.merc->unit.x, player.merc->unit.y) = destination->nearest_free(spot_x + 1, spot_y + 1);
+        }
+        player.interact_npc = player.pick_item = player.take_warp = player.take_portal = -1;
+    });
 }
 
 auto World::quests() -> d2d::rules::QuestBits& { return actor->character.header.quests[std::size_t(std::clamp(actor->character.header.active_difficulty(), 0, 2))]; }
@@ -127,6 +153,15 @@ auto World::view() const -> View {
         view.gfx = fight.gfx();
         if (actor->merc && actor->merc_npc) view.merc = View::Merc{ actor->merc->unit, actor->merc_npc, actor->merc->mode };
         for (const auto& pet : actor->pets) if (pet.where == level) view.pets.push_back({ pet.monster.npc, pet.monster.unit, pet.monster.mode });
+        for (const auto& player : players)                    // the others in the game, as their client draws them
+            if (player.get() != actor) {
+                const int cls = std::max(player->character.character_class, 0);
+                std::vector<std::string_view> states;
+                for (const auto& state : player->self_states)
+                    if (const auto* skill = now < state.until ? game_data->skills.get(state.skill) : nullptr) states.push_back(skill->aurastate);
+                view.others.push_back({ player->player, cls, player->character.name, std::uint32_t(player->id),
+                                        player->character.appearance ? *player->character.appearance : game_data->starting_gear[std::size_t(cls)], player->pmode, player->running, std::move(states) });
+            }
         if (level == fight.mon_level) {
             // What's near the player (D2 sends the units of the rooms round
             // each player). ponytail: a radius of 28 cells, not rooms; waits for
@@ -826,7 +861,7 @@ auto World::spring_trap(int trap, float x, float y, int alvl, std::uint32_t now_
         d2d::log::info("trap {}: {} at level {}", trap, name, lvl);
     }
 
-auto World::enter(const Character& entering) -> void {
+auto World::take_character(const Character& entering) -> void {
         actor->character.character_class = entering.character_class; actor->character.name = entering.name;
         actor->character.appearance = entering.appearance; actor->character.items = entering.items; actor->character.stats = entering.stats; actor->character.panel = entering.panel;
         actor->character.expansion = entering.expansion; actor->character.header = entering.header; actor->character.merc_items = entering.merc_items;
@@ -838,6 +873,51 @@ auto World::enter(const Character& entering) -> void {
             actor->character.stats.values[cur] = actor->character.stats.values[max];
         actor->held.reset();
         actor->store = {};
+    }
+
+auto World::lay_save_corpse(const Character& entering, float x, float y) -> void {
+        actor->corpses.clear();
+        if (entering.corpse.empty()) return;
+        const auto [spot_x, spot_y] = level->nearest_free(x, y);
+        actor->corpses.push_back({ level, spot_x, spot_y, 4, entering.corpse, 0, entering.appearance ? *entering.appearance : game_data->starting_gear[std::size_t(entering.header.cls % 7)] });
+    }
+
+auto World::join(const Character& entering) -> Player& {
+        Player& was = *actor;
+        Player& player = add_player();
+        act_as(player);
+        take_character(entering);
+        std::tie(player.player.x, player.player.y) = level->nearest_free(lead().player.x + 1, lead().player.y);
+        player.target_x = player.player.x; player.target_y = player.player.y;
+        player.player.dir = 4;
+        lay_save_corpse(entering, player.player.x + 1, player.player.y + 1);
+        spawn_merc();
+        item_ids();
+        d2d::log::info("{} joins the game (player {})", player.character.name, player.id);
+        act_as(was);
+        return player;
+    }
+
+auto World::leave(int id) -> std::string {
+        const auto found = std::ranges::find(players, id, [](const auto& player) { return player->id; });
+        if (found == players.end()) return "no such player";
+        if (players.size() == 1) return "the last player stays";
+        Player& was = *actor;
+        act_as(**found);
+        const auto why = save();
+        d2d::log::info("{} leaves the game (player {})", actor->character.name, id);
+        std::erase(fight.heroes, found->get());
+        const bool was_leaving = &was == found->get();
+        players.erase(found);
+        act_as(was_leaving ? lead() : was);
+        return why;
+    }
+
+auto World::enter(const Character& entering) -> void {
+        act_as(lead());                               // a new game: its first player alone
+        players.resize(1);
+        fight.heroes.assign(1, &lead());
+        take_character(entering);
         stocks.clear();
         for (auto& list : hire_lists) list.clear();
         // A game starts in the town of the save's act (its difficulty byte:
@@ -846,15 +926,8 @@ auto World::enter(const Character& entering) -> void {
         const int save_act = act_byte & 0x80 ? act_byte & 7 : 0;
         const Level* act_town = save_act > 0 && save_act < int(d2d::rules::level_ids::kActTowns.size()) ? game_data->level(d2d::rules::level_ids::kActTowns[std::size_t(save_act)]) : nullptr;
         level = act_town && act_town->start.first >= 0 ? act_town : &game_data->town;   // set_map_seed may have rebuilt the camp
-        // A corpse in the save (its corpse list, FUN_00533850) lies by the
-        // town's start.
-        // ponytail: where game.exe puts it isn't traced; the save's x / y
-        // aren't read.
-        actor->corpses.clear();
-        if (!entering.corpse.empty()) {
-            const auto [spot_x, spot_y] = level->nearest_free(level->start.first + 1.f, level->start.second + 1.f);
-            actor->corpses.push_back({ level, spot_x, spot_y, 4, entering.corpse, 0, entering.appearance ? *entering.appearance : game_data->starting_gear[std::size_t(entering.header.cls % 7)] });
-        }
+        // A corpse in the save lies by the town's start.
+        lay_save_corpse(entering, level->start.first + 1.f, level->start.second + 1.f);
         other_npcs.clear();
         npc_states = npc_start(*level);
         actor->interact_npc = actor->pick_item = actor->take_warp = -1;
@@ -987,6 +1060,8 @@ auto World::respawn(std::uint32_t now_ms) -> void {
             level = act_town ? act_town : &game_data->town;   // Lut Gholein not built: the camp
             swap_npcs(from);
             actor->interact_npc = actor->pick_item = -1;
+            std::tie(actor->player.x, actor->player.y) = level->start.first >= 0 ? level->start : std::pair{ actor->player.x, actor->player.y };
+            bring_party(from, level, actor->player.x, actor->player.y, false);
         }
         actor->take_warp = -1;
         std::tie(actor->player.x, actor->player.y) = level->start.first >= 0 ? level->start : std::pair{ actor->player.x, actor->player.y };
@@ -1016,17 +1091,19 @@ auto World::cross_level() -> void {
                 unit.goal_x -= dx; unit.goal_y -= dy;
                 for (auto& [step_x, step_y] : unit.path) { step_x -= dx; step_y -= dy; }
             };
-            shift(actor->player);
-            actor->target_x -= dx; actor->target_y -= dy;
-            if (actor->merc) shift(actor->merc->unit);
-            fight.pets_cross(level, neighbour.level, dx, dy);
-            actor->events.push_back(ev::LevelChanged{ level, true });
+            each_player([&](Player& player) {            // the party crosses together (one screen, one level)
+                shift(player.player);
+                player.target_x -= dx; player.target_y -= dy;
+                if (player.merc) shift(player.merc->unit);
+                fight.pets_cross(level, neighbour.level, dx, dy);
+                player.events.push_back(ev::LevelChanged{ level, true });
+                player.interact_npc = -1;
+            });
             const Level* from = level;
             level = neighbour.level;
             fight.enter(level);
             loot.enter(level);
             swap_npcs(from);
-            actor->interact_npc = -1;
             d2d::log::info("level: {} at ({:.1f}, {:.1f})", level_name(*level), actor->player.x, actor->player.y);
             return;
         }
@@ -1552,6 +1629,7 @@ auto World::arrive(const Level* destination, float arrive_x, float arrive_y, con
         }
         fight.footstep(int(std::floor(free_x * 5)), int(std::floor(free_y * 5)), now);   // an arrival is a footstep (FUN_00554ea0)
         actor->warp_spot = { int(std::floor(free_x * 5)), int(std::floor(free_y * 5)) };
+        bring_party(from, level, free_x, free_y, true);
         fight.enter(level);
         fight.rooms_up(*level, actor->player.x, actor->player.y, true);
         reopen_doors();
@@ -2132,23 +2210,24 @@ auto World::stamina_frame() -> void {
         stamina = d2d::rules::stamina_regen(stamina, actor->character.stats.values[kMaxStamina], mode, int(actor->psum[kStaminaRecoveryBonus]));
     }
 
-auto World::tick(const std::vector<Command>& cmds, std::uint32_t now_ms, std::uint32_t last_ms) -> void {
+auto World::tick(std::span<const Order> orders, std::uint32_t now_ms, std::uint32_t last_ms) -> void {
         const float elapsed = float(now_ms - last_ms) / 1000.f;
         now = now_ms;
         // The look follows what's worn (compcode::look, the save header's bytes).
-        if (!game_data->item_pieces.empty() && !game_data->comp.empty()) {
-            std::vector<std::string_view> active_states;
-            for (const auto& state : actor->self_states) if (const auto* skill = game_data->skills.get(state.skill)) active_states.push_back(skill->aurastate);
-            actor->character.appearance = game_data->look_of(actor->character.items, active_states);
-        }
+        if (!game_data->item_pieces.empty() && !game_data->comp.empty())
+            each_player([&](Player& player) {
+                std::vector<std::string_view> active_states;
+                for (const auto& state : player.self_states) if (const auto* skill = game_data->skills.get(state.skill)) active_states.push_back(skill->aurastate);
+                player.character.appearance = game_data->look_of(player.character.items, active_states);
+            });
         // Levels: finished builds come in; the ones next to the player's
         // start building when it changes (GameData::level).
         game_data->poll_levels();
         fight.spawning.game_quests = game_bits;          // the town markers' inits read them as rooms come up
         // a3q7: the Dark Wanderer gone (ai.cpp) marks every player in act 3 (FUN_005bd260: word 0x20 bit 0, if missing).
-        if (d2d::rules::level_act(level->id) == 2 && !d2d::rules::quest::bit(quests(), 0x20, 0)
+        if (d2d::rules::level_act(level->id) == 2
             && std::ranges::any_of(fight.monsters, [](const Monster& monster) { return monster.gone && monster.type == d2d::rules::monster_ids::kDarkWanderer; }))
-            d2d::rules::quest::set(quests(), 0x20, 0);
+            each_player([&](Player&) { if (!d2d::rules::quest::bit(quests(), 0x20, 0)) d2d::rules::quest::set(quests(), 0x20, 0); });
         // FUN_005bd390, once a game: round where he went (0x741538's
         // (dx, dy), from index `quest seed & 1`: 7 or 8; index 7 repeats
         // index 2, bugs.md #20) object 131 at a free spot near each, mode 1,
@@ -2167,20 +2246,22 @@ auto World::tick(const std::vector<Command>& cmds, std::uint32_t now_ms, std::ui
         }
         std::erase_if(fires, [&](const Fire& fire) { return fire.gone && now_ms >= fire.gone; });
         if (level != wanted_near) { want_nearby(*game_data, *level); wanted_near = level; }
-        item_ids();
+        each_player([&](Player&) { item_ids(); });
         // The day moves a frame a tick (40 ms); a stall doesn't fast-forward it.
         if (now_ms - day_at > 1000) day_at = now_ms;
         for (; now_ms - day_at >= kTickMs; day_at += kTickMs) {
             day.step(act());
             act1_tick();
             act2_tick();
-            stamina_frame();
+            each_player([&](Player&) { stamina_frame(); });
         }
-        if (actor->boost.until && now_ms >= actor->boost.until) {     // the state runs out
-            if (shrine_code(actor->boost.shrine) == 14) actor->character.stats.values[d2d::d2s::kStamina] = actor->character.stats.values[d2d::d2s::kMaxStamina];
-            actor->boost = {};
-        }
-        fight.update_fighters(now_ms);
+        each_player([&](Player& player) {
+            if (player.boost.until && now_ms >= player.boost.until) {     // the state runs out
+                if (shrine_code(player.boost.shrine) == 14) player.character.stats.values[d2d::d2s::kStamina] = player.character.stats.values[d2d::d2s::kMaxStamina];
+                player.boost = {};
+            }
+            fight.update_fighters(now_ms);
+        });
         spring_traps(now_ms);
         // Used shrines and chests: OP while it plays, then ON; a shrine back
         // to NU after its reset time (Shrines.txt Reset x 1200 + 1 frames;
@@ -2203,8 +2284,10 @@ auto World::tick(const std::vector<Command>& cmds, std::uint32_t now_ms, std::ui
             if (key.first == level && std::size_t(key.second) < npc_states.size())
                 std::tie(npc_states[std::size_t(key.second)].mode, npc_states[std::size_t(key.second)].mode_ms) = std::pair{ kObjectModes[std::size_t(door.mode)], door.when };
         Crowd crowd;                           // who's in whose way this frame
-        crowd.units.push_back(&actor->player);
-        if (actor->merc) crowd.units.push_back(&actor->merc->unit);
+        for (const auto& player : players) {
+            crowd.units.push_back(&player->player);
+            if (player->merc) crowd.units.push_back(&player->merc->unit);
+        }
         for (std::size_t i = 0; i < npc_states.size() && i < level->npcs.size(); ++i)
             if (level->npcs[i].root != "objects" && !npc_states[i].hidden) crowd.units.push_back(&npc_states[i]);
         const bool in_moor = !in_town(level);     // outside: this level's monsters are about
@@ -2213,119 +2296,127 @@ auto World::tick(const std::vector<Command>& cmds, std::uint32_t now_ms, std::ui
         // swing or a flinch holds the player in place until it ends, and
         // an attack goes on while the button's held (the left skill sent
         // again).
-        const bool button = std::ranges::any_of(cmds, [](const Command& command) {
-            const auto* use_skill = std::get_if<cmd::UseSkill>(&command);
-            return std::holds_alternative<cmd::Move>(command) || (use_skill && use_skill->left);
-        });
-        const bool resurrect = std::ranges::any_of(cmds, [](const Command& command) { return std::holds_alternative<cmd::Resurrect>(command); });
-        if (fight.player_modes(button, now_ms, elapsed) && resurrect) respawn(now_ms);
-        if (actor->pmode != actor->last_pmode) {                 // death's stages: the penalty as it starts, the corpse as it ends
-            if (actor->pmode == kModeDT) death_penalty(now_ms);
-            if (actor->pmode == kModeDD) make_corpse();
-            actor->last_pmode = actor->pmode;
-        }
-        if (!fight.dead()) {
-        const bool busy = actor->pmode >= 0;
-        for (const auto& command : cmds) if (!std::holds_alternative<cmd::Resurrect>(command)) apply(command, now_ms);
-        // Close enough to the stash: open it with the inventory.
-        // ponytail: 2 cells, not D2's per-object operate range.
-        if (actor->interact_npc >= 0) {
-            const auto& npc = level->npcs[std::size_t(actor->interact_npc)];
-            const auto& state = npc_states[std::size_t(actor->interact_npc)];
-            const float npc_x = npc.path.empty() ? npc.x : state.x, npc_y = npc.path.empty() ? npc.y : state.y;
-            if (std::hypot(npc_x - actor->player.x, npc_y - actor->player.y) < 2.f) {
-                if (operable(npc.operate_fn) || npc.operate_fn == d2d::rules::operate_fn::kMoldyTome || npc.operate_fn == d2d::rules::ToolsQuest::kStand || npc.operate_fn == d2d::rules::operate_fn::kCairnStone || npc.operate_fn == d2d::rules::operate_fn::kGibbet || npc.operate_fn == d2d::rules::operate_fn::kInifussTree
-                    || npc.operate_fn == d2d::rules::operate_fn::kSunAltar || npc.operate_fn == d2d::rules::operate_fn::kOrifice
-                    || npc.operate_fn == d2d::rules::operate_fn::kJournal || npc.operate_fn == d2d::rules::operate_fn::kSanctuaryPortal) {
-                    operate(actor->interact_npc, now_ms);
-                } else if (npc.operate_fn == d2d::rules::operate_fn::kStash) {
-                    actor->events.push_back(ev::OpenUI{ ev::OpenUI::stash, actor->interact_npc });
-                } else if (npc.operate_fn == d2d::rules::operate_fn::kWaypoint) {
-                    // FUN_00584e30: touching activates this level's waypoint
-                    // (the town's, index 0, always is); an unlit one lights
-                    // up (mode 1 → 2) and the panel waits for the next touch.
-                    set_waypoint(0);
-                    set_waypoint(waypoint_index(*game_data, level->id));
-                    if (npc.mode == "NU" && !operated.contains({ level, actor->interact_npc })) operated[{ level, actor->interact_npc }] = now_ms;
-                    else actor->events.push_back(ev::OpenUI{ ev::OpenUI::waypoint, actor->interact_npc });
-                } else {
-                    if (d2d::rules::is_healer(npc.hc_idx)) { d2d::rules::heal(actor->character.stats); fight.cure(now_ms); }
-                    // In Hell, a Den of Evil done before the reset existed
-                    // opens it on meeting Akara (FUN_0058fd20: quest 41 bits
-                    // 13 and 1).
-                    if (npc.hc_idx == d2d::rules::monster_ids::kAkara && actor->character.header.active_difficulty() == 2) {
-                        auto& quest_bits = quests();
-                        namespace quest = d2d::rules::quest;
-                        constexpr int kRespec = d2d::rules::kRespecQuest;
-                        if (quest::bit(quest_bits, d2d::rules::DenQuest::kQuest, 0) && !quest::bit(quest_bits, kRespec, 1) && !quest::bit(quest_bits, kRespec, 0)) { d2d::rules::quest::set(quest_bits, kRespec, 13); d2d::rules::quest::set(quest_bits, kRespec, 1); }
+        each_player([&](Player& player) {
+            std::vector<Command> cmds;                  // this player's
+            for (const auto& order : orders) if (order.player == player.id) cmds.push_back(order.command);
+            const bool button = std::ranges::any_of(cmds, [](const Command& command) {
+                const auto* use_skill = std::get_if<cmd::UseSkill>(&command);
+                return std::holds_alternative<cmd::Move>(command) || (use_skill && use_skill->left);
+            });
+            const bool resurrect = std::ranges::any_of(cmds, [](const Command& command) { return std::holds_alternative<cmd::Resurrect>(command); });
+            if (fight.player_modes(button, now_ms, elapsed) && resurrect) respawn(now_ms);
+            if (actor->pmode != actor->last_pmode) {                 // death's stages: the penalty as it starts, the corpse as it ends
+                if (actor->pmode == kModeDT) death_penalty(now_ms);
+                if (actor->pmode == kModeDD) make_corpse();
+                actor->last_pmode = actor->pmode;
+            }
+            if (!fight.dead()) {
+            const bool busy = actor->pmode >= 0;
+            for (const auto& command : cmds) if (!std::holds_alternative<cmd::Resurrect>(command)) apply(command, now_ms);
+            // Close enough to the stash: open it with the inventory.
+            // ponytail: 2 cells, not D2's per-object operate range.
+            if (actor->interact_npc >= 0) {
+                const auto& npc = level->npcs[std::size_t(actor->interact_npc)];
+                const auto& state = npc_states[std::size_t(actor->interact_npc)];
+                const float npc_x = npc.path.empty() ? npc.x : state.x, npc_y = npc.path.empty() ? npc.y : state.y;
+                if (std::hypot(npc_x - actor->player.x, npc_y - actor->player.y) < 2.f) {
+                    if (operable(npc.operate_fn) || npc.operate_fn == d2d::rules::operate_fn::kMoldyTome || npc.operate_fn == d2d::rules::ToolsQuest::kStand || npc.operate_fn == d2d::rules::operate_fn::kCairnStone || npc.operate_fn == d2d::rules::operate_fn::kGibbet || npc.operate_fn == d2d::rules::operate_fn::kInifussTree
+                        || npc.operate_fn == d2d::rules::operate_fn::kSunAltar || npc.operate_fn == d2d::rules::operate_fn::kOrifice
+                        || npc.operate_fn == d2d::rules::operate_fn::kJournal || npc.operate_fn == d2d::rules::operate_fn::kSanctuaryPortal) {
+                        operate(actor->interact_npc, now_ms);
+                    } else if (npc.operate_fn == d2d::rules::operate_fn::kStash) {
+                        actor->events.push_back(ev::OpenUI{ ev::OpenUI::stash, actor->interact_npc });
+                    } else if (npc.operate_fn == d2d::rules::operate_fn::kWaypoint) {
+                        // FUN_00584e30: touching activates this level's waypoint
+                        // (the town's, index 0, always is); an unlit one lights
+                        // up (mode 1 → 2) and the panel waits for the next touch.
+                        set_waypoint(0);
+                        set_waypoint(waypoint_index(*game_data, level->id));
+                        if (npc.mode == "NU" && !operated.contains({ level, actor->interact_npc })) operated[{ level, actor->interact_npc }] = now_ms;
+                        else actor->events.push_back(ev::OpenUI{ ev::OpenUI::waypoint, actor->interact_npc });
+                    } else {
+                        if (d2d::rules::is_healer(npc.hc_idx)) { d2d::rules::heal(actor->character.stats); fight.cure(now_ms); }
+                        // In Hell, a Den of Evil done before the reset existed
+                        // opens it on meeting Akara (FUN_0058fd20: quest 41 bits
+                        // 13 and 1).
+                        if (npc.hc_idx == d2d::rules::monster_ids::kAkara && actor->character.header.active_difficulty() == 2) {
+                            auto& quest_bits = quests();
+                            namespace quest = d2d::rules::quest;
+                            constexpr int kRespec = d2d::rules::kRespecQuest;
+                            if (quest::bit(quest_bits, d2d::rules::DenQuest::kQuest, 0) && !quest::bit(quest_bits, kRespec, 1) && !quest::bit(quest_bits, kRespec, 0)) { d2d::rules::quest::set(quest_bits, kRespec, 13); d2d::rules::quest::set(quest_bits, kRespec, 1); }
+                        }
+                        actor->events.push_back(ev::OpenUI{ ev::OpenUI::talk, actor->interact_npc, quest_talk(npc.hc_idx) });
                     }
-                    actor->events.push_back(ev::OpenUI{ ev::OpenUI::talk, actor->interact_npc, quest_talk(npc.hc_idx) });
+                    actor->player.walking = false; actor->interact_npc = -1;
+                } else if (!actor->player.walking) {
+                    actor->interact_npc = -1;                         // blocked on the way
+                } else {
+                    actor->target_x = npc_x; actor->target_y = npc_y;              // follow a walking NPC
                 }
-                actor->player.walking = false; actor->interact_npc = -1;
-            } else if (!actor->player.walking) {
-                actor->interact_npc = -1;                         // blocked on the way
-            } else {
-                actor->target_x = npc_x; actor->target_y = npc_y;              // follow a walking NPC
             }
-        }
-        if (actor->pick_item >= 0 && loot.index_of(actor->pick_item) < 0) actor->pick_item = -1;   // someone took it
-        if (actor->pick_item >= 0 && !busy) {
-            const auto ground_index = std::size_t(loot.index_of(actor->pick_item));
-            const auto& ground_item = loot.ground[ground_index];
-            if (std::hypot(ground_item.x - actor->player.x, ground_item.y - actor->player.y) <= 1.f) {
-                const bool malus = ground_item.item.code == "hdm";
-                loot.take(ground_index);
-                if (malus && holding_malus() && tools.picked_up(quests())) d2d::log::info("Tools of the Trade: the malus picked up (the player's line, FUN_00553380)");
-                actor->pick_item = -1; actor->player.walking = false; actor->player.path.clear();
-            } else {
-                actor->target_x = ground_item.x; actor->target_y = ground_item.y; actor->player.walking = true;
-            }
-        }
-        if (autoloot_gold && !fight.dead())                  // d2d: walking over gold picks it up (game.exe wants a click)
-            for (std::size_t i = loot.ground.size(); i-- > 0;)
-                if (const auto& ground_item = loot.ground[i]; ground_item.item.code == "gld" && std::hypot(ground_item.x - actor->player.x, ground_item.y - actor->player.y) <= 0.5f) {
-                    if (loot.index_of(actor->pick_item) == int(i)) actor->pick_item = -1;
-                    loot.take(i);
+            if (actor->pick_item >= 0 && loot.index_of(actor->pick_item) < 0) actor->pick_item = -1;   // someone took it
+            if (actor->pick_item >= 0 && !busy) {
+                const auto ground_index = std::size_t(loot.index_of(actor->pick_item));
+                const auto& ground_item = loot.ground[ground_index];
+                if (std::hypot(ground_item.x - actor->player.x, ground_item.y - actor->player.y) <= 1.f) {
+                    const bool malus = ground_item.item.code == "hdm";
+                    loot.take(ground_index);
+                    if (malus && holding_malus() && tools.picked_up(quests())) d2d::log::info("Tools of the Trade: the malus picked up (the player's line, FUN_00553380)");
+                    actor->pick_item = -1; actor->player.walking = false; actor->player.path.clear();
+                } else {
+                    actor->target_x = ground_item.x; actor->target_y = ground_item.y; actor->player.walking = true;
                 }
-        bool to_unit = actor->interact_npc >= 0 && std::size_t(actor->interact_npc) < level->npcs.size() && level->npcs[std::size_t(actor->interact_npc)].root == "monsters";
-        if (const auto target = fight.engage(now_ms)) { std::tie(actor->target_x, actor->target_y) = *target; actor->player.walking = true; to_unit = true; }
-        if (actor->player.walking && actor->pmode < 0) {
-            // A route to the target (path type 7), re-planned when the
-            // target moves off its end (dragging, a walking NPC) and when
-            // it ran out short of it (FUN_006503f0's last test).
-            // ponytail: a target unit re-paths at 0.3 cells, not game.exe's
-            // 5 subtiles off SP2.
-            const auto subtile = [](float value) { return int(std::floor(value * 5)); };
-            if (actor->player.path.empty() || std::hypot(actor->player.goal_x - actor->target_x, actor->player.goal_y - actor->target_y) > 0.3f) {
-                actor->player.path = player_walk(*level, actor->player.x, actor->player.y, actor->target_x, actor->target_y, to_unit, crowd, &actor->player);
-                actor->player.goal_x = actor->target_x; actor->player.goal_y = actor->target_y;
             }
-            const auto save_class = std::size_t(std::max(actor->character.character_class, 0));
-            // FUN_00623f50: the walk velocity x a % (at least 25) of 100 (run: run x 100 / walk),
-            // faster run/walk's effective % (150 x v / (150 + v)) and chill's -50.
-            const int walk = std::max(game_data->walk_velocity[save_class], 1);
-            const int base = actor->running && actor->character.stats.values[d2d::d2s::kStamina] > 0 ? game_data->run_velocity[save_class] * 100 / walk : 100;
-            const float vel = float(walk * std::max(base + d2d::rules::effective_speed(actor->player_combat.frw, 150) + fight.chill_rate(now_ms), 25)) / 100.f;
-            const float before_x = actor->player.x, before_y = actor->player.y;
-            actor->player.walking = follow_path(*level, actor->player, cells_per_sec(vel) * elapsed, crowd);
-            // The merc's think reads the player's footsteps (FUN_00580c20): walking or
-            // running, 25 ms on from the last, over 45 (squared) from it.
-            if (const int step_x = int(std::floor(actor->player.x * 5)), step_y = int(std::floor(actor->player.y * 5)); now_ms > actor->footstep_ms + 25) {
-                const auto [last_x, last_y] = actor->footsteps[std::size_t(actor->footstep_cursor == 0 ? 0x13 : actor->footstep_cursor - 1)];
-                if ((step_x - last_x) * (step_x - last_x) + (step_y - last_y) * (step_y - last_y) > 0x2d) fight.footstep(step_x, step_y, now_ms);
+            if (autoloot_gold && !fight.dead())                  // d2d: walking over gold picks it up (game.exe wants a click)
+                for (std::size_t i = loot.ground.size(); i-- > 0;)
+                    if (const auto& ground_item = loot.ground[i]; ground_item.item.code == "gld" && std::hypot(ground_item.x - actor->player.x, ground_item.y - actor->player.y) <= 0.5f) {
+                        if (loot.index_of(actor->pick_item) == int(i)) actor->pick_item = -1;
+                        loot.take(i);
+                    }
+            bool to_unit = actor->interact_npc >= 0 && std::size_t(actor->interact_npc) < level->npcs.size() && level->npcs[std::size_t(actor->interact_npc)].root == "monsters";
+            if (const auto target = fight.engage(now_ms)) { std::tie(actor->target_x, actor->target_y) = *target; actor->player.walking = true; to_unit = true; }
+            if (actor->player.walking && actor->pmode < 0) {
+                // A route to the target (path type 7), re-planned when the
+                // target moves off its end (dragging, a walking NPC) and when
+                // it ran out short of it (FUN_006503f0's last test).
+                // ponytail: a target unit re-paths at 0.3 cells, not game.exe's
+                // 5 subtiles off SP2.
+                const auto subtile = [](float value) { return int(std::floor(value * 5)); };
+                if (actor->player.path.empty() || std::hypot(actor->player.goal_x - actor->target_x, actor->player.goal_y - actor->target_y) > 0.3f) {
+                    actor->player.path = player_walk(*level, actor->player.x, actor->player.y, actor->target_x, actor->target_y, to_unit, crowd, &actor->player);
+                    actor->player.goal_x = actor->target_x; actor->player.goal_y = actor->target_y;
+                }
+                const auto save_class = std::size_t(std::max(actor->character.character_class, 0));
+                // FUN_00623f50: the walk velocity x a % (at least 25) of 100 (run: run x 100 / walk),
+                // faster run/walk's effective % (150 x v / (150 + v)) and chill's -50.
+                const int walk = std::max(game_data->walk_velocity[save_class], 1);
+                const int base = actor->running && actor->character.stats.values[d2d::d2s::kStamina] > 0 ? game_data->run_velocity[save_class] * 100 / walk : 100;
+                const float vel = float(walk * std::max(base + d2d::rules::effective_speed(actor->player_combat.frw, 150) + fight.chill_rate(now_ms), 25)) / 100.f;
+                const float before_x = actor->player.x, before_y = actor->player.y;
+                actor->player.walking = follow_path(*level, actor->player, cells_per_sec(vel) * elapsed, crowd);
+                // The merc's think reads the player's footsteps (FUN_00580c20): walking or
+                // running, 25 ms on from the last, over 45 (squared) from it.
+                if (const int step_x = int(std::floor(actor->player.x * 5)), step_y = int(std::floor(actor->player.y * 5)); now_ms > actor->footstep_ms + 25) {
+                    const auto [last_x, last_y] = actor->footsteps[std::size_t(actor->footstep_cursor == 0 ? 0x13 : actor->footstep_cursor - 1)];
+                    if ((step_x - last_x) * (step_x - last_x) + (step_y - last_y) * (step_y - last_y) > 0x2d) fight.footstep(step_x, step_y, now_ms);
+                }
+                if (!actor->player.walking) {
+                    actor->player.path.clear();
+                    // Short of the target with a step made: it paths again from here.
+                    actor->player.walking = (subtile(actor->player.x) != subtile(actor->target_x) || subtile(actor->player.y) != subtile(actor->target_y))
+                                     && (actor->player.x != before_x || actor->player.y != before_y);
+                }
             }
-            if (!actor->player.walking) {
-                actor->player.path.clear();
-                // Short of the target with a step made: it paths again from here.
-                actor->player.walking = (subtile(actor->player.x) != subtile(actor->target_x) || subtile(actor->player.y) != subtile(actor->target_y))
-                                 && (actor->player.x != before_x || actor->player.y != before_y);
             }
-        }
-        }
+        });
         // The world goes on with the player dead (game.exe runs the rooms
         // around the corpse till the respawn): monsters see the dead player
         // as not alive (Fight::world) and think on.
-        npc_patrol(*game_data, *level, npc_states, actor->talking, now_ms, elapsed, crowd, &actor->player, arcane.guard_state == 2);
+        std::array<int, 3> talking{ -1, -1, -1 };    // the NPCs a player has a menu, speech or store open with
+        for (const auto& player : players)
+            for (std::size_t k = 0; k < talking.size(); ++k) if (player->talking[k] >= 0) talking[k] = player->talking[k];
+        // ponytail: an NPC with news greets the first player.
+        npc_patrol(*game_data, *level, npc_states, talking, now_ms, elapsed, crowd, &lead().player, arcane.guard_state == 2);
         cain_step(now_ms, elapsed);
         for (const auto& neighbour : level->nearby) {           // over the edge, still in play
             auto& states = other_npcs[neighbour.level];
@@ -2336,20 +2427,23 @@ auto World::tick(const std::vector<Command>& cmds, std::uint32_t now_ms, std::ui
         for (std::size_t i = 0; i < npc_states.size() && i < level->npcs.size(); ++i)
             npc_states[i].alert = act1_alert(level->npcs[i].hc_idx) || act2_alert(level->npcs[i].hc_idx) || act3_alert(level->npcs[i].hc_idx) || act4_alert(level->npcs[i].hc_idx);
         // The player's mode as the merc's think reads it: 2 walk, 3 run, 6 walk in town.
-        actor->owner_mode = !actor->player.walking ? 1 : actor->running && actor->character.stats.values[d2d::d2s::kStamina] > 0 ? 3 : in_moor ? 2 : 6;
+        for (auto& player : players)
+            player->owner_mode = !player->player.walking ? 1 : player->running && player->character.stats.values[d2d::d2s::kStamina] > 0 ? 3 : in_moor ? 2 : 6;
         fight.world(in_moor, now_ms, elapsed, crowd);
         den_count(now_ms);                                      // the merc's or a missile's kill counts with the player dead
         if (den_log_at && now_ms >= den_log_at) { den.log = 5; den_log_at = 0; }
-        if (!fight.dead()) {
-            use_warp();
-            if (actor->portal_due) { actor->portal_due = false; open_portal(now_ms); }
-            if (actor->take_corpse >= 0 && std::size_t(actor->take_corpse) < actor->corpses.size() && actor->corpses[std::size_t(actor->take_corpse)].level == level) {
-                const auto& corpse = actor->corpses[std::size_t(actor->take_corpse)];
-                if (std::hypot(corpse.x - actor->player.x, corpse.y - actor->player.y) < 2.f) { take_corpse_items(std::size_t(actor->take_corpse), now_ms); actor->take_corpse = -1; }
-                else if (!actor->player.walking) actor->take_corpse = -1;
+        each_player([&](Player&) {
+            if (!fight.dead()) {
+                use_warp();
+                if (actor->portal_due) { actor->portal_due = false; open_portal(now_ms); }
+                if (actor->take_corpse >= 0 && std::size_t(actor->take_corpse) < actor->corpses.size() && actor->corpses[std::size_t(actor->take_corpse)].level == level) {
+                    const auto& corpse = actor->corpses[std::size_t(actor->take_corpse)];
+                    if (std::hypot(corpse.x - actor->player.x, corpse.y - actor->player.y) < 2.f) { take_corpse_items(std::size_t(actor->take_corpse), now_ms); actor->take_corpse = -1; }
+                    else if (!actor->player.walking) actor->take_corpse = -1;
+                }
+                use_portal(now_ms);
             }
-            use_portal(now_ms);
-        }
+        });
         for (const auto& kill : hosted_quests ? std::vector<Fight::Kill>{} : fight.kills) {
             act1_kill(kill, now_ms);
             act2_kill(kill, now_ms);
@@ -2361,11 +2455,11 @@ auto World::tick(const std::vector<Command>& cmds, std::uint32_t now_ms, std::ui
         act2_update();
         act3_update(now_ms);
         act4_update(now_ms);
-        cross_level();
-        fight.rooms_up(*level, actor->player.x, actor->player.y, false);
+        each_player([&](Player&) { cross_level(); });
+        for (const auto& player : players) fight.rooms_up(*level, player->player.x, player->player.y, false);
         reopen_doors();
         grow_states(npc_states, *level);
-        if (!fight.dead()) fight.apply_regen(now_ms, last_ms);
+        each_player([&](Player&) { if (!fight.dead()) fight.apply_regen(now_ms, last_ms); });
     }
 
 }  // namespace d2d::game

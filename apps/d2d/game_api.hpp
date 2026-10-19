@@ -51,6 +51,7 @@ using game::TextLine;
 using game::UnitState;
 using game::View;
 using game::ViewEncoder;
+using game::Order;
 using game::World;
 using game::attack_mode;
 using game::cof_direction;

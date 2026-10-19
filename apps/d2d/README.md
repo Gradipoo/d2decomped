@@ -45,10 +45,10 @@ default layout, by button position. The first pad connected plays.
 | Right stick | Move the cursor; click it to recentre | Move the cursor |
 | A (south) / right trigger | Left click: attack or use what's in reach | Left click |
 | B (east) / left trigger | Right-hand skill | Back (Esc) |
-| Y (north) / X (west) | Inventory / character | |
-| Left / right shoulder | Skill tree / automap | |
+| Y (north) / X (west) | Inventory / character; in a store X buys or sells what the cursor is on | |
+| Left / right shoulder | Skill tree / automap; in a store the tab before / after | |
 | View (back) / Menu (start) | Quest log / game menu (Esc) | — / Enter |
-| D-pad | Belt slots 1–4 | Up, down, left, right |
+| D-pad | Belt slots 1–4; with a panel open the cursor hops item to item | Up, down, left, right |
 | Left stick click | Walk / run toggle | |
 
 Settings live in `d2d.cfg`: `~/Library/Preferences/d2d` (macOS),

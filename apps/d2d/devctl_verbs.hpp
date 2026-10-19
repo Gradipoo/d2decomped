@@ -141,6 +141,27 @@ void register_game_verbs(d2d::devctl::Channel& channel, Window& win, Screen& scr
         }
         return std::string("ok\n");
     });
+    // A virtual pad (SDL's, plugged in on first use) holds a button down or
+    // lets it go; the next frame's sample reads it, as a real pad's.
+    channel.on("pad", [](const std::vector<std::string>& args) {
+        if (args.size() < 3 || (args[2] != "down" && args[2] != "up")) return std::string("err pad <button> down|up\n");
+        const SDL_GamepadButton button = SDL_GetGamepadButtonFromString(args[1].c_str());
+        if (button == SDL_GAMEPAD_BUTTON_INVALID) return std::string("err unknown button (a, b, x, y, dpleft, leftshoulder, ...)\n");
+        static SDL_Joystick* virtual_pad = nullptr;
+        if (!virtual_pad) {
+            SDL_VirtualJoystickDesc desc;
+            SDL_INIT_INTERFACE(&desc);
+            desc.type = SDL_JOYSTICK_TYPE_GAMEPAD;
+            desc.naxes = SDL_GAMEPAD_AXIS_COUNT;
+            desc.nbuttons = SDL_GAMEPAD_BUTTON_COUNT;
+            desc.name = "devctl pad";
+            const SDL_JoystickID id = SDL_AttachVirtualJoystick(&desc);
+            virtual_pad = id ? SDL_OpenJoystick(id) : nullptr;
+            if (!virtual_pad) return "err " + std::string(SDL_GetError()) + "\n";
+        }
+        SDL_SetJoystickVirtualButton(virtual_pad, button, args[2] == "down");
+        return std::string("ok\n");
+    });
     channel.on("text", [&](const std::vector<std::string>& args) {
         if (args.size() < 2) return std::string("err text <words>\n");
         static std::string typed;   // SDL keeps the pointer until the event is read

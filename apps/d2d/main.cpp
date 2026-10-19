@@ -733,12 +733,13 @@ int run_windowed(std::vector<std::uint8_t>& framebuffer,
             const std::uint32_t pad_now = std::uint32_t(SDL_GetTicks());
             const float pad_dt = std::min(float(pad_now - pad_last_ms) / 1000.f, 0.1f);
             pad_last_ms = pad_now;
-            const pad::Context pad_context = screen == Screen::InGame ? pad::Context::Game
+            const pad::Context pad_context = screen == Screen::InGame ? (town.store.npc >= 0 ? pad::Context::Shop : town.pad_field() ? pad::Context::Game : pad::Context::Panel)
                                            : screen == Screen::Title  ? pad::Context::Title : pad::Context::Menu;
             const pad::Actions pad_actions = pad_mapper.step(gamepads.sample(), pad_context, pad_dt);
             const int pad_side = (win.view_w - int(kScreenWidth)) / 2;   // widescreen's world beyond the 800x600 UI
             const bool pad_active = pad_actions.move_active || pad_actions.click_press || pad_actions.click_down || pad_actions.rclick_press
-                                    || pad_actions.cursor_dx != 0 || pad_actions.cursor_dy != 0 || !pad_actions.keys.empty();
+                                    || pad_actions.cursor_dx != 0 || pad_actions.cursor_dy != 0 || !pad_actions.keys.empty()
+                                    || pad_actions.snap_x != 0 || pad_actions.snap_y != 0 || pad_actions.trade_press || pad_actions.tab_step != 0;
             if (pad_active && !pad_in_use) d2d::log::info("gamepad: in use (screen {})", int(screen));
             if (pad_active) pad_in_use = true;
             // In the field a pad plays without a cursor: its buttons hit what is in reach (Town::pad_act).
@@ -755,6 +756,14 @@ int run_windowed(std::vector<std::uint8_t>& framebuffer,
                 mouse.x = std::clamp(mouse.x + int(std::lround(pad_actions.cursor_dx)), -pad_side, int(kScreenWidth) + pad_side - 1);
                 mouse.y = std::clamp(mouse.y + int(std::lround(pad_actions.cursor_dy)), 0, int(kScreenHeight) - 1);
             }
+            if (pad_actions.snap_x != 0 || pad_actions.snap_y != 0) {
+                const auto points = town.pad_snap_points();
+                if (const int pick = pad::snap_pick(mouse.x, mouse.y, pad_actions.snap_x, pad_actions.snap_y, points); pick >= 0) {
+                    mouse.x = points[std::size_t(pick)].x; mouse.y = points[std::size_t(pick)].y;
+                }
+            }
+            if (pad_actions.trade_press) town.pad_trade(mouse.x, mouse.y);
+            if (pad_actions.tab_step != 0) town.pad_tab(pad_actions.tab_step);
             if (pad_actions.click_press && !pad_field)   { mouse.down = true;  mouse.press_this_frame = true; }
             if (pad_actions.click_release && mouse.down) { mouse.down = false; mouse.release_this_frame = true; }
             if (pad_actions.rclick_press && !pad_field)  mouse.rpress_this_frame = true;

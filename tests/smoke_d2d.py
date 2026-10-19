@@ -253,6 +253,23 @@ try:
         near("Akara")
         pick("trade")
         assert state()["store_tab"] == "1", "Akara's store didn't open on her staves (tab 1)"
+        # A pad in a store (a virtual SDL pad): the shoulders step the tabs,
+        # the d-pad hops the cursor onto stock, X buys it / sells your item.
+        def press(button):
+            cmd(f"pad {button} down"); frames(2); cmd(f"pad {button} up"); frames(2)
+        press("rightshoulder")
+        assert state()["store_tab"] not in ("1", "0"), "RB didn't step to Akara's next stocked tab"
+        press("leftshoulder")
+        assert state()["store_tab"] == "1", "LB didn't step back"
+        n0 = int(state()["items"])
+        cmd("move 90 137"); frames(2)                          # left of the stock grid
+        press("dpright"); press("x"); frames(4)               # onto the first stock in the row; buy
+        assert int(state()["items"]) == n0 + 1, "pad X didn't buy the stock it hopped to"
+        at = [l for l in cmd("items").splitlines() if l.startswith("[") and "panel=1 " in l][-1]
+        col, row = (int(v) for v in at.split("at=")[1].rstrip("]").split(","))
+        cmd(f"move {419 + 29 * col + 14} {315 + 29 * row + 14}"); frames(2)
+        press("x"); frames(4)
+        assert int(state()["items"]) == n0, "pad X didn't sell the inventory item"
         cmd("key Escape"); frames()
 
         # Hire at Kashya: the list, then a rogue follows.

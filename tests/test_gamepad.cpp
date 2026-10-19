@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // The gamepad's action mapping (apps/d2d/gamepad_map.hpp): dead zones, the
-// walk direction, click edges, per-screen keys, and a pad that goes away.
+// walk direction, click edges, per-screen keys, panel hops and store
+// buttons, and a pad that goes away.
 #include "gamepad_map.hpp"
 
 #include <algorithm>
@@ -120,6 +121,42 @@ int main() {
         assert(pick_target(0, 0, 1, 0, things, 4) == 3);        // sticky 4 (2 tiles off the cone) stays in sticky reach
         assert(pick_target(0, 0, 1, 0, things, 3) == 0);        // sticky 3 is out of sticky reach: back to the nearest
         assert(pick_target(0, 0, 1, 0, {}, -1) == -1);
+    }
+    // A panel: the d-pad hops the cursor instead of using the belt; the shoulders still open their panels.
+    {
+        Mapper mapper;
+        Actions actions = mapper.step(with(Button::DpadRight), Context::Panel, 0.016f);
+        assert(actions.snap_x == 1 && actions.snap_y == 0 && !has(actions, Key::Belt4));
+        mapper.step(Sample{}, Context::Panel, 0.016f);
+        actions = mapper.step(with(Button::DpadUp), Context::Panel, 0.016f);
+        assert(actions.snap_x == 0 && actions.snap_y == -1);
+        mapper.step(Sample{}, Context::Panel, 0.016f);
+        assert(has(mapper.step(with(Button::LeftShoulder), Context::Panel, 0.016f), Key::SkillTree));
+        assert(mapper.step(with(Button::DpadRight), Context::Game, 0.016f).snap_x == 0);   // the field: the belt
+    }
+    // A store: X trades (not the character panel), the shoulders step the tabs; each once per press.
+    {
+        Mapper mapper;
+        Actions actions = mapper.step(with(Button::West), Context::Shop, 0.016f);
+        assert(actions.trade_press && !has(actions, Key::Character));
+        assert(!mapper.step(with(Button::West), Context::Shop, 0.016f).trade_press);
+        mapper.step(Sample{}, Context::Shop, 0.016f);
+        actions = mapper.step(with(Button::RightShoulder), Context::Shop, 0.016f);
+        assert(actions.tab_step == 1 && !has(actions, Key::Automap));
+        mapper.step(Sample{}, Context::Shop, 0.016f);
+        assert(mapper.step(with(Button::LeftShoulder), Context::Shop, 0.016f).tab_step == -1);
+        mapper.step(Sample{}, Context::Shop, 0.016f);
+        assert(mapper.step(with(Button::DpadDown), Context::Shop, 0.016f).snap_y == 1);
+    }
+    // Hops: along the row before off it, never behind or onto the spot the cursor's on.
+    {
+        const std::vector<Point> grid{ { 0, 0 }, { 29, 0 }, { 58, 0 }, { 20, 29 }, { 0, 29 } };
+        assert(snap_pick(0, 0, 1, 0, grid) == 1);               // right: the next in the row, not the nearer-diagonal (20, 29)
+        assert(snap_pick(29, 0, 1, 0, grid) == 2);
+        assert(snap_pick(58, 0, 1, 0, grid) == -1);             // the row's end: stay
+        assert(snap_pick(0, 0, 0, 1, grid) == 4);               // down: straight below
+        assert(snap_pick(0, 0, -1, 0, grid) == -1);
+        assert(snap_pick(0, 0, 1, 0, {}) == -1);
     }
     return 0;
 }

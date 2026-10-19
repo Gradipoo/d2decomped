@@ -601,13 +601,20 @@ public:
         layout->addSpacing(6);
         layout->addWidget(line);
 
+        // Own row: beside Launch the fixed-width window squeezes the labels
+        // into the next box.
+        auto* optionsRow = new QHBoxLayout;
+        optionsRow->addWidget(fullscreen_);
+        optionsRow->addSpacing(12);
+        optionsRow->addWidget(widescreen_);
+        optionsRow->addSpacing(12);
+        optionsRow->addWidget(skipVideo_);
+        optionsRow->addStretch();
+        layout->addLayout(optionsRow);
+
         auto* btnRow = new QHBoxLayout;
         btnRow->addWidget(fetchBins_);
         btnRow->addStretch();
-        btnRow->addWidget(fullscreen_);
-        btnRow->addWidget(widescreen_);
-        btnRow->addWidget(skipVideo_);
-        btnRow->addSpacing(12);   // macOS clips the checkbox label against the default button
         btnRow->addWidget(launch_);
         layout->addLayout(btnRow);
         layout->addWidget(crashReports_);

@@ -183,7 +183,7 @@ auto World::leash(std::span<const std::pair<float, float>> before) -> void {
     }
 }
 
-auto World::bring_party(const Level* from, const Level* destination, float x, float y, bool keep_map) -> void {
+auto World::bring_party(const Level* from, const Level* destination, float x, float y, bool keep_map, bool tell) -> void {
     static constexpr std::array<std::pair<float, float>, 4> kAround{ { { 1.f, 0.f }, { 0.f, 1.f }, { -1.f, 0.f }, { 0.f, -1.f } } };
     std::size_t around = 0;
     Player* const mover = actor;
@@ -192,7 +192,7 @@ auto World::bring_party(const Level* from, const Level* destination, float x, fl
         const auto [spot_x, spot_y] = destination->nearest_free(x + kAround[around % 4].first, y + kAround[around % 4].second);
         ++around;
         fight.pets_cross(from, destination, player.player.x - spot_x, player.player.y - spot_y);
-        player.events.push_back(ev::LevelChanged{ from, keep_map });
+        if (tell) player.events.push_back(ev::LevelChanged{ from, keep_map });
         player.player.x = spot_x; player.player.y = spot_y;
         player.player.walking = false; player.player.path.clear();
         player.target_x = spot_x; player.target_y = spot_y;
@@ -335,6 +335,7 @@ auto World::save() -> std::string {
         stow_held(*game_data, actor->character.items, actor->held);                  // the item in hand goes back first
         auto header = actor->character.header;
         if (header.right_skill == std::uint32_t(kResurrectSkill)) header.right_skill = actor->right_before;   // co-op's only: never in a save
+        if (header.right_swap == std::uint32_t(kResurrectSkill)) header.right_swap = 0;
         header.level = std::uint8_t(std::clamp<std::int64_t>(actor->character.stats.get(d2d::d2s::kLevel), 1, 99));
         header.last_played = std::uint32_t(std::time(nullptr));
         header.map_id = game_data->map_seed;
@@ -499,6 +500,7 @@ auto World::operate(int npc_index, std::uint32_t now_ms, int force ) -> void {  
             actor->player.path.clear(); actor->player.walking = false;
             actor->player.goal_x = spot_x; actor->player.goal_y = spot_y;
             actor->interact_npc = -1;
+            bring_party(level, level, spot_x, spot_y, true, false);   // one screen: the party with them (the leash would undo a lone jump)
             d2d::log::info("teleport pad {} -> {}", npc_index, target);
             return;
         }
@@ -2142,6 +2144,7 @@ auto World::apply(const Command& command, std::uint32_t now_ms) -> void {
                 else if (item.slot == body::kRightArmSwitch || item.slot == body::kLeftArmSwitch) item.slot -= body::kRightArmSwitch - body::kRightArm;
             }
             auto& header = actor->character.header;
+            if (header.right_skill == std::uint32_t(kResurrectSkill)) header.right_skill = actor->right_before;   // co-op's Resurrect stays with no set
             header.weapon_set ^= 1;
             const auto kept = [&](std::uint32_t id, bool left) {
                 const auto* skill = game_data->skills.get(int(id));

@@ -212,7 +212,7 @@ void register_game_verbs(d2d::devctl::Channel& channel, Window& win, Screen& scr
         if (args.size() < 2) return std::string("err wheel <dy>\n");
         SDL_Event event{};
         event.wheel = { .type = SDL_EVENT_MOUSE_WHEEL, .windowID = SDL_GetWindowID(win.window),
-                     .integer_y = std::stoi(args[1]) };
+                     .y = float(std::stoi(args[1])) };
         SDL_PushEvent(&event);
         return std::string("ok\n");
     });

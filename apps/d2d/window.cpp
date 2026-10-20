@@ -91,7 +91,12 @@ void handle_sdl_events(SDL_Event& event, Mouse& mouse, Screen& current_screen,
             mouse.rpress_this_frame = true;
         }
     } else if (event.type == SDL_EVENT_MOUSE_WHEEL) {
-        mouse.wheel += event.wheel.integer_y;
+        // Whole ticks from y: integer_y is SDL 3.2.12+ (Debian 13 has 3.2.10, #58).
+        static float wheel_rest = 0.f;
+        wheel_rest += event.wheel.y;
+        const int ticks = int(wheel_rest);
+        wheel_rest -= float(ticks);
+        mouse.wheel += ticks;
     } else if (event.type == SDL_EVENT_MOUSE_BUTTON_UP) {
         mouse.x = int(event.button.x);
         mouse.y = int(event.button.y);

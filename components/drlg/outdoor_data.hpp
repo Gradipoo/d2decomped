@@ -113,7 +113,7 @@ template <class Read> void load_outdoor_assets(OutdoorAssets& assets, Read&& rea
 // three every room gets (FUN_0066f240).
 template <class Read> RoomDt1s load_room_dt1s(OutdoorAssets& assets, Read&& read, int type) {
     RoomDt1s dt1s;
-    auto load = [&](std::string rel) -> const Dt1File* {
+    auto load = [&](const std::string& rel) -> const Dt1File* {
         if (rel.empty() || rel == "0") return nullptr;
         std::string path = R"(data\global\tiles\)", name;
         for (const char letter : rel) path.push_back(letter == '/' ? '\\' : letter);

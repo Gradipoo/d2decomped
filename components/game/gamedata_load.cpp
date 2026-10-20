@@ -164,7 +164,7 @@ void load_monsters(GameData& game_data, const d2d::mpq::Stack& mpqs) {
     game_data.mon_npc.resize(monstats.size());
     for (std::size_t row_index = 0; row_index < monstats.size(); ++row_index) {
         auto& type_info = monsters.types[row_index];
-        auto text = [&](std::string column) { return monstats.get(row_index, column); };
+        auto text = [&](const std::string& column) { return monstats.get(row_index, column); };
         type_info.id = text("Id"); type_info.code = text("Code"); type_info.name_key = text("NameStr"); type_info.ai_name = text("AI");
         type_info.base = row(text("BaseId")); type_info.next_in_class = row(text("NextInClass"));
         type_info.min_grp = num(text("MinGrp")); type_info.max_grp = num(text("MaxGrp"));
@@ -292,7 +292,7 @@ void load_monsters(GameData& game_data, const d2d::mpq::Stack& mpqs) {
                     if (const std::string name(missiles_table.get(row_index, column)); !name.empty()) more |= skill_missiles.emplace(name).second;
     }
     for (std::size_t row_index = 0; row_index < missiles_table.size(); ++row_index) {
-        auto number = [&](std::string column) { return num(missiles_table.get(row_index, column)); };
+        auto number = [&](const std::string& column) { return num(missiles_table.get(row_index, column)); };
         const std::string name(missiles_table.get(row_index, "Missile"));
         bool used = name == "arrow" || name == "denofevillight" || skill_missiles.contains(name)    // the rogue merc's, the Den's light beams, skills',
                  || std::ranges::contains(d2d::rules::kTrapMissile, std::string_view(name))    // chest traps
@@ -780,7 +780,7 @@ void load_tables(GameData& game_data, const d2d::mpq::Stack& mpqs) {
         for (const auto* table : { &weapons, &armor, &misc })                  // Items table order (the vendors' lists, FUN_00536d50)
             for (std::size_t row = 0; row < table->size(); ++row) {
                 const std::string code(table->get(row, "code"));
-                auto number = [&](std::string column) { return std::atoi(std::string(table->get(row, column)).c_str()); };
+                auto number = [&](const std::string& column) { return std::atoi(std::string(table->get(row, column)).c_str()); };
                 const bool two = table == &weapons && table->get(row, "2handed") == "1" && table->get(row, "1or2handed") != "1";
                 game_data.rules.item_base[code] = { table == &armor ? number("minac") : 0, table == &armor ? number("maxac") : 0, number("cost"),
                                           // armor.txt's first mindam/maxdam: a shield's smite, boots' kick damage
@@ -822,7 +822,7 @@ void load_tables(GameData& game_data, const d2d::mpq::Stack& mpqs) {
             }
         // Potions (misc.txt stat1/calc1, stat2/calc2, len), autobelt.
         for (std::size_t row = 0; row < misc.size(); ++row) {
-            auto number = [&](std::string column) { return std::atoi(std::string(misc.get(row, column)).c_str()); };
+            auto number = [&](const std::string& column) { return std::atoi(std::string(misc.get(row, column)).c_str()); };
             if (number("autobelt")) if (const auto base = game_data.rules.item_base.find(std::string(misc.get(row, "code"))); base != game_data.rules.item_base.end()) base->second.autobelt = true;
             const auto stat1 = misc.get(row, "stat1"), stat2 = misc.get(row, "stat2");
             d2d::rules::Tables::Potion potion{ 0, 0, number("len") };
@@ -842,7 +842,7 @@ void load_tables(GameData& game_data, const d2d::mpq::Stack& mpqs) {
         std::string last_name;
         int last_group = 0;
         for (std::size_t row = 0; row < tcx.size(); ++row) {
-            auto number = [&](std::string column) { return std::atoi(std::string(tcx.get(row, column)).c_str()); };
+            auto number = [&](const std::string& column) { return std::atoi(std::string(tcx.get(row, column)).c_str()); };
             d2d::rules::TreasureClass treasure_class{ number("Picks") ? number("Picks") : 1, number("NoDrop"), { number("Unique"), number("Set"), number("Rare"), number("Magic") }, {},
                                                       number("group"), number("level"), {} };
             for (int i = 1; i <= 10; ++i) {
@@ -859,7 +859,7 @@ void load_tables(GameData& game_data, const d2d::mpq::Stack& mpqs) {
         const auto ratio = txt("ItemRatio");
         std::array<int, 4> ratio_version{ -1, -1, -1, -1 };
         for (std::size_t row = 0; row < ratio.size(); ++row) {
-            auto number = [&](std::string column) { return std::atoi(std::string(ratio.get(row, column)).c_str()); };
+            auto number = [&](const std::string& column) { return std::atoi(std::string(ratio.get(row, column)).c_str()); };
             const auto which = std::size_t((number("Class Specific") ? 2 : 0) + (number("Uber") ? 1 : 0));
             if (number("Version") > 100 || number("Version") < ratio_version[which]) continue;
             ratio_version[which] = number("Version");
@@ -1306,7 +1306,7 @@ void load_tables(GameData& game_data, const d2d::mpq::Stack& mpqs) {
     for (std::size_t class_index = 0; class_index < 7; ++class_index)
         for (std::size_t row = 0; row < inv.size(); ++row) {
             if (inv.get(row, "class") != kInvClass[class_index]) continue;
-            auto num = [&](std::string column) { return std::atoi(std::string(inv.get(row, column)).c_str()); };
+            auto num = [&](const std::string& column) { return std::atoi(std::string(inv.get(row, column)).c_str()); };
             auto& layout = game_data.inv_layout[class_index];
             layout.panel_x = num("invLeft"); layout.panel_y = num("invTop");
             layout.grid_x = num("gridLeft"); layout.grid_y = num("gridTop");

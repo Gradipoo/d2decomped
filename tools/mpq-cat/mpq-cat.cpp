@@ -6,9 +6,10 @@
 
 #include <cstdio>
 #include <cstdlib>
+#include <exception>
 #include <filesystem>
 
-int main(int argc, char** argv) {
+int main(int argc, char** argv) try {
     if (argc < 3) { std::fprintf(stderr, "usage: mpq-cat <mpq dir> <file>...\n"); return 2; }
     const std::filesystem::path dir = argv[1];
     d2d::mpq::Stack mpqs;
@@ -21,4 +22,8 @@ int main(int argc, char** argv) {
         if (!bytes) { std::fprintf(stderr, "mpq-cat: %s not found\n", argv[i]); return 1; }
         std::fwrite(bytes->data(), 1, bytes->size(), stdout);
     }
+    return 0;
+} catch (const std::exception& error) {
+    std::fprintf(stderr, "%s\n", error.what());
+    return 1;
 }

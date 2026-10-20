@@ -17,6 +17,7 @@
 #include <cassert>
 #include <cstdint>
 #include <cstdio>
+#include <exception>
 #include <random>
 #include <vector>
 
@@ -58,7 +59,7 @@ auto save_of(std::size_t size) -> std::vector<std::uint8_t> {
 
 } // namespace
 
-int main() {
+int main() try {
     // Huffman: refuses a bad code, round trips any bytes.
     const auto lengths = synthetic_lengths();
     assert(d2gs::check_lengths(lengths));
@@ -209,4 +210,7 @@ int main() {
     }
     std::puts("test_net: ok");
     return 0;
+} catch (const std::exception& error) {
+    std::fprintf(stderr, "%s\n", error.what());
+    return 1;
 }

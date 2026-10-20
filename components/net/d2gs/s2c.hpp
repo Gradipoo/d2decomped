@@ -64,7 +64,7 @@ inline auto monster_boss(std::span<const std::uint8_t> packet, const std::array<
     MonsterBoss out;
     for (int flag = 0; flag < 5; ++flag) out.flags |= int(bits(1)) << flag;
     if (out.flags & 4) out.super = int(bits(16));
-    for (std::uint32_t mod = bits(8); mod != 0 && !over && out.mods.size() < 9; mod = bits(8)) out.mods.push_back(int(mod));
+    for (std::uint32_t mod = bits(8); mod != 0 && out.mods.size() < 9; mod = bits(8)) out.mods.push_back(int(mod));
     out.name_seed = int(bits(16));
     if (over) return std::nullopt;
     return out;

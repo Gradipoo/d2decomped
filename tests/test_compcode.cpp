@@ -11,12 +11,13 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <exception>
 #include <filesystem>
 #include <span>
 
 namespace fs = std::filesystem;
 
-int main() {
+int main() try {
     // txt::Table basics: CRLF, case-insensitive columns, separator rows.
     {
         const char* src = "name\tCode\talternateGfx\r\nHand Axe\thax\thax\r\n"
@@ -99,4 +100,7 @@ int main() {
     }
     std::printf("OK\n");
     return 0;
+} catch (const std::exception& error) {
+    std::fprintf(stderr, "%s\n", error.what());
+    return 1;
 }

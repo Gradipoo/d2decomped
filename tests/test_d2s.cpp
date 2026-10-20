@@ -14,6 +14,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <exception>
 #include <filesystem>
 #include <fstream>
 #include <ios>
@@ -53,7 +54,7 @@ bool throws(const std::vector<std::byte>& bytes) {
 
 }  // namespace
 
-int main() {
+int main() try {
     // A game.exe host's ground item (S->C 0x9c, live 2026-10-04): gold, the
     // net layout (no JM, x / y 16 bits on the ground, the amount 1 + 12 bits
     // right after the code: FUN_0062a970 reads no socket count for it).
@@ -255,4 +256,7 @@ int main() {
 
     std::printf("OK\n");
     return 0;
+} catch (const std::exception& error) {
+    std::fprintf(stderr, "%s\n", error.what());
+    return 1;
 }

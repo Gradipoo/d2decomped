@@ -1091,7 +1091,7 @@ std::unique_ptr<Level> build_level(const GameData& game_data, GameData::LevelBui
     auto num = [](std::string_view text) { return std::atoi(std::string(text).c_str()); };
     for (std::size_t row_index = 0; row_index < builder.levels.size(); ++row_index) {
         if (num(builder.levels.get(row_index, "Id")) != id) continue;
-        auto text = [&](std::string column) { return builder.levels.get(row_index, column); };
+        auto text = [&](const std::string& column) { return builder.levels.get(row_index, column); };
         level->layer = num(text("Layer"));
         level->light = level_light(text("Intensity"), text("Red"), text("Green"), text("Blue"));
         level->rain = text("Rain") == "1";

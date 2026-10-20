@@ -403,7 +403,7 @@ inline std::vector<Outdoor::RoomSeed> generate_maze(const OutdoorData& data, con
         // (FUN_00672810); none for the harem, cellars and Claw Viper 2.
         int sewer_side = 1, turn = 0;
         const bool specials = maze.type != 14 && maze.type != 15 && maze.type != 23 && maze.type != 28 && !(maze.type == 17 && level == level_ids::kClawViperTempleLevel2);
-        if (maze.type == 7) turn = court_file;
+        if (maze.type == 7) turn = std::max(court_file, 0);
         else if (maze.type == 17) {
             for (const int other_index : list)
                 if (const int def = rooms[std::size_t(other_index)].def; def >= 0x1ad) { turn = def == 0x1bc ? 3 : def == 0x1bd ? 1 : def == 0x1be ? 0 : 2; break; }
@@ -481,7 +481,7 @@ inline std::vector<Outdoor::RoomSeed> generate_maze(const OutdoorData& data, con
                 bridge = index;
             }
             special(seed.next() & 1 ? Special{ 838, 854, -1, 0 } : Special{ 837, 853, -1, 2 });   // 0x6f0474: Forge W / E
-            const auto listed = list;                                               // FUN_00671320
+            const auto listed = list;                    // FUN_00671320; a copy: add() grows list
             for (const int other_index : listed) {
                 if (other_index == bridge) continue;
                 for (int side = 0; side < 8; ++side) {
@@ -552,7 +552,7 @@ inline std::vector<Outdoor::RoomSeed> generate_maze(const OutdoorData& data, con
         } else if (maze.type == 10) {                                               // FUN_006727a0
             special(kSpecials[15][std::size_t(turn)]);
             if (level == level_ids::kCatacombsLevel2) special(kSpecials[16][std::size_t(turn)]);
-        } else if (maze.type == 7) {                                                // FUN_00673120
+        } else if (maze.type == 7 && court_file >= 0 && court_file < 3) {          // FUN_00673120
             // The anchor: the rightmost / lowest / leftmost room (by court file) a room fits beside (FUN_00672340's probe, then freed).
             const int side = std::array{ 2, 3, 0 }[std::size_t(court_file)];
             auto key = [&](int index) { const auto& room = rooms[std::size_t(index)]; return court_file == 0 ? room.x : court_file == 1 ? room.y : -room.x; };
@@ -565,6 +565,8 @@ inline std::vector<Outdoor::RoomSeed> generate_maze(const OutdoorData& data, con
                 if (place(probe, other_index, side)) anchor = other_index;
                 rooms.pop_back();
             }
+            // ponytail: no room fits the court: game.exe goes on from a null room (a crash); never seen, d2d stops.
+            if (anchor < 0) { notes.push_back("drlg: no room fits the Barracks' court"); return {}; }
             // Court Connect (FUN_00670de0): no merge, no set_def of its own.
             court_room = alloc(maze.width, maze.height);
             place(court_room, anchor, side);

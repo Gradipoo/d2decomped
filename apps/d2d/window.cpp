@@ -43,7 +43,7 @@ void handle_sdl_events(SDL_Event& event, Mouse& mouse, Screen& current_screen,
         (event.key.key == SDLK_RETURN || event.key.key == SDLK_KP_ENTER) && (event.key.mod & SDL_KMOD_ALT)) {
         if (SDL_Window* window = SDL_GetWindowFromEvent(&event)) {
             const bool fullscreen = (SDL_GetWindowFlags(window) & SDL_WINDOW_FULLSCREEN) == 0;
-            SDL_SetWindowFullscreen(window, fullscreen);
+            if (!SDL_SetWindowFullscreen(window, fullscreen)) d2d::log::warn("fullscreen: {}", SDL_GetError());
             d2d::userdir::save_cfg(d2d::userdir::user_dir("d2d") / "d2d.cfg", { { "fullscreen", fullscreen ? "1" : "0" } });
         }
         return;

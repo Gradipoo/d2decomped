@@ -12,13 +12,14 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <exception>
 #include <filesystem>
 #include <string>
 #include <utility>
 
 namespace fs = std::filesystem;
 
-int main() {
+int main() try {
     const char* env = std::getenv("D2_MPQ_DIR");
     const fs::path dir = env ? env
         // Match the launcher's default install location on this dev box.
@@ -99,4 +100,7 @@ int main() {
 
     std::printf("OK\n");
     return 0;
+} catch (const std::exception& error) {
+    std::fprintf(stderr, "%s\n", error.what());
+    return 1;
 }

@@ -34,6 +34,7 @@
 #include <weather.hpp>
 
 #include <algorithm>
+#include <cctype>
 #include <array>
 #include <cmath>
 #include <cstddef>
@@ -850,6 +851,7 @@ auto Town::update(std::vector<std::uint8_t>& framebuffer, const Mouse& frame_mou
                 Screen& screen, Audio& audio, std::uint32_t frame_ms, std::uint32_t last_ms) -> void {
         now_ms = frame_ms;
         skillbar.coop = world.players.size() > 1;           // Resurrect on the right-hand picker
+        if (skillbar.right == kResurrectSkill && !skillbar.usable(kResurrectSkill, false)) skillbar.right = 0;   // co-op over: Attack
         // A partner's screen with nothing of theirs open goes back to the first player.
         if (focus_id() != hero.id && focus_keys.empty() && pad_field() && !game_menu.open && !automap.open && !waypoint.open) take_focus(hero.id);
         auto keys_this_frame = frame_keys;               // and a partner's that took the screen
@@ -1633,6 +1635,11 @@ auto Town::coop_pad(int seat, const pad::Sample& sample, float seconds) -> void 
                 if (choice->save >= 0) {
                     coop_join(seat, character_of_save(*scene, std::size_t(choice->save)));
                 } else {                                 // a new character, saved at once (as char-create's OK)
+                    // A name a player in the game or a save on disk has is refused (as char-create's).
+                    const auto lower = [](char letter) { return std::tolower(static_cast<unsigned char>(letter)); };
+                    const auto same = [&](const std::string& name) { return std::ranges::equal(name, choice->name, {}, lower, lower); };
+                    if (std::ranges::any_of(world.players, [&](const auto& each) { return same(each->character.name); })
+                        || (world.characters && std::filesystem::exists(world.characters->path(choice->name)))) return;
                     coop_join(seat, made_character(*scene, choice->cls, choice->name, lead.hardcore(), lead.expansion(), rng));
                     auto& made = *world.players.back();
                     world.each_player([&](World::Player& each) {

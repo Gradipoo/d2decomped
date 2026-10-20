@@ -252,8 +252,9 @@ struct World {
     static constexpr float kLeashWidth = 620, kLeashHeight = 380;
     void leash(std::span<const std::pair<float, float>> before);
     // The other players come to `destination` round (x, y) with their mercs
-    // and pets (one screen, one level: docs/design/local-coop.md).
-    void bring_party(const Level* from, const Level* destination, float x, float y, bool keep_map);
+    // and pets (one screen, one level: docs/design/local-coop.md); `tell`:
+    // their clients hear of a level change (not for a jump within one).
+    void bring_party(const Level* from, const Level* destination, float x, float y, bool keep_map, bool tell = true);
     const GameData* game_data = nullptr;
     const Level* level = nullptr;          // where the player is: the town, the Blood Moor, the Den of Evil
     std::vector<UnitState> npc_states;     // the level's NPCs as they patrol

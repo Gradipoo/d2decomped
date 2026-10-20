@@ -87,7 +87,10 @@ std::optional<RosterChoice> roster_input(Roster& roster, const pad::Actions& act
             roster.pick = 0;
             return std::nullopt;
         case Roster::Stage::name: {
-            const bool taken = std::ranges::any_of(scene.saves, [&](const auto& save) { return save.name == roster.name; });
+            const bool taken = std::ranges::any_of(scene.saves, [&](const auto& save) {   // case-blind: the files may be
+                return std::ranges::equal(save.name, roster.name, {}, [](char letter) { return std::tolower(static_cast<unsigned char>(letter)); },
+                                          [](char letter) { return std::tolower(static_cast<unsigned char>(letter)); });
+            });
             if (!d2d::net::valid_join_name(roster.name) || taken) return std::nullopt;   // a name D2 takes, not a save's
             return RosterChoice{ -1, roster.cls, roster.name };
         }

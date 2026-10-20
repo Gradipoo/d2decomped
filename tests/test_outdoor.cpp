@@ -15,6 +15,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <exception>
 #include <filesystem>
 #include <string>
 #include <vector>
@@ -22,7 +23,7 @@
 namespace fs = std::filesystem;
 using namespace d2d::drlg;
 
-int main() {
+int main() try {
     const char* env = std::getenv("D2_MPQ_DIR");
     const fs::path dir = env ? fs::path(env) : fs::path(std::getenv("HOME") ? std::getenv("HOME") : "") / "Workspace/private/diablo2";
     if (!fs::exists(dir / "d2data.mpq")) { std::printf("SKIP: no d2data.mpq in %s\n", dir.string().c_str()); return 0; }
@@ -133,4 +134,7 @@ int main() {
         assert(flavie);
     }
     std::puts("test_outdoor: ok");
+} catch (const std::exception& error) {
+    std::fprintf(stderr, "%s\n", error.what());
+    return 1;
 }

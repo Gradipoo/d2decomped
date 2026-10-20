@@ -99,25 +99,25 @@ int main() {
     // Ping (built-in).
     int client1 = connect_client();
     tick();
-    ::send(client1, "ping\n", 5, 0);
+    assert(::send(client1, "ping\n", 5, 0) == 5);
     tick();
     auto reply = read_reply(client1);
     assert(reply == "ok\n");
 
     // Custom handler with args.
-    ::send(client1, "hello there\n", 12, 0);
+    assert(::send(client1, "hello there\n", 12, 0) == 12);
     tick();
     reply = read_reply(client1);
     assert(reply == "greet there\n");
 
     // Unknown verb.
-    ::send(client1, "does-not-exist\n", 15, 0);
+    assert(::send(client1, "does-not-exist\n", 15, 0) == 15);
     tick();
     reply = read_reply(client1);
     assert(reply.starts_with("err unknown verb"));
 
     // Thrown exception → err message.
-    ::send(client1, "boom\n", 5, 0);
+    assert(::send(client1, "boom\n", 5, 0) == 5);
     tick();
     reply = read_reply(client1);
     assert(reply == "err kablooey\n");
@@ -137,7 +137,7 @@ int main() {
     // closed the fd before dispatching buffered lines. Repro with a fresh
     // client that half-closes right after sending.
     int client3 = connect_client();
-    ::send(client3, "hello alice\nhello bob\nping\n", 27, 0);
+    assert(::send(client3, "hello alice\nhello bob\nping\n", 27, 0) == 27);
     ::shutdown(client3, SHUT_WR);
     tick();
     reply = read_reply(client3);

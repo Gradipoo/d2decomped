@@ -148,8 +148,12 @@ void Channel::listen(const std::string& path) {
         ::unlink(path.c_str());
         return;
     }
-    const int flags = ::fcntl(socket_fd, F_GETFL, 0);
-    ::fcntl(socket_fd, F_SETFL, flags | O_NONBLOCK);
+    if (const int flags = ::fcntl(socket_fd, F_GETFL, 0); flags < 0 || ::fcntl(socket_fd, F_SETFL, flags | O_NONBLOCK) < 0) {
+        std::fprintf(stderr, "[devctl] nonblocking: %s\n", std::strerror(errno));
+        ::close(socket_fd);
+        ::unlink(path.c_str());
+        return;
+    }
     impl_->listen_fd = socket_fd;
     impl_->path = path;
     std::fprintf(stderr, "[devctl] listening on %s\n", path.c_str());
@@ -218,8 +222,7 @@ void Channel::pump() {
     while (true) {
         int client = ::accept(impl_->listen_fd, nullptr, nullptr);
         if (client < 0) break;
-        const int flags = ::fcntl(client, F_GETFL, 0);
-        ::fcntl(client, F_SETFL, flags | O_NONBLOCK);
+        if (const int flags = ::fcntl(client, F_GETFL, 0); flags < 0 || ::fcntl(client, F_SETFL, flags | O_NONBLOCK) < 0) { ::close(client); continue; }
         // The old client may have read its reply and hung up since the
         // drain above (a fast poller reconnects within one pump).
         if (char peek; impl_->client_fd >= 0 && impl_->rx_buf.empty() && ::recv(impl_->client_fd, &peek, 1, MSG_PEEK) == 0)

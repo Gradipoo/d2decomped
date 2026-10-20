@@ -47,6 +47,7 @@
 #include <cctype>
 #include <cstddef>
 #include <cstdint>
+#include <cstdio>
 #include <cstring>
 #include <exception>
 #include <filesystem>
@@ -1031,7 +1032,7 @@ private:
 // ===========================================================================
 // Entry point.
 // ===========================================================================
-int main(int argc, char** argv) {
+int main(int argc, char** argv) try {
     QApplication app(argc, argv);
     QApplication::setWindowIcon(QIcon(":/d2d.png"));
     QApplication::setOrganizationName("D2Decomp");
@@ -1040,6 +1041,9 @@ int main(int argc, char** argv) {
     MainWindow window;
     if (!steam_gamepad_ui() || !window.launchForSteam()) window.show();
     return app.exec();
+} catch (const std::exception& error) {
+    std::fprintf(stderr, "%s\n", error.what());
+    return 1;
 }
 
 #include "main.moc"

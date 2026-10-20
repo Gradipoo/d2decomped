@@ -170,7 +170,7 @@ inline std::vector<std::string> prop_lines(const GameData& game_data, std::vecto
             if (stat_desc->val == 0) return first;
             return stat_desc->val == 2 ? first + " " + num : num + " " + first;
         };
-        auto with2 = [&](std::string line_text) { return second.empty() ? line_text : line_text + " " + second; };
+        auto with2 = [&](const std::string& line_text) { return second.empty() ? line_text : line_text + " " + second; };
         std::string line_text;
         switch (stat_desc->func) {
             case 1: case 12: line_text = place(d2_format("%+d", { value })); break;
@@ -353,7 +353,7 @@ inline std::vector<TextLine> item_lines(const GameData& game_data, const d2d::d2
         return sum;
     };
     auto has = [&](int id) { return std::ranges::any_of(props, [&](const auto& prop) { return prop.stat == id && prop.value; }); };
-    auto line = [](std::string head, std::string tail, bool blue) {
+    auto line = [](const std::string& head, const std::string& tail, bool blue) {
         TextLine text_line{ head + tail, kTxtWhite };
         if (blue) { text_line.split = head.size(); text_line.tail = kTxtBlue; }
         return text_line;

@@ -46,7 +46,7 @@
 
 using namespace d2d::game;
 
-int main() {
+int main() try {
     const char* mpq_dir = std::getenv("D2_MPQ_DIR");
     const char* home = std::getenv("HOME");
     const fs::path data_dir = mpq_dir ? fs::path(mpq_dir) : fs::path(home ? home : "") / "Workspace/private/diablo2";
@@ -619,4 +619,7 @@ int main() {
         std::printf("OK: two players: their own orders, the other in the View, the party arrives together, monsters go at the near one; scaling, party experience, gold, quest credit\n");
     }
     return 0;
+} catch (const std::exception& error) {
+    std::fprintf(stderr, "%s\n", error.what());
+    return 1;
 }

@@ -43,7 +43,7 @@ auto ensure_started() -> bool {
     static const bool started = [] { WSADATA data{}; return ::WSAStartup(MAKEWORD(2, 2), &data) == 0; }();
     return started;
 }
-auto set_nonblocking(Native socket) -> void { u_long enabled = 1; ::ioctlsocket(socket, FIONBIO, &enabled); }
+auto set_nonblocking(Native socket) -> bool { u_long enabled = 1; return ::ioctlsocket(socket, FIONBIO, &enabled) == 0; }
 auto in_progress() -> bool { return ::WSAGetLastError() == WSAEWOULDBLOCK; }
 auto would_block() -> bool { const int code = ::WSAGetLastError(); return code == WSAEWOULDBLOCK || code == WSAEINTR; }
 auto no_sigpipe(Native) -> void {}                            // Winsock has no SIGPIPE
@@ -59,14 +59,14 @@ auto wait_for(Native socket, short events, int timeout_ms) -> int {
     return ::poll(&entry, 1, timeout_ms);
 }
 auto ensure_started() -> bool { return true; }
-auto set_nonblocking(Native socket) -> void { ::fcntl(socket, F_SETFL, ::fcntl(socket, F_GETFL, 0) | O_NONBLOCK); }
+auto set_nonblocking(Native socket) -> bool { const int flags = ::fcntl(socket, F_GETFL, 0); return flags >= 0 && ::fcntl(socket, F_SETFL, flags | O_NONBLOCK) == 0; }
 auto in_progress() -> bool { return errno == EINPROGRESS; }
 auto would_block() -> bool { return errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR; }
 // A send to a peer that closed is an error here, not SIGPIPE killing the
 // process: SO_NOSIGPIPE on the socket (macOS / BSD), MSG_NOSIGNAL on each
 // send (Linux).
 #ifdef SO_NOSIGPIPE
-auto no_sigpipe(Native socket) -> void { int enabled = 1; ::setsockopt(socket, SOL_SOCKET, SO_NOSIGPIPE, &enabled, sizeof enabled); }
+auto no_sigpipe(Native socket) -> void { int enabled = 1; (void)::setsockopt(socket, SOL_SOCKET, SO_NOSIGPIPE, &enabled, sizeof enabled); }
 #else
 auto no_sigpipe(Native) -> void {}
 #endif
@@ -91,7 +91,7 @@ auto TcpConnection::connect(const std::string& host, std::uint16_t port, int tim
     const Native socket = ::socket(found->ai_family, found->ai_socktype, found->ai_protocol);
     if (socket == kNone) { ::freeaddrinfo(found); return std::unexpected("socket: " + last_error()); }
     TcpConnection connection(static_cast<std::intptr_t>(socket));
-    set_nonblocking(socket);
+    if (!set_nonblocking(socket)) { ::freeaddrinfo(found); return std::unexpected("nonblocking: " + last_error()); }
     no_sigpipe(socket);
     const int result = ::connect(socket, found->ai_addr, static_cast<int>(found->ai_addrlen));
     ::freeaddrinfo(found);
@@ -100,11 +100,11 @@ auto TcpConnection::connect(const std::string& host, std::uint16_t port, int tim
         if (wait_for(socket, POLLOUT, timeout_ms) <= 0) return std::unexpected("no answer from " + host + " within " + std::to_string(timeout_ms) + " ms");
         int error = 0;
         socklen_t length = sizeof error;
-        ::getsockopt(socket, SOL_SOCKET, SO_ERROR, reinterpret_cast<char*>(&error), &length);
+        if (::getsockopt(socket, SOL_SOCKET, SO_ERROR, reinterpret_cast<char*>(&error), &length) != 0) return std::unexpected("connect: " + last_error());
         if (error != 0) return std::unexpected("connect: " + error_text(error));
     }
     int enabled = 1;
-    ::setsockopt(socket, IPPROTO_TCP, TCP_NODELAY, reinterpret_cast<const char*>(&enabled), sizeof enabled);
+    (void)::setsockopt(socket, IPPROTO_TCP, TCP_NODELAY, reinterpret_cast<const char*>(&enabled), sizeof enabled);
     return connection;
 }
 
@@ -156,7 +156,7 @@ auto TcpListener::listen(std::uint16_t port, const std::string& bind_address) ->
     if (socket == kNone) return std::unexpected("socket: " + last_error());
     TcpListener listener(static_cast<std::intptr_t>(socket));
     int enabled = 1;
-    ::setsockopt(socket, SOL_SOCKET, SO_REUSEADDR, reinterpret_cast<const char*>(&enabled), sizeof enabled);
+    (void)::setsockopt(socket, SOL_SOCKET, SO_REUSEADDR, reinterpret_cast<const char*>(&enabled), sizeof enabled);
     sockaddr_in address{};
     address.sin_family = AF_INET;
     address.sin_port = htons(port);
@@ -190,11 +190,12 @@ auto TcpListener::accept(int timeout_ms, std::string* from) -> std::expected<std
         const auto address_bits = ntohl(address.sin_addr.s_addr);
         *from = std::to_string(address_bits >> 24) + "." + std::to_string(address_bits >> 16 & 0xff) + "." + std::to_string(address_bits >> 8 & 0xff) + "." + std::to_string(address_bits & 0xff);
     }
-    set_nonblocking(client);
+    TcpConnection connection(static_cast<std::intptr_t>(client));
+    if (!set_nonblocking(client)) return std::unexpected("nonblocking: " + last_error());
     no_sigpipe(client);
     int enabled = 1;
-    ::setsockopt(client, IPPROTO_TCP, TCP_NODELAY, reinterpret_cast<const char*>(&enabled), sizeof enabled);
-    return std::optional<TcpConnection>{ TcpConnection(static_cast<std::intptr_t>(client)) };
+    (void)::setsockopt(client, IPPROTO_TCP, TCP_NODELAY, reinterpret_cast<const char*>(&enabled), sizeof enabled);
+    return std::optional<TcpConnection>{ std::move(connection) };
 }
 
 auto own_address() -> std::string {

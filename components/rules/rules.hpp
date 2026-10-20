@@ -278,7 +278,7 @@ template <class Make>
 void store_fill(const Tables& tables, int vendor, int level, bool expansion, Rng& seed, Make&& make) {
     if (vendor < 0 || vendor >= 17) return;
     int failed = 0;
-    auto ask = [&](StoreAsk request) { if (!make(request) && ++failed > 32) return false; return true; };
+    auto ask = [&](const StoreAsk& request) { if (!make(request) && ++failed > 32) return false; return true; };
     for (const auto& item : tables.vendor_items[std::size_t(vendor)]) {
         if (item.perm || item.level > level) continue;
         const int normals = level < 25 ? store_range(seed, item.min, item.max + 1) : 0;
@@ -1379,7 +1379,7 @@ inline int gamble_price(const Tables& tables, const std::string& code, int clvl,
     const int level = std::max(clvl, 5);
     const long long mix = ((10000LL - elite_chance - exceptional_chance) * base.cost * stack + (long long)cost_of(base.ultracode) * elite_chance
                            + (long long)cost_of(base.ubercode) * exceptional_chance) / 10000;
-    const long long lvl = ((std::max(base.level - 45, 0) - base.level / 2 + level) * 250) / 3;
+    const long long lvl = ((std::max(base.level - 45, 0) - base.level / 2 + level) * 250LL) / 3;
     return int(price_reduced((lvl + mix) * ((level * 2 + 1) / 3 + 20) / 15, reduced));
 }
 
@@ -1539,10 +1539,10 @@ inline MercStats merc_stats(const Tables& tables, int id, std::uint32_t exp) {
     if (!first) return merc;
     for (int level = 1; level < 99; ++level)
         if ((long long)(level + 1) * first->exp_per_level * level * level <= (long long)exp) merc.level = level;
-    const Hireling* row = nullptr;
+    const Hireling* row = first;
     for (const auto& hireling : tables.hirelings) {
         if (hireling.version != 100 || hireling.id != id) continue;
-        if (row && merc.level < hireling.level) break;
+        if (&hireling != first && merc.level < hireling.level) break;
         row = &hireling;
     }
     const auto& hireling = *row;

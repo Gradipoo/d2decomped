@@ -3159,7 +3159,7 @@ auto Fight::pet_foe(const Pet& pet) const -> Foe {
     }
 
 auto Fight::pet_hurt(Pet& pet, int damage, std::uint32_t now_ms) -> void {
-        if (damage > 0 && pet.monster.mode != "DT") hurt(*game_data, pet.monster, damage, now_ms);
+        if (damage > 0 && pet.monster.mode != "DT") (void)hurt(*game_data, pet.monster, damage, now_ms);
     }
 
 auto Fight::pets_cross(const Level* from, const Level* destination, float dx, float dy) -> void {
@@ -3489,8 +3489,7 @@ auto Fight::pet_think_turn(Pet& pet, std::uint32_t now_ms, float elapsed, const 
         // The corpse: near the owner for Fenris (10) and the cycle vines
         // (their skill's calc), near itself for the Death Sentry.
         const auto* summoning = game_data->skills.get(pet.skill);
-        const int corpse_reach = type_info.ai_name == "DruidWolf" ? 10
-            : summoning ? std::clamp(d2d::rules::eval_calc(game_data->skills, summoning->calc[0], calc_env(), summoning->id, monster.stats.level), 5, 0x32) : 10;
+        const int corpse_reach = summoning && type_info.ai_name != "DruidWolf" ? std::clamp(d2d::rules::eval_calc(game_data->skills, summoning->calc[0], calc_env(), summoning->id, monster.stats.level), 5, 0x32) : 10;
         const bool by_self = type_info.ai_name == "DeathSentry";
         int corpse = corpse_near(by_self ? unit.x : actor->player.x, by_self ? unit.y : actor->player.y);
         if (corpse >= 0 && !by_self && std::hypot(monsters[std::size_t(corpse)].unit.x - actor->player.x, monsters[std::size_t(corpse)].unit.y - actor->player.y) * 5 > float(corpse_reach)) corpse = -1;

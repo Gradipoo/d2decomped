@@ -35,6 +35,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <exception>
 #include <filesystem>
 #include <iostream>
 #include <map>
@@ -43,7 +44,7 @@
 #include <utility>
 #include <vector>
 
-int main(int argc, char** argv) {
+int main(int argc, char** argv) try {
     if (argc < 2) { std::fprintf(stderr, "usage: drop-dump <mpq dir> [tables|items|objects|stands] < jobs\n"); return 2; }
     const char* patch = std::getenv("D2_PATCH_INSTALLER");
     const auto data = d2d::game::load_game_data(argv[1], patch ? d2d::game::fs::path(patch) : d2d::game::fs::path{}, 0x1234);
@@ -160,4 +161,7 @@ int main(int argc, char** argv) {
         for (const auto& drop : drops) std::printf(drop.mul ? " %s:%d*%d" : " %s:%d", drop.code.c_str(), drop.quality, drop.mul);
         std::printf(" -> %08x\n", rng.low);
     }
+} catch (const std::exception& error) {
+    std::fprintf(stderr, "%s\n", error.what());
+    return 1;
 }

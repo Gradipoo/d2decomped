@@ -14,6 +14,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <exception>
 #include <fstream>
 #include <iterator>
 #include <string>
@@ -36,7 +37,7 @@ auto usage() -> int {
 
 } // namespace
 
-int main(int argc, char** argv) {
+int main(int argc, char** argv) try {
     std::vector<std::string_view> args(argv + 1, argv + argc);
     if (args.size() < 2) return usage();
     const std::string save_path(args[0]), host(args[1]);
@@ -100,4 +101,7 @@ int main(int argc, char** argv) {
     std::fputs(log.summary().c_str(), stdout);
     std::printf("unknown S>C packets: %llu; log: %s\n", static_cast<unsigned long long>(log.unknown_count()), log_path.c_str());
     return state == d2d::net::JoinState::Closed ? 0 : 1;
+} catch (const std::exception& error) {
+    std::fprintf(stderr, "%s\n", error.what());
+    return 1;
 }

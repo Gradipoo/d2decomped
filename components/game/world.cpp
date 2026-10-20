@@ -2117,14 +2117,14 @@ auto World::apply(const Command& command, std::uint32_t now_ms) -> void {
         // The character's own: through whatever the player's doing.
         if (const auto* stat_point = std::get_if<cmd::StatPoint>(&command)) {
             if (stat_point->stat < 0 || stat_point->stat > 3 || stat_point->count < 1) return;
-            d2d::rules::spend_stat_points(actor->character.stats, stat_point->stat, std::min<int>(stat_point->count, int(actor->character.stats.get(d2d::d2s::kStatPts))),
+            (void)d2d::rules::spend_stat_points(actor->character.stats, stat_point->stat, std::min<int>(stat_point->count, int(actor->character.stats.get(d2d::d2s::kStatPts))),
                                           game_data->class_gains[std::size_t(actor->character.header.cls)]);
             return;
         }
         if (const auto* skill_point = std::get_if<cmd::SkillPoint>(&command)) {
             if (actor->character.stats.get(d2d::d2s::kSkillPts) > 0
                 && d2d::rules::can_learn(game_data->rules, actor->character.header.cls, skill_point->skill, actor->character.stats.skills, int(actor->character.stats.get(d2d::d2s::kLevel))))
-                d2d::rules::learn_skill(game_data->rules, actor->character.header.cls, skill_point->skill, actor->character.stats.skills, actor->character.stats);
+                (void)d2d::rules::learn_skill(game_data->rules, actor->character.header.cls, skill_point->skill, actor->character.stats.skills, actor->character.stats);
             return;
         }
         // The weapon switch (C->S 0x60, FUN_0054ce70 -> ItemMode.cpp's
@@ -2195,7 +2195,7 @@ auto World::apply(const Command& command, std::uint32_t now_ms) -> void {
         const int cls = actor->character.header.cls;
         if (const auto* to_cursor = std::get_if<cmd::ToCursor>(&command)) {
             const auto found = std::ranges::find(actor->character.items, to_cursor->item, &d2d::d2s::Item::id);
-            if (!actor->held && found != actor->character.items.end()) d2d::rules::pick_up(actor->character.items, actor->held, std::size_t(found - actor->character.items.begin()));
+            if (!actor->held && found != actor->character.items.end()) (void)d2d::rules::pick_up(actor->character.items, actor->held, std::size_t(found - actor->character.items.begin()));
             return;
         }
         if (const auto* drop = std::get_if<cmd::Drop>(&command)) {           // FUN_0054ab40: the item in hand, not while dead
@@ -2292,7 +2292,7 @@ auto World::apply(const Command& command, std::uint32_t now_ms) -> void {
             actor->interact_npc = actor->pick_item = -1;
             actor->player.walking = false;
             actor->player.dir = direction16(actor->move_x - actor->player.x, actor->move_y - actor->player.y);
-            fight.start_swing(now_ms);
+            (void)fight.start_swing(now_ms);
         } else if (skill && !live && (fight.missile_skill(*skill) || fight.spot_skill(*skill)) && (in_moor || skill->in_town)) {
             actor->interact_npc = actor->pick_item = -1;                                   // a missile, Teleport, Corpse Explosion at the spot
             if (fight.cast_missile(use_skill.skill, use_skill.x, use_skill.y, now_ms)) actor->player.walking = false;

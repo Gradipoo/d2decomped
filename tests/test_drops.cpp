@@ -10,12 +10,13 @@
 #include <cassert>
 #include <cstdint>
 #include <cstdio>
+#include <exception>
 #include <utility>
 #include <vector>
 
 using namespace d2d::rules;
 
-int main() {
+int main() try {
     Tables tables;
     tables.item_info["hax"] = { .type = "axe", .kind = 2 };
     tables.item_info["big"] = { .type = "axe", .kind = 2 };
@@ -224,4 +225,7 @@ int main() {
     assert(!imbuable(tables, axe));
     std::printf("half drops: %d of 1000, %d magic or better\n", dropped, magic);
     std::puts("ok");
+} catch (const std::exception& error) {
+    std::fprintf(stderr, "%s\n", error.what());
+    return 1;
 }

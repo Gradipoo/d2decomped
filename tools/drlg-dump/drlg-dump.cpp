@@ -38,6 +38,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <exception>
 #include <filesystem>
 #include <format>
 #include <fstream>
@@ -388,7 +389,7 @@ static std::string dump_npcs(d2d::game::GameData& game, std::uint32_t seed, int 
     return out;
 }
 
-int main(int argc, char** argv) {
+int main(int argc, char** argv) try {
     if (argc < 3) { std::fprintf(stderr, "usage: drlg-dump <mpq dir> <map seed> [level]\n"); return 2; }
     const fs::path dir = argv[1];
     const std::string range = argv[2];
@@ -675,4 +676,7 @@ int main(int argc, char** argv) {
     } else {
         std::fputs(dump(assets, std::uint32_t(std::stoul(range, nullptr, 0)), id, tiles ? &dt1s : nullptr).c_str(), stdout);
     }
+} catch (const std::exception& error) {
+    std::fprintf(stderr, "%s\n", error.what());
+    return 1;
 }

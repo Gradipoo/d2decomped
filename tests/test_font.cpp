@@ -8,12 +8,13 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <exception>
 #include <filesystem>
 #include <utility>
 
 namespace fs = std::filesystem;
 
-int main() {
+int main() try {
     const char* env = std::getenv("D2_MPQ_DIR");
     const fs::path dir = env ? fs::path(env)
         : fs::path(std::getenv("HOME") ? std::getenv("HOME") : "")
@@ -51,7 +52,7 @@ int main() {
     // per-char advance widths.
     const auto width = font.measure("Hello");
     int by_hand = 0;
-    for (char letter : std::string_view("Hello")) by_hand += font.find(letter)->width;
+    for (char letter : std::string_view("Hello")) { const auto* glyph = font.find(letter); assert(glyph); by_hand += glyph->width; }
     assert(width == by_hand);
     assert(width > 0);
 
@@ -62,4 +63,7 @@ int main() {
 
     std::printf("OK\n");
     return 0;
+} catch (const std::exception& error) {
+    std::fprintf(stderr, "%s\n", error.what());
+    return 1;
 }

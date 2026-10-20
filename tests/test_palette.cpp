@@ -9,13 +9,14 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <exception>
 #include <filesystem>
 #include <stdexcept>
 #include <vector>
 
 namespace fs = std::filesystem;
 
-int main() {
+int main() try {
     const char* env = std::getenv("D2_MPQ_DIR");
     const fs::path dir = env ? fs::path(env)
         : fs::path(std::getenv("HOME") ? std::getenv("HOME") : "")
@@ -120,4 +121,7 @@ int main() {
 
     std::printf("OK\n");
     return 0;
+} catch (const std::exception& error) {
+    std::fprintf(stderr, "%s\n", error.what());
+    return 1;
 }

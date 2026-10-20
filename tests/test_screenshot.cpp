@@ -12,6 +12,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <exception>
 #include <filesystem>
 #include <fstream>
 #include <ios>
@@ -28,7 +29,7 @@ static std::uint32_t rd_u32_be(const std::uint8_t* source) {
          | (std::uint32_t(source[2]) <<  8) |  std::uint32_t(source[3]);
 }
 
-int main() {
+int main() try {
     // Procedural 32×24 gradient — every pixel unique, so a filter or endian
     // slip would be immediately visible.
     constexpr std::uint32_t kWidth = 32, kHeight = 24;
@@ -108,4 +109,7 @@ int main() {
 
     std::printf("OK\n");
     return 0;
+} catch (const std::exception& error) {
+    std::fprintf(stderr, "%s\n", error.what());
+    return 1;
 }

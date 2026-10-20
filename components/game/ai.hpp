@@ -555,8 +555,8 @@ void missiles_update(const Level& level, std::vector<Missile>& ms_, std::span<Fo
             if (std::ranges::contains(*missile.struck, key)) continue;
             missile.struck->push_back(key);
             foe.take(d2d::rules::monster_blow(foe.fighter, foe.level, foe.motion(), missile.src, true, rng, true));
-            if (missile.info->hit_func == 19 && missile.skill >= 0) foe.marked = { missile.skill, missile.level };   // FUN_005ab110
-            if (missile.info->return_fire && missile.owner >= 0) foe.fired_by.push_back(missile.owner);
+            if (missile.info && missile.info->hit_func == 19 && missile.skill >= 0) foe.marked = { missile.skill, missile.level };   // FUN_005ab110
+            if (missile.info && missile.info->return_fire && missile.owner >= 0) foe.fired_by.push_back(missile.owner);
             return true;
         }
         return false;

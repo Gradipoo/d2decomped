@@ -6,11 +6,12 @@
 #include <cassert>
 #include <cstdint>
 #include <cstdio>
+#include <exception>
 #include <vector>
 
 using namespace d2d::game;
 
-int main() {
+int main() try {
     const std::vector<Command> all{
         cmd::Move{ 12.5f, 3.25f, true }, cmd::UseSkill{ 36, 1.f, 2.f, 77, true }, cmd::UseSkill{ 0, 4.f, 5.f, -1, false },
         cmd::Interact{ 9 }, cmd::Pickup{ 41 }, cmd::Resurrect{}, cmd::Transmute{}, cmd::StatPoint{ 3, 5 }, cmd::SkillPoint{ 12 },
@@ -37,4 +38,7 @@ int main() {
     message.push_back(0);
     assert(!decode(message));
     std::puts("ok");
+} catch (const std::exception& error) {
+    std::fprintf(stderr, "%s\n", error.what());
+    return 1;
 }

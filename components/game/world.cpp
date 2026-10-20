@@ -184,7 +184,7 @@ auto World::leash(std::span<const std::pair<float, float>> before) -> void {
 }
 
 auto World::bring_party(const Level* from, const Level* destination, float x, float y, bool keep_map) -> void {
-    static constexpr std::array<std::pair<float, float>, 4> kAround{ { { 1, 0 }, { 0, 1 }, { -1, 0 }, { 0, -1 } } };
+    static constexpr std::array<std::pair<float, float>, 4> kAround{ { { 1.f, 0.f }, { 0.f, 1.f }, { -1.f, 0.f }, { 0.f, -1.f } } };
     std::size_t around = 0;
     Player* const mover = actor;
     each_player([&](Player& player) {

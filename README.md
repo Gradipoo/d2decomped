@@ -101,8 +101,29 @@ keyboard in Gaming Mode; if one doesn't, press STEAM + X.
 
 ## Build and run
 
-You'll need a C++26 compiler, CMake 3.28+, Ninja, SDL3, OpenAL, FFmpeg, zlib,
-StormLib, and Qt 6.5+ for the launcher.
+You'll need a C++26 compiler, CMake 3.28+, Ninja, SDL3, OpenAL, zlib, libcurl
+and Qt 6.5+ for the launcher. The build fetches CLI11 and Sentry itself. On Linux
+and macOS it also builds a small Bink-only FFmpeg. StormLib comes from your
+system if it has one, or from source if not.
+
+Debian / Ubuntu (CI uses Ubuntu 26.04; you need a release with `libsdl3-dev`,
+which means Ubuntu 25.04+ or Debian 13+):
+
+```sh
+sudo apt-get install cmake ninja-build build-essential pkg-config libcurl4-openssl-dev \
+  libsdl3-dev libopenal-dev zlib1g-dev libbz2-dev libstorm-dev qt6-base-dev libgl1-mesa-dev
+```
+
+macOS (Homebrew):
+
+```sh
+brew install cmake ninja sdl3 openal-soft qtbase stormlib
+```
+
+Windows: see the `Windows` steps in `.github/workflows/ci.yml` for the
+prebuilt SDL3, OpenAL Soft and FFmpeg, plus zlib and StormLib from vcpkg.
+
+Then build and run:
 
 ```sh
 cmake -S . -B build -G Ninja

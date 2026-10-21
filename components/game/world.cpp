@@ -1365,9 +1365,8 @@ auto World::transmute(std::uint32_t now_ms) -> void {
             const auto [width, height] = d2d::rules::item_size(game_data->rules, item.code);
             std::optional<Item> held_item = std::move(item);
             held_item->id = -1;
-            if (const auto [column, cell_row] = d2d::rules::free_spot(game_data->rules, placed, layout.cols, layout.rows, width, height); column >= 0)
-                d2d::rules::put_in_grid(game_data->rules, actor->character.items, held_item, d2d::d2s::item_panel::kCube, layout.cols, layout.rows, column, cell_row);
-            else
+            if (const auto [column, cell_row] = d2d::rules::free_spot(game_data->rules, placed, layout.cols, layout.rows, width, height);
+                column < 0 || !d2d::rules::put_in_grid(game_data->rules, actor->character.items, held_item, d2d::d2s::item_panel::kCube, layout.cols, layout.rows, column, cell_row))
                 loot.place(std::move(*held_item), actor->player.x, actor->player.y, now_ms);
         }
         d2d::log::info("transmute: {} ({} made)", recipe.description, made.items.size());

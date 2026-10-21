@@ -451,10 +451,13 @@ below, so new features land on the new structure:
    clicks from it alone; the World owns its own character, the client's
    is the View's; run / walk, talking, sounds and events go over too.
 6. Views as deltas: done (2026-09-27; about 0.4 KB a tick).
-7. Deferred until Act 1 plays through (see "Road to a whole Act 1"): a
-   World with N players (Fight's player state per player), `TcpTransport`
-   (a second d2d joins), a standalone `d2ds` server, player-count scaling
-   and party.
+7. The N-player World: done (2026-10-19, local co-op, PR #57, #34). `World`
+   holds up to four `World::Player`s (each its character, unit, merc and
+   Fight state), commands come tagged with their player (`Order`),
+   `World::join` / `leave` come after one `new_game`, and player-count
+   scaling, party experience, gold and quest credit follow game.exe
+   (docs/design/local-coop.md, net-host.md items 1, 4, 5). Still to do:
+   `TcpTransport` (a second d2d joins) and a standalone `d2ds` server.
 
 ## Road to a whole Act 1 (from 2026-09-27)
 

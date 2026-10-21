@@ -54,7 +54,8 @@ void handle_sdl_events(SDL_Event& event, Mouse& mouse, Screen& current_screen,
     }
     if (toggled && (event.type == SDL_EVENT_WINDOW_ENTER_FULLSCREEN || event.type == SDL_EVENT_WINDOW_LEAVE_FULLSCREEN)) {
         toggled = false;
-        d2d::userdir::save_cfg(d2d::userdir::user_dir("d2d") / "d2d.cfg", { { "fullscreen", event.type == SDL_EVENT_WINDOW_ENTER_FULLSCREEN ? "1" : "0" } });
+        if (!d2d::userdir::save_cfg(d2d::userdir::user_dir("d2d") / "d2d.cfg", { { "fullscreen", event.type == SDL_EVENT_WINDOW_ENTER_FULLSCREEN ? "1" : "0" } }))
+            d2d::log::warn("fullscreen: d2d.cfg not saved");
         return;
     }
     if (event.type == SDL_EVENT_KEY_DOWN) {

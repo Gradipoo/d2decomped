@@ -2600,7 +2600,7 @@ auto Fight::pierce() const -> std::array<int, 4> { return { int(actor->psum[d2d:
 
 auto Fight::skill_missile_hits(Missile& missile, std::size_t monster_index, std::uint32_t now_ms) -> bool {
         const auto* skill = game_data->skills.get(missile.skill);
-        if (!skill) return true;
+        if (!skill || !missile.info) return true;
         const auto& missile_info = *missile.info;
         if (missile_info.srv_do == 5) return false;                    // a burner: missile_tick's
         // Hit function 10 (FUN_005aa650): a guided one passes by all but its target.

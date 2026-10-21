@@ -2209,11 +2209,11 @@ auto World::apply(const Command& command, std::uint32_t now_ms) -> void {
         if (const auto* to_grid = std::get_if<cmd::ToGrid>(&command)) {
             const auto* layout = to_grid->panel == d2d::d2s::item_panel::kInventory ? &game_data->inv_layout[std::size_t(cls)] : to_grid->panel == d2d::d2s::item_panel::kCube ? &game_data->cube_layout
                           : to_grid->panel == d2d::d2s::item_panel::kStash ? &game_data->stash_layout[actor->character.expansion ? 1 : 0] : nullptr;
-            if (actor->held && layout) d2d::rules::put_in_grid(tables, actor->character.items, actor->held, to_grid->panel, layout->cols, layout->rows, to_grid->col, to_grid->row);
+            if (actor->held && layout) (void)d2d::rules::put_in_grid(tables, actor->character.items, actor->held, to_grid->panel, layout->cols, layout->rows, to_grid->col, to_grid->row);
             return;
         }
         if (const auto* to_body = std::get_if<cmd::ToBody>(&command)) {
-            if (actor->held && to_body->slot >= d2d::d2s::body_location::kFirst && to_body->slot <= d2d::d2s::body_location::kLast) d2d::rules::equip(tables, actor->character.items, actor->held, to_body->slot, wearer(*game_data, cls, actor->character.items, actor->character.stats));
+            if (actor->held && to_body->slot >= d2d::d2s::body_location::kFirst && to_body->slot <= d2d::d2s::body_location::kLast) (void)d2d::rules::equip(tables, actor->character.items, actor->held, to_body->slot, wearer(*game_data, cls, actor->character.items, actor->character.stats));
             return;
         }
         if (const auto* to_belt = std::get_if<cmd::ToBelt>(&command)) {

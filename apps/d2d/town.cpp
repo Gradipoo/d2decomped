@@ -987,7 +987,8 @@ auto Town::automap_frame() -> void {
             { "automap_mode", std::to_string(values[1]) }, { "automap_fade", std::to_string(values[2]) }, { "automap_center", std::to_string(values[3]) },
             { "automap_party", std::to_string(values[4]) }, { "automap_names", std::to_string(values[5]) }, { "automap_left", automap.left ? "1" : "0" } } };
         if (now != automap_saved) {
-            if (automap_saved_once && !cfg_file.empty()) d2d::userdir::save_cfg(cfg_file, { now.begin(), now.end() });
+            if (automap_saved_once && !cfg_file.empty() && !d2d::userdir::save_cfg(cfg_file, { now.begin(), now.end() }))
+                d2d::log::warn("d2d.cfg: the automap settings not saved");
             automap_saved = now;
             automap_saved_once = true;
         }
@@ -1175,9 +1176,10 @@ auto Town::update(std::vector<std::uint8_t>& framebuffer, const Mouse& frame_mou
         bool hud_click = false;
         if (game_menu.open) {
             const auto action = game_menu.input(*scene, audio, mouse, keys_this_frame, frame_ms);
-            if (game_menu.volume_changed && !cfg_file.empty())
-                d2d::userdir::save_cfg(cfg_file, { { "master_volume", std::to_string(audio.master_volume) },
-                                                   { "music_volume", std::to_string(audio.music_volume) } });
+            if (game_menu.volume_changed && !cfg_file.empty()
+                && !d2d::userdir::save_cfg(cfg_file, { { "master_volume", std::to_string(audio.master_volume) },
+                                                      { "music_volume", std::to_string(audio.music_volume) } }))
+                d2d::log::warn("d2d.cfg: the volume not saved");
             game_menu.volume_changed = false;
             if (action != GameMenu::kNone) close_game_menu();
             if (action == GameMenu::kControls) {          // CfgOptions (0x47f400): UI 0xb

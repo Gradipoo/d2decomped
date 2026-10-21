@@ -1095,7 +1095,8 @@ int run_windowed(std::vector<std::uint8_t>& framebuffer,
                         // ponytail: game.exe connects once here to test the host and
                         // stays on an error; d2d finds out when char-select joins.
                         g_last_tcp_ip = tcpip.address;
-                        d2d::userdir::save_cfg(g_user_dir / "d2d.cfg", { { "last_tcp_ip", g_last_tcp_ip } });
+                        if (!d2d::userdir::save_cfg(g_user_dir / "d2d.cfg", { { "last_tcp_ip", g_last_tcp_ip } }))
+                            d2d::log::warn("d2d.cfg: last_tcp_ip not saved");
                         g_join_host = tcpip.address;
                         tcpip.box_open = false;
                         screen = Screen::CharSelect;

@@ -148,7 +148,8 @@ struct Config {
     std::string out;
     for (const Button button : pair)
         if (button != Bindings::kNone) out += (out.empty() ? "" : ",") + std::string(kButtonNames[std::size_t(button)]);
-    return out.empty() ? "none" : out;
+    if (out.empty()) return "none";
+    return out;
 }
 [[nodiscard]] inline std::vector<std::pair<std::string, std::string>> save_config(const Config& config) {
     std::vector<std::pair<std::string, std::string>> out = {
@@ -271,7 +272,7 @@ struct Point { int x = 0, y = 0; };
 
 class Mapper {
 public:
-    explicit Mapper(Config config = {}) : config_(config) {}
+    explicit Mapper(Config config = {}) : config_(std::move(config)) {}
 
     // `seconds` since the last frame. A pad that went away is a default
     // Sample: every button lets go, so nothing stays held.

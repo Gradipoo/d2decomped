@@ -16,6 +16,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace d2d::client {
@@ -31,7 +32,7 @@ NpcMenuState open_hire_menu(const Scene& scene, int npc, const std::vector<d2d::
     menu.scroll = std::clamp(scroll, 0, menu.scroll_max);
     std::string head = string_id(scene, 0xd24);
     if (const auto found = head.find("%d"); found != head.npos) head.replace(found, 2, std::to_string(gold));
-    menu.lines.push_back({ head, 21, 0, 0, true });
+    menu.lines.push_back({ std::move(head), 21, 0, 0, true });
     auto label = [&](std::uint16_t id) { return string_id(scene, id) + ": "; };
     for (std::size_t i = std::size_t(menu.scroll); i < offers.size() && i < std::size_t(menu.scroll + kRows); ++i) {
         const auto& offer = offers[i];

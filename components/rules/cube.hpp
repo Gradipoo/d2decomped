@@ -67,7 +67,7 @@ inline std::vector<std::string> split(const std::string& text) {
         if (letter == ',') { parts.push_back(part); part.clear(); }
         else part += letter;
     }
-    parts.push_back(part);
+    parts.push_back(std::move(part));
     return parts;
 }
 inline bool same_letters(std::string_view first, std::string_view second) {
@@ -240,7 +240,7 @@ inline std::optional<CubeMatch> cube_match(const Tables& tables, const CubeRecip
                     const std::string& tier = (first_out.flags & cube_out::kExceptional) ? base.ubercode : (first_out.flags & cube_out::kElite) ? base.ultracode : upgraded;
                     if (const auto tier_base = tables.item_base.find(tier); !tier.empty() && tier_base != tables.item_base.end()
                         && (expansion || tier_base->second.version < 100)) upgraded = tier;
-                    match.base[out] = upgraded;
+                    match.base[out] = std::move(upgraded);
                 }
             }
             used[index] = true;

@@ -106,7 +106,7 @@ void view_units(const Scene& scene, const View& view, float camera_x, float came
         unit.sprite = scene.flippy(ground_item.item.code);
         unit.cmap = scene.item_map(ground_item.item, false);   // FUN_00471ec0: the character's colours
         unit.rgb = ground_item.rgb;
-        out.push_back(unit);
+        out.push_back(std::move(unit));
     }
     for (const auto& fire : view.fires) out.push_back({ fire.x, fire.y, &scene.npc_anim(*fire.npc, fire.npc->mode), 0, nullptr, fire.born, -2 });
     // Local co-op's fallen: their bodies where they fell, lying as a corpse lies.
@@ -155,7 +155,7 @@ void view_units(const Scene& scene, const View& view, float camera_x, float came
     auto shot = [&](const View::Shot& shot_state) {
         Unit unit{ shot_state.x, shot_state.y, nullptr, shot_state.dir, nullptr, shot_state.born, -1 };
         unit.missile = shot_state.info;
-        out.push_back(unit);
+        out.push_back(std::move(unit));
     };
     for (const auto& shot_state : view.missiles) shot(shot_state);
     for (const auto& shot_state : effects) shot(shot_state);                 // the client's own (the Den's light beams)
@@ -374,7 +374,7 @@ auto Town::publish() -> void {
         quest_log.sent_known = true;
         held = view.held;
         if (view.store) {
-            const auto keep = store;
+            const auto keep = std::move(store);
             store = *view.store;
             if (keep.npc == store.npc) { store.tab = keep.tab; store.mode = keep.mode; store.pressed = keep.pressed; }
             else store.first_tab();                 // the tab isn't sent: the World's pick again

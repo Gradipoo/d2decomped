@@ -605,7 +605,7 @@ void load_npcs(GameData& game_data, const d2d::mpq::Stack& mpqs) {
     // What a level build reads later (build_level).
     if (game_data.builder) {
         game_data.builder->objects = objects;
-        game_data.builder->obj_row = obj_row;
+        game_data.builder->obj_row = std::move(obj_row);
         game_data.builder->levels = lvs;
         game_data.builder->sound_env = txt("SoundEnviron");
     }

@@ -209,7 +209,7 @@ inline std::vector<Outdoor::RoomSeed> generate_maze(const OutdoorData& data, con
         room.seed.next();
         room.width = width;
         room.height = height;
-        rooms.push_back(room);
+        rooms.push_back(std::move(room));
         return int(rooms.size()) - 1;
     };
     auto add = [&](int index) { list.insert(list.begin(), index); };                   // FUN_0066b970

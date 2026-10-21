@@ -1371,7 +1371,7 @@ auto Fight::prg(const d2d::rules::Skill& skill, ServerDoFunction func, int count
             auto put = [&](float x, float y, float velocity_x, float velocity_y, int range) {
                 Missile missile{ missile_info, x, y, velocity_x, velocity_y, direction32(velocity_x, velocity_y), now_ms, now_ms + std::uint32_t(std::max(range, 1)) * 40, {} };
                 missile.friendly = true; missile.caster = actor->id; missile.skill = skill.id; missile.level = lvl;
-                missiles.push_back(missile);
+                missiles.push_back(std::move(missile));
                 return missiles.size() - 1;
             };
             if (func == ServerDoFunction::kReleaseNova) {
@@ -1823,7 +1823,7 @@ auto Fight::merc_turn(std::uint32_t now_ms, float elapsed, const Crowd& crowd, b
                     missile.to = { target.unit.x, target.unit.y };
                     const auto fighter = merc_fighter();                    // its bow's damage and attack rating with its gear
                     missile.min = fighter.min; missile.max = fighter.max; missile.attack_rating = fighter.attack_rating; missile.level = actor->merc_st.level; missile.friendly = true; missile.caster = actor->id;
-                    missiles.push_back(missile);
+                    missiles.push_back(std::move(missile));
                 } else if (target.alive() && distance <= kMeleeReach + 0.3f) {
                     // A melee skill (Jab, Bash, Stun) builds its hit as the
                     // player's do (skill_swing) at the merc's skill level.
@@ -1958,8 +1958,7 @@ auto Fight::merc_turn(std::uint32_t now_ms, float elapsed, const Crowd& crowd, b
             auto move = [&](int kind, int x, int y) {
                 if (kind == 2) {                                      // FUN_005ded00: a run at the foe
                     if (!set_off(*level, unit, target.unit.x, target.unit.y, true, crowd)) return false;
-                    const auto path = unit.path;
-                    set("RN"); unit.path = path;
+                    set("RN");                                        // a run keeps its path
                     actor->merc->move_pct = 0; actor->merc_chase = true;
                     return true;
                 }
@@ -2305,7 +2304,7 @@ auto Fight::launch(const GameData::MissileInfo& missile_info, const d2d::rules::
         const float speed = missile_speed(missile_info, lvl), distance = std::max(std::hypot(dx, dy), 0.01f);
         Missile missile{ &missile_info, x, y, dx / distance * speed, dy / distance * speed, direction32(dx, dy), now_ms, now_ms + std::uint32_t(std::max(range, 1)) * 40, {} };
         missile.friendly = true; missile.caster = actor->id; missile.skill = skill.id; missile.level = lvl; missile.by_merc = casting_merc;
-        pending.push_back(missile);
+        pending.push_back(std::move(missile));
         return pending.back();
     }
 
@@ -3247,7 +3246,7 @@ auto Fight::pets_turn(std::uint32_t now_ms, float elapsed, const Crowd& crowd) -
                         x.dir = direction32(dx, dy); x.to = { monsters[monster_index].unit.x, monsters[monster_index].unit.y };
                         x.friendly = true; x.caster = actor->id; x.level = pet.ranged_level; x.skill = pet.ranged;
                         if (const auto* missile_skill_row = skill_named(missile_info->skill)) x.skill = missile_skill_row->id;   // 'hydra' carries the Hydra skill's damage
-                        pending.push_back(x);
+                        pending.push_back(std::move(x));
                     } else if (monsters[monster_index].targetable() && std::hypot(monsters[monster_index].unit.x - unit.x, monsters[monster_index].unit.y - unit.y) <= kMeleeReach + 0.3f) {
                         auto target = target_of(monster_index);
                         // A Shadow swings the owner's blow (its copied gear); its skills are shadow_cast's.

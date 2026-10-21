@@ -294,7 +294,7 @@ private:
                     if (version_ >= 15) point.action = cursor.rd_i32();
                 }
                 for (auto& object : objects_)
-                    if (object.x == x && object.y == y) { object.path = path; break; }
+                    if (object.x == x && object.y == y) { object.path = std::move(path); break; }
             }
         }
     }

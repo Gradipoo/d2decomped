@@ -12,6 +12,7 @@
 #include <cassert>
 #include <cstdio>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 using namespace d2d::rules;
@@ -72,7 +73,7 @@ int main() {
     // Bone Wall's calc2 "par34" (a Skills.txt typo) reads par3: 8 at every level.
     Skill bone_wall;
     bone_wall.id = 3; bone_wall.name = "Bone Wall"; bone_wall.par = { 25, 600, 8, 0, 0, 0, 0, 10 };
-    skill_tables.rows.push_back(bone_wall);
+    skill_tables.rows.push_back(std::move(bone_wall));
     for (const int level : { 1, 10, 20 }) assert(evaluate("par34", 3, level) == 8);
     skill_tables.rows.pop_back();
 
@@ -157,7 +158,7 @@ int main() {
         assert(passives[1].stat == 343 && passives[1].value == 30 + 10);
         // An aura's passive stats count too (Holy Fire's weapon fire), on
         // or off (FUN_00646d60 while off, FUN_005cf3a0's state while on).
-        Skill fire_aura = idle;
+        Skill fire_aura = std::move(idle);
         fire_aura.id = int(passive_tables.rows.size()); fire_aura.passive = false; fire_aura.aura = true;
         passive_tables.rows.push_back(fire_aura);
         CalcEnv aura_env{ .level = [&](int skill_id) { return skill_id == fire_aura.id ? 2 : 0; } };

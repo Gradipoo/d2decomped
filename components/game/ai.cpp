@@ -1251,9 +1251,9 @@ void countess_firewall(const GameData& game_data, const Monster& monster, std::u
         made.velocity_x = across_x / length * speed * side; made.velocity_y = across_y / length * speed * side;
         made.dir = direction32(made.velocity_x, made.velocity_y);
         made.dies = now_ms + std::uint32_t(std::max(maker->second.range, 1)) * 40;
-        missiles.push_back(made);
+        missiles.push_back(std::move(made));
     }
-    missiles.push_back(burner);
+    missiles.push_back(std::move(burner));
 }
 
 }  // namespace
@@ -1448,7 +1448,7 @@ bool monster_update(const GameData& game_data, const Level& level, Monster& mons
                         Missile y = x;
                         y.velocity_x = side_x / side_distance * speed; y.velocity_y = side_y / side_distance * speed; y.dir = direction32(side_x, side_y);
                         y.to = { unit.x + side_x, unit.y + side_y };
-                        missiles.push_back(y);
+                        missiles.push_back(std::move(y));
                     }
             } else if (const auto* fired_skill = seq ? game_data.skills.get(monster.skill) : nullptr;
                        fired_skill && fired_skill->srvdofunc == d2d::rules::ServerDoFunction::kTransMissile) {

@@ -1401,7 +1401,7 @@ inline Outdoor generate_outdoor(const OutdoorData& data, const OutdoorLevel& lev
                         ++bit;
                     }
                 }
-                rooms.push_back(room);
+                rooms.push_back(std::move(room));
             }
         }
     for (auto& room : rooms) {

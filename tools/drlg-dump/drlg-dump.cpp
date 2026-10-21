@@ -381,7 +381,7 @@ static std::string dump_npcs(d2d::game::GameData& game, std::uint32_t seed, int 
                 break;
             }
         }
-        lines.push_back(line);
+        lines.push_back(std::move(line));
     }
     std::ranges::sort(lines);
     std::string out;

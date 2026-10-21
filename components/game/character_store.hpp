@@ -90,9 +90,9 @@ private:
         namespace fs = std::filesystem;
         std::error_code error;
         fs::create_directories(dir, error);
-        if (const auto bak = fs::path(file).replace_extension(".d2s.bak"); !raw.empty() && !fs::exists(bak))
-            fs::copy_file(file, bak, error);
-        const auto tmp = fs::path(file).replace_extension(".d2s.tmp");
+        fs::path bak = file, tmp = file;
+        bak.replace_extension(".d2s.bak"); tmp.replace_extension(".d2s.tmp");
+        if (!raw.empty() && !fs::exists(bak)) fs::copy_file(file, bak, error);
         {
             std::ofstream file_out(tmp, std::ios::binary | std::ios::trunc);
             file_out.write(reinterpret_cast<const char*>(out.data()), std::streamsize(out.size()));

@@ -381,7 +381,7 @@ inline Act3Layout act3_layout(const LevelDefs& defs, d2d::rules::Rng act_seed) {
         min_x = std::min(min_x, piece.x);
         min_y = std::min(min_y, piece.y);
         max_x = std::max(max_x, piece.x + width);
-        pieces[std::size_t(count++)] = piece;
+        pieces[std::size_t(count++)] = std::move(piece);
     }
     const int grid_w = (max_x - min_x) / 32 + 2, grid_h = (max_y - min_y) / 32 + 2;
     const auto cells = std::size_t(grid_w * grid_h);

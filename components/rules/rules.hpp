@@ -1095,7 +1095,7 @@ inline d2d::d2s::Item generate_item(const Tables& tables, const std::string& cod
     };
     // FUN_00557450's tail on every quality: ethereal, sockets, the class affix.
     auto finish = [&] {
-        if (!unit_seed || !base) return item;
+        if (!unit_seed || !base) return std::move(item);
         if ((kind == 1 || kind == 2) && item.quality != 1 && item.quality != 5 && !base->quest && has_durability() && rng(100) < 5) {
             item.ethereal = true;                          // FUN_0065e4d0
             if (kind == 1) item.defense = item.defense * 3 / 2;
@@ -1136,7 +1136,7 @@ inline d2d::d2s::Item generate_item(const Tables& tables, const std::string& cod
             }
         }
         if (base->quest && base->quest_diff) item.props.push_back({ d2d::d2s::kQuestItemDifficulty, 0, difficulty });   // FUN_00557ab0 after FUN_00557450
-        return item;
+        return std::move(item);
     };
     // Low / normal / superior: no affixes; stacks (arrows, bolts, keys) roll
     // their quantity.
@@ -1145,7 +1145,7 @@ inline d2d::d2s::Item generate_item(const Tables& tables, const std::string& cod
         quality = plain_quality;
         item.quality = std::max(quality, 1);
         if (!unit_seed && base && base->stackable) item.quantity = rng.range(base->min_stack, base->max_stack);
-        if (!unit_seed || !base) return item;
+        if (!unit_seed || !base) return std::move(item);
         bool made = true;                                  // low / superior that doesn't take: FUN_005572a0, normal off a fresh own seed
         if (item.quality == 1 && kind != 1 && kind != 2) {
             made = false;

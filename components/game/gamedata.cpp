@@ -166,7 +166,7 @@ Npc monster_npc(const GameData& game_data, const d2d::txt::Table& monstats, cons
         std::string key(monstats.get(row, "NameStr"));        // 1.14d; "namco" on the CD
         if (key.empty()) key = std::string(monstats.get(row, "namco"));
         auto name = lookup_string(game_data, key);
-        npc.name = name ? u16_to_latin1(*name) : key;
+        npc.name = name ? u16_to_latin1(*name) : std::move(key);
     }
     if (npc.code.empty()) return npc;
     if (npc.base_w.empty()) npc.base_w = "hth";

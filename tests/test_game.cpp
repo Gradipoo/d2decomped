@@ -460,7 +460,7 @@ int main() try {
                 d2d::d2s::Item piece;
                 piece.code = data->rules.sets[row].code; piece.quality = 5; piece.set_id = int(row);
                 piece.location = d2d::d2s::item_location::kEquipped; piece.slot = std::uint8_t(d2d::d2s::body_location::kHead + int(worn.size()));
-                worn.push_back(piece);
+                worn.push_back(std::move(piece));
             }
         auto total = [&](int stat) {
             std::int64_t sum = 0;

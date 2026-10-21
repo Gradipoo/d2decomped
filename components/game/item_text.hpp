@@ -433,7 +433,7 @@ inline std::vector<TextLine> item_lines(const GameData& game_data, const d2d::d2
             const std::string spell = str(desc.spell_str);
             text = desc.spell_desc == 1 ? spell : desc.spell_desc == 4 ? d2_format(spell, { value }) : spell + space + std::to_string(value);
         }
-        if (!text.empty()) out.push_back({ text, kTxtWhite });
+        if (!text.empty()) out.push_back({ std::move(text), kTxtWhite });
     }
     if (is_type("char")) out.push_back({ string_id(game_data, 20438), kTxtWhite });            // "Keep in Inventory to Gain Bonus"
     // Socket fillers (FUN_004e6850): a gem's or rune's gems.txt bonus per
@@ -492,7 +492,7 @@ inline std::vector<TextLine> item_lines(const GameData& game_data, const d2d::d2
     if ((weapon || armor) && (item.ethereal || item.socketed)) {
         std::string text = item.ethereal ? string_id(game_data, 22745) : std::string{};          // "Ethereal (Cannot be Repaired)"
         if (item.socketed) text += (item.ethereal ? ", " : "") + string_id(game_data, 3453) + " (" + std::to_string(item.sockets) + ")";
-        out.push_back({ text, kTxtBlue });
+        out.push_back({ std::move(text), kTxtBlue });
     }
     return out;
 }

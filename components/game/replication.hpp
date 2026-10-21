@@ -502,7 +502,7 @@ inline bool apply_view(const GameData& game_data, std::span<const std::uint8_t> 
     for (int count = u16(); count > 0 && input.ok; --count) {
         const auto npc_index = std::size_t(u16());
         auto unit = wire::unit(input);
-        if (npc_index < view.npc_states.size()) view.npc_states[npc_index] = unit;
+        if (npc_index < view.npc_states.size()) view.npc_states[npc_index] = std::move(unit);
     }
     view.events.clear();
     for (int k = u16(); k > 0 && input.ok; --k) {

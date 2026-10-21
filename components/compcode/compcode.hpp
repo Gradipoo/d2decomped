@@ -141,7 +141,7 @@ inline std::vector<Entry> build(const txt::Table& itemtypes, const txt::Table& w
                    !table[std::size_t(idx)].code.empty())
                 ++idx;
             if (idx > 0xfe) idx = cursor;   // D2 falls back to the cursor slot
-            table[std::size_t(idx)] = { code, wclass_id(source_table->get(row, c_wc)),
+            table[std::size_t(idx)] = { std::move(code), wclass_id(source_table->get(row, c_wc)),
                                         wclass_id(source_table->get(row, c_wc2)), type,
                                         types.isa(type, kArmor) };
             if (idx == cursor) ++cursor;

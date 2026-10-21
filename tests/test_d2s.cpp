@@ -22,6 +22,7 @@
 #include <span>
 #include <stdexcept>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace {
@@ -221,7 +222,7 @@ int main() try {
                     auto header2 = hdr; auto st2 = stats; auto items2 = items;
                     st2.values[d2d::d2s::kGold] = 12345; st2.values[d2d::d2s::kLevel] = header2.level = 97;
                     d2d::d2s::Item potion; potion.code = "hp1"; potion.simple = potion.identified = true; potion.location = 2; potion.column = 3;
-                    items2.push_back(potion);
+                    items2.push_back(std::move(potion));
                     const auto written = d2d::d2s::write_save(bytes, header2, st2, items2, item_tables);
                     const auto back = d2d::d2s::parse_items(written, item_tables);
                     const auto st3 = d2d::d2s::parse_stats(written, item_tables);

@@ -229,7 +229,7 @@ int main() {
     assert(spend_stats.get(d2d::d2s::kSkillPts) == 5 && spend_stats.skills[3] == 0);
 
     // Repair: missing / max of the base, rep mult; ethereal and whole items don't.
-    Tables tables_copy = tables;
+    Tables tables_copy = std::move(tables);
     tables_copy.npc_prices["Charsi"].rep = 512;
     Item worn = item("hax"); worn.max_durability = 40; worn.durability = 10;
     assert(repair_cost(tables_copy, worn, "Charsi", header) == 1000 * 30 / 40 / 2);
@@ -271,7 +271,7 @@ int main() {
     assert(!can_learn(skill_tables, 7, 0, levels, 99) && !can_learn(skill_tables, 0, 29, levels, 99));   // no such class / skill
 
     // Item generation.
-    Tables gamble_tables = cursor_tables;                                                          // the cursor tables' types
+    Tables gamble_tables = std::move(cursor_tables);                                                          // the cursor tables' types
     gamble_tables.item_base["cap"] = { .minac = 3, .maxac = 5, .cost = 100, .level = 1, .durability = 12, .gamble_cost = 3016,
                            .normcode = "cap", .ubercode = "xap", .ultracode = "uap" };
     gamble_tables.item_base["xap"] = { .cost = 500, .level = 22 };

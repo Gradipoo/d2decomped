@@ -6,6 +6,7 @@
 #include <cassert>
 #include <cstdint>
 #include <cstdio>
+#include <utility>
 
 using namespace d2d::drlg;
 
@@ -79,7 +80,7 @@ int main() {
         for (std::size_t i = 4; i < 9; ++i) assert(layout.levels[i].y + layout.levels[i].height == layout.levels[i - 1].y);
     }
     // No jungle row (or one too small): a failed layout, not a hang.
-    auto no_jungle = act3;
+    auto no_jungle = std::move(act3);
     no_jungle.erase(76);
     assert(act3_layout(no_jungle, d2d::rules::Rng{ 1 }).failed);
     // Act 4 (FUN_00678a20): Pandemonium Fortress anchors Outer Steppes,

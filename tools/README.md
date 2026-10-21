@@ -32,6 +32,7 @@ the command to run first.
 |---|---|---|
 | `validate-linux.sh` | CI's Linux build, clang-tidy and tests, in Docker (`validate-linux.Dockerfile`; its own `build-linux/`). Run before every push | `tools/validate-linux.sh` (exit status 0 = good) |
 | `tidy-pr-select.py` | CI only: picks the files a PR needs clang-tidy on | not run by hand |
+| `coverity.py` | Lists Coverity Scan issues with file:line, shows one, marks them False Positive / Intentional / Bug (auth: `--help`) | `tools/coverity.py list` |
 
 ## Before any of them
 

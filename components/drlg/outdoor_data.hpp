@@ -22,6 +22,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 namespace d2d::drlg {
@@ -120,7 +121,7 @@ template <class Read> RoomDt1s load_room_dt1s(OutdoorAssets& assets, Read&& read
         for (const char letter : rel.substr(rel.find_last_of("/\\") + 1)) name.push_back(char(std::tolower(static_cast<unsigned char>(letter))));
         const auto bytes = read(path);
         if (!bytes) return nullptr;
-        return &assets.dt1s.emplace_back(dt1_heads(name, *bytes));
+        return &assets.dt1s.emplace_back(dt1_heads(std::move(name), *bytes));
     };
     for (std::size_t row = 0; row < assets.lvl_types.size(); ++row)
         if (to_int(assets.lvl_types.get(row, "Id"), -1) == type)

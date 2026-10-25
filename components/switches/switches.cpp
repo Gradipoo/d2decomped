@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // game.exe 1.14d's switch names (docs/research/re/switches.md, the table
-// at 0x00705040). This is our list of the token and whether it takes a
-// value. It is not game.exe's struct: no offsets, no ini defaults.
+// at 0x00705040). Each entry is the token. A wired token also names the
+// d2d option. Kind only separates a value word from the next switch:
+// a wired switch passes that word through, and an ignored switch drops
+// it. This is not game.exe's struct: no offsets, no ini defaults.
 #include "switches.hpp"
 
 #include <cstddef>
@@ -19,6 +21,8 @@ enum class Kind { boolean, integer, text };
 struct Token {
     std::string_view name;
     Kind kind;
+    // Set when this token is wired. Empty means log it and drop it.
+    std::string_view long_option{};
 };
 
 constexpr Token kTokens[] = {
@@ -51,9 +55,9 @@ constexpr Token kTokens[] = {
     {"rare", Kind::boolean}, {"unique", Kind::boolean},
     {"act", Kind::integer},
     {"log", Kind::boolean}, {"msglog", Kind::boolean}, {"safe", Kind::boolean},
-    {"nosave", Kind::boolean},
-    // -seed stays ignored until Bret answers #62. DEBUG/SEED may not be
-    // the map seed d2d's --seed sets.
+    {"nosave", Kind::boolean, "--no-save"},
+    // Ignored on purpose. switches.md: DEBUG/SEED is not traced into the
+    // generator, so this is not d2d's --seed.
     {"seed", Kind::integer},
     {"nopk", Kind::boolean},
     {"cheats", Kind::boolean}, {"teen", Kind::boolean},
@@ -129,6 +133,15 @@ bool negative_integer(std::string_view word) {
     return true;
 }
 
+// True when `next` is this switch's value rather than another switch.
+// A glued tail is already the value, so the next word is not. An integer
+// value may be negative. The word itself is not read.
+bool following_is_value(const Token& token, std::string_view leftover, std::string_view next) {
+    if (token.kind == Kind::boolean || !leftover.empty()) return false;
+    if (next.empty() || next[0] != '-') return true;
+    return token.kind == Kind::integer && negative_integer(next);
+}
+
 std::string ignored_line(std::string_view typed, std::string_view token_name) {
     if (same_token(typed, token_name))
         return std::format("game.exe switch {} ignored (not supported yet)", typed);
@@ -155,18 +168,27 @@ Translated translate(std::span<const std::string_view> arguments) {
             result.argv.emplace_back(argument);
             continue;
         }
-        const bool takes_value = token->kind != Kind::boolean && leftover.empty();
         const bool next_is_value = index + 1 < arguments.size()
-            && (arguments[index + 1].empty() || arguments[index + 1][0] != '-'
-                || (token->kind == Kind::integer && negative_integer(arguments[index + 1])));
-        // The value is not passed on. This pass only accepts the switch.
-        if (takes_value && next_is_value) ++index;
-        // ponytail: -nosave is the only switch wired (d2d's --no-save). The
-        // rest are accepted and logged; the next change maps the ones d2d
-        // already does. CLI11 2.6.2 keeps the last copy of a flag, so a
-        // repeated --no-save is legal and this may emit it more than once.
-        if (token->name == "nosave") result.argv.emplace_back("--no-save");
-        else result.ignored.push_back(ignored_line(argument, token->name));
+            && following_is_value(*token, leftover, arguments[index + 1]);
+        // ponytail: -nosave is the only switch wired (d2d's --no-save).
+        // A wired name is rewritten and its value is passed through for
+        // CLI11, which checks the type. -seed stays ignored until
+        // DEBUG/SEED is traced (switches.md). Anything else is logged and
+        // dropped, value included, so an old command line still starts.
+        // CLI11 2.6.2 keeps the last copy of a flag, so a repeated
+        // --no-save is legal and this may emit it more than once.
+        if (!token->long_option.empty()) {
+            result.argv.emplace_back(token->long_option);
+            if (token->kind == Kind::boolean) continue;
+            if (!leftover.empty()) result.argv.emplace_back(leftover);
+            else if (next_is_value) {
+                result.argv.emplace_back(arguments[index + 1]);
+                ++index;
+            }
+            continue;
+        }
+        if (next_is_value) ++index;
+        result.ignored.push_back(ignored_line(argument, token->name));
     }
     return result;
 }

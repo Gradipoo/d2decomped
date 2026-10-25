@@ -185,24 +185,51 @@ From `docs/PLAN.md` and the notes on
 - A one-dash switch keeps game.exe's spelling and meaning. A two-dash
   option is d2d's own. `-seed` behaves the way game.exe has it,
   `--seed` stays as it is, and neither one changes the other. Ideally
-  they call the same code.
+  they call the same code. `-seed` stays ignored until DEBUG/SEED is
+  traced. Wiring it sooner would tie the two together before that is
+  known.
 - A switch d2d cannot support yet is accepted and logged as ignored.
-  It is not rejected, so an existing command line still starts.
-- This note is the research step. The translator, then the wiring, are
-  each their own change.
+  It is not rejected, so an existing command line still starts. The
+  pre-pass only rewrites a wired name and leaves its value for CLI11.
+  An ignored switch is dropped with its value.
+- game.exe applies one command-line string, the last slot
+  (`argv[argc - 1]`), not each slot. Two slots, as in
+  `Game.exe -w -nosave`, apply only the last one. d2d reads every
+  slot, so both apply. That is the behavior to keep.
+- The translator wires `-nosave` only. Mapping the other switches d2d
+  already has is its own change.
 
-d2d parses with CLI11 2.6.2. A single dash plus letters is a short
-option of the first character only, and d2d registers no short options,
-so a game.exe token has to be translated before `app.parse`. `-s`,
-`-w`, `-i`, and `-m` must never be registered as CLI11 short options.
-A longer token that starts with that letter (`-seed`, `-window`,
-`-name`) would be read as the one-letter option.
+d2d parses with CLI11 2.6.2. `allow_non_standard_option_names()` stays
+off. Turned on, CLI11 can take a one-dash name (`-nosave`, `-seed=7`).
+The name is still rewritten first, for three reasons:
+
+- A one-letter name clashes with a longer name that starts with the
+  same letter. Registering `-window` beside `-w` is rejected. The
+  error is "interferes with existing non standard option", or the
+  short-option form of that message, depending on which name is added
+  first. game.exe has `-s`, `-w`, `-m`, and `-i` beside longer names
+  such as `-seed`, `-window`, and `-md`.
+- There is no longest-prefix match. `-act2` is not read as `-act` with
+  value `2`, and `-windowed` is not read as `-window`. CLI11 matches
+  the whole name, or `name=value`.
+- `-NOSAVE` would need the app's `ignore_case()`, and that applies to
+  every option d2d registers. The pre-pass lowercases only the game.exe
+  token.
+
+With that setting left off, a single dash plus letters is a short
+option of the first character only. d2d registers no short options.
+`-s`, `-w`, `-i`, and `-m` must never be registered as CLI11 short
+options. A longer token that starts with that letter would be read as
+the one-letter option.
 
 ## Open
 
 - DEBUG/SEED at offset 538 is stored as an int. d2d's `--seed` fixes
   the map seed. This pass does not show that the struct field is that
-  seed.
+  seed. `-seed` stays ignored until it is traced.
+- Whether `argv[argc - 1]` comes from the C runtime or from
+  `GetCommandLine` / WinMain's `lpCmdLine`. The notes do not say.
+  Which it is changes what that one string contains.
 - What CHARACTER/CTEMP (offset 493) does past the struct.
 - `-ama` defaults to 1. How that bool becomes the starting class,
   beside the other class bools, was not traced.

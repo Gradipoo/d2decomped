@@ -166,3 +166,6 @@ D2Decomp is licensed under the GNU General Public License, version 3 or later
 
 Thanks to [SophieLovesMorrowind](https://github.com/Sophialovesmorrowind) for
 finding the Act III quest-state bounds crash and preparing the initial fix.
+
+Thanks to [CascaMori](https://github.com/CascaMori) for extensive playtesting and
+reports leading to major fixes.

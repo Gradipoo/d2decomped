@@ -6,6 +6,9 @@
 // it. This is not game.exe's struct: no offsets, no ini defaults.
 #include "switches.hpp"
 
+#include <CLI/CLI.hpp>
+
+#include <algorithm>
 #include <cstddef>
 #include <format>
 #include <span>
@@ -150,12 +153,31 @@ std::string ignored_line(std::string_view typed, std::string_view token_name) {
 
 }  // namespace
 
-Translated translate(std::span<const std::string_view> arguments) {
+Translated translate(std::span<const std::string_view> arguments, const CLI::App& app) {
     Translated result;
     if (arguments.empty()) return result;
     result.argv.emplace_back(arguments[0]);
     for (std::size_t index = 1; index < arguments.size(); ++index) {
         const std::string_view argument = arguments[index];
+        // CLI11's end-of-options marker also ends legacy translation.
+        if (argument == "--") {
+            for (; index < arguments.size(); ++index) result.argv.emplace_back(arguments[index]);
+            break;
+        }
+        if (argument.starts_with("--")) {
+            result.argv.emplace_back(argument);
+            const auto equals = argument.find('=');
+            const auto* option = app.get_option_no_throw(std::string(argument.substr(0, equals)));
+            // All current d2d value options are scalar. Use the parser's
+            // registered arity, not a second list of names or value types.
+            // CLI11 also takes the next word for an empty --option=.
+            if (option && (equals == std::string_view::npos || equals + 1 == argument.size())) {
+                const int required = std::min(option->get_type_size_min(), option->get_items_expected_min());
+                for (int count = 0; count < required && index + 1 < arguments.size(); ++count)
+                    result.argv.emplace_back(arguments[++index]);
+            }
+            continue;
+        }
         // Two dashes are d2d's own. Anything else that isn't one dash plus
         // a word is left for CLI11, including an unknown -zzz.
         if (argument.size() < 2 || argument[0] != '-' || argument[1] == '-') {

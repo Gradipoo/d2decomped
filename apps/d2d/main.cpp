@@ -1700,7 +1700,7 @@ int main(int argc, char** argv) {
                    "InGame camera y (grid cell)");
     // game.exe's one-dash switches, before CLI11. Two-dash options pass through.
     const std::vector<std::string_view> arguments(argv, argv + argc);
-    d2d::switches::Translated switched = d2d::switches::translate(arguments);
+    d2d::switches::Translated switched = d2d::switches::translate(arguments, app);
     std::vector<char*> switched_argv;
     switched_argv.reserve(switched.argv.size());
     for (std::string& argument : switched.argv) switched_argv.push_back(argument.data());

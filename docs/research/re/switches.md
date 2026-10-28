@@ -198,6 +198,12 @@ From `docs/PLAN.md` and the notes on
   slot, so both apply. That is the behavior to keep.
 - The translator wires `-nosave` only. Mapping the other switches d2d
   already has is its own change.
+- The translator reads CLI11's registered option arity before scanning
+  legacy switches. A required d2d value is preserved verbatim: `--data
+  -direct` names a directory, and `--start-name -NOSAVE` names a character.
+  Nonempty inline values (`--data=-direct`) need no following word;
+  flags do not consume one. Unknown options and missing/invalid values
+  remain CLI11 errors. A standalone `--` ends legacy translation too.
 
 d2d parses with CLI11 2.6.2. `allow_non_standard_option_names()` stays
 off. Turned on, CLI11 can take a one-dash name (`-nosave`, `-seed=7`).

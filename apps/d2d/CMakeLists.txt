@@ -233,6 +233,13 @@ target_link_libraries(d2d PRIVATE
     game net mpq d2s rules drlg txt userdir cof compcode dc6 dcc ds1 dt1 font palette tbl devctl screenshot switches
     SDL3::SDL3 CLI11::CLI11 ${OPENAL_LIBRARY} sentry)
 target_include_directories(d2d SYSTEM PRIVATE ${OPENAL_INCLUDE_DIR})
+# start_sentry looks for the handler beside d2d; the packages put it there,
+# this does for the build tree (sentry_init fails without it).
+if(TARGET crashpad_handler)
+    add_dependencies(d2d crashpad_handler)
+    add_custom_command(TARGET d2d POST_BUILD COMMAND "${CMAKE_COMMAND}" -E copy_if_different
+        "$<TARGET_FILE:crashpad_handler>" "$<TARGET_FILE_DIR:d2d>")
+endif()
 d2d_check_headers(d2d_headers LINK
     ${ffmpeg_target}   # first: its headers before a system FFmpeg's in /opt/homebrew/include
     game net mpq d2s rules drlg txt userdir cof compcode dc6 dcc ds1 dt1 font palette tbl devctl screenshot switches

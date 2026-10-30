@@ -136,8 +136,12 @@ The same bar for everyone, people and agents alike.
 
 ## 6. Pull requests and credit
 
-- A branch, a short subject line, at most three lines of body.
-- The body says what's claimed, the evidence, how to re-check it, and
+- A branch, and commits with a short subject line and at most three lines
+  of body.
+- The pull request body follows
+  [.github/pull_request_template.md](.github/pull_request_template.md)
+  (`gh pr create` skips it, so fill it in with `--body-file`): what changes,
+  the evidence, how to re-check it, screenshots if it shows, and
   `Agent: <name>` (or `Agent: none`). Disclosure is for the record; it
   doesn't change the checks.
 - The commit is theirs: their name as git author, even when you typed it.

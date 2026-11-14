@@ -18,9 +18,10 @@ struct Box {
      */
     [[nodiscard]] bool contains(float point_x, float point_y) const { return point_x >= x && point_x < x + width && point_y >= y && point_y < y + height; }
 };
-inline constexpr Box kMove{ 12, 330, 270, 260 }, kAttack{ 680, 438, 108, 100 }, kPage{ 650, 265, 138, 55 },
-    kCancel{ 540, 180, 240, 65 }, kMenu{ 12, 12, 95, 48 }, kDone{ 650, 12, 138, 48 };
-inline constexpr Box kSkills[4] = { { 540, 445, 112, 75 }, { 550, 350, 112, 75 }, { 675, 350, 112, 75 }, { 415, 445, 112, 75 } };
+// Immortal-inspired arc: move stick lower-left, skills fan around a large attack.
+inline constexpr Box kMove{ 24, 340, 220, 240 }, kAttack{ 648, 418, 132, 132 }, kPage{ 560, 318, 108, 52 },
+    kCancel{ 520, 180, 240, 65 }, kMenu{ 12, 12, 95, 48 }, kDone{ 650, 12, 138, 48 }, kMap{ 688, 12, 100, 48 };
+inline constexpr Box kSkills[4] = { { 562, 492, 100, 80 }, { 488, 418, 100, 80 }, { 556, 344, 100, 80 }, { 638, 344, 100, 80 } };
 inline constexpr Box kBelts[4] = { { 12, 260, 62, 55 }, { 80, 260, 62, 55 }, { 148, 260, 62, 55 }, { 216, 260, 62, 55 } };
 // Extra inset, in logical pixels, past the 12px margin the boxes already have.
 // Zero leaves every box where it is. main.cpp fills this from SDL_GetWindowSafeArea.
@@ -33,6 +34,18 @@ inline Box placed(Box box) {
     if (box.x + box.width > 800.f - kEdge) box.x -= safe_inset.right;
     if (box.y + box.height > 600.f - kEdge) box.y -= safe_inset.bottom;
     return box;
+}
+inline constexpr float kStickOuter = 78.f, kStickInner = 28.f;
+/** True when logical coordinates hit a fixed touch chrome region (not the free field). */
+inline bool chrome_hit(float x, float y) {
+    if (placed(kDone).contains(x, y) || placed(kMap).contains(x, y) || placed(kMenu).contains(x, y)) return true;
+    if (placed(kPage).contains(x, y) || placed(kMove).contains(x, y) || placed(kAttack).contains(x, y)) return true;
+    for (const auto& box : kSkills)
+        if (placed(box).contains(x, y)) return true;
+    for (const auto& box : kBelts)
+        if (placed(box).contains(x, y)) return true;
+    if (placed(Box{ 400, 0, 135, 60 }).contains(x, y)) return true;
+    return false;
 }
 struct Target { int skill = -1, unit = -1; float x = 0, y = 0; bool left = false, valid = false; };
 
@@ -105,8 +118,8 @@ public:
             else {
                 const float dx = x - move_origin_x_, dy = y - move_origin_y_;
                 const float length = std::hypot(dx, dy);
-                move_x = length > 8 ? dx / std::max(length, 60.f) : 0;
-                move_y = length > 8 ? dy / std::max(length, 60.f) : 0;
+                move_x = length > 12 ? dx / std::max(length, 55.f) : 0;
+                move_y = length > 12 ? dy / std::max(length, 55.f) : 0;
             }
         }
         if (finger == attack_ && phase == Phase::Up) { attack_ = -1; attack_down = false; }

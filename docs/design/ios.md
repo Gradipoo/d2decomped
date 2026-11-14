@@ -52,7 +52,7 @@ runs printed `BUILD SUCCEEDED`. One `d2d.app` was produced
 | StormLib | Used. Existing source build, tag v9.30. |
 | zlib | Used. Simulator SDK `libz.tbd` (and `libbz2.tbd` for StormLib). |
 | FFmpeg / Bink | Deliberately absent. Not linked. |
-| Sentry | Deliberately absent. `D2D_NO_SENTRY` on this target only. |
+| Sentry | Deliberately absent. iOS builds omit `D2D_WITH_SENTRY`. |
 | Qt launcher | Deliberately absent. The iOS configure does not add the launcher. |
 
 The SDL fetch is a new download. It needs a maintainer `security-reviewed`

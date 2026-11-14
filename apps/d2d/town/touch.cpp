@@ -183,7 +183,7 @@ void Town::cast_resolved(PadPlayer& player_pad, const touch::Target& target) {
 bool Town::touch_event(std::int64_t finger, touch::Phase phase, float x, float y) {
     if (!touch_enabled) return false;
     if (phase == touch::Phase::Down && touch::placed(touch::kDone).contains(x, y)) {
-        touch_input.clear(); touch_item_finger = -1;
+        touch_input.clear(); touch_item_finger = -1; touch_ground_finger = -1;
         if (touch_assign != skillpad::kUnset) { touch_assign = skillpad::kUnset; tree_open = touch_assignment_from_tree; touch_assignment_from_tree = false; return true; }
         focus_keys.push_back(SDLK_ESCAPE);
         return true;
@@ -251,6 +251,26 @@ bool Town::touch_event(std::int64_t finger, touch::Phase phase, float x, float y
     }
     if (phase == touch::Phase::Down && touch::placed(touch::Box{ 400, 0, 135, 60 }).contains(x, y)) {
         touch_input.clear(); tree_open = true; inv_open = false; return true;
+    }
+    if (phase == touch::Phase::Down && touch::placed(touch::kMap).contains(x, y)) {
+        touch_input.clear(); automap.open = !automap.open; return true;
+    }
+    if (pad_field()) {
+        if (phase == touch::Phase::Down && !touch::chrome_hit(x, y)) {
+            touch_ground_finger = finger; touch_ground_x = x; touch_ground_y = y;
+        } else if (finger == touch_ground_finger) {
+            if (phase == touch::Phase::Move &&
+                std::hypot(x - touch_ground_x, y - touch_ground_y) > 14.f)
+                touch_ground_finger = -1;
+            if (phase == touch::Phase::Up && touch_ground_finger == finger) {
+                const float iso_u = float(x - int(kScreenWidth) / 2) / (kIsoW / 2);
+                const float iso_v = float(y - kViewY) / (kIsoH / 2);
+                const float world_x = cam_x + (iso_u + iso_v) / 2, world_y = cam_y + (iso_v - iso_u) / 2;
+                send(cmd::Move{ world_x, world_y, true });
+                touch_ground_finger = -1;
+            }
+            if (phase == touch::Phase::Cancel) touch_ground_finger = -1;
+        }
     }
     touch::Target target;
     bool immediate = false;
@@ -369,7 +389,10 @@ void Town::draw_touch(std::vector<std::uint8_t>& framebuffer) {
     }
     button(touch::placed(touch::kMenu), "Inventory");
     button(touch::placed({ 400, 12, 135, 48 }), "Skills");
-    // A generous hit area with a compact thumb-pad drawing above the HUD.
+    button(touch::placed(touch::kMap), automap.open ? "Map*" : "Map");
+    const touch::Box move_pad = touch::placed(touch::kMove);
+    const float stick_x = move_pad.x + move_pad.width * .5f;
+    const float stick_y = move_pad.y + move_pad.height * .55f;
     const auto ring = [&](float centre_x, float centre_y, float radius) {
         for (int pixel_y = int(centre_y - radius - 1); pixel_y <= int(centre_y + radius + 1); ++pixel_y)
             for (int pixel_x = int(centre_x - radius - 1); pixel_x <= int(centre_x + radius + 1); ++pixel_x)
@@ -379,8 +402,9 @@ void Town::draw_touch(std::vector<std::uint8_t>& framebuffer) {
                     pixel[0] = 199; pixel[1] = 179; pixel[2] = 119;
                 }
     };
-    ring(145 + touch::safe_inset.left, 445 - touch::safe_inset.bottom, 60);
-    ring(145 + touch::safe_inset.left + touch_input.move_x * 40, 445 - touch::safe_inset.bottom + touch_input.move_y * 40, 16);
+    ring(stick_x, stick_y, touch::kStickOuter);
+    ring(stick_x, stick_y, touch::kStickInner);
+    ring(stick_x + touch_input.move_x * 38, stick_y + touch_input.move_y * 38, 18);
     button(touch::placed(touch::kAttack), "Attack / Use");
     button(touch::placed(touch::kPage), touch_input.alternate ? "II (tap: I)" : "I (tap: II)");
     for (int index = 0; index < 4; ++index) {

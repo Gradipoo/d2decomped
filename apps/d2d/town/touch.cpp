@@ -804,9 +804,19 @@ bool Town::touch_event(std::int64_t finger, touch::Phase phase, float x, float y
             immediate = info && (info->aura || self_cast(*info));
         }
     }
+    const auto aim_from_drag = [&] {
+        if (!touch_input.aiming) return;
+        touch_input.aim_x = x;
+        touch_input.aim_y = y;
+        const float dx = x - touch_input.origin_x, dy = y - touch_input.origin_y;
+        touch_input.dragged = touch_input.dragged || (!touch_input.stationary && std::hypot(dx, dy) > 10);
+        if (!touch_input.dragged) return;
+        touch_refresh_skill_aim();
+    };
+    if (phase != touch::Phase::Down) aim_from_drag();
     release.armed = false;
     touch_input.event(finger, phase, x, y, target, immediate, false, now_ms);
-    if (touch_input.aiming && touch_input.dragged) touch_refresh_skill_aim();
+    if (phase != touch::Phase::Up && phase != touch::Phase::Cancel) aim_from_drag();
     return true;
 }
 

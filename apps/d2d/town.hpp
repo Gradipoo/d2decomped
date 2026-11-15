@@ -370,6 +370,7 @@ struct Town {
     int lead_leaves();
     int handed_over = -1;                         // the seat a hand-over in the game menu gave seat 0 (main swaps the pads, frees the leaver's)
     int partner_left = -1;                        // the seat whose player Save and Exit logged out (main frees it)
+    bool quit_app = false;                        // iOS: Save and Exit should end the host app, not only the roster
     // A seat's player joins with `character` / leaves (saved).
     void coop_join(int seat, const Character& joining);
     void coop_leave(int seat);

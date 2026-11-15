@@ -367,6 +367,7 @@ target_sources(d2d PRIVATE
     ingame.cpp
     $<$<STREQUAL:${CMAKE_SYSTEM_NAME},iOS>:ios/import.mm>
     $<$<STREQUAL:${CMAKE_SYSTEM_NAME},iOS>:ios/keyboard.mm>
+    $<$<STREQUAL:${CMAKE_SYSTEM_NAME},iOS>:ios/quit.mm>
     items.cpp
     load.cpp
     lobby.cpp
@@ -424,6 +425,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
         XCODE_ATTRIBUTE_GENERATE_INFOPLIST_FILE "NO")
     set_source_files_properties(ios/import.mm PROPERTIES COMPILE_OPTIONS "-fobjc-arc")
     set_source_files_properties(ios/keyboard.mm PROPERTIES COMPILE_OPTIONS "-fobjc-arc")
+    set_source_files_properties(ios/quit.mm PROPERTIES COMPILE_OPTIONS "-fobjc-arc")
     target_link_libraries(d2d PRIVATE "-framework UIKit")
     if(OPENAL_INCLUDE_DIR)
         target_include_directories(d2d SYSTEM PRIVATE ${OPENAL_INCLUDE_DIR})

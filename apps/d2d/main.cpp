@@ -99,6 +99,7 @@
 #if defined(TARGET_OS_IPHONE) && TARGET_OS_IPHONE
 #include "ios/import.hpp"
 #include "ios/keyboard.hpp"
+#include "ios/quit.hpp"
 #include <SDL3/SDL_main.h>
 #endif
 
@@ -1801,6 +1802,7 @@ int run_windowed(std::vector<std::uint8_t>& framebuffer,
                 if (const int act = town.view_act(); act != scene->palette_act)
                     load_act_palettes(*scene, scene->mpqs, act);
                 town.update(framebuffer, mouse, keys_this_frame, screen, audio, now_ms, last_ms);
+                if (town.quit_app) quit = true;
                 // A panel key moved the cursor with the view (FUN_00468770's SetCursorPos):
                 // the game's copy, and the OS cursor unless a pad drives it.
                 if (const auto moved = std::exchange(town.cursor_move, std::nullopt)) {
@@ -2039,6 +2041,9 @@ int run_windowed(std::vector<std::uint8_t>& framebuffer,
     g_current_phase_ptr = nullptr;
     gamepads.close();   // before SDL goes away, not at scope exit
     SDL_Quit();
+#if defined(TARGET_OS_IPHONE) && TARGET_OS_IPHONE
+    d2d::ios::request_app_termination();
+#endif
     return 0;
 }
 

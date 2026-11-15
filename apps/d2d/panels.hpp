@@ -175,7 +175,7 @@ struct Hud { bool poisoned = false, running = false, run_down = false, weapon_se
              std::vector<HudHover>* hovers = nullptr;    // set: the bars' hover texts go here, for the frame's late draw (draw_hud_hovers); null: drawn at once
              int life_preview = 0, mana_preview = 0;     // View::life_preview / mana_preview: the potions' preview fill
              bool life_text = false, mana_text = false;  // "Show HP Text" / "Show MP Text" (0x7befdc / 0x7befe0): the globe's text without the cursor on it
-             int holy_shield = 0; bool touch_inv_anchor = false, touch_store_right = false, touch_compact = false; };   // touch: inventory left only with vendor-right split
+             int holy_shield = 0; bool touch_inv_anchor = false, touch_store_right = false, touch_compact = false; };   // touch: classic panel X (flags stay off)
 void draw_hud_hovers(std::vector<std::uint8_t>& framebuffer, const Scene& scene, const std::vector<HudHover>& hovers);
 void draw_hud(std::vector<std::uint8_t>& framebuffer, const Scene& scene, const d2d::d2s::Stats& stats,
               const Hud& hud = {}, int mouse_x = -1, int mouse_y = -1);

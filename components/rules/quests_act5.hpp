@@ -437,6 +437,7 @@ struct PrisonQuest {
     bool fana_made = false;        // data +0xa4
     bool thawing = false;          // data +0x100: the thaw's timer
     int thaw_step = 0;             // data +0x8c
+    int thaw_steps = 0;            // quest steps since the thaw's timer last ran
     bool news = false;
 
     // The player joins (FUN_0058a110).
@@ -494,10 +495,18 @@ struct PrisonQuest {
         state = 5; anya = 1;
         quest::set(quest_bits, kQuest, 13); quest::set(quest_bits, kQuest, 1);
         log = 5; news = true;
-        if (!thawing) { thawing = true; thaw_step = 0; }
+        if (!thawing) { thawing = true; thaw_step = 0; thaw_steps = 0; }
         return true;
     }
-    // The thaw's timer (FUN_0058aab0), a tick each: 1 fana's mode 2; 2 she's
+    // A quest-clock step. The thaw's timer (1 tick, queued by FUN_0058abc0
+    // at 0x58ad52) returns 0 at its first run, so it runs every 2 steps:
+    // true when it runs.
+    bool thaw_quest_step() {
+        if (!thawing || ++thaw_steps < quest_timer_steps(1)) return false;
+        thaw_steps = 0;
+        return true;
+    }
+    // The thaw's timer (FUN_0058aab0), a run each: 1 fana's mode 2; 2 she's
     // drehyaiced, the chain on. Returns the step done (0 none).
     int thaw_tick() {
         if (!thawing) return 0;
@@ -807,8 +816,8 @@ struct RiteQuest {
         return kSuperuniques[std::size_t(which)];
     }
     // An Ancient fell while they're up (FUN_0058c9a0, before the count):
-    // its statue's due back, the return timer on (FUN_00543f10, every 2
-    // frames). True: its death missile goes to that statue.
+    // its statue's due back, the return timer on (0x58c9da: FUN_00543f10,
+    // 2 ticks). True: its death missile goes to that statue.
     // None counts while a town portal is open there (data +0xc).
     bool ancient_fell(int statue) {
         if (!heard || !awake || portals != 0) return false;

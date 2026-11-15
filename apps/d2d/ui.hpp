@@ -196,19 +196,20 @@ struct NpcMenuState {
     // Index of the selectable line under (mx, my), or -1.
     // ponytail: how the window's own hover finds "cancel" (its line 0x13b
     // high reaches over the list) isn't traced; d2d gives the list box the mouse first.
-    [[nodiscard]] int line_at(int mouse_x, int mouse_y) const {
+    [[nodiscard]] int line_at(int mouse_x, int mouse_y, int pad_y = 0) const {
         if (npc < 0 || mouse_x < x || mouse_x >= x + box_width) return -1;
         if (list && d2d::rules::list_contains(list->box, mouse_x, mouse_y)) return -1;
         int base = y;
         for (std::size_t i = 0; i < lines.size(); ++i) {
             base += lines[i].height;
-            if (!lines[i].header && mouse_y > base - lines[i].height && mouse_y <= base) return int(i);
+            if (!lines[i].header && mouse_y > base - lines[i].height - pad_y && mouse_y <= base + pad_y) return int(i);
         }
         return -1;
     }
 };
 
 void layout_npc_menu(const Scene& scene, NpcMenuState& menu, int screen_x, int screen_y);
+void layout_npc_menu_touch(const Scene& scene, NpcMenuState& menu);
 
 // clvl and the unidentified item count adjust the table like game.exe:
 // Kashya gains "hire" above level 7 (FUN_004b66b0 -> FUN_004b6410
@@ -262,8 +263,9 @@ int talk_topic(const NpcTalk& talk, bool intro, int cls, d2d::rules::Rng& rng,
 // pre-wrapped. A half-dark 325x122 box at ((W-325)/2, 12-5); FontFormal11
 // lines at x+16, 18 px apart, entering at the bottom (baseline top+112)
 // and rising by (ms/4)*rate/1024 px. Done once the offset passes
-// (lines-1)*18 + 112. ponytail: whole lines clipped to the box instead of
-// FUN_00501df0's partial-line reveal; no voice.
+// (lines-1)*18 + 112. A line that meets the box is drawn for the glyph
+// rows inside it (FUN_00501df0); one clear of the box is not drawn.
+// ponytail: no voice.
 struct Speech {
     int npc = -1;
     std::vector<std::string> lines;
@@ -277,9 +279,21 @@ struct Speech {
     }
 };
 
+// The speech box (FUN_0046efd0): half-dark 325x122 at y = 12 - 5.
+inline constexpr int kSpeechBoxTop = 12 - 5;
+inline constexpr int kSpeechBoxBottom = kSpeechBoxTop + 0x7a;
+
+// FUN_0049d5a0 draws a line whole while it sits in the box, and FUN_00501df0
+// draws one that only partly sits there. The glyph is the cell ending on
+// the baseline. False: the line is clear of the box.
+inline bool speech_line_visible(int baseline, int cell, int box_top = kSpeechBoxTop, int box_bottom = kSpeechBoxBottom) {
+    const int glyph_top = baseline - cell + 1;
+    return glyph_top < box_bottom && baseline >= box_top;
+}
+
 Speech start_speech(const Scene& scene, int npc, std::uint16_t string, std::uint32_t now_ms);
 
-void draw_speech(std::vector<std::uint8_t>& framebuffer, const Scene& scene, const Speech& speech, std::uint32_t now_ms);
+void draw_speech(std::vector<std::uint8_t>& framebuffer, const Scene& scene, const Speech& speech, std::uint32_t now_ms, bool touch_layout = false);
 
 // FUN_004b8100: a black box at draw mode 1 (half transparent), each line's
 // text with its baseline at the box top + the heights so far + its own;

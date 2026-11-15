@@ -17,6 +17,7 @@
 #include <missiles.hpp>
 #include <monsters.hpp>
 #include <object_ids.hpp>
+#include <quest_clock.hpp>
 #include <quest_music.hpp>
 #include <quests.hpp>
 #include <quests_act3.hpp>
@@ -33,6 +34,7 @@
 #include <cstdlib>
 #include <ctime>
 #include <format>
+#include <iterator>
 #include <memory>
 #include <optional>
 #include <span>
@@ -49,6 +51,20 @@ static void take_blast(std::int64_t& life, int taken) {
     if (taken <= 0) return;
     life -= taken;
     if (life < 256) life = 0;
+}
+
+auto World::drop_wirt_gold(std::uint32_t now_ms) -> void {
+    // FUN_00594630: one pile every ten frames, on the corpse's level.
+    for (auto entry = wirt_gold.begin(); entry != wirt_gold.end();) {
+        auto& [key, drop] = *entry;
+        if (now_ms < drop.next_ms) { ++entry; continue; }
+        const auto& [where, npc_index] = key;
+        const auto& corpse = where->npcs[std::size_t(npc_index)];
+        if (drop.left == 0) drop.left = 10 + fight.spawning.quests(10);
+        loot.put({ .code = "gld" }, corpse.x, corpse.y, drop.item_level, fight.spawning.game, now_ms, false, 0, where);
+        drop.next_ms = now_ms + 10 * kTickMs;
+        entry = --drop.left == 0 ? wirt_gold.erase(entry) : std::next(entry);
+    }
 }
 
 auto World::wall_to(const Npc& object, int x, int y, int size) const -> bool {
@@ -95,6 +111,14 @@ auto World::operate(int npc_index, std::uint32_t now_ms, int force ) -> void {  
         auto to_mode = [&](int mode) {               // FUN_00624690 and its footprint (FUN_00623830); its sound is the client's (Town::object_sounds)
             set_footprint(*level, object, object.collision >> mode & 1);
         };
+        // Wirt's body (FUN_00583e70) drops the leg once and starts event 7.
+        if (object.operate_fn == d2d::rules::operate_fn::kWirtBody) {
+            if (object.preoperated || fight.remote_monsters || !operated.try_emplace({ level, npc_index }, now_ms).second) return;
+            loot.put({ .code = "leg" }, object.x, object.y, here, fight.spawning.game, now_ms);
+            to_mode(1);
+            wirt_gold.emplace(std::pair{ level, npc_index }, WirtGold{ now_ms + 10 * kTickMs, 0, here });
+            return;
+        }
         // A trap object (30: "a trap", the exploding chest; FUN_00581cd0), in
         // mode 0: a physical then a fire blast on its opener (FUN_005dfa00
         // types 0, 1: blast), then mode 1; its event 1 (FUN_005417d0,
@@ -338,7 +362,6 @@ auto World::operate(int npc_index, std::uint32_t now_ms, int force ) -> void {  
             });
             if (!wields_will) { d2d::log::info("I can't use this yet."); return; }
             if (!temple.hit_orb(quests())) { d2d::log::info("The Blackened Temple: the orb's hit"); return; }
-            music_cue("music_quest_compelling");
             take_carried(d2d::rules::KhalimQuest::kWillCode);
             // The party (FUN_005bb850): one done loses Khalim's pieces; one in act 3
             // gets bits 0 and 13, the pieces gone, and with word 0x15 bit 4 its bit 0.
@@ -354,7 +377,14 @@ auto World::operate(int npc_index, std::uint32_t now_ms, int force ) -> void {  
                 take_pieces();
                 if (quest::bit(bits, 0x15, 4) && !quest::bit(bits, 0x15, 0)) quest::set(bits, 0x15, 0);
             });
-            for (auto& monster : fight.monsters) if (std::size_t(monster.type) < game_data->mon_bin.size() && monster.type == int(game_data->mon_bin[0x16e])) monster.gone = true;
+            // The orb monster's death (FUN_005ddfc0, mode 0) runs its questcomplete
+            // mod's client hook (0x4ad2f0, class 0x16e): the jingle, with object 386
+            // in its near list (FUN_005dfee0 asserts it is), for each client seeing it.
+            for (auto& monster : fight.monsters)
+                if (std::size_t(monster.type) < game_data->mon_bin.size() && monster.type == int(game_data->mon_bin[0x16e]) && !monster.gone) {
+                    monster.gone = true;
+                    music_cue_near("music_quest_compelling", monster.unit.x, monster.unit.y);
+                }
             to_mode(1);
             doors[{ level, npc_index }] = Door{ 1, now_ms };
             fight.spawning.orb_smashed = true;
@@ -368,8 +398,9 @@ auto World::operate(int npc_index, std::uint32_t now_ms, int force ) -> void {  
             operated[{ level, npc_index }] = now_ms;
             if (!blade.use_altar(quests())) return;
             to_mode(1);
-            gidbinn_timer = now_ms + d2d::rules::BladeQuest::kTimerTicks * kTickMs;
+            gidbinn_in = d2d::rules::quest_timer_steps(d2d::rules::BladeQuest::kTimerTicks);
             gidbinn_altar = npc_index;
+            gidbinn_level = level;
             d2d::log::info("The Blade of the Old Religion: the altar used");
             return;
         }
@@ -414,7 +445,8 @@ auto World::operate(int npc_index, std::uint32_t now_ms, int force ) -> void {  
                 if (const auto part = std::ranges::find(actor->character.items, std::string(code), &d2d::d2s::Item::code); part != actor->character.items.end()) actor->character.items.erase(part);
             operated[{ level, npc_index }] = now_ms;
             to_mode(1);
-            tombs.staff_in(quests());
+            const auto staff_missile = game_data->missiles.find("horadricstaff");   // Missiles.txt 338
+            tombs.staff_in(quests(), d2d::rules::SevenTombsQuest::staff_ticks(staff_missile != game_data->missiles.end() ? staff_missile->second.range : 440));
             // The party in act 2 not done (FUN_0059dbd0): bits 0 and 13, their staff and parts gone.
             const int placer = actor->id;
             each_player([&](Player& player) {
@@ -423,6 +455,10 @@ auto World::operate(int npc_index, std::uint32_t now_ms, int force ) -> void {  
                 d2d::rules::quest::set(bits, 10, 0); d2d::rules::quest::set(bits, 10, 13);
                 for (const char* code : { "hst", "vip", "msf" }) while (carries(code)) take_carried(code);
             });
+            // FUN_0059dd80 sends S->C 0x89 event 3 to the game; its client entry
+            // (0x46b100 in the table at 0x7129d8) plays the jingle with the orifice
+            // (object 152) near its player.
+            music_cue_near("music_quest_horadric", object.x, object.y);
             d2d::log::info("The Horadric Staff: placed in the orifice");
             return;
         }
@@ -553,8 +589,7 @@ auto World::operate_door(int npc_index, std::uint32_t now_ms) -> void {
         if (door.operate_fn == d2d::rules::operate_fn::kSecretDoor) {                   // secret door (FUN_00583ff0): slides open (OP), once
             if (state.mode == 0) mode = 1;
         } else if (door.operate_fn == d2d::rules::operate_fn::kSlimeDoor) {           // the Maggot Lair's (FUN_005821a0): NU only, to OP (0x5821b8), once
-            // ponytail: its event 1 (0x58223c, FrameCnt1 + 1 frames) takes it to ON; d2d holds OP's last frame (the same collision).
-            if (state.mode == 0) mode = 1;
+            if (state.mode == 0) mode = 1;                                              // then ON by its event 1 (slime_doors_on)
         } else if (door.operate_fn == d2d::rules::operate_fn::kTrapDoor) {            // trap door (FUN_00581eb0): opens, then down its room's warp (FUN_005550b0)
             // Mode 2: the first warp tile unit (type 5) of the door's room
             // (room +0x74's list); a room without one is game.exe's assert 0x40e.
@@ -612,6 +647,24 @@ auto World::set_door_mode(int npc_index, int mode, std::uint32_t now_ms) -> void
         state = { mode, now_ms };
         set_footprint(*level, door, door.collision >> mode & 1);   // FUN_00623830 out / FUN_00620a70 back in
         d2d::log::info("door {}: mode {}", npc_index, kObjectModes[std::size_t(mode)]);
+    }
+
+// A slime door's event 1: with Mode2 (objects.bin +0x141, 0x582209)
+// FUN_005821a0 queues it at FrameCnt1 + 1 frames on (FUN_005417d0,
+// 0x58223c); FUN_00581490 takes a door still in mode 1 to mode 2 (ON), its
+// footprint ON's (HasCollision2). The time is object_op_ticks', as the
+// chests' tick: the sooner of that event and the client's OP counter's end.
+// ponytail: on this level's tick only; one left mid-OP goes ON when it's back in view.
+auto World::slime_doors_on(std::uint32_t now_ms) -> void {
+        for (const auto& [key, state] : doors) {
+            if (key.first != level || state.mode != 1 || std::size_t(key.second) >= level->npcs.size()) continue;
+            const auto& door = level->npcs[std::size_t(key.second)];
+            if (door.operate_fn != d2d::rules::operate_fn::kSlimeDoor) continue;
+            const int on_ticks = object_op_ticks(door);
+            if (on_ticks < 0) continue;
+            const std::uint32_t on_ms = state.when + std::uint32_t(on_ticks) * kTickMs;
+            if (now_ms >= on_ms) set_door_mode(key.second, 2, on_ms);
+        }
     }
 
 // A monster's door at a think (FUN_005b0f50): of the level's closed (mode

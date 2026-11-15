@@ -254,7 +254,7 @@ auto Fight::player_foe(std::uint32_t now_ms) -> Foe {
 auto Fight::merc_foe(std::uint32_t now_ms) -> Foe {
         if (now_ms >= actor->curses[1].until) actor->curses[1] = {};   // merc_fighter reads one still on
         for (auto& state : actor->merc_potion_states) if (now_ms >= state.until) state = {};
-        Foe foe{ actor->merc ? actor->merc->unit.x : 0, actor->merc ? actor->merc->unit.y : 0, actor->merc_st.level, actor->merc && actor->merc->mode != "DT",
+        Foe foe{ actor->merc ? float(actor->merc->unit.x) : 0.f, actor->merc ? float(actor->merc->unit.y) : 0.f, actor->merc_st.level, actor->merc && actor->merc->mode != "DT",
                  actor->merc && actor->merc->unit.walking, merc_fighter() };
         foe.fighter.prime_evil_pct = 200;                // a hireling under a prime evil's blow (FUN_0057c060)
         foe.pet = true;                                  // the merc: its MonStats class's size
@@ -476,7 +476,7 @@ auto Fight::world(bool in_moor, std::uint32_t now_ms, float elapsed, const Crowd
                         if (std::ranges::contains(*missile.struck, int(i))) continue;
                         if (skill_missile_hits(missile, i, now_ms)) return true;
                         // FUN_005ae1f0: one unit a frame, its hit ends the missile's frame.
-                        if (missile.info && missile.info->next_hit && missile.last_hit_ms == now_ms) return false;
+                        if (missile.info && (missile.info->next_hit || missile.info->last_unit_rule()) && missile.last_hit_ms == now_ms) return false;
                         continue;
                     }
                     auto blow = d2d::rules::player_blow(d2d::rules::simple_fighter(missile.min, missile.max, missile.attack_rating), target_of(i), missile.level, rng);
@@ -511,7 +511,7 @@ auto Fight::world(bool in_moor, std::uint32_t now_ms, float elapsed, const Crowd
             pending.clear();
             for (auto& monster : monsters) {
                 if (near_players(monster.unit.x, monster.unit.y)) monster_sounds(monster, now_ms);
-                else monster.seq_sounds = 0;             // a far Jab's event-3 rows go unheard, not saved for later
+                else { monster.seq_sounds = 0; monster.skill_sound = -1; }   // a far Jab's event-3 rows and skill start go unheard, not saved for later
             }
             for (const auto& side : sides) {
                 act_as(*side.hero);
@@ -520,15 +520,15 @@ auto Fight::world(bool in_moor, std::uint32_t now_ms, float elapsed, const Crowd
         }
         for (Hero* hero : heroes) {
             act_as(*hero);
-            if (!in_moor) {                                      // pets follow the player about camp
-                const auto save_class = std::size_t(std::max(actor->character.character_class, 0));
-                // ponytail: game.exe's walk rule for a pet in town isn't traced or claimed here; every pet follows at the
-                // owner's RunVelocity x 1.1 as it did, outside the MonStats Velocity claim.
-                for (auto& pet : actor->pets)
-                    if (pet.where == level && pet.monster.alive()) {
-                        pet_follow(*level, pet.monster.unit, actor->player.x, actor->player.y, cells_per_sec(float(game_data->run_velocity[save_class])) * 1.1f, now_ms, elapsed, crowd);
-                        if (const std::string_view want = pet.monster.unit.walking ? "WL" : "NU"; pet.monster.mode != want) set_mode(*game_data, pet.monster, want, now_ms);
-                    }
+            // In town each pet runs its own think as out of it: the AI driver
+            // (FUN_005b1740) and its steps before the think (FUN_005b10e0,
+            // FUN_005b1650, FUN_005b13e0) test no town; the thinks test the
+            // pet's room themselves (pets.hpp). The last level's monsters stay
+            // out of their sight: Fight::enter keeps them through a town.
+            if (!in_moor) {
+                auto elsewhere = std::exchange(monsters, {});
+                try { pets_turn(now_ms, elapsed, crowd); } catch (...) { monsters = std::move(elsewhere); throw; }
+                monsters = std::move(elsewhere);
             }
             if (actor->merc && actor->merc_npc) merc_turn(now_ms, elapsed, crowd, !in_moor);
         }
@@ -627,9 +627,10 @@ auto Fight::hurt_side(std::span<Foe> side, std::uint32_t now_ms) -> void {
         // FUN_0057f090): path type 8, 5 subtiles on from the attacker;
         // with no room it stays (FUN_0057f020, NU).
         // The KB mode is drawn as GH (PlrMode.txt "Knock back": GH), the
-        // player sliding there over it.
-        // ponytail: an even slide over the GH length (FHR's); the path's own
-        // pace (FUN_00554ca0) isn't traced.
+        // player sliding there a subtile a frame (knock_moved: FUN_00623f50's
+        // KB velocity 0x1000). KB's frame is the walk's (0x732c10[0x13] =
+        // FUN_00580c20): the path's end is the mode's (FUN_0057f020, NU), so
+        // it lasts the slide, not FHR's get-hit.
         if (actor->leap) {                                          // Leap's flight, then its landing's knockback (FUN_005da120, FUN_0056bad0)
             const float done = std::clamp(float(now_ms - actor->leap->start) / float(std::max<std::uint32_t>(actor->leap->lands - actor->leap->start, 1)), 0.f, 1.f);
             actor->player.x = actor->leap->from_x + (actor->leap->to_x - actor->leap->from_x) * done; actor->player.y = actor->leap->from_y + (actor->leap->to_y - actor->leap->from_y) * done;
@@ -650,8 +651,9 @@ auto Fight::hurt_side(std::span<Foe> side, std::uint32_t now_ms) -> void {
         }
         if (actor->knock) {
             if (actor->pmode == kModeGH) {
-                const float done = std::clamp(float(now_ms - actor->player.mode_ms) / float(std::max<std::uint32_t>(actor->pmode_until - actor->player.mode_ms, 1)), 0.f, 1.f);
-                actor->player.x = (*actor->knock)[0] + ((*actor->knock)[2] - (*actor->knock)[0]) * done; actor->player.y = (*actor->knock)[1] + ((*actor->knock)[3] - (*actor->knock)[1]) * done;
+                const float dx = (*actor->knock)[2] - (*actor->knock)[0], dy = (*actor->knock)[3] - (*actor->knock)[1], length = std::hypot(dx, dy);
+                const float done = length > 0 ? d2d::game::knock_moved(now_ms - actor->player.mode_ms, length) / length : 1.f;
+                actor->player.x = (*actor->knock)[0] + dx * done; actor->player.y = (*actor->knock)[1] + dy * done;
             }
             if (actor->pmode != kModeGH || now_ms >= actor->pmode_until) actor->knock.reset();   // done, or cut short
         }
@@ -659,8 +661,9 @@ auto Fight::hurt_side(std::span<Foe> side, std::uint32_t now_ms) -> void {
             const auto [from_x, from_y] = *foe.knocked_from;
             const float dx = actor->player.x - from_x, dy = actor->player.y - from_y, distance = std::max(std::hypot(dx, dy), 0.01f);
             if (const float next_x = actor->player.x + dx / distance, next_y = actor->player.y + dy / distance; !level->unit_blocked(next_x, next_y, actor->player.shape)) {
-                actor->knock = std::array{ actor->player.x, actor->player.y, next_x, next_y };
+                actor->knock = std::array{ float(actor->player.x), float(actor->player.y), next_x, next_y };
                 set_pmode(kModeGH, now_ms);
+                actor->pmode_until = now_ms + d2d::game::knock_ms(std::hypot(next_x - (*actor->knock)[0], next_y - (*actor->knock)[1]));
             }
         }
         for (std::size_t k = 0; k < 2; ++k)
@@ -800,8 +803,18 @@ auto Fight::enter(const Level* destination) -> void {
         }
         mon_level = destination;
         missiles.clear();
+        kept_missiles.erase(destination);   // what a turn of its own left in flight (take_turn): nothing follows here either
         actor->attack_mon = actor->merc_target = -1;
         for (auto& pet : actor->pets) pet.target = -1;
+    }
+
+auto Fight::take_turn(const Level* destination) -> void {
+        if (in_town(destination) || destination == mon_level) return;
+        if (mon_level) { kept[mon_level] = std::move(monsters); kept_missiles[mon_level] = std::move(missiles); }
+        monsters.clear(); missiles.clear();
+        if (const auto found = kept.find(destination); found != kept.end()) { monsters = std::move(found->second); kept.erase(found); }
+        if (const auto found = kept_missiles.find(destination); found != kept_missiles.end()) { missiles = std::move(found->second); kept_missiles.erase(found); }
+        mon_level = destination;
     }
 
 auto Fight::rooms_up(const Level& here, float x, float y, bool arrived) -> void {

@@ -4,9 +4,15 @@
 // Same layout as thirdeye's components/files (OpenMW lineage), so both
 // engines put their files in the same places:
 //   user dir    macOS    ~/Library/Preferences/<app>/
+//               iOS      <sandbox>/Documents/<app>/
 //               Linux    $XDG_CONFIG_HOME/<app>/ (normally ~/.config/<app>/)
 //               Windows  Documents\My Games\<app>
+//               PS Vita  ux0:data/d2vita/1.14d/ (D2Vita's game folder, any app)
+//               Switch   sdmc:/switch/<app>/ (the homebrew folder)
+//               Android  the app's own external folder: d2d's main sets
+//                        D2D_USER_DIR to it (docs/android.md)
 //   global dir  macOS    /Library/Preferences/<app>/
+//               iOS      <sandbox>/Library/Preferences/<app>/
 //               Linux    /etc/<app>/
 //               Windows  Program Files\<app>
 // A few free functions, not thirdeye's FixedPath template: d2d's cfgs use
@@ -26,9 +32,12 @@
 
 #if defined(_WIN32)
 #  include <shlobj.h>
-#else
+#elif !defined(__vita__) && !defined(__SWITCH__)
 #  include <pwd.h>
 #  include <unistd.h>
+#endif
+#if defined(__APPLE__)
+#  include <TargetConditionals.h>
 #endif
 
 namespace d2d::userdir {
@@ -36,6 +45,15 @@ namespace d2d::userdir {
 namespace fs = std::filesystem;
 
 inline fs::path user_dir(std::string_view app) {
+    // D2D_USER_DIR, set: the whole user dir. The headless test scripts keep
+    // each run apart from the real one with it (on Windows, d2d's dir doesn't
+    // follow HOME). Windows reads it wide: a path outside the code page
+    // stays whole.
+#if defined(_WIN32)
+    if (const wchar_t* forced = ::_wgetenv(L"D2D_USER_DIR"); forced && *forced) return fs::path(forced);
+#else
+    if (const char* forced = std::getenv("D2D_USER_DIR"); forced && *forced) return fs::path(forced);
+#endif
 #if defined(_WIN32)
     fs::path base(".");
     PWSTR docs = nullptr;
@@ -43,12 +61,23 @@ inline fs::path user_dir(std::string_view app) {
         base = fs::path(docs) / "My Games";
     CoTaskMemFree(docs);
     return base / app;
+#elif defined(__vita__)
+    // Where D2Vita keeps Game.exe and the MPQs: d2d.cfg and save/ sit
+    // beside them, as d2d does in a PC install (docs/d2vita.md).
+    static_cast<void>(app);
+    return fs::path("ux0:data/d2vita/1.14d");
+#elif defined(__SWITCH__)
+    // Beside d2d.nro, with the MPQs (docs/switch.md).
+    return fs::path("sdmc:/switch") / app;
 #else
     const char* home = std::getenv("HOME");
     if (!home || !*home)
         if (const passwd* home_entry = getpwuid(getuid())) home = home_entry->pw_dir;
     const fs::path base = home ? fs::path(home) : fs::path(".");
-#  if defined(__APPLE__)
+#  if defined(TARGET_OS_IPHONE) && TARGET_OS_IPHONE
+    // HOME is the app container. Documents holds cfg, saves, and the log.
+    return base / "Documents" / app;
+#  elif defined(__APPLE__)
     return base / "Library" / "Preferences" / app;
 #  else
     if (const char* xdg = std::getenv("XDG_CONFIG_HOME"); xdg && *xdg) {
@@ -64,6 +93,10 @@ inline fs::path global_dir(std::string_view app) {
 #if defined(_WIN32)
     const char* program_files = std::getenv("ProgramFiles");
     return fs::path(program_files ? program_files : ".") / app;
+#elif defined(TARGET_OS_IPHONE) && TARGET_OS_IPHONE
+    const char* home = std::getenv("HOME");
+    const fs::path base = home && *home ? fs::path(home) : fs::path(".");
+    return base / "Library" / "Preferences" / app;
 #elif defined(__APPLE__)
     return fs::path("/Library/Preferences") / app;
 #else

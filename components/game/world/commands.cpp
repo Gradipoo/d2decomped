@@ -45,6 +45,18 @@
 
 namespace d2d::game {
 
+namespace {
+
+// A right skill set (FUN_005701b0, from C->S 0x3c's FUN_0054be70 and the
+// weapon switch): any but skill 5 (Left Hand Swing) clears state 0x55
+// (nomanaregen, 0x5701db), the one Prayer's paid pulses set.
+constexpr int kLeftHandSwing = 5;
+void right_skill_set(Fight::Hero& hero, int skill) {
+    if (skill != kLeftHandSwing) hero.no_mana_regen = false;
+}
+
+}  // namespace
+
 auto World::spill_belt(std::uint32_t now_ms) -> void {
         const auto& layout = game_data->inv_layout[std::size_t(actor->character.header.cls)];
         const int boxes = game_data->belts[std::size_t(belt_index(*game_data, actor->character.items))].boxes;
@@ -60,7 +72,7 @@ auto World::deal(const Command& command, std::uint32_t now_ms) -> bool {
             if (std::size_t(trade->npc) >= level->npcs.size()) return true;
             if (trade->gamble) actor->store = d2d::rules::open_gamble(item_rules, level->npcs[std::size_t(trade->npc)].id, clvl, actor->character.header.active_difficulty(),
                                                                 actor->character.expansion, fight.spawning.proxy, fight.spawning.game, &loot.found_uniques);
-            else if (const auto kept = stocks.find(trade->npc); kept != stocks.end()) { actor->store = kept->second; actor->store.mode = 0; actor->store.first_tab(); actor->store.pressed = {}; }
+            else if (const auto kept = stocks.find({ level->id, trade->npc }); kept != stocks.end()) { actor->store = kept->second; actor->store.mode = 0; actor->store.first_tab(); actor->store.pressed = {}; }
             else actor->store = open_store(*game_data, *level, trade->npc, act(), actor->character.header.active_difficulty(), clvl, actor->character.expansion,
                                     fight.spawning.proxy, fight.spawning.game, &loot.found_uniques);
             actor->store.npc = trade->npc;
@@ -256,16 +268,33 @@ auto World::deal(const Command& command, std::uint32_t now_ms) -> bool {
         // Not the cursor item: no answer (FUN_00578610, 0x579f75). Else S->C
         // 0x58 answers 7, refused (0x579fc6, 0x57a002, 0x57a2e6, 0x57a54a), or
         // 6, done (0x57a1b4, 0x57a488, 0x57a63f): ev::ServiceResult.
-        // ponytail: the new item stays in hand; game.exe puts it back (FUN_00560200) or drops it.
+        // Each service takes the item off the cursor (FUN_0055eea0) and puts
+        // it in the inventory's free spot (FUN_00560200(.., 0, 0, 1, 1, 0),
+        // called in each of FUN_00579d60's three branches), with no room on the ground at the
+        // player (FUN_00555da0 / FUN_00558aa0).
         if (const auto* imbue = std::get_if<cmd::Imbue>(&command)) {
             if (std::size_t(imbue->npc) >= level->npcs.size() || !actor->held || actor->held->id != imbue->item) return true;
             const int service_npc = level->npcs[std::size_t(imbue->npc)].hc_idx;
             const auto answer = [&](bool done) { actor->events.push_back(ev::ServiceResult{ imbue->npc, done }); return true; };
+            const auto put_back = [&] {
+                const auto& layout = game_data->inv_layout[std::size_t(actor->character.header.cls % 7)];
+                std::vector<const d2d::d2s::Item*> stored;
+                for (const auto& other : actor->character.items)
+                    if (other.location == d2d::d2s::item_location::kStored && other.panel == d2d::d2s::item_panel::kInventory) stored.push_back(&other);
+                const auto [width, height] = d2d::rules::item_size(game_data->rules, actor->held->code);
+                if (const auto [column, row] = d2d::rules::free_spot(game_data->rules, stored, layout.cols, layout.rows, width, height, true);
+                    column < 0 || !d2d::rules::put_in_grid(game_data->rules, actor->character.items, actor->held, d2d::d2s::item_panel::kInventory, layout.cols, layout.rows, column, row)) {
+                    loot.enter(level);                       // the player's floor, as cmd::Drop: a respawn changes level without it
+                    loot.place(std::move(*actor->held), actor->player.x, actor->player.y, now_ms);
+                }
+                actor->held.reset();
+            };
             if (service_npc == d2d::rules::SiegeQuest::kLarzuk) {
                 if (!d2d::rules::quest::bit(quests(), d2d::rules::SiegeQuest::kQuest, 1) || !d2d::rules::socketable(item_rules, *actor->held)) return answer(false);
                 actor->held = d2d::rules::socket_item(item_rules, *actor->held);
                 siege.socketed(quests());
                 d2d::log::info("Siege on Harrogath: Larzuk put {} sockets in the {}", actor->held->sockets, actor->held->code);
+                put_back();
                 return answer(true);
             }
             if (service_npc == d2d::rules::BetrayalQuest::kAnya) {
@@ -274,6 +303,7 @@ auto World::deal(const Command& command, std::uint32_t now_ms) -> bool {
                 actor->held->owner = actor->character.header.name;
                 betrayal.personalized(quests());
                 d2d::log::info("Betrayal of Harrogath: Anya personalized the {}", actor->held->code);
+                put_back();
                 return answer(true);
             }
             if (service_npc != d2d::rules::monster_ids::kCharsi) return true;
@@ -283,6 +313,7 @@ auto World::deal(const Command& command, std::uint32_t now_ms) -> bool {
             actor->held = std::move(made);
             tools.imbued(quests());
             d2d::log::info("Tools of the Trade: Charsi imbued the {}", actor->held->code);
+            put_back();
             return answer(true);
         }
         if (const auto* run = std::get_if<cmd::Run>(&command)) { actor->running = run->running; return true; }
@@ -353,6 +384,11 @@ auto World::deal(const Command& command, std::uint32_t now_ms) -> bool {
  * facing.
  */
 auto World::apply(const Command& command, std::uint32_t now_ms) -> void {
+        if (const auto* say = std::get_if<cmd::Say>(&command)) {   // typed chat: to everyone in the game
+            if (!say->text.empty()) announce({ ev::Message::chat, actor->character.name, say->text.substr(0, 255) });
+            d2d::log::info("chat: {}: {}", actor->character.name, say->text);
+            return;
+        }
         // The character's own: through whatever the player's doing.
         if (const auto* stat_point = std::get_if<cmd::StatPoint>(&command)) {
             if (stat_point->stat < 0 || stat_point->stat > 3 || stat_point->count < 1) return;
@@ -396,14 +432,18 @@ auto World::apply(const Command& command, std::uint32_t now_ms) -> void {
             auto& header = actor->character.header;
             if (header.right_skill == std::uint32_t(kResurrectSkill)) header.right_skill = actor->right_before;   // co-op's Resurrect stays with no set
             header.weapon_set ^= 1;
-            const auto kept = [&](std::uint32_t id, bool left, std::uint32_t current) {
+            // FUN_00647960 on the hands now worn (0x561a1f / 0x561a8e): its status 7 (level 0) or
+            // 2 (the weapon gate, Throw's too: skill_refused) gives way.
+            const auto usable = [&](std::uint32_t id, bool left) {
                 const auto* skill = game_data->skills.get(int(id));
-                return skill && !skill->passive && (!left || skill->leftskill) && skill_level(*game_data, actor->character, int(id), {}) > 0 ? id : current;
+                return skill && !skill->passive && (!left || skill->leftskill) && skill_level(*game_data, actor->character, int(id), {}) > 0
+                    && !skill_refused(*game_data, actor->character, int(id));
             };
             std::swap(header.left_skill, header.left_swap);
             std::swap(header.right_skill, header.right_swap);
-            header.left_skill = kept(header.left_skill, true, header.left_swap);
-            header.right_skill = kept(header.right_skill, false, header.right_swap);
+            header.left_skill = usable(header.left_skill, true) ? header.left_skill : header.left_swap;
+            if (usable(header.right_skill, false)) right_skill_set(*actor, int(header.right_skill));   // FUN_005701b0 at 0x561aa9
+            else header.right_skill = header.right_swap;
             const auto* right = game_data->skills.get(int(header.right_skill));
             actor->aura = right && right->aura ? int(header.right_skill) : 0;
             return;
@@ -412,6 +452,7 @@ auto World::apply(const Command& command, std::uint32_t now_ms) -> void {
             if (select->skill == kResurrectSkill && (select->left || players.size() < 2)) return;   // the right button's, in co-op
             if (select->skill == kResurrectSkill && actor->character.header.right_skill != std::uint32_t(kResurrectSkill)) actor->right_before = actor->character.header.right_skill;
             (select->left ? actor->character.header.left_skill : actor->character.header.right_skill) = std::uint32_t(select->skill);
+            if (!select->left) right_skill_set(*actor, select->skill);   // FUN_005701b0 at 0x54bee4
             if (!select->left) if (const auto* skill = game_data->skills.get(select->skill)) actor->aura = skill->aura ? select->skill : 0;
             return;
         }
@@ -609,7 +650,7 @@ auto World::apply(const Command& command, std::uint32_t now_ms) -> void {
             return;
         }
         if (deal(command, now_ms)) {
-            if (actor->store.npc >= 0 && !actor->store.gamble) stocks[actor->store.npc] = actor->store;   // what the trade left in the vendor's stock
+            if (actor->store.npc >= 0 && !actor->store.gamble) stocks[{ level->id, actor->store.npc }] = actor->store;   // what the trade left in the vendor's stock
             return;
         }
         if (actor->pmode >= 0 && !actor->ghost) return;   // busy (a ghost, dead, only walks: the tick lets nothing else through)
@@ -629,6 +670,7 @@ auto World::apply(const Command& command, std::uint32_t now_ms) -> void {
                 return;
             }
             actor->player.path.clear();                                             // a click: a new path (FUN_006503f0 re-plans only a moved unit's)
+            actor->walk_pending = true;                                             // FUN_00548a50 sets it with the walk (LAB_00641f37)
             actor->attack_mon = actor->pick_item = -1;
             actor->take_warp = -1;                                                  // a click on a warp: go through it
             for (std::size_t i = 0; i < level->warps.size(); ++i)

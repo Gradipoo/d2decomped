@@ -382,6 +382,16 @@ lines (missile names aren't passed in). What it does:
   calc4 conversion, the element; SrcDam; FUN_0057dbf0; count − 1, and
   with hits left a new target from FUN_0056bd10 (handed the last one's id)
   and the next hit (FUN_0056e210). No ResultFlags.
+  The next hit comes on this action frame, not the swing's end:
+  FUN_0056e210 (ECX the unit, EDX = Param2, skill record +0x14c read by
+  FUN_004efc20) hands it to FUN_00553b10, which drops the unit's pending
+  mode events (FUN_00540e60 0 / 1) and starts the mode over from
+  (game frames played) × (100 − Param2) / 100 animation frames, then
+  queues its event 1..4 frames and its end (FUN_005417d0). Param2 is 100
+  for Zeal and Fury (from frame 0: calc1 − 1 action frames, then one whole
+  swing) and 60 for Fend. No target in reach: no FUN_0056e210, the swing
+  plays out and the hits left are lost. d2d: `Fight::repeat_hit`,
+  `test_zeal_chain`.
 - **Sacrifice**, start 29 (FUN_005ce790): hit check with toht; on a hit
   the physical from FUN_0057b420 with ED = **calc1**, calc4, the element,
   ResultFlags, flags | 1 (the physical is built: FUN_0057b7d0 skips its
@@ -408,13 +418,30 @@ lines (missile names aren't passed in). What it does:
   on from the attacker (FUN_00648cf0 / FUN_00648e40); no path, NU
   (FUN_0057f020). On a monster with no KB mode (MonStats2 bit 13) it's
   turned into a get-hit (flag 4); else mode 13 (FUN_005a7e60 /
-  FUN_005a7c20; start FUN_005a77d0: GH and KB modes, alive): path type 8,
-  5 subtiles, 10 for class 0x4e (sandleaper1); each frame along the path
-  (FUN_005a8630 -> FUN_00554ca0) till the mode ends, then FUN_005a8520:
-  GH (mode 3), a Sand Leaper instead thinking 15 frames on (45 stunned).
-  The player's KB is drawn as GH (PlrMode.txt). d2d: `Fight::land` and
-  `monster_update`'s KB (a monster), `Fight::knock` (the player), an even
-  slide over the mode (path type 8 adds no pace, 0x6eb648[8] = 0).
+  FUN_005a7c20; start LAB_005a77d0: FUN_0046c140 bits 3 and 13, MonStats2
+  mGH and mKB, alive): path type 8, 5 subtiles, 10 for class 0x4e
+  (sandleaper1); each frame along the path (LAB_005a8630 -> FUN_00554ca0,
+  its 2 at the path's end ignored) till the mode ends (FUN_006217c0), then
+  FUN_005a8520: the saved velocity back (FUN_00648dc0), GH (mode 3), a Sand
+  Leaper instead thinking 15 frames on (45 stunned).
+  A monster's KB draws its GH COF: MonMode.txt's row is `knockback GH KB`
+  (token GH), and no monster has a KB COF.
+  **The pace.** FUN_00623f50 gives a player in mode 0x13 or a monster in
+  mode 0xd path velocity 0x1000 (FUN_00648690, LAB_006240ca), whatever its
+  speed; path type 8 neither saves nor sets one (0x6eb690[8] = 0x1e6, no
+  0x2000 / 0x8000). FUN_00650840's step is velocity x dir >> 8 (FUN_006502d0,
+  FUN_0064fe40; dir from FUN_0064fc60's slope table at 0x6eb7e0, 4096 long),
+  one subtile a frame, snapping on the point once within a step on both axes
+  (FUN_00650090): 5 subtiles take 5 frames. A monster whose KB is shorter
+  stops where its mode ends. The player's KB frame is the walk's
+  (0x732c10[0x13] = FUN_00580c20), whose path end is NU (FUN_0057f020), so
+  its KB lasts the slide; it's drawn as GH (PlrMode.txt).
+  d2d: `Fight::knock_back` (gate: `can_get_hit`, `can_knock_back`),
+  `knock_slide` / `knock_moved` / `knock_ms` (ai.hpp), `npc_cof`'s KB token,
+  `Fight::hurt_side` (the player). `tools/emu/knock_pace.py` runs
+  FUN_00623f50, FUN_0064fe40 and FUN_00650090 on 2000 paths: velocity 0x1000
+  on all, frames all match, the step within 361 / 65536 subtile (the slope
+  table).
 - Record flags seen: 1 = the physical is built (FUN_0057b7d0 doesn't roll
   the weapon), 2 = don't run FUN_0057b7d0 at all, 0x1000 = self damage;
   FUN_0057b7d0 marks 0x20.
@@ -739,6 +766,28 @@ frame, `Hero::skill_delay`; startmana's state inferno is `Hero::burning`
 - Item elemental damage takes its mastery as a % (FUN_0057b7d0 →
   FUN_0057a8e0): fire 48/49 + 329, lightning 50/51 + 330, cold 54/55 +
   331, magic 52/53 + 357, poison 57/58 + 332.
+  - **FUN_0057a8e0** (EAX the mastery stat, stack `minDamageStat`,
+    `bonusStat`, `minPctBonus`, `rangePctBonus`, `accum`; EDI `unit`):
+    reads the mastery stat (`FUN_00625480`, `unit_stat_value`); under
+    0x800 (8 << 8) it returns `accum` unchanged (clamped to 0 or itself)
+    — the base damage isn't rolled at all below that mastery floor.
+    Otherwise it reads `minDamageStat` (the base min damage, already
+    `<<8` by the caller) and, when `bonusStat` isn't `~STR` (-1), adds
+    its value to both `minPctBonus` and `rangePctBonus`. Then it calls
+    `FUN_0057a880(mastery<<8, minPctBonus, unit, minDamageStat<<8,
+    rangePctBonus, accum)`.
+  - **FUN_0057a880** (ECX `range`, EDX `minPctBonus`, stack `unit`,
+    `min`, `rangePctBonus`; EAX `accum`): `range<=0` returns `accum`
+    unchanged (clamped to 0 or itself). Otherwise it rolls two
+    `FUN_00483360(value, pct, 100)` MulDiv percentages (`value*pct/100`):
+    `FUN_00483360(min, minPctBonus, 100)` added to `min` for the rolled
+    floor, and `FUN_00483360(range, rangePctBonus, 100)` added to
+    `range` for the rolled ceiling. `accum` gains the rolled floor; when
+    that floor is under the rolled ceiling, `RANDOM_RandomNumberSelector`
+    on the unit's own seed (`+0x20`) rolls the gap and adds it too. The
+    sum is clamped to 0. So the mastery % (plus any bonus stat) widens
+    both ends of the damage's own min/range roll, not a separate
+    "extra point" chance.
 - Built: `rules::passive_stats` (skills.hpp), `Fight::player_fighter`
   (the layer check, best value), `make_fighter` (342..344, 348, the
   elemental masteries), `monster_blow` (Weapon Block), `panel_stats` (Iron
@@ -838,7 +887,8 @@ frame, `Hero::skill_delay`; startmana's state inferno is `Hero::burning`
   Charged Bolt): calc1 missiles at the target, each with FUN_005c9290
   steering it. Do 22 (**FUN_005c9b50** → FUN_0056d400, the novas): 64
   missiles toward the offsets in 0x6e1288 / 0x6e1388, lasting
-  FUN_00663270 (the row's range) + calc1. A row with no Skill (Multiple
+  FUN_00663270 (Vel + VelLev x level / 8, a velocity: see the note below) +
+  calc1. A row with no Skill (Multiple
   Shot's) carries the weapon's damage at its SrcDamage (96).
   Built as `skill_missile` / `fire` (fight.hpp); a nova's missiles share
   their struck list, so a monster takes one hit from it. Not yet: the
@@ -846,6 +896,17 @@ frame, `Hero::skill_delay`; startmana's state inferno is `Hero::burning`
   other do functions
   (Guided Arrow 10, Strafe 12, Chain Lightning 26, Meteor / Blizzard 28,
   Fire Wall, Blaze, Inferno, Bone Spirit, Blessed Hammer, ...).
+
+`FUN_00663270(missile id, level)` reads the Missiles.txt row (table `0x96c794`,
+count `0x96c79c`, rows of `0x1a4`) and answers byte `+0x9a` (Vel) plus byte
+`+0x9b` (VelLev) x level / 8, 0 for an id outside the count or a null row.
+The multiply is a 32-bit signed `imul` and the division truncates toward zero.
+So the value is a velocity (missiles.md puts Vel/VelLev at those offsets;
+monster-ai.md and collision.md already call it velocity), not Range
+(`+0x96`); the "range" wording above is a
+mislabel, and what `FUN_0056d400` does with the argument was not traced.
+Run for real on three synthetic rows (the first with VelLev 0), 43 cases, nothing
+hooked: `tools/emu/skills_combat_helpers.py`. No d2d comparison.
 
 ### Auras (phase 5, part 1)
 - An aura skill's do runs on its pulse: **65** (FUN_005cf010, friendly:
@@ -861,6 +922,27 @@ frame, `Hero::skill_delay`; startmana's state inferno is `Hero::burning`
   with the aurastats (Conviction's resistances and defense) and a hit of
   the skill's element (FUN_0056e0c0 with the mastery; flags 0xd,
   HitClass +0x134, ResultFlags / HitFlags). **82** Redemption.
+- An aura's mana (FUN_00644b10, skill and level on the stack): Skills.txt
+  +0x18a mana plus +0x18c lvlmana x (lvl - 1), shifted by +0x188
+  manashift, in 256ths; no minmana floor (`rules::mana_formula`). In 1.14d
+  only Prayer (16, 3, shift 4) and Sanctuary (1, 0, shift 8) have one.
+  65 and 66 read it against stat 8 (mana, FUN_00625480). On a player
+  caster with less mana than that (0x5cf0b9..0x5cf0c4), 65 builds no
+  aurastats: they stay 0, so Prayer heals no one. After FUN_0056b7e0,
+  with the cost above 0 and a player caster (0x5cf229..0x5cf24d):
+  FUN_005cedc0's count (context +0x40: a unit whose stat it changed, for
+  hitpoints one not at its max) above 0 sets state 0x55 (nomanaregen,
+  FUN_00639db0) and calls FUN_0056c110(ECX caster, EDX cost), which takes
+  the cost off stat 8 (state 0x72: FUN_005d2b60 instead); a count of 0
+  clears 0x55. So a Paladin's Prayer draws its cost only on a pulse that
+  heals someone, and a merc's Prayer (not a player) costs nothing. While
+  0x55 is on, the player's mana a frame (FUN_005806f0, 0x580713) skips
+  the ManaRegen part: manarecovery (26) alone. A right skill set clears
+  it: FUN_005701b0 (0x5701db), for any skill but 5 (Left Hand Swing),
+  from C->S 0x3c (FUN_0054be70, 0x54bee4) and from the weapon switch
+  when its kept right skill is usable (FUN_005616a0, 0x561aa9). d2d:
+  `Fight::prayer_pulse`, `Hero::no_mana_regen`; Sanctuary's (66) side
+  isn't built.
 - FUN_00646d60 holds an aura's passive state off while the aura's state
   (+0x80) is on, so the passive stats hold either way.
 - Operands 49..53 (enma, exma, edma, enms, exms) are the elemental damage
@@ -869,10 +951,11 @@ frame, `Hero::skill_delay`; startmana's state inferno is `Hero::burning`
   aurastats in `update_fighters` (resists added over the panel, to 95),
   `aura_pulse` (Prayer's hitpoints heal; 66 / 81 strike monsters in
   range), `target_of` (the target state's resistances / defense while in
-  range), thorns_percent (131) on melee hits. Not yet: perdelay's reader
-  (taken as ticks), aurafilter's unit-flag, town and sight bits (below),
-  the merc in the aura, Sanctuary / Redemption's callbacks, Holy Freeze's
-  slow (its cold chills), mana (FUN_00644b10), the aura overlays.
+  range and taken by the aurafilter, as Holy Freeze's slow in
+  `monster_states`: `enemy_auras`), thorns_percent (131) on melee hits. Not yet: perdelay's reader
+  (taken as ticks), the merc in the aura, Sanctuary / Redemption's callbacks, Holy Freeze's
+  slow (its cold chills), Sanctuary's mana and its state 0x55
+  (FUN_005cf3a0), the aura overlays.
 - **aurafilter** (+0x50): dos 65, 66 and 81 pass it to FUN_0056b7e0
   (SkilPal.cpp lines 0x1f6, 0x2ba, 0x6ba), which runs the callback only on
   a unit within range that FUN_0056b3e0 takes (a filter of 0 is 0x583).
@@ -897,11 +980,15 @@ frame, `Hero::skill_delay`; startmana's state inferno is `Hero::burning`
   - Sanctuary 0xe786: undead that aren't bosses;
   - Holy Freeze 0x4a283: no prime evil.
 
-  d2d: `rules::aura_filter_takes` (`Fight::aura_takes`) in `enemy_pulse`
+  d2d: `rules::aura_filter_takes` is FUN_0056b3e0 on a monster, every bit
+  (below); `rules::aura_walk_takes` adds FUN_0056b7e0's own part (0 is
+  0x583, 0x2000 skips town rooms). `Fight::aura_takes` in `enemy_pulse`
   and `in_aura`, so a friendly aura's auratargetstate isn't drawn on a
-  monster. Not read: 0x80 / 0x400 (unit flags +0xc4 & 4 / & 8), 0x100 and
-  FUN_0056b7e0's 0x2000 (town rooms), 0x200 (line of sight,
-  FUN_0064e260), 0x20000 (FUN_00622c40), 0x80000 (state 0x56).
+  monster. `Fight::filter_takes` gives it the monster's mode (DD a corpse,
+  any other without life dying), MonStats npc, `targetable` for unit
+  flags 4 and 8 (flags 0xe), the level a town, and the line from the
+  walk's unit, mask 4 (in_reach's); never in melee (0x20000) nor just hit
+  (0x80000), which no Skills.txt row asks.
   Re-check: `python3 tools/ghidra/fn.py 0056b3e0` (and 0056b7e0, 005cf010,
   005cf3a0, 005d0920); the rows from Skills.txt's aurafilter column.
 - **FUN_0056b3e0 whole: the other unit types and the order** (cited,
@@ -927,15 +1014,19 @@ frame, `Hero::skill_delay`; startmana's state inferno is `Hero::burning`
   set; 0x80000 fails a target in state 0x56; 0x200 passes only when both
   units have a room and `FUN_0064e260` over their two positions
   (`FUN_0045adf0` / `FUN_0045ae20`, mask 4) returns 0 (a missing room
-  fails); no 0x200 → pass. d2d's
-  `aura_filter_takes` agrees on the monster bits it lists, with these
-  differences: it has no player / object / item / missile branches (an aura
-  only ever strikes a `Monster` here), no mode-0 exclusion for a monster
-  (`Fight::aura_takes` passes `dead = !alive()`; game.exe tells mode 0 and
-  0xc apart and passes only 0xc when 0x1000 is set), and 0x10000 does not
-  fail the MonStats +0xd bit 0 monsters. Those two are the DISAGREES (not
-  played out: no aura in the 1.14d rows above sets 0x1000, and which
-  monsters carry +0xd bit 0 is not read here).
+  fails); no 0x200 → pass. MonStats +0xd bit 0 is the **npc** column:
+  FUN_00651210's MonStats column table names "npc" (0x6ec678, the entry at
+  0x0065181c) with bit 8 of the dword at +0xc (inTown bit 0xa, lUndead 0xb,
+  interact 9 in the same table), and FUN_0056b3e0 tests it against the
+  mask byte at 0x6ce268 (1).
+  **Verified for a monster** tested by a caster that isn't a missile:
+  `tools/emu/aura_filter.py` runs FUN_0056b3e0 for real on 200,000 cases
+  (the modes, the unit flags, the npc byte and every bit's order; its
+  predicates hooked) and `test_aura_filter` matches each; the old
+  `aura_filter_takes` got 23,340 wrong (dying taken by 0x1000, npcs taken
+  by 0x10000, the unit-flag, town, melee, state and line bits unread).
+  d2d has no player / object / item / missile branches (an aura only ever
+  strikes a `Monster` here), and no missile caster.
 - A monster's curse or enemy-aura lowering of a resistance whose base is
   100 or more counts a fifth, truncated toward 0 (FUN_005c3540, from the
   callbacks of do 30, 65 and 66): `apply_target_stats` takes the base.
@@ -952,12 +1043,13 @@ frame, `Hero::skill_delay`; startmana's state inferno is `Hero::burning`
 - **38** (FUN_005d3e80): the skill's physical (FUN_0056e170) and element
   (FUN_0056e0c0) on everything within prgcalc n subtiles of the target
   (FUN_0056b7e0, aurafilter). **36** (FUN_005d4db0): a nova of the
-  count's missile round the target (FUN_0056d400), range FUN_00663270 +
-  calc1. **39** (FUN_005d3f90): prgcalc n² tries at random points within
+  count's missile round the target (FUN_0056d400), FUN_00663270 (Vel +
+  VelLev x level / 8, a velocity) + calc1. **39** (FUN_005d3f90): prgcalc n² tries at random points within
   prgcalc n subtiles of the target, a missile at each that lands on the
-  map. **37** (FUN_005d4e70 → FUN_005d4150), **143** (FUN_005d4f40 →
-  FUN_005d4870), **40** (FUN_005d5010 → FUN_0056ede0), **41**
-  (FUN_005d5080: random offsets ±20) aren't built.
+  map. **37** and **143** launch the ring below. **40** (FUN_005d5010)
+  stands the count's missile at the target (`Fight::prg`). **41**
+  (FUN_005d5080) aims each one at `seed % 0x28 - 0x14` on each axis
+  (`rules::release_spread_offset`; a (0, 0) pair is stored as x = 0x14).
 - A missile row with no Skill carries its own element by level
   (FUN_0064b100 / 0064b1d0 / 0064b2a0: EMin + MinELev brackets <<
   HitShift, ELen + ELevLen brackets): `rules::row_damage`.
@@ -1001,14 +1093,50 @@ frame, `Hero::skill_delay`; startmana's state inferno is `Hero::burning`
   spaces take the owner's item in the same slot, skipped if the owner has
   none) at item level `ilvl` and quality from +0x17 (outside 0..7: 0),
   through `FUN_00573b20`. So a summoned Valkyrie takes the rows from her
-  skill level on: the higher rows give better gear.
+  skill level on: the higher rows give better gear. The callers:
+  `FUN_00573cb0` (0x574235: a monster as it's made, no owner, oninit 1,
+  level and item level its level), `FUN_005c4470` (0x5c49c7: the pet's
+  owner, the skill level; the item level is the caller's argument when not
+  0, else min(max(3 × level, 1), the owner's level), 0x5c497c; the
+  Valkyrie's do 16 passes calc2, `FUN_00646ca0` on Skills +0x13c at
+  0x5dc2ec: ln56, 25 + 3 a level) and `FUN_005d6e70` (0x5d6fcd, the
+  Shadows). `FUN_00573b20` looks the code up (`FUN_00633640`; "    " finds
+  nothing, so no item), makes it as a drop (`FUN_00559ce0`), flags it
+  0x1000, sets its body slot and equips it (`FUN_005606b0`), its
+  durability then at its max. V: `tools/emu/mon_equip.py` runs
+  FUN_005d6b60 on 2000 calls over synthetic tables, `test_mon_equip`
+  (`rules::monster_gear`) matches every call and the seed after.
+- **What the gear does.** The items' stats join the monster's as a
+  hireling's do (merc-ai.md "Its gear"). A blow's physical
+  (`FUN_0057b420`, weapon argument 0 from `FUN_0057b7d0`) takes the
+  monster's weapon from its inventory (`FUN_00535bc0`: `FUN_0063c9b0`'s
+  hand item, the class check `FUN_006235a0` being for players and the
+  Shadows only) and, when `FUN_0063d340` says two-handed (`FUN_006289c0`,
+  Items +0x11c), reads stats 23 / 24, which only the weapon fills: the
+  mode's damage (`FUN_005a4f50` puts it in 21 / 22) goes unread. With a
+  one-handed weapon 21 / 22: the mode's and the weapon's together. With a
+  weapon there's no 1 / 2 floor. `FUN_00535d10` switches the weapons'
+  stat lists off only when `FUN_0057b7d0`'s third argument is set; the
+  melee and skill callers checked (0x56f178, 0x5d62f5) pass 0. So Blood
+  Raven's short bow and the Valkyrie's spears and pikes (all two-handed)
+  set their whole physical damage. d2d: `rules::gear_sum` /
+  `gear_damage`; a made monster's items are made from `Spawn::gear`'s
+  seeds in `spawn_monsters` (before a boss's mods scale them), a pet's in
+  `Fight::summon_one` (`test_valkyrie_gear`).
+- **Its gear never drops.** MonItemPercent.txt is loaded
+  (`FUN_00654f20` into `0x96d484`) but nothing reads TreasureClassPercent:
+  `0x96d484` is read only by the loader, its free (`FUN_00654fc0`) and
+  its row getter `FUN_00654fe0`, which nothing calls (stubs.md), and the
+  death's drop (`FUN_005a6830` → `FUN_005a6600` → `FUN_0055afa0` →
+  `FUN_0055a6d0`) calls no inventory function directly: it rolls the
+  treasure class only. Where the worn items go when the unit is freed
+  isn't traced.
 - Built: `Fight::pets` (a Monster each), `summon_skill` / `cast_summon` /
   `summon` / `pets_turn` / `pet_foe`; monsters take pets as foes; Raise
   Skeleton uses a Blood Moor corpse (`Monster::corpse_used`).
   `Monsters::row` ignores case (Skills.txt says ClayGolem). Not yet:
   FUN_005c4470's stats, sumskills (the skeletal mage's bolt, Fire Golem's
-  Holy Fire, Valkyrie's), sumumod, Skeleton / Golem Mastery
-  (FUN_005d6b60), pets' own think (NecroPet's since traced: pet-ai.md),
+  Holy Fire, Valkyrie's), sumumod, Skeleton / Golem Mastery, pets' own think (NecroPet's since traced: pet-ai.md),
   pets leaving the Blood Moor, Decoy, Shadow Warrior, the Druid's spirits
   and vines, Raven's hit count.
 
@@ -1023,13 +1151,12 @@ frame, `Hero::skill_delay`; startmana's state inferno is `Hero::burning`
   player's skill (sentrylightningbolt → Lightning Sentry), so the damage
   is the Assassin's skill at the trap's sumskill level.
 - Built: traps as pets (`Pet::shot_skill / shot_level / shots`,
-  `trap_shot`, `trap_turn`): every aidel ticks at the nearest monster
-  within aip4 subtiles; Charged Bolt Sentry's do 17 spread; spent after
-  Param1 shots (calc4 for Charged Bolt Sentry), untargetable. Not traced:
-  the AssassinSentry / DeathSentry AI functions (aip4 as range, shot
-  counts as published); not built: Wake of Fire / Inferno (do 125 / 95),
-  Death Sentry's corpse blast (do 55), Blade Sentinel / Fury / Shield,
-  Fire Blast / Shock Web (thrown traps).
+  `trap_shot`, `trap_fire`), untargetable. Their thinks are the traced
+  AssassinSentry / DeathSentry (pet-ai.md "The other thinks",
+  `Fight::pet_think_turn`); d2d's first guess at them (`trap_turn`: aip4 as
+  the range, the published shot counts) is gone, as no trap reached it.
+  Wake of Fire's do 125 (`kWakeOfDestruction`) and Blade Fury's do 48 have
+  no handler of their own.
 
 ### Do-function missiles (phase 6, part 1)
 - Tables: srvdofunc 0x7322b0, missile pSrvDoFunc 0x73c768, pSrvHitFunc
@@ -1109,9 +1236,15 @@ frame, `Hero::skill_delay`; startmana's state inferno is `Hero::burning`
   the aura events, sumumod, sumoverlay. **FUN_005d6b60** isn't a
   mastery: it's the pet's MonEquip.txt gear.
 - A pet's life and damage are MonStats' own columns (a skeleton 21 life,
-  1-2 damage in Normal, 30 / 42 in Nightmare / Hell), not MonLvl-scaled.
-  The Druid's and Raven's rows have no damage: the skill's physical
-  (MinDam + MinLevDam) is theirs. (Neither traced: the published values.)
+  1-2 damage in Normal, 30 / 42 in Nightmare / Hell), not MonLvl-scaled:
+  every player summon's row but hydra1 (no life) is noRatio (+0xc & 4),
+  which the stat init (FUN_00573cb0 -> FUN_006538a0) and the per-mode
+  damage (FUN_005a4f50) take as written; Align 1 (row +0x4c, read in the
+  emulator: necroskeleton 1, skeleton1 0) skips the players' life bonus
+  (FUN_00573930). The Druid's and Raven's rows have no damage: d2d gives
+  them the skill's physical (MinDam + MinLevDam). Not traced where
+  game.exe does: not in the summon (FUN_005c6910 / FUN_005c7390,
+  FUN_005c49e0, FUN_005c4470) nor FUN_005a4f50.
 - Do 149 (**FUN_005ce0b0**, NecromageMissile): srvmissilea + the mage's
   byte +0xf (necromage1..4: poison, cold, fire, lightning).
 - Do 144 (**FUN_005ca910**, Hydra): three at the target, sumskills at
@@ -1119,7 +1252,12 @@ frame, `Hero::skill_delay`; startmana's state inferno is `Hero::burning`
 - Do 58 (**FUN_005c56c0**, Revive): the corpse's monster rises with its
   own stats (FUN_006538a0), brought down to the owner's level and life
   when above it, then FUN_005c4470 (200 % life, Revive's speed and
-  damage %); the pet's time is calc2 frames.
+  damage %); the pet's time is calc2 frames. It is the corpse itself
+  (FUN_00553540: the unit cast at) on its own MonStats think:
+  FUN_005c55c0 sets its owner (FUN_0058f030) and its next think (event 2,
+  15 frames on) and swaps no AI (no FUN_005b0e00). d2d runs a stand-in
+  (`Fight::pets_turn`'s untraced branch): monster thinks don't take
+  monsters as targets yet.
 - Do 15 (**FUN_005dc000**, Decoy): the owner's look (FUN_00621ce0), life =
   owner's max life x calc3 %, the owner's level, gone in calc2 frames.
 - Do 49 (**FUN_005d6e70**, Shadow Warrior / Master): the owner's level
@@ -1147,8 +1285,36 @@ frame, `Hero::skill_delay`; startmana's state inferno is `Hero::burning`
   air: passes units, lands at its target), **51** (volcano debris):
   HitSubMissile1 there. **3** (bomb on ground): the skill's damage within
   aurarange. **7** (FUN_005a9fb0, Holy Bolt): sHitPar2 1 strikes only the
-  undead (FUN_0063e990), 2 demons (FUN_0063e940); with sHitPar1 it heals
-  allies by calc1. **9** (FUN_005aa250, Immolation Arrow): the damage
+  undead (FUN_0063e990), 2 demons (FUN_0063e940); with sHitPar1 non-zero
+  and an owner (`FUN_00552fd0`/`GetOwnerUnit`, the missile's caster) it
+  heals instead. The heal gate is `FUN_005542c0(caster, target, skill) ||
+  FUN_00554d20(caster, target, skill)` (re-decompiled to fix a
+  caster/target mix-up a prior pass had): `FUN_005542c0` requires both
+  non-null, the caster's type 0 (player) or target's type 1 (monster,
+  not mode — mode is a separate field), and bounds `skill` against the
+  Skills.txt count (`[0x744304]+0xba0`), its record's `+7` bit 1
+  (`gadwBitMasks[1]`, `0x6ce26c`, Skills.txt's TargetPet flag). It then
+  calls `FUN_0058f090(target, &owner_guid, &owner_type)`: for a monster
+  `target` with a resolved pet-owner chain (its own `pAiGeneral`), it
+  fills `owner_guid`/`owner_type` from that chain's own owner-GUID and
+  owner-type fields; otherwise it sets `owner_guid` to -1 and leaves
+  `owner_type` unchanged. `FUN_005542c0` passes only when `owner_type`
+  came back 0 and `owner_guid` equals the caster's own GUID — so
+  TargetPet only passes for a monster the caster itself owns. TargetAlly
+  (bit 0x1a, `FUN_00554d20`) is a player, or a monster owned by a
+  player, in the owner's party: `FUN_00540710` is -1 with no party, and
+  that fails, so a solo caster is not healed through this path. Not
+  traced: `FUN_00554d20`'s own body.
+
+  With the gate passed, the amount is `calc[0]` whole points (skill
+  `+0x138`, `FUN_00646ca0`) in 256ths plus a roll of `calc[1] - calc[0]`
+  in 256ths on the missile's own seed (`+0x20`, `RANDOM_RandomNumberSelector`/
+  `FUN_0045c3e0`); 0 or under falls back to `FUN_005a8910` of missile
+  stats mindamage/maxdamage (0x15/0x16). The result is added to the
+  target's life (stat 6), capped at max life; `ProgOverlay` (`+0x36`)
+  plays when set. Returns 1 (ends, no damage). When the gate fails, the
+  type/sHitPar2 check above runs instead (a strike, not a heal).
+  **9** (FUN_005aa250, Immolation Arrow): the damage
   within sHitPar1 (else calc1), fire over that ground (FUN_005a9530) for
   the arrow row's SHitCalc1 (+0x88) frames (0x8000), burning its own row
   (immolationfire: + Fire Arrow x 5 %).
@@ -1198,7 +1364,10 @@ frame, `Hero::skill_delay`; startmana's state inferno is `Hero::burning`
   at calc1 % (calc2 champion, calc3 unique, calc4 boss). **51**
   (FUN_005d76e0, Mind Blast): physical and stun within aurarange (or
   prgcalc), conversion through FUN_005d7680. **20** (FUN_005c9800 ->
-  FUN_005c96a0, Static Field): calc1 % of life within aurarange. **55**
+  FUN_005c96a0, Static Field): calc1 % of life within aurarange; its walk
+  (FUN_0056b7e0 from 0x005c98dd: the caster in EDX, x = y = 0) takes
+  Skills.txt +0x50 (0x8783), so a monster behind a wall (0x200, mask 4)
+  or in town isn't struck (`Fight::spot`, `filter_takes`). **55**
   (FUN_005c4df0, Corpse Explosion): the corpse's max life (FUN_006538a0) x
   calc1..calc2 %, half fire half physical, within aurarange / 2. **63**
   (FUN_005c5e60, Poison Explosion): srvmissilea clouds on the corpse. **27**
@@ -1208,7 +1377,9 @@ frame, `Hero::skill_delay`; startmana's state inferno is `Hero::burning`
 - Built: `Fight::burst / strike / area / spot / spot_skill /
   strike_bolts / land_range`, `Missile::ox / oy / turn / hit_at`,
   MonType undead / demon. Not traced / not built: Blessed Hammer's path
-  (a spiral out at a fifth of its speed), Holy Bolt's healing, Static
+  (a spiral out at a fifth of its speed), Holy Bolt's party heal and its
+  ProgOverlay (the pet heal is built; the draw uses the fight rng, not the
+  missile seed), Static
   Field's floor, Mind Blast's conversion, Volcano's frame window,
   Double Throw (the throwing weapons' missiles). Hit 2's ring
   (FUN_005a9370: Plague Javelin 23 clouds of 87 frames, `test_plague_ring`
@@ -1394,12 +1565,23 @@ frame, `Hero::skill_delay`; startmana's state inferno is `Hero::burning`
 
 ### The rest (phase 6, part 5)
 - Royal Strike's releases: **40** (FUN_005d5010: the count's missile
-  standing at the target, its meteor), **143** (FUN_005d4f40 ->
-  FUN_005d4870) and **37** (FUN_005d4e70 -> FUN_005d4150, Claws of
-  Thunder's third): a 64-direction scan (FUN_005d4680 / FUN_005d40f0) for
-  units within prgcalc (else aurarange), a missile at each with
-  FUN_004efc20 + 1 hops; **41** (FUN_005d5080): prgcalc of them toward
-  random points round the target.
+  standing at the target, its meteor). **37** (FUN_005d4e70 ->
+  FUN_005d4150, Claws of Thunder's third) and **143** (FUN_005d4f40 ->
+  FUN_005d4870) are not a unit scan. Each calls FUN_0059fa30 with flags 3
+  (start at the target, aim relative) once per ring entry, stepping
+  prgcalc entries (FUN_005d3da0; 0 falls through to aurarange at skill
+  +0x64) while the byte offset stays under 0x100. The 64 offsets are the
+  same list in both functions (radius about 30 subtiles), `kReleaseRing`.
+  After each create, FUN_004efc20(0x118) reads that skill's Param2
+  (+0x14c) and FUN_0064a710 stores it plus 1. 37 does that for every
+  missile. 143 does it only when the missile row is 0x238. The path
+  callback is FUN_005d40f0 for 37 (range capped at 77, velocity 10, then
+  a straight route) and FUN_005d4680 for 143 (the same cap, then a wobble).
+  d2d: `Fight::prg` aims the row's own velocity straight at the offset.
+  **41** (FUN_005d5080): prgcalc of them toward random points round the
+  target. Its offsets are `seed % 0x28 - 0x14` on each axis, and a (0, 0)
+  roll is stored as x = 0x14. d2d: `rules::release_spread_offset`
+  (`Fight::prg`, `test_release_spread`).
 - Do **60** (FUN_005c58b0, Bone Wall): a bonewall on the point, then two
   srvmissilea makers carrying calc2 / 2 (missile do 13 lays the rest).
   With P the first piece's spot (where FUN_0056d940 put it) and (dx, dy)
@@ -2054,6 +2236,12 @@ level <= 0 or a bad id, else FUN_00645b20(level, par1, par2) / (level, par3,
 par4) (diminishing returns); FUN_00644750 answers the signed short `+0x174`
 (reqlevel) plus the unit's own level in the skill, `0x7fffffff` for a bad id.
 FUN_00644750 has no null-unit check, unlike FUN_006447b0.
+`FUN_00645c10(level, id)` is the same shape as FUN_00645b70 / FUN_00645bc0:
+0 for level <= 0, an id outside `0 <= id < count` or a null row, else
+FUN_00645b20(level, dword `+0x158`, dword `+0x15c`) (which Skills.txt
+columns those are was not traced). Run with
+FUN_00645b20 hooked and its arguments logged, 15 cases:
+`tools/emu/skills_combat_helpers.py`. The interpolation and d2d are not compared.
 
 **A unit's skill levels**: FUN_006447b0 (fastcall unit, id) the level `+0x28` of
 FUN_006439b0(unit, id, -1), 0 for none. FUN_00644300 adds FUN_00644180's
@@ -2435,3 +2623,24 @@ closed the picker, selected Attack and pressed F1. The saved pre-fix executable
 reported the binding lost; the changed executable selected Fire Bolt. The
 committed keyboard test additionally reassigns a duplicate to F3 and reloads
 the actual saved character. These are d2d regression tests, not retail oracles.
+
+## `UNIT/PlrSkills.cpp`: skill-state maintenance helpers (static trace)
+
+The functions below are the remaining untouched entries assigned to this
+source file by `game-srcfiles.tsv`. These are static readings of the 1.14d
+binary; the table-data semantics are unresolved where noted, and no runtime
+parity is claimed. Recheck the bodies with
+`python3 tools/ghidra/fn.py 004d8a60 004d8b90 004d8d60 004d8d90 004d8e60 004d90f0 004d93b0 004d9480 004d9630 004d96b0`.
+
+| Address | Observed operation |
+| --- | --- |
+| `FUN_004d8a60` | Bounds-checks a skill-tree index against the global tree-row count, reads five signed 16-bit values from the row at stride `0x3c`, and calls `FUN_004d8660` three times for nonnegative fields at offsets `+0x0a`, `+2`, and `+4`, then once for nonnegative fields at `+6` and `+8`. The helper removes overlay rows; exact meaning of the five fields is not established here. |
+| `FUN_004d8b90` | Looks up the unit's stat list, reads stats `0x84` and `0x85`, computes a value from their ratio in thirds (1–3), and stores it as stat `0x163`. When that value rises, it clears old overlay ranges with `FUN_004d8a60` and emits stat events for newly reached row fields; when it falls, it calls `FUN_004d8660` twice per removed tier. The row fields are signed shorts at offsets `+2..+10`. |
+| `FUN_004d8d60` | Computes the same three-tier result from two values: starts at 3, drops to 2 when the second value is below one third of the first, and drops again below two thirds. The decompiler's register recovery leaves one input in ESI, so its full calling convention needs disassembly before reuse. |
+| `FUN_004d8d90` | For a validated skill-tree row, invokes overlay cleanup twice for each nonnegative field at offsets `+2`, `+4`, and `+6`. |
+| `FUN_004d8e60` | Recomputes stat `0x163` from stats `0x84` / `0x85`. On an increase, clears prior overlays and emits stat events for newly enabled signed-short fields; on a decrease, removes the paired overlay rows for the fields whose thresholds are no longer reached. |
+| `FUN_004d90f0` | Reads stat `0x15e` from the unit's stat list, validates it as a skill-row index, checks the row's signed field at `+0x10e`, then calls `FUN_004ba790(1)` only if `FUN_004ca900` also succeeds. The purpose of that row field and gate is not identified by this trace. |
+| `FUN_004d93b0` | Selects a unit's path coordinates (for path types 2 and 4–5, the stored target at path `+0xc/+0x10`; otherwise the path's current x/y), passes them to `FUN_00480c10`, then calls `d2d_ai_facing16` on the unit's path. |
+| `FUN_004d9480` | Validates a skill-tree row and skill index, calculates the effective skill level, then walks the row's two signed-short overlay intervals. In each interval it keeps a regular stride of rows based on the skill level and stat `0xa9`, adding a missing overlay or removing the others. |
+| `FUN_004d9630` | Removes every overlay row in the two inclusive intervals stored at skill-tree row offsets `+2..+4` and `+6..+8`. |
+| `FUN_004d96b0` | Validates the row's skill index and initializes a zeroed `0x5c`-byte argument record for `FUN_004cd540`, storing that skill index at local offset `+0x10`, the row's `+0x38` value (or 0 if negative) at `+0x2c`, and flag 1 at `+0x30`. The consumer's record semantics are not established here. |

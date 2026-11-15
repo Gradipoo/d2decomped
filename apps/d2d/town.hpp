@@ -34,6 +34,7 @@
 
 #include <ambient_dip.hpp>
 #include <d2s_items.hpp>
+#include <lan.hpp>
 #include <overlays.hpp>
 #include <panel_view.hpp>
 #include <quests.hpp>
@@ -211,6 +212,8 @@ struct Town {
     std::uint32_t net_drift_ms = 0;                          // since when d2d's player has been far from the host's (0: not)
     std::uint32_t net_follow_ms = 0;                         // when the host was last told where our walk is
     bool inv_close_down = false, char_close_down = false, tree_close_down = false;   // the inventory's / character panel's close button held
+    bool stash_close_down = false;                           // the stash's close button held (0x7bce38)
+    bool cube_close_down = false;                            // the Cube's close button held (0x7bce40)
     bool hold_interact = false;                              // the left press sent an Interact: the hold walks no more till it's done (LAB_00462b1d)
     int entry_level = 0;                                     // the level whose "entering" art last started (0: the game's first)
     std::uint32_t entry_until = 0;                           // shown till then (2 s from a level change)
@@ -322,6 +325,39 @@ struct Town {
     // screen (take_focus).
     struct CoopPlayer { int seat = 0, id = 0, colour = 0; PadPlayer pad; pad::Mapper mapper; std::vector<Command> orders; std::optional<Roster> roster; };
     std::vector<CoopPlayer> coop;
+    // --host (docs/design/lan-host.md): d2d players joined over the LAN, each a World
+    // player with its own View stream. lan_poll takes their joins, commands and
+    // leaves (once a frame); lan_publish sends each their View after the ticks.
+    struct LanPlayer {
+        int client = -1, id = 0; ViewEncoder view_enc; std::vector<Command> orders;
+        std::vector<std::byte> save;            // their .d2s as last sent (the Hello's, then each Save): the next one's base
+        std::uint32_t saved_ms = 0;             // when it was last sent (every kLanSaveMs while they play)
+    };
+    std::optional<d2d::net::lan::Host> lan_host;
+    std::vector<LanPlayer> lan_players;
+    void lan_poll();
+    void lan_publish();
+    std::size_t lan_cue_from = 0;                          // split levels: this turn's sounds start here in cues.due
+    // A joiner's character, built and sent to them (their machine keeps it). False if it couldn't be.
+    bool lan_send_save(LanPlayer& lan_player);
+    // A joiner gone: out of the World, never saved on this machine.
+    void lan_remove(LanPlayer& lan_player, const std::string& why);
+    // --connect: this d2d plays in a d2d host's game. Its World doesn't tick; the host's Views
+    // come in and are taken as publish takes the local one, its commands go out over the socket.
+    std::optional<d2d::net::lan::Client> lan_client;
+    std::string lan_lost;                         // why the host's game ended for us ("" while it's on)
+    const CharacterStore* lan_store = nullptr;    // where the host's Saves of our character go
+    bool lan_resyncing = false;                   // asked the host for a whole View, none applied since
+    int lan_views = 0;                            // Views from the host so far
+    // Goodbye to the host: its last Save of our character written, then out (Town::save on leaving).
+    void lan_leave();
+    void lan_client_frame(const Mouse& mouse, Audio& audio, std::uint32_t frame_ms);
+    // Our Level::npcs laid out as the host's (View::npc_keys): our rooms never come up
+    // (this World doesn't tick), and would in another order if they did.
+    void lan_take_npcs();
+    // A View's bytes taken as the screen's (publish's second half; the client's every View).
+    // `local`: the World's own View when it made these (a local game keeps its merc's FHR).
+    bool take_view(std::span<const std::uint8_t> bytes, const View* local);
     int lead_colour = 0;                          // the first player's seat colour (pad::Seats::colour)
     // A pad took seat `seat` (its colour `colour`): its roster comes up (a held seat's player stays).
     // `pad_now`: the pad as it is, so what it holds (the Start that seated it) isn't pressed in the roster.
@@ -332,6 +368,7 @@ struct Town {
     int lead_leaves();
     int handed_over = -1;                         // the seat a hand-over in the game menu gave seat 0 (main swaps the pads, frees the leaver's)
     int partner_left = -1;                        // the seat whose player Save and Exit logged out (main frees it)
+    bool quit_app = false;                        // iOS: Save and Exit should end the host app, not only the roster
     // A seat's player joins with `character` / leaves (saved).
     void coop_join(int seat, const Character& joining);
     void coop_leave(int seat);
@@ -435,6 +472,7 @@ struct Town {
     [[nodiscard]] std::optional<PadFocus> pad_focus() const;
     [[nodiscard]] std::vector<pad::Point> pad_snap_points() const;
     [[nodiscard]] const d2d::d2s::Item* bag_at(int mouse_x, int mouse_y) const;
+    [[nodiscard]] Scene::InvLayout touch_inv_layout() const;
     void pad_trade(int mouse_x, int mouse_y);
     void pad_drop(int mouse_x, int mouse_y);
     void drive_pad_hold(Mouse& mouse, float seconds);
@@ -454,23 +492,62 @@ struct Town {
     // Opt-in skill buttons. The sheet is <name>.padskills beside the .key;
     // an empty key_dir (--no-save) keeps it in memory only.
     bool touch_enabled = false;
+    touch::LastDevice last_device = touch::LastDevice::MouseKeyboard;
+    /** Touch on, last device is a finger/Pencil, and classic PC bottom bar suppressed. */
+    [[nodiscard]] bool touch_hides_classic_hud() const;
+    /** Field thumb cluster (move/skills/attack); false during panels, NPC, store, or speech. Automap overlay keeps it. */
+    [[nodiscard]] bool touch_shows_field_controls() const;
+    /** @deprecated Use touch_shows_field_controls for field chrome; touch_hides_classic_hud for HUD. */
+    [[nodiscard]] bool touch_compact_field() const;
+    void drive_touch_hold(float seconds);
     touch::Input touch_input;
     PadPlayer touch_player;
     std::map<std::string, skillpad::Sheet> touch_sheets;
     std::array<touch::Target, 4> touch_previews{};
     std::int64_t touch_item_finger = -1;
-    int touch_item = -1, touch_stock = -1;
+    int touch_item = -1, touch_stock = -1, touch_fingers = 0;
     std::uint32_t touch_item_start = 0;
     float touch_item_x = 0, touch_item_y = 0;
     int touch_panel_state = 0;
     bool touch_sold = false;
+    bool touch_item_drag = false;
+    int touch_identify_target = -1;
+    struct TouchPointer {
+        bool active = false, press = false, release = false;
+        float x = 0, y = 0;
+    };
+    TouchPointer touch_pointer;
+    touch::ItemSheet touch_sheet;
+    hold_confirm::Hold touch_hold;
+    float touch_hold_fraction = 0.f;
     std::string touch_item_hint;
     int touch_selected = skillpad::kEmpty;
+    int touch_learn_skill = -1;
+    int touch_tree_tap_skill = -1;
+    std::uint32_t touch_tree_tap_ms = 0;
     bool touch_attack_used = false;
-    PadPick touch_attack_pick;
+    std::int64_t touch_ground_finger = -1;
+    float touch_ground_x = 0, touch_ground_y = 0;
+    PadPick touch_attack_pick, touch_interact_pick;
     int touch_assign = skillpad::kUnset;
     std::string touch_feedback;
+    enum class TouchBindPhase { Off, PickSlot, PickSkill };
+    TouchBindPhase touch_bind = TouchBindPhase::Off;
+    int touch_bind_slot = -1;
+    int touch_bind_wheel_at = 0;
+    int touch_bind_wheel_page = 0;
+    bool touch_bind_hit = false;
+    std::int64_t touch_bind_finger = -1;
+    float touch_bind_origin_x = 0, touch_bind_origin_y = 0;
+    void touch_rebuild_bind_wheel();
+    void touch_open_bind();
+    void touch_close_bind();
+    void touch_apply_bind(int slot, int skill);
+    [[nodiscard]] int touch_bound_skill(int slot) const;
+    [[nodiscard]] int touch_store_panel_x() const;
     bool touch_event(std::int64_t finger, touch::Phase phase, float x, float y);
+    /** Facing plus resolve_skill: swipe-aim when directional or when pad_pick has no monster. */
+    void touch_refresh_skill_aim();
     void drive_touch();
     void draw_touch(std::vector<std::uint8_t>& framebuffer);
     void load_touch_sheet(const std::string& name);
@@ -635,6 +712,9 @@ struct Town {
     [[nodiscard]] QuestState quest_state() const { return { view.quest_log, view.game_quests, view.den_left, net_game != nullptr }; }
     int view_act() const;
     void toggle_quest_log();               // Q and the mini-panel (FUN_004a3fe0)
+    void toggle_inventory();               // I, C, T and the mini-panel (FUN_00455f20 via FUN_00453910)
+    void toggle_character();
+    void toggle_skill_tree();
     [[nodiscard]] QuestLogButton quest_log_button_now() const;
 
     // The client's side of a click: what it asks the server for

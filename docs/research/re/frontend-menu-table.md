@@ -89,15 +89,22 @@ add ID-based lookup when a subsystem needs it.
 
 ## LoD variant records (0x709010..)
 
-LoD moves the buttons LOWER and adds separate text-label records that
-overlay the button chrome. The button chrome uses the same handles;
-only the y coords shift:
+LoD moves four buttons LOWER. The button chrome uses the same handles;
+only the y coords shift. The title adds no other LoD records: CREDITS,
+CINEMATICS and EXIT are the classic ones (indices 0xd to 0xf) in both
+(`FUN_004336c0`, below).
 
 ```
 0x709010    6  264  324  ...  WideButton    SINGLE PLAYER  (was y=224)
 0x709040    6  264  366  ...  WideButton02  BATTLE.NET     (was y=266)
 0x709070    6  264  391  ...  NarrowButton  Gateway link   (was y=291)
 0x7090a0    6  264  433  ...  WideButton    OTHER MULTIPLAYER (was y=333)
+```
+
+The records after them aren't the title's (which screens add them is
+not traced):
+
+```
 0x709100..1c0  2 (five text-label boxes at x=319, w=169, h=26)
 0x7091f0..2b0  4 (five clickable rects, w=300, h=32)
 0x709370..3a0  1 (two hotspot markers)
@@ -106,6 +113,138 @@ only the y coords shift:
 0x7095b0      8 (kind 8 marker at (50,0), maybe click threshold?)
 0x709670    2 (326×341 sprite at (237,555), handle 0x779770 — some CharSelect asset)
 ```
+
+## The title screen (`FUN_004336c0`)
+
+A screen adds a record with `FUN_0042f430(ECX index)`, the record at
+`0x708d10 + index * 0x30` (tcpip-menu.md). On `FUN_004359d0`'s last path
+(config `+0x35e` not 2, 3 or 4, and `+0x35d` clear) it sets the mode
+`0x7795ec` to 0 (`0x435c19`) and, the first time (config `+0x35f`
+clear), runs `FUN_00435230` and sets `+0x35f`; after that it builds the
+title, `FUN_004336c0` (`0x435c45`). OTHER MULTIPLAYER's CANCEL builds it too
+(`0x434df0`).
+
+In order:
+
+1. `FUN_0043b9a0`: with a Battle.net client (`0x77abf0`) up, disconnect
+   it ("Disconnect from BNET"). Config `+0x37` = 0.
+2. `FUN_0043c4f0`: tear down the last screen (`FUN_0042f480`), add records
+   8, 6, 7 (TitleScreen and the two logo halves; record 5, the static
+   `Diablo2.dc6`, isn't added), the palette (`FUN_0042f2e0`), and
+   `FUN_00432ef0` (in language 9 it moves 16 records of other screens).
+3. With the expansion (`FUN_00408f20`): 0x12 (gateway, kept at
+   `0x7795ac`), `FUN_00431af0`, 0x11 (BATTLE.NET), 0x13 (OTHER
+   MULTIPLAYER), 0x10 (SINGLE PLAYER). Without: 0xa, 0xb (gateway,
+   `0x7795ac`), `FUN_00431af0`, 9, 0xc.
+4. `FUN_004fac90` (no `d2char.mpq` in the install path or the current
+   folder, and `DAT_0074c82c` 0): BATTLE.NET, OTHER MULTIPLAYER and the
+   gateway are disabled (`FUN_004f96f0(button, 0)`).
+5. 0xd CREDITS, 0xe CINEMATICS, 0xf EXIT, and 0x115: a text box (kind 4)
+   at (0, bottom 599), 200x40, font pair `0x7089c4` {1, 0} (Font16),
+   alignment 2. Its text is `"v %d.%d%c"` (`0x6d48d4`) with 1, 0xe, 'd':
+   "v 1.14d"; with config `+0x223` nonzero, `" %d"` (`0x6d48d0`) with
+   0x47 follows. `FUN_004fcff0(record, text, 0)` sets it.
+6. With `FUN_00514d80` (`DAT_008817c0`) nonzero, `FUN_005148f0(1)` turns
+   the frontend playlist on (sound.md "Frontend music").
+
+`FUN_00431af0` writes the gateway's label: the current gateway's name
+(the client's +0x98, `BNGatewayAccess::Name`) put in a TBL string
+(`FUN_00524a30`; which id is not traced), characters below 0x100 mapped
+through `0x730578`, then `FUN_005009d0`.
+
+The buttons' handlers (record +0x20, read from the table):
+
+| Index | Button | Handler |
+|---|---|---|
+| 9 / 0x10 | SINGLE PLAYER | `0x435cd0`: mode 0; a `*.d2s` in the save folder (`FUN_00430bc0`, `FindFirstFileA`) tears down and opens character select (`FUN_0043b080`), none opens character creation (`FUN_00435580`) |
+| 0xa / 0x11 | BATTLE.NET | `0x435d30`: mode 1, `FUN_00435330` (the realm and login screens, "Last BNet") |
+| 0xb / 0x12 | Gateway | `FUN_00434600`: the gateway list, one line per gateway, then `FUN_00431af0` |
+| 0xc / 0x13 | OTHER MULTIPLAYER | `0x430c50` (tcpip-menu.md); its OPEN BATTLE.NET, `0x435d10`, sets mode 3 and runs `FUN_00435330` |
+| 0xd | CREDITS | `0x4312c0`: teardown, a palette, records 0x29 and 0x2a |
+| 0xe | CINEMATICS | `FUN_00431600` |
+| 0xf | EXIT DIABLO II | `0x431c30`: `0x7795e8` = 0, `FUN_00515f50(0xb4)`, `FUN_004f9190` |
+
+d2d (`title_ui`, apps/d2d/frontend.cpp) has the seven LoD buttons, with
+the LoD positions with or without the expansion. It doesn't draw the
+0x115 version text. Its SINGLE PLAYER opens character select even when
+the save folder has no `.d2s`.
+
+## Button labels (`FUN_00500db0`, `FUN_00500c50`)
+
+A kind 6 record becomes a button with `FUN_00501290`; its draw is
+`FUN_00500db0` (control `+0x1c`). The control has x at `+0xc`, the bottom
+y at `+0x10`, the width at `+0x14`, the height at `+0x18` and the label
+at `+0x64`. After the chrome, the draw picks the label's font by the
+button's height (`0x500f7f`) and how far the baseline drops:
+
+| Height | Font (`+0x60`) | Drop |
+|---|---|---|
+| 0x23 and up | 9, FontExocet10 | 4 |
+| 0x20 | 10, FontRidiculous | 3 |
+| 0x15 to 0x22, but not 0x20 | 10, FontRidiculous | 2 |
+| up to 0x14 | 10, FontRidiculous | 1 |
+
+The font names come from the table at `0x6dc980` (`FUN_005013a0`; 9 is
+`0x6dc910`, 10 is `0x6dc900`), under `DATA\LOCAL\FONT\LATIN\`. The
+draw clears the colour `+0x264` to 0 every frame (`0x500fba`), so a
+label never changes colour on hover, press or when disabled. It then
+calls `FUN_00500c50(drop)` when the label isn't empty.
+
+`FUN_00500c50` sets the font (`FUN_00502ef0`). It reads the font's height,
+byte 10 of its `.tbl` (`FUN_00501a40`; `FUN_00501580` keeps the file at
+slot `+8`). It gets the label's width with `FUN_00501820`, then:
+
+- x = `+0xc` + (width `+0x14` − label width) / 2, or `+0xc` when the
+  label is wider than the button;
+- the baseline = `+0x10` − (height `+0x18` − font height) / 2 + drop;
+- pressed (`+0x44` and `+0x48`, or `+0x4c`: the same test that picks
+  the chrome's pressed frames), x − 2 and baseline + 2.
+
+With flag 0x40 at `+0x40` (`0x500cb4`) the button has two lines: the
+label at `+0x10` − 2 × ((height − font height) / 3) + drop, and the
+string with id `+0x270` (`FUN_00524a30`) under it at `+0x10` −
+(height − font height) / 3 + drop, each centred on its own width and
+both moved when pressed. The halvings and thirds round toward zero. `FUN_00502360` → `FUN_00501c30` draws
+the label at that point: colour 0, not centred again (0), draw mode 4.
+Each glyph's frame is placed with its bottom row on the baseline
+(`FUN_004f64b0`, the renderer's slot `+0x88`, DirectDraw `FUN_005120a0`).
+
+The slot hands the mode to `FUN_00511d70` (`0x512113`), which picks the
+blend table from `DAT_007c9150`: mode 0 → `[2]`, 1 → `[1]`, 2 → `[0]`,
+3 → `[0x41]`, 4 → `[0x42]`, 6 → `[0x43]`, and 5 none. `FUN_004fb010`
+fills that array: `[0..2]` the 75/25, 50/50 and 25/75 alpha tables
+(`0x7ee468`, `0x7fe468`, `0x80e468`), `[0x41]` the additive table
+(`0x7de468`), `[0x42]` the multiplicative one (`0x821b68`) and `[0x43]`
+the max-component one (`0x831b68`) (pl2.md has the PL2 offsets). So a
+label is multiplied onto the chrome: each channel fg × bg / 255, snapped
+to the nearest palette colour (`FUN_00605aa0`). FontExocet10's light
+pixels (indices 29 to 32) nearly vanish into the grey chrome, and its
+dark core (index 15) stays. A disabled button's chrome (mode 1, the
+chrome's draw through slot `+0x84`, `FUN_00511fb0`, which picks its table
+the same way) goes through the 50/50 alpha table.
+
+The heights in the `.tbl` header: FontExocet10 10, FontRidiculous 7. The
+capitals' frames: FontExocet10 is 18 rows, with ink in rows 2 to 14, and
+FontRidiculous is 14 rows, with ink in rows 4 to 12. On the title:
+
+| Buttons | Box rows | Baseline | Capitals' rows |
+|---|---|---|---|
+| SINGLE PLAYER (bottom 324, h 0x23) | 290..324 | 324 − 12 + 4 = 316 | 301..313 |
+| Gateway (bottom 391, h 0x19) | 367..391 | 391 − 9 + 2 = 384 | 375..383 |
+
+BATTLE.NET, OTHER MULTIPLAYER and EXIT follow the 0x23 row, and CREDITS
+and CINEMATICS the 0x19 row, at their own bottoms.
+
+d2d draws every frontend button's label this way (`draw_button_label`,
+apps/d2d/frontend.cpp, with `button_label_spot` in
+components/font/button_label.hpp). It used to draw them in Font16, whose
+capitals in the Sky palette are mostly index 31 (196, 196, 196) where
+FontExocet10's are mostly index 15 (12, 12, 8) with 29, 31 and 32, and
+3 to 5 rows low, opaque, with a gold hover and no press offset. It now
+multiplies the label onto the chrome in RGB, without the table's snap to
+the palette. It still greys a disabled button's label and draws its
+chrome opaque; game.exe keeps colour 0 there and draws the chrome
+through the 50/50 alpha table.
 
 ## Interpretation — layout convention
 
@@ -125,7 +264,7 @@ Working hypothesis after cross-checking the sprite dimensions:
   `(0, 599, 800, 600)`. Earlier notes said top-left; that put EXIT at
   y=568..603 (off-screen) and overlapped BATTLE.NET (y=366, h=35) with
   GATEWAY (y=391, h=25). Bottom-left stacks them flush. d2d converts with
-  `rec_top()` in apps/d2d/main.cpp. The label centres inside.
+  `rec_top()` in apps/d2d/main.cpp. The label sits as "Button labels" says.
 
 ## Follow-ups
 

@@ -272,6 +272,20 @@ mode 0xc; other barrels (class 0xb, mode 0) under 3 go off in turn):
   `tools/emu/blast.py` runs game.exe's own function (helpers hooked)
   against the port: 5000 cases, 3525 hits, every damage and seed alike.
 
+`tools/emu/ai_object_blast_damage.py` separately compares FUN_005df990 with
+compiled `object_blast` over 384 rolls at 100 percent damage. The fixture
+starts after a guaranteed hit; other damage percentages and the hit check
+are outside this comparison. From the worktree root, with `GAME_EXE` set to
+stock 1.14d:
+
+```sh
+mkdir -p build/ai-object-blast
+uv run --no-sync --project tools/emu python tools/emu/ai_object_blast_damage.py --cpp > build/ai-object-blast/cases.cpp
+c++ -std=c++23 -Icomponents -Icomponents/d2s -Icomponents/txt build/ai-object-blast/cases.cpp -o build/ai-object-blast/cases
+build/ai-object-blast/cases > build/ai-object-blast/cases.txt
+uv run --no-sync --project tools/emu python tools/emu/ai_object_blast_damage.py --cases build/ai-object-blast/cases.txt --exe "$GAME_EXE"
+```
+
 **Trap 8** (`FUN_005822f0`):
 
 - Count: one step of the seed at the start of the game's monster-region
@@ -514,8 +528,9 @@ Findings along the way:
   TotalPieces (+0xec) > 2 and the region has 13 types or fewer, rolling
   its component sets on the unit seed (FUN_005bdb20). TotalPieces is its
   own column, not a count of the layers present.
-- Blood Raven's oninit MonEquip bow (FUN_005d6b60): one own-seed roll,
-  then two game-seed steps for the item.
+- Blood Raven's and the flying scimitar's oninit MonEquip items
+  (FUN_005d6b60, skills.md "Summons"): one own-seed roll a row, then two
+  game-seed steps for each item made (`FUN_00559ce0`).
 - A MonPlace champion (FUN_0054e1e0): the leader and its MonStats party
   (FUN_005b2830), one unused own roll (FUN_005a48c0 -> FUN_005a0c00),
   then own(3) + 1 more champions at radius 4, each with its own party.

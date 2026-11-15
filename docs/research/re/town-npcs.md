@@ -70,6 +70,40 @@ AI control +0x20 is a circular list of commands, found by type
    stand 20 (FUN_005de080: the next think 20 frames on).
 2. Classes 0x109, 0x200, 0xff, 0xc9, 0xfe have their own steps first
    (Cain in Act 5, Larzuk, Ormus, Jerhyn, Alkor): none in Act 1.
+   - 0x109 (Cain, A1Q4): `Q04_GetCainPortalCoordinates`; over 2 off, walk
+     there; else `Q04_SetTristramActiveFlag`.
+   - 0x200 (A5Q4): `Q34_NpcSpawnPortalInAct5`, then falls through to the
+     commands below either way.
+   - 0xff (Ormus, the A3Q3 serpent cage): `Q20_GetSerpentLocation`; over 3
+     off, walk there; else Skill1 (8) at it and `Q20_ActivateSerpentObject`,
+     then returns (no commands this think). No location: falls through.
+   - 0xc9 (Jerhyn, A2Q4/A2Q7): `QUEST_ShouldBlockJerhyn` (`FUN_0059f570`, a
+     15-byte `BOOL` wrapper over `QUEST_CheckJerhynShouldBlock`) gates it:
+     clear → stand 0x28 (40), return. Set → `QUEST_JerhynNpcAILogic`
+     (`FUN_0059f580`, 668 bytes): bails (`*pbRunDefaultAi = 1,
+     *pbDelayNextMove = 0`) unless the Arcane Sanctuary quest has started
+     and its A2Q4 data's `bShouldSpawnJerhyn` is set, and both Arcane
+     Sanctuary and Seven Tombs are short of state 0xd with Seven Tombs
+     actually under way (`Q14_IsSevenTombsNotStarted` false). With all of
+     that and `bJerhynRelocated` still 0: once `Q14_IsSevenTombsAtState1`
+     fires `bJerhynWalkPending`, it scans every player and monster for
+     Duriel proximity (`IteratePlayerOrMonsterUnits` +
+     `Q14_CheckDurielProximity`) and walks Jerhyn to the harem-blocker spot
+     (`WalkToCoords`) once seen, else just delays (`*pbDelayNextMove = 1`,
+     no walk); once the walk's been issued and he's within 2 of the
+     blocker spot, it finds a free spot by the Duriel-portal object
+     (`GetFreeCoordinates_WithNeighboorRooms`, shapes 1 then 2 then 3) and
+     relocates him there (`SUNIT_RelocateUnit`), setting
+     `bJerhynInitial`/`bJerhynRelocated`. Back in the think: a nonzero
+     `*pbDelayNextMove` reschedules at 0x14 (20) frames regardless; a zero
+     `*pbRunDefaultAi` (the walk/relocate still in progress) returns right
+     there. Otherwise (nothing pending) it checks `Q12_CheckJerhynGateOpen`:
+     open, with the Jerhyn-gateway command (kind 10) already up, sets its
+     `nCmdArg[1]`/`[2]` to the unit's own X + 9 / Y and reschedules at 0x32
+     (50); closed, or no such command, falls through to the commands below.
+   - 0xfe (Alkor, the A3Q5 golden bird): while `Q22_IsGoldenBirdQuestActive`,
+     Skill1 (8) at it, then `Q22_ClearGoldenBirdQuestFlag`, and returns;
+     else falls through.
 3. FUN_005e68f0, the visitor (below): returns 0 with no player to heed
    and nobody talking, so the NPC goes on with its commands.
 4. FUN_005e6ae0, the commands:
@@ -98,6 +132,55 @@ AI control +0x20 is a circular list of commands, found by type
 
    It returns what the action did: 0 when already there.
 6. Nothing done: stand 8.
+
+`tools/emu/ai_town_path_actions.py` compares these five path actions with
+`npc_think` over 170 cases, holding point selection fixed and hooking movement,
+mode availability and command allocation. It compares movement and command
+fields, not pathfinding or the action return value. From the worktree root,
+with `GAME_EXE` pointing to stock 1.14d:
+
+```sh
+mkdir -p build/ai-town-path
+uv run --no-sync --project tools/emu python tools/emu/ai_town_path_actions.py --cpp > build/ai-town-path/cases.cpp
+c++ -std=c++20 -Icomponents -Icomponents/d2s -Icomponents/txt build/ai-town-path/cases.cpp -o build/ai-town-path/cases
+build/ai-town-path/cases > build/ai-town-path/cases.txt
+uv run --no-sync --project tools/emu python tools/emu/ai_town_path_actions.py --cases build/ai-town-path/cases.txt --exe "$GAME_EXE"
+```
+
+`tools/emu/ai_town_path_dispatch.py` uses the same cases to run FUN_005e7080
+and its selected actions. The cases have one path point and use the same
+seed, which selects that point; paths with no point and the no-selection
+branch are not checked. After generating the cases above:
+
+```sh
+uv run --no-sync --project tools/emu python tools/emu/ai_town_path_dispatch.py --cases build/ai-town-path/cases.txt --exe "$GAME_EXE"
+```
+
+`tools/emu/ai_town_return_home.py` compares the existing-home branch of
+FUN_005e6860 with `npc_heed` at 65 horizontal distances, including the
+16-subtile boundary. The no-home branch and two-dimensional distances are
+not checked; distance and command allocation are hooked.
+
+```sh
+mkdir -p build/ai-town-home
+uv run --no-sync --project tools/emu python tools/emu/ai_town_return_home.py --cpp > build/ai-town-home/cases.cpp
+c++ -std=c++20 -Icomponents -Icomponents/d2s -Icomponents/txt build/ai-town-home/cases.cpp -o build/ai-town-home/cases
+build/ai-town-home/cases > build/ai-town-home/cases.txt
+uv run --no-sync --project tools/emu python tools/emu/ai_town_return_home.py --cases build/ai-town-home/cases.txt --exe "$GAME_EXE"
+```
+
+`tools/emu/ai_town_linger.py` compares the active-linger branch of
+FUN_005e6ae0 with `npc_think` over 85 horizontal distances and remaining
+counts. Command lookup, distance and movement are hooked; later branches of
+the function are not checked.
+
+```sh
+mkdir -p build/ai-town-linger
+uv run --no-sync --project tools/emu python tools/emu/ai_town_linger.py --cpp > build/ai-town-linger/cases.cpp
+c++ -std=c++20 -Icomponents -Icomponents/d2s -Icomponents/txt build/ai-town-linger/cases.cpp -o build/ai-town-linger/cases
+build/ai-town-linger/cases > build/ai-town-linger/cases.txt
+uv run --no-sync --project tools/emu python tools/emu/ai_town_linger.py --cases build/ai-town-linger/cases.txt --exe "$GAME_EXE"
+```
 
 So an NPC picks a random point of its path two thinks in three, walks
 there and lingers 12 (or 20) thinks of 10 frames, walking back when pushed

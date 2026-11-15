@@ -375,6 +375,8 @@ def act1():
     if os.environ.get("QUESTS_STOP") == "6":                # debugging: leave d2d up at this point
         print("STOP", sock_path, log_path, flush=True)
         time.sleep(1800)
+    # Its start timer (0x14) is quest steps: 21 of 20 frames, 16.8 s from the malus's return.
+    until("Sisters to the Slaughter available", lambda: re.search(r"states=(\d+,){5}1 ", cmd("debug quest 6 show")), 30)
     topic("Cain")
     assert bits(6) & 0x4, f"Cain didn't give quest 6: {cmd('debug quest 6 show')}"
     go(37)
@@ -468,7 +470,7 @@ def act2():
     # a2q3: The Tainted Sun. The Lost City's dark; the altar in the Claw
     # Viper Temple (61) brings the sun back and gives the Viper Amulet.
     go(44)
-    until("the sun goes dark", lambda: "dark=true" in cmd("debug quest 11 show"), 10)
+    until("the sun goes dark", lambda: "dark=true" in cmd("debug quest 11 show"), 20)   # rand(17) ticks: up to 18 quest steps, 14.4 s
     go(61)
     altar = [o for o in presets()[0] if o[1] == 149]
     assert altar, "no Tainted Sun altar"
@@ -529,6 +531,7 @@ def act2():
     cmd("debug kill")
     operate(chest_room[0][0])
     assert bits(10) & 1 and "[hst " not in cmd("items"), f"the orifice didn't take the staff: {bits(10):#x}"
+    until("the way down to Duriel", lambda: any(line.startswith("6\t") for line in cmd("debug portals").splitlines()), 20)   # its timer: 18 ticks, 19 quest steps (15.2 s)
     take_portal(6, 73)
     cmd("debug kill")
     until("Duriel's death counts", lambda: show(14, "tombs") == 3, 10)
@@ -782,14 +785,15 @@ def act4():
         cmd(f"debug operate {seal[0]}")
         kill_until("its boss dead", lambda: True, 1)
     kill_until("the seals broken", lambda: "the seals are broken" in log_text())
-    until("Diablo comes", lambda: "Terror's End: Diablo" in log_text(), 10)
+    # The release's quake (shake.hpp: 6 to 10 s) and taunt (10 s) come before Diablo does.
+    until("Diablo arrival's quake reaches the camera and loop", quake_on, 10)
+    until("Diablo arrival's remaining-frame taunt", lambda: any(row.split(':')[0] == '4638' for row in state()['sfx'].split(',')), 10)
+    until("Diablo comes", lambda: "Terror's End: Diablo" in log_text(), 25)   # the release's 10th run: 20 quest steps, up to 16 s
     # Only players in his room or one next to it take part (FUN_005b5140): by him first.
     until("Diablo made", lambda: any(l.startswith("diablo\t") for l in cmd("monsters").splitlines()), 30)
     diablo = [l.split("\t") for l in cmd("monsters").splitlines() if l.startswith("diablo\t")][0]
     cmd(f"debug warp {int(float(diablo[1]))} {int(float(diablo[2])) + 3}"); time.sleep(1)
     kill_until("Diablo dead", lambda: "Diablo is dead" in log_text())
-    until("Diablo arrival's quake reaches the camera and loop", quake_on, 10)
-    until("Diablo arrival's remaining-frame taunt", lambda: any(row.split(':')[0] == '4638' for row in state()['sfx'].split(',')), 10)
     assert bits(0x1a) & 0x2001 == 0x2001, f"word 0x1a: {bits(0x1a):#x}"
     go(103)
     talk_until("Tyrael", lambda: bits(0x1a) & 0x200, "Tyrael's portal not given")

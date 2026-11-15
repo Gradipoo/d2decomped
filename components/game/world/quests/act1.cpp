@@ -165,10 +165,15 @@ auto World::act1_said(int hc_idx, int message_string) -> void {
     }
 
 auto World::act1_tick() -> void {
-        if (andy.tick() && level->id == d2d::rules::level_ids::kCatacombsLevel4) actor->portal_due = true;   // tick 10 of her death (FUN_00596490)
+        tower_treasure(day_at);
+    }
+
+auto World::act1_quest_step() -> void {
+        if (andy.tick() && level->id == d2d::rules::level_ids::kCatacombsLevel4) actor->portal_due = true;   // her timer's 10 (FUN_00596490)
         burial.tick();
         tower.tick();
-        tower_treasure(day_at);
+        if (den_log_in > 0 && --den_log_in == 0 && den.state == 4) den.log = 5;   // LAB_00590230: "Return to Akara", only still cleared (0x590232)
+        if (stones_portal_in > 0 && --stones_portal_in == 0) stones_portal();      // 0x59366e -> FUN_00592d50
     }
 
 auto World::act1_alert(int hc_idx) -> bool {

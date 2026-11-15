@@ -677,6 +677,19 @@ ids).
   taken as a left panel open **(?)**), baselines 20 + 15 a line (0x5f
   when `FUN_004538d0` **(?)**), each on a dark box (`FUN_0046efd0`: x − 5,
   baseline − 14, the width + 10, 16 high, colour 0, mode 1).
+  `FUN_0049e3a0` (ECX text, EDX kind byte): a 0x26-byte node from
+  `FUN_0040b380` (line 0xd46): six line pointers at +0, a u16 line count
+  (at most 6) at +0x18, the kind at +0x1a, the expiry at +0x1e, next at
+  +0x22. The queue head is `DAT_007bf1e4`, its count a u16 at
+  `DAT_007bf1e8`; a head chain of a different length than count - 1 is a
+  fatal error (`FUN_00681e09(-1)`). Lines past six are freed; one line of
+  kind 4 also goes to the ignore list's vtable slot +0x18. When the queue's
+  lines total more than 18 one head is dropped (once, not repeatedly) and
+  the count goes back. `tools/emu/ui_client_helpers.py` runs it for 113
+  cases with the allocator, free, line wrapper, font, draw and refresh
+  callees, GetTickCount and the fatal report hooked (the wrapper returns a
+  scripted line list); the ignore list's own work, wrapping and d2d are not
+  checked.
 - **The chat edit box** (`FUN_0047b720`, `.\UI\chat.cpp`; UI flag 5 is
   the box open, `FUN_00455f20(5, 1)` shuts it while `DAT_007a0620` **(?)**):
   FontInGameChat (0xd); a dark box (`FUN_0046efd0` colour 0, mode 1) at
@@ -696,12 +709,18 @@ ids).
   (`FUN_00525150`; 7 stays on this path): return 0 when the unit at the
   index is `_isspace` (`00687006`, `DAT_0096dfe4` is 0, ctype bit 8, so
   9..13 and 32), and 1 when the previous unit is. The space stays on the
-  line. `FUN_005028e0` flag 1 drops one leading space. No break in the
-  prefix: cut on the last glyph that fits, one glyph if it is over. A
-  line that ends on the last unit (the index walks to the length) is
-  followed by an empty line; a remainder that fits, including the early
-  whole-string return, is not. d2d's box does this for bytes. Ids 6, 8
-  and 9 are not ported. The shrink at `0x502b60` repeats that search
+  line. Ids 6, 8 and 9 read only that 16-bit unit: return 0 for 0x2026,
+  0x3001, 0x3002, 0xff01, 0xff0c, 0xff0e, 0xff1f, 0xff61, 0xff64, for
+  0x30..0x39, 0x41..0x5a, 0x61..0x7a, and for 0xff10..0xff19,
+  0xff21..0xff3a, 0xff41..0xff5a, and 1 for any other unit. `FUN_005028e0`
+  flag 1 drops one leading space. No break in the prefix: cut on the last
+  glyph that fits, one glyph if it is over. A line that ends on the last
+  unit (the index walks to the length) is followed by an empty line; a
+  remainder that fits, including the early whole-string return, is not.
+  d2d's box does this for bytes and takes the language id (0 when the
+  caller leaves it unset). A byte is below 256, so ids 6, 8 and 9 apply
+  the ASCII letter and digit tests only. The code points above 255 are
+  not applied. The shrink at `0x502b60` repeats that search
   when the saved width is still over the limit; the first search stores
   a width that already fits before the walk back, so that path is not
   taken.
@@ -733,7 +752,22 @@ ids).
 - **0x7f party member** (10): +1 u8 is player, +2 u16 life %, +4 u32 id,
   +8 u16 area.
 - **0x8b relationship** (6): +1 u32 id, +5 u8 (roster +0x30).
-- **0x8c player relation** (11): +1 u32 id, +5 u32 id, +9 u16 flags.
+- **0x8c player relation** (11): +1 u32 id, +5 u32 id, +9 u16 flags. One
+  sender is `FUN_0053de20` (ECX unused, EDX the first id, stack the
+  second id and the u16, `ret 8`): builds `{0x8c, id1, id2, flags}` and
+  passes it to `FUN_005538d0` (UNIT/PlayerList.cpp). Its caller
+  `FUN_0055b4c0(param_1, player, record)` (ECX `param_1`, passed through
+  unused; EDX `player`; stack `record`; `ret 4`) resolves `player`'s data
+  (`FUN_006221a0`, fatal on a bad `player`) and does nothing when `player`
+  and `record` are the same pointer. Otherwise it looks up the relation
+  list at `player`'s data `+0x38` for the node whose id (`+0`) is
+  `record`'s id (`+0xc`, or -1 when `record` is null); a match's word
+  (`+4`) sends `FUN_0053de20(param_1, player's own id (`+0xc`), that key,
+  that word)` — `{0x8c, player's id, record's id (or -1), the node's
+  word}`. No match, no send. One branch on `player`'s own nullness is
+  unreachable (`FUN_006221a0` already faults on that). Not traced:
+  `FUN_0055b4c0`'s own callers, `param_1`, or what the id/word pair mean
+  (friend, ignore, hostile).
 - **0x8d assign party** (7): +1 u32 id, +5 u16 party (roster +0x22).
 - **Party portraits** (`FUN_00494020`): the other players in our party
   (`FUN_00493b50`), then the merc (`FUN_00493ce0`) and pets by PetType.txt
@@ -1313,3 +1347,59 @@ if found, calls `FUN_0053da90(client player unit from FUN_00537860, found
 unit)` (the 0x75 packet). Its one caller `FUN_00571f90` (`00571ff0`) passes the
 id at record +0xc, the class byte at +4, the name pointer at +0x14 and two
 words of its frame. Re-check: `python3 tools/ghidra/fn.py 0053e8f0 00571f90`.
+
+### Read from the disassembly: more SCmd.cpp builders
+
+These builders were read in the disassembly (register and stack arguments,
+`ret n`, the stores into the packet and the queue call). The queue is
+`FUN_0053b280(buffer, size)` with the client in EDI, as above. The
+emulator has not run them. Offsets are into the packet, and a0, a1 ... are
+stack words in order.
+
+| Builder | Size | Packet |
+|---|---|---|
+| `FUN_0053b400` | 5 | id (DL), u32 a0 at +1 |
+| `FUN_0053c1d0` | 0xa | id (DL), u32 a0 at +1, u8 a1 at +5, u32 a2 at +6. A word a1 of 0xff or more is fatal (line 0x4b8, file string `0x6cc837`) |
+| `FUN_0053cab0` | 2 | 0x77, u8 DL at +1 |
+| `FUN_0053cad0` | 0x15 | the 0x15 bytes of the structure at EDX (the id is its first byte, set by the caller) |
+| `FUN_0053cbe0` | 6 | 0x79, u8 a0 at +1, u32 EDX at +2 |
+| `FUN_0053d220` | 8 | 0x3f, u8 at +1 (a0 when the stack word a1 is 0, else 0xff), u32 at +2 (`[EDX+0xc]`, or 0 when EDX is null), u16 a3 at +6. The stack word at +0x10 is not read |
+| `FUN_0053d270` | 0xd | 0x40, u32 at +1 (`[EDX+0xc]`, or 0xffffffff when EDX is null), u32 a0 at +5, u32 a1 at +9 |
+| `FUN_0053d330` | (wrapper) | `FUN_0053cef0(a0, 0x13, a1, 0)` with ECX and EDX as they came in; `FUN_0053cef0` is the 0x9d builder |
+| `FUN_0053d370` | 0xb | 0x47, u8 at +1 (low byte of `[EDX]`, or 6 when EDX is null), +2 zero, u32 at +3 (`[EDX+0xc]`, or 0xffffffff when EDX is null), +7 to +10 zero |
+| `FUN_0053d3c0` | 0xb | 0x48, u8 at +1 (low byte of `[EDX]`, or 6 when EDX is null), u8 a0 at +2, u32 at +3 (`[EDX+0xc]`, or 0xffffffff when EDX is null), +7 to +10 zero |
+| `FUN_0053d6d0` | 7 | id (DL), u8 a0 at +1, u32 a1 at +2. The third stack word is not read |
+| `FUN_0053d7b0` | 7 | the 7 bytes of the structure at EDX (u32 at +0, u16 at +4, u8 at +6) |
+| `FUN_0053d830` | 0x26 | the 0x26 bytes of the structure at EDX |
+| `FUN_0053d840` | 0x2a | the 0x2a bytes of the structure at EDX |
+| `FUN_0053d850` | 8 | 0x11, u8 DL at +1, u32 a0 at +2, u16 a1 at +6 |
+| `FUN_0053d880` | 0xe | 0x57, u32 EDX at +1, u8 a0 at +5, u16 a1 at +6, u16 a2 at +8, u16 a3 at +0xa, u16 a4 at +0xc (`ret 0x14`) |
+| `FUN_0053d900` | 7 | 0x60, u8 at +1 (low byte of `FUN_006222c0(unit)`), u8 at +2 (`[[unit+0x14]+4]`, read with no null test), u32 at +3 (`[unit+0xc]`) |
+| `FUN_0053d9c0` | 7 | 0x65, u32 EDX at +1, u16 a0 at +5 |
+| `FUN_0053da10` | 0x20 | the 32 bytes of the structure at EDX (the caller sets the id) |
+| `FUN_0053da40` | 0xa | 0x74, u8 a1 at +1, u32 at +2 (`[EDX+0xc]`, or 0xffffffff when EDX is null), u32 at +6 (`[a0+0xc]`, or 0xffffffff when a0 is null) |
+| `FUN_0053db20` | 8 | 0x7b, u8 DL at +1, u16 at +2 (a0 & 0xfff, with 0x8000 set when the stack word a1 is not 0), u32 a2 at +4 |
+| `FUN_0053db70` | 5 | 0x7e at +0. The four bytes after it are not written, so the queue copies what is on the stack (bugs.md #113) |
+| `FUN_0053db90` | 0x1d | 0x82, u32 at +1 (`[P+0xc]`), 16 bytes at +5 (the name from `FUN_006221a0(P)`, copied by `FUN_004135d0` with count 0x10), u32 a0 at +0x15, u32 a1 at +0x19. P is found in two steps: `FUN_00552f60(client, type 2, a0)` gives the first unit, `FUN_00552b10` on it gives an id, and `FUN_00552f60(client, type 0, id)` gives P. Sent only when both lookups find a unit |
+| `FUN_0053df50` | 0xa | the callback of `FUN_0053df80`: ECX is the unit (the walker's EDX), the stack word the record pointer (`ret 4`). Calls `FUN_005531c0(0xbff)` with ECX = unit, then queues the record with EDI set to that result, so the walker's client is not the queue target. `FUN_005531c0` returns 0 when the unit is null or its first dword is not 0; otherwise the dword at +0x9c of `FUN_006221a0(unit)` |
+| `FUN_0053df80` | (none) | not a sender here: it stores a 10-byte record (0x8e, u8 a1 at +1, u32 EDX at +2, u32 a0 at +6) and passes its address to `FUN_005538d0` with EDX = 0x53df50 (the callback, `FUN_0053df50`, below). `FUN_005538d0` walks the client's unit lists (the 0x80 heads at client +0x1120, the link at unit +0xe4) and calls that routine for each unit where `FUN_00639df0(unit, 7)` is 0 |
+| `FUN_0053dff0` | 6 | the 6 bytes of the structure at EDX (u32 at +0, u16 at +4) |
+| `FUN_0053e0a0` | 7 | 0x98, u32 EDX at +1, u16 a0 at +5 |
+| `FUN_0053e0e0` | 7 | 0x9b, u16 DX at +1, u32 a0 at +3 |
+| `FUN_0053e110` | 1 | 0x97 |
+| `FUN_0053ec00` | (none) | a wrapper: `FUN_0053eae0(0, a0, 0)` with ECX and EDX as they came in |
+
+**`FUN_0053cdf0`** (EDX the unit; a null unit is fatal, line 0x72a) sends up
+to two packets. The first is 10 bytes, 0x7f, sent when `FUN_0053cd80`
+returns nonzero: +1 is 1 when the dword at unit +0 is 0, else 0; +2 is the
+low word of `FUN_00621f20(unit)`, or 0xffff when that value is 0xffff or
+more (signed compare); +4 is `[unit+0xc]`; +8 is the low word of
+`FUN_0061a1b0(FUN_00620bb0(unit))`. `FUN_0053cd80` takes the zero-extended
+0x61a1b0 word as its stack argument, the client's player unit (from
+`FUN_00537860(client, 0)`) in ECX and the 0x621f20 value in EDX. The second is
+13 bytes, 0x90, sent when the +1 flag is nonzero and `FUN_006416d0(player
+unit, unit)` is above 0x32 (signed): +1 is `[unit+0xc]`, +5 is
+`FUN_0045adf0(unit)`, +9 is `FUN_0045ae20(unit)`.
+
+Re-check: `python3 tools/ghidra/fn.py 0053cdf0 0053d220 0053db90`, and read
+the same addresses in the disassembly (`ret n` and the stores).

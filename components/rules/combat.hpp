@@ -18,6 +18,7 @@
 #include <limits>
 #include <optional>
 #include <span>
+#include <string_view>
 #include <tuple>
 #include <utility>
 #include <vector>
@@ -63,6 +64,7 @@ struct Fighter {
     bool knockback = false;
     bool prevent_heal = false;                      // stat 117 (item_preventheal)
     int hit_class = 1;                              // the weapon's (Weapons.txt hit class; 1 hand to hand), FUN_00623c20
+    int attack_start = 0;                           // the frame an A1 swing starts on with this weapon (attack_start_frame)
     int life_steal = 0, mana_steal = 0;             // %
     int ias = 0, wsm = 0, frw = 0, fhr = 0, fbr = 0, fcr = 0;
     int sias = 0;           // stat 68 attackrate the states give (auras, skills): added raw, not diminished (FUN_00623f50, 0x6241e7)
@@ -204,9 +206,43 @@ inline int attack_speed(int rate, int ias, int wsm, int sias = 0) {
     const int eias = std::clamp(effective_speed(ias) - wsm + sias, -85, 75);
     return std::max(rate * (100 + eias) / 100, 1);
 }
-inline int attack_ticks(int frames, int rate, int ias, int wsm, int sias = 0) {
-    const int speed = attack_speed(rate, ias, wsm, sias);
-    return (256 * frames + speed - 1) / speed;
+// The tick animation frame `frame` is reached on, counted from the tick a mode starts, when it starts on frame `start` and
+// plays `speed` / 256 frames a tick: FUN_005539b0 files the strike there, max(1, ceil(256 (frame - start) / speed)), and the end of the swing
+// (game.exe's floor for the end is 2 ticks: the two differ only when one tick covers the rest of the animation, no player record's case)
+// (tools/emu/swing_start.py runs it).
+inline int frame_tick(int frame, int start, int speed) {
+    return std::max(1, (256 * (frame - start) + speed - 1) / speed);
+}
+inline int attack_ticks(int frames, int rate, int ias, int wsm, int sias = 0, int start = 0) {
+    return frame_tick(frames, start, attack_speed(rate, ias, wsm, sias));
+}
+// The tick a swing strikes on: its action frame (the AnimData flag byte), the same clock as attack_ticks.
+inline int attack_action_tick(int action, int rate, int ias, int wsm, int sias = 0, int start = 0) {
+    return frame_tick(action, start, attack_speed(rate, ias, wsm, sias));
+}
+
+// The frame a player's A1 or A2 swing starts on (FUN_00623b10, 0x623b88 .. 0x623bfa; every other mode and a monster start on frame 0):
+// the weapon in hand (FUN_00623990) gives its class key (FUN_00629fe0: the weapons.txt wclass through the map at 0x7446a0), which picks
+// a row of the table at 0x6e8e60, one dword a player class (d2s order). Only an Amazon and a Sorceress start in: frame 1 barehanded,
+// frame 2 with a one-hand sword or thrusting weapon, a staff or a two-hand sword or thrusting weapon, 0 with a bow, crossbow or claws.
+// A class key the map lacks gets row 0 (FUN_00629fe0, 0x62a040), the nothing-in-hand row: no vanilla weapon has one.
+struct AttackStart { std::string_view wclass; std::array<int, 7> by_class; };
+inline constexpr std::array<AttackStart, 9> kAttackStart = {{
+    { "",    { 1, 1, 0, 0, 0, 0, 0 } },   // row 0: nothing in hand
+    { "bow", { 0, 0, 0, 0, 0, 0, 0 } },   // row 1
+    { "1hs", { 2, 2, 0, 0, 0, 0, 0 } },   // row 2
+    { "1ht", { 2, 2, 0, 0, 0, 0, 0 } },   // row 3
+    { "stf", { 2, 2, 0, 0, 0, 0, 0 } },   // row 4
+    { "2hs", { 2, 2, 0, 0, 0, 0, 0 } },   // row 5
+    { "2ht", { 2, 2, 0, 0, 0, 0, 0 } },   // row 6
+    { "xbw", { 0, 0, 0, 0, 0, 0, 0 } },   // row 7
+    { "ht1", { 0, 0, 0, 0, 0, 0, 0 } },   // row 12
+}};
+inline int attack_start_frame(int player_class, std::string_view wclass) {
+    if (player_class < 0 || std::size_t(player_class) >= 7) return 0;
+    for (const auto& row : kAttackStart)
+        if (row.wclass == wclass) return row.by_class[std::size_t(player_class)];
+    return kAttackStart.front().by_class[std::size_t(player_class)];
 }
 
 // Frame count after a speed stat (FCR / FHR / FBR) shortens `base_frames`:
@@ -253,21 +289,6 @@ inline bool get_hit(std::int64_t max_life, std::int64_t damage, int hit_class, b
     return true;
 }
 
-// game.exe's MulDiv (FUN_00483360): value x times / over, truncated, 0 over
-// 0. Up to 0x100000 with times up to 0x10000 it multiplies in 32 bits (the
-// product wraps); a bigger times over at most times / 16 divides it first,
-// as a bigger value over at most value / 16 does the value (each multiply
-// wrapping); else 64 bits.
-inline int mul_div(int value, int times, int over) {
-    if (over == 0) return 0;
-    if (value <= 0x100000) {
-        if (times <= 0x10000) return int(std::uint32_t(value) * std::uint32_t(times)) / over;
-        if (over <= times >> 4) return int(std::uint32_t(times / over) * std::uint32_t(value));
-    } else if (over <= value >> 4) {
-        return int(std::uint32_t(value / over) * std::uint32_t(times));
-    }
-    return int(std::int64_t(value) * times / over);
-}
 // FUN_0057c1e0 (0x57c252..0x57c2a4): the flat (stat 34 or 35, whole points) in 256ths, scaled by the record's +0x54 / 1024
 // (FUN_00483360) when that is above 0. +0x54 is the missile's stat 327 damage_framerate, Missiles.txt DamageRate (FUN_0059fa30,
 // copied by its hit FUN_005ad730): set only on the burners, so any other hit takes the flat whole.
@@ -379,7 +400,8 @@ inline void settle_blow(StruckBlow& blow, std::int64_t old) {
 // only its own part: Bone Armor (FUN_005c6370) from the physical field,
 // Cyclone Armor (FUN_005c87a0) from fire, cold, then lightning. A blow whose
 // fire / lightning / cold went keeps its mark only by its poison
-// (FUN_0057ce30 reads the fields after). `pool` is in 256ths, as game.exe's
+// (FUN_0057ce30 reads the fields after, in 256ths: under a point left of one
+// still marks; tools/emu/hit_absorb.py). `pool` is in 256ths, as game.exe's
 // stat is: Bone Armor subtracts it from the physical field BEFORE the defender's
 // reduction (`raw`; a blow without one takes it from `physical` and `frac`), then
 // the flat and percent reduction (reduce_fine) are put back on what is left, as
@@ -387,7 +409,7 @@ inline void settle_blow(StruckBlow& blow, std::int64_t old) {
 // outlasts the field takes the fraction too. Returns what the pool took, in 256ths
 // of the unreduced field.
 // Its oracle for the pool in 256ths and the absorb before the reduction is tools/emu/monster_damage.py (sets absorb and
-// both); hit_absorb.py, the older whole-point one, was never committed.
+// both); tools/emu/hit_absorb.py runs a frame's records through either armor's pool and FUN_0057ce30's mark.
 // Cyclone Armor works on each part's unresisted field (raw x 256) in 256ths and puts what is left back through the flat magic
 // reduction and the resistance (elemental_fine); a blow with no parts (built by hand) loses whole points of its elemental total.
 inline int absorb_blows(std::span<StruckBlow> blows, int& pool, bool elemental) {
@@ -408,7 +430,9 @@ inline int absorb_blows(std::span<StruckBlow> blows, int& pool, bool elemental) 
                 taken += cut;
             }
             store_total(blow, total);
-            if (blow.elemental <= 0 && !blow.poisoned) blow.marked = false;
+            // FUN_0057ce30 reads the fields in 256ths: a fire, lightning or cold field with under a point left still marks.
+            const bool lit = std::ranges::any_of(std::array{ 0, 1, 2 }, [&](int type) { return part_fine(blow.parts[std::size_t(type)]) > 0; });
+            if (!lit && !blow.poisoned) blow.marked = false;
             continue;
         }
         if (elemental) {
@@ -1004,18 +1028,24 @@ inline std::int64_t kill_exp(int exp, int clvl, int mlvl) {
     return factor == 256 ? exp : scale(exp, factor, 256);
 }
 
+// A kill award's ExpRatio step (FUN_0057e390): `award` unapplied outside
+// `shift` 1..31 or at 0 or less; otherwise (award >> shift) x ratio when
+// award x ratio would overflow INT32_MAX, else award x ratio >> shift.
+// Oracled bit-for-bit (game.exe's own ratio and shift, from Experience.txt
+// through TXT_Experience_GetExpRatio, FUN_00613e60): tools/emu/xp_ratio.py.
+inline std::int64_t exp_ratio_apply(std::int64_t award, int ratio, int shift) {
+    if (award <= 0 || shift < 1 || shift > 31) return award;
+    return award > (0x7fffffff >> (((ratio >> shift) + shift) & 31)) ? (award >> shift) * ratio : award * ratio >> shift;
+}
+
 // What a kill gives a unit of level `clvl` (FUN_0057e480): 1 for a kill
 // worth none, 0 at `max_level` (Experience.txt MaxLvl); else kill_exp, then
-// the level's ExpRatio (`ratios`, by level) >> `shift` (the MaxLvl row's
-// ExpRatio, FUN_0057e390: (exp >> shift) x ratio where exp x ratio would
-// overflow), then + item_addexperience % of that.
+// the level's ExpRatio (`ratios`, by level) through exp_ratio_apply, then
+// + item_addexperience % of that.
 inline std::int64_t kill_award(int exp, int clvl, int mlvl, int add_pct, std::span<const int> ratios, int shift, int max_level) {
     if (exp < 1) return 1;
     if (clvl >= max_level) return 0;
-    auto award = int(kill_exp(exp, clvl, mlvl));
-    const int ratio = clvl >= 1 && std::size_t(clvl) < ratios.size() ? ratios[std::size_t(clvl)] : 0;
-    if (award > 0 && shift >= 1 && shift <= 31)
-        award = award > (0x7fffffff >> (((ratio >> shift) + shift) & 31)) ? (award >> shift) * ratio : award * ratio >> shift;
+    auto award = int(exp_ratio_apply(kill_exp(exp, clvl, mlvl), clvl >= 1 && std::size_t(clvl) < ratios.size() ? ratios[std::size_t(clvl)] : 0, shift));
     if (add_pct != 0) award += scale(award, add_pct, 100);
     return award;
 }

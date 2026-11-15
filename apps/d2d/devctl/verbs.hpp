@@ -19,6 +19,7 @@
 
 #include <d2s_items.hpp>
 #include <devctl.hpp>
+#include <hire_list.hpp>
 #include <rules.hpp>
 
 #include <algorithm>
@@ -261,9 +262,10 @@ void register_game_verbs(d2d::devctl::Channel& channel, Window& win, Screen& scr
         std::string out;
         for (std::size_t i = 0; i < town.level->npcs.size(); ++i) {
             const auto& npc = town.level->npcs[i];
-            if (npc.name.empty() || (i < town.npc_states.size() && town.npc_states[i].hidden)) continue;
-            const bool live = i < town.npc_states.size() && !npc.path.empty();
-            const float dx = (live ? town.npc_states[i].x : npc.x) - town.player.x, dy = (live ? town.npc_states[i].y : npc.y) - town.player.y;
+            const auto& states = town.view.npc_states;            // as drawn (a LAN joiner's are the host's)
+            if (npc.name.empty() || (i < states.size() && states[i].hidden)) continue;
+            const bool live = i < states.size() && !npc.path.empty();
+            const float dx = (live ? states[i].x : npc.x) - town.player.x, dy = (live ? states[i].y : npc.y) - town.player.y;
             const int screen_x = int(kScreenWidth) / 2 + int(std::lround((dx - dy) * (kIsoW / 2)));
             const int screen_y = kViewY + int(std::lround((dx + dy) * (kIsoH / 2)));
             const bool menu = std::ranges::any_of(kNpcMenus, [&](const NpcMenu& menu_entry) { return menu_entry.hc_idx == npc.hc_idx; });
@@ -304,7 +306,7 @@ void register_game_verbs(d2d::devctl::Channel& channel, Window& win, Screen& scr
         return out + "ok\n";
     });
     // The open NPC menu's lines: "<text>\t<x>\t<y>" with a point inside
-    // each (game pixels), header first.
+    // each (game pixels), header first; then its list box's rows shown.
     channel.on("menu", [&](const std::vector<std::string>&) {
         std::string out;
         int base = town.npc_menu.y;
@@ -312,6 +314,17 @@ void register_game_verbs(d2d::devctl::Channel& channel, Window& win, Screen& scr
             base += line.height;
             out += line.text + "\t" + std::to_string(town.npc_menu.x + town.npc_menu.box_width / 2) + "\t"
                  + std::to_string(base - line.height / 2) + "\n";
+        }
+        if (const auto& list = town.npc_menu.list) {   // the list box's rows shown, after the lines: each row's first line
+            const auto counts = town.npc_menu.list_lines();
+            const int first = town.npc_menu.scroll;
+            int top = 0;
+            const int shown = d2d::rules::list_rows_shown(list->box, counts, first);   // all fitting: the whole count, not the count from `first`
+            for (int row = first; row < first + shown && row < int(list->rows.size()); ++row) {
+                const int tall = counts[std::size_t(row)] * list->box.line_height;
+                out += list->rows[std::size_t(row)].lines[0] + "\t" + std::to_string(list->box.x + 0x20) + "\t" + std::to_string(list->box.y + 0xc + top + tall / 2) + "\n";
+                top += tall + list->box.row_gap;
+            }
         }
         return out + "ok\n";
     });

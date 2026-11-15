@@ -56,6 +56,9 @@ public:
 
     [[nodiscard]] const dc6::Sprite& sheet() const noexcept { return sheet_; }
     [[nodiscard]] int line_height() const noexcept { return line_height_; }
+    // Byte 10 of the .tbl, the height game.exe centres a button label by
+    // (FUN_00501a40).
+    [[nodiscard]] int tbl_height() const noexcept { return tbl_height_; }
     [[nodiscard]] std::size_t glyph_count() const noexcept { return glyphs_.size(); }
 
     // Nullptr when the char isn't in the font — caller decides whether to
@@ -107,18 +110,24 @@ public:
 
     // FUN_00501a80 hands glyphs to FUN_004f64b0 at a bottom-left anchor.
     // Unlike draw_tinted, each frame's own height determines its top.
+    // `multiply`: draw mode 4, the renderer's slot 0x42 (FUN_00511d70),
+    // which FUN_004fb010 points at the PL2's multiplicative table: each
+    // channel fg * bg / 255 (FUN_00605aa0). A button label draws so.
+    // ponytail: the table snaps that to the nearest palette colour; this
+    // keeps the RGB product.
     int draw_tinted_baseline(std::vector<std::uint8_t>& framebuffer,
                              std::uint32_t framebuffer_width, std::uint32_t framebuffer_height,
                              const palette::Palette& palette, int x, int baseline,
                              std::string_view text, std::uint8_t tint_red,
-                             std::uint8_t tint_green, std::uint8_t tint_blue) const {
+                             std::uint8_t tint_green, std::uint8_t tint_blue,
+                             bool multiply = false) const {
         for (unsigned char letter : text) {
             const auto* glyph = find(letter);
             if (!glyph) continue;
             const auto& frame = sheet_.frame(0, glyph->frame);
             blit_glyph_tinted(framebuffer, framebuffer_width, framebuffer_height, palette, frame,
                              x + frame.offset_x, baseline + frame.offset_y - int(frame.height) + 1,
-                             tint_red, tint_green, tint_blue, 0, 1 << 30);
+                             tint_red, tint_green, tint_blue, 0, 1 << 30, multiply);
             x += glyph->width;
         }
         return x;
@@ -131,7 +140,7 @@ private:
                                   const dc6::Frame& frame,
                                   int dst_x, int dst_y,
                                   std::uint8_t tint_red, std::uint8_t tint_green, std::uint8_t tint_blue,
-                                  int clip_y0, int clip_y1) {
+                                  int clip_y0, int clip_y1, bool multiply = false) {
         for (std::uint32_t glyph_y = 0; glyph_y < frame.height; ++glyph_y) {
             const int pixel_y = dst_y + int(glyph_y);
             if (pixel_y < 0 || std::uint32_t(pixel_y) >= fbH || pixel_y < clip_y0 || pixel_y >= clip_y1) continue;
@@ -142,9 +151,18 @@ private:
                 if (idx == 0) continue;
                 const auto colour = pal[idx];
                 auto* pixel = &framebuffer[(std::size_t(pixel_y) * fbW + std::uint32_t(pixel_x)) * 4];
-                pixel[0] = std::uint8_t(int(colour.r) * tint_red / 255);
-                pixel[1] = std::uint8_t(int(colour.g) * tint_green / 255);
-                pixel[2] = std::uint8_t(int(colour.b) * tint_blue / 255);
+                const int red = int(colour.r) * tint_red / 255;
+                const int green = int(colour.g) * tint_green / 255;
+                const int blue = int(colour.b) * tint_blue / 255;
+                if (multiply) {
+                    pixel[0] = std::uint8_t(red * pixel[0] / 255);
+                    pixel[1] = std::uint8_t(green * pixel[1] / 255);
+                    pixel[2] = std::uint8_t(blue * pixel[2] / 255);
+                    continue;
+                }
+                pixel[0] = std::uint8_t(red);
+                pixel[1] = std::uint8_t(green);
+                pixel[2] = std::uint8_t(blue);
                 pixel[3] = colour.a;
             }
         }
@@ -159,7 +177,8 @@ private:
             || bytes[2] != std::byte{0x6f} || bytes[3] != std::byte{0x21}
             || bytes[4] != std::byte{0x01})
             throw std::runtime_error("font: bad magic");
-        // 7 unknown header bytes follow, then 256 * 14 records.
+        // 7 header bytes follow (byte 10 the font's height), then 256 * 14 records.
+        tbl_height_ = std::uint8_t(bytes[10]);
         std::size_t offset = kHdr;
         while (offset + kRec <= bytes.size()) {
             Glyph glyph;
@@ -181,6 +200,7 @@ private:
     std::unordered_map<std::uint16_t, Glyph> glyphs_;
     dc6::Sprite sheet_;
     int         line_height_ = 0;
+    int         tbl_height_ = 0;
 };
 
 // The edit box's wrap (FUN_00502970, Src/D2WinFont.cpp). One byte is one
@@ -189,15 +209,20 @@ private:
 // adds no width. 0xff, 'c', and '0'..'6' add no width when three count
 // slots remain (the measure's EBX starts at 3). A prefix fits when its
 // width is less than or equal to `box_width`. The walk back stops where
-// FUN_00526d30's Latin branch returns 1: the unit at the index is not
-// _isspace (00687006; DAT_0096dfe4 is 0, ctype bit 8, codes 9..13 and 32)
-// and the previous unit is. That space stays on the line. FUN_005028e0
-// with flag 1 then drops one leading space. No such break: the line is
-// the longest prefix that fits, and one glyph if even that is over.
-// ponytail: language ids 6, 8 and 9 (FUN_00525150) use the other break
-// in FUN_00526d30, not this one.
+// FUN_00526d30 returns 1. `language_id` is FUN_00525150 (0 when the caller
+// leaves it unset). Ids other than 6, 8 and 9, including 7: the unit at
+// the index is not _isspace (00687006; DAT_0096dfe4 is 0, ctype bit 8,
+// codes 9..13 and 32) and the previous unit is. That space stays on the
+// line. Ids 6, 8 and 9 read only the unit at the index: return 0 for an
+// ASCII letter or digit, and 1 for any other byte. FUN_005028e0 with
+// flag 1 then drops one leading space. No such break: the line is the
+// longest prefix that fits, and one glyph if even that is over.
+// ponytail: those ids also return 0 for the 16-bit units 0x2026, 0x3001,
+// 0x3002, 0xff01, 0xff0c, 0xff0e, 0xff1f, 0xff61, 0xff64, and for
+// 0xff10..0xff19, 0xff21..0xff3a and 0xff41..0xff5a. A byte unit never
+// holds them.
 template <class GlyphWidth>
-auto wrap_edit_box(std::string_view text, int box_width, GlyphWidth glyph_width) -> std::vector<std::string> {
+auto wrap_edit_box(std::string_view text, int box_width, GlyphWidth glyph_width, int language_id = 0) -> std::vector<std::string> {
     auto space_unit = [](unsigned char code) {
         return code == ' ' || (code >= 9 && code <= 13);
     };
@@ -235,9 +260,16 @@ auto wrap_edit_box(std::string_view text, int box_width, GlyphWidth glyph_width)
         }
         return total;
     };
+    const bool other_break = language_id == 6 || language_id == 8 || language_id == 9;
     auto kept_break = [&](int origin, int index) {
         if (index == 0) return true;
-        if (space_unit(unit_at(origin + index))) return false;
+        const auto unit = unit_at(origin + index);
+        if (other_break) {
+            const bool letter = (unit >= 'A' && unit <= 'Z') || (unit >= 'a' && unit <= 'z');
+            const bool digit = unit >= '0' && unit <= '9';
+            return !letter && !digit;
+        }
+        if (space_unit(unit)) return false;
         return space_unit(unit_at(origin + index - 1));
     };
     auto copy_line = [&](int origin, int count) {

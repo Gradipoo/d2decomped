@@ -14,6 +14,7 @@
 #include <ds1.hpp>
 #include <dt1.hpp>
 #include <level_ids.hpp>
+#include <mon_equip.hpp>
 #include <monsters.hpp>
 #include <montypes.hpp>
 #include <mpq.hpp>
@@ -149,9 +150,11 @@ struct Npc {
     int trans_lvl = 0;                   // MonStats TransLvl: its palshift.dat colour (Fallen 0, Carver 1 ...)
     bool no_unique_shift = false;        // MonStats2 noUniqueShift: a unique keeps its type's colour
     bool dead_col = false;               // MonStats2 deadCol (flag 19): its corpse keeps collision, never shatters
+    int height = 0;                      // MonStats2 Height (+0xb): its shattered death's ice (rules::shatter_rows)
     std::array<int, 3> utrans{};         // MonStats2 Utrans by difficulty (0: none)
     int colour = 0;                      // the colour it's drawn in (FUN_00466360; the client's Scene::monster_map), 0/1 none
     int overlay_class = 0;               // which Overlay.txt Height it takes: MonStats2 OverlayHeight - 1 (FUN_006223a0)
+    int hit_class = 0;                   // MonStats2 HitClass (+0x14, FUN_00623c20): the swing a weaponsnd / stsounddelay skill start times
     std::array<std::uint8_t, 8> lit{};   // an object's light radius in each mode NU OP ON S1..S5 (objects.txt Lit0..7)
 };
 
@@ -768,7 +771,7 @@ struct GameData {
     // (FUN_0064b860), ToHit (rolls the attack rating), CollideKill (spent on
     // its first hit; else flies through), Pierce (may fly on, stat 328 %),
     // pSrvHitFunc (+0x0e, table 0x73c840) and its sHitPar1 (+0x4c).
-    struct MissileInfo { std::string name, cel_file; int vel = 0, range = 0, src_damage = 0, min = 0, max = 0, anim_speed = 16, anim_len = 1;
+    struct MissileInfo { std::string name, cel_file; int id = -1; int vel = 0, range = 0, src_damage = 0, min = 0, max = 0, anim_speed = 16, anim_len = 1;
                          int vel_lev = 0, max_vel = 0, accel = 0, activate = 0;   // its flight (rules::MissileFlight)
                          std::string skill; int lev_range = 0, hit_func = 0, hit_par1 = 0;
                          int hit_class = 0;                                     // HitClass, a number (+0x94, FUN_00661b20 type 4): its impact sound
@@ -794,6 +797,9 @@ struct GameData {
                          int dmg_func = 0, dmg_par1 = 0, dmg_par2 = 0;   // pSrvDmgFunc (5: Blessed Hammer's bonus, FUN_005ad2f0), dParam1 (undead %) and dParam2 (demon %)
                          bool next_hit = false; int next_delay = 0;   // NextHit: its hit puts state 0x56 on the unit for NextDelay frames
                          bool last_collide = false;                   // LastCollide (+4 bit 0): it passes the unit it last struck by
+                         // The one-unit-a-frame, skip-the-last-unit rule (FUN_005ae1f0, FUN_005a8730) for a srvdofunc 1 row with LastCollide and neither NextHit
+                         // nor Pierce. srvdofunc 3 rows (standing clouds) and Pierce rows keep the struck list.
+                         bool last_unit_rule() const { return last_collide && !next_hit && !pierce && srv_do == 1; }
                          std::string sub, sub2, hit_sub;
                          std::array<const MissileInfo*, 2> subs{}; const MissileInfo* hit_sub_info = nullptr;   // those rows, loaded
                          // ExplosionMissile (+0x16): played where it hits a unit or a wall,
@@ -808,15 +814,16 @@ struct GameData {
     Npc afterglow;                                         // object 131 (9b), OP: the "vile dog afterglow" the Dark Wanderer leaves
     Npc town_portal;                                       // object 59 (TP): a town portal's look and light
     Npc red_portal;                                        // object 60 (PP): a permanent (red) portal's (World::portal_object)
+    Npc duriel_portal;                                     // object 100 (SJ): the true tomb's way down to Duriel's Lair
     Npc cain_portal;                                       // object 189 (tP: TP's files): Tristram Cain's and the cages' portals
     std::unordered_map<std::string, std::string> thrown;   // a throwing weapon's code: its Missiles.txt row (weapons.txt missiletype)
     std::unordered_map<std::string, std::string> gem_letters;   // gems.txt letter by code (the runes'; gems.txt +0x20)
     std::vector<std::size_t> mon_bin;                  // game.exe's MonStats unit ids -> rows (no Expansion row)
     std::vector<bool> mon_is_npc;                      // by MonStats row: MonStats npc
-    // MonEquip.txt's oninit rows (FUN_005d6b60 as a monster's made), by
-    // MonStats row: each row's item count (1..3). Only Blood Raven's and the
-    // flying scimitar's in 1.14d, both from level 0.
-    std::vector<std::vector<int>> mon_equip_oninit;
+    // MonEquip.txt (FUN_00659e60), and by MonStats row its first row there
+    // (MonStats +0x2a, -1 none): rules::monster_gear's tables.
+    std::vector<d2d::rules::MonEquipRow> mon_equip;
+    std::vector<int> mon_equip_first;
     // The level builder: its own MPQ handles, the DRLG tables and the
     // tables a build reads. Last, so it's torn down first: a build in
     // flight reads the rest of GameData.
@@ -888,6 +895,10 @@ constexpr int kModeDT = 0, kModeNU = 1, kModeWL = 2, kModeRN = 3, kModeGH = 4, k
 // subtiles per 40 ms tick (arrival time (dist << 16) / ((v >> 8) << 12),
 // 0x4c86a3) — velocity / 16 subtiles a tick. Walk 6: 1.875 cells/s.
 constexpr float cells_per_sec(float velocity) { return velocity / 16.f * 25.f / 5.f; }
+// A walker's path velocity (path +0x7c) as FUN_00623f50 sets it: the
+// Velocity << 8 x its walk % / 100, truncated (tools/emu/walk_velocity.py).
+// A frame moves it velocity / 4096 subtiles (FUN_006502d0).
+constexpr int path_velocity(int velocity, int pct = 100) { return (velocity << 8) * pct / 100; }
 
 // Direction (0..15, D2's DCC order) for a world-space step (dx, dy) in
 // cells. Directions are screen-space: project to screen, take the angle

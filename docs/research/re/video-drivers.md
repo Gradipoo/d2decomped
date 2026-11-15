@@ -70,7 +70,9 @@ fails. It doesn't try another mode.
 path"). The two disagree for `-opengl`, `-rave` and `-d3d -w`: the driver
 is software (3 or 1) and the light path is the 3D one (4 or more).
 [bugs.md](bugs.md) #106. What a software driver draws with that table was
-not followed.
+not followed. `FUN_00477730` is that six-byte read: `ui_client_helpers.py`
+returns nine synthetic values of the global unchanged (including
+`0xffffffff`); option setup and d2d are not covered.
 
 ## The window and the resolution
 
@@ -126,8 +128,15 @@ Video Options' two sliders, both kept in the registry under "Diablo II".
   it is linear, entry i = min(255, i × gamma / 100). So **gamma 155 shows
   every colour at 1.55 times** (128 → 198, and everything from 165 up is
   255); 100 leaves the palette alone. A lower contrast bends the ramp up
-  (gamma 155, contrast 0: 128 → 163, 192 → 212). Run, `video_drivers.py
-  gamma`, through game.exe's own code.
+  (gamma 155, contrast 0: 128 → 163, 192 → 212). With 256 entries and a
+  top of 255, entry i is the truncation of
+  (linear x contrast + powered x (100 - contrast)) / 100, where linear is
+  min(i x gamma / 100, 255) and powered is (i / 255) ^ (100 / gamma) x 255.
+  At contrast 100 the power term is zero and the truncation is the integer
+  line above. The converter is `FUN_00682fd0`, which truncates when the
+  CRT's SSE2 flag is set. Run, `video_drivers.py gamma`, through game.exe's
+  own code. d2d applies this on palette lookup (palette.hpp), default 155
+  and 100, keys `gamma` and `contrast` in d2d.cfg. Index 0 stays transparent.
 - **Who applies it.** DirectDraw: `+0x58` (`0x510300`) keeps the gamma and
   rebuilds the palette through the ramp (`FUN_00510160`, contrast from
   option 11), and its present (`FUN_00511870`) loads entries 1..255 into
@@ -201,6 +210,21 @@ those are what the 3D modes add.
 | `+0xcc` | `FUN_004f68b0` | Glide only: copies two blocks (0x1000 and 0x4800 bytes) in, from `FUN_00475b20` when `DAT_007b9564` is set; Direct3D and software `ret 8`. Not followed | `0x5126f0` `ret 8` |
 | `+0xd0` | `FUN_004f65a0` | One pixel, inside a 0x50 margin; no caller | `0x5123b0` |
 | `+0xd4` | `FUN_004f5d50` | Flush the 3D floor, subtile and texture caches. 3D only | `0x510130` `ret` |
+
+**Frame pacing (`FUN_004f6190`, slots `+0x1c` and `+0x20`).** With a clock
+`FUN_004f6130` (a double), a last-frame time `DAT_007c9368`, a carry
+`DAT_007c9360` and a first-call flag (bit 0 of `DAT_007c9370`; the first call
+reads the clock to set the last time): elapsed = now - last. When elapsed is
+not above the double at `0x6dc670` (5.0), v = 5.0 - elapsed + carry, the
+whole milliseconds are `trunc(v)` and the carry becomes v minus them. The
+call sleeps (`Sleep(ms)`) only for 1..5 ms, then reads the clock again and
+subtracts the overshoot `(after - now) - ms` from the carry; below 1 or above
+5 ms the carry is cleared and it does not sleep. Elapsed above 5.0 skips the
+sleep and the carry update. Then last = the clock, slot `+0x1c`, slot
+`+0x20`, return 1. It reads no video mode. `tools/emu/ui_client_helpers.py`
+runs it for 130 clock scripts (the x87 maths and the CRT's float to int run
+for real; the clock, `Sleep` and the two driver slots are hooked). Real
+timing, the clock's own conversion and d2d's pacing are not checked.
 
 ## What the 3D drivers add
 

@@ -7,6 +7,7 @@
 #include "scene.hpp"
 #include "ui.hpp"
 
+#include <automap_cells.hpp>
 #include <automap_miniature.hpp>
 #include <automap_scroll.hpp>
 #include <d2s.hpp>
@@ -272,8 +273,7 @@ void draw_char_panel(std::vector<std::uint8_t>& framebuffer, const Scene& scene,
     // font16, font8 from 1000 (FUN_004e9940). The numbers come from the
     // server (rules::attack_line).
     // ponytail: dual wield's two-value line (FUN_004e9870), the hover
-    // tooltips (FUN_004a7340..), the "K" formats past 9999 and other
-    // languages' y-1 aren't drawn.
+    // tooltips (FUN_004a7340..), and other languages' y-1 aren't drawn.
     for (std::size_t block = 0; block < 2; ++block) {
         const auto& line = panel.attack[block];
         const auto* skill = scene.skills.get(line.skill);
@@ -287,7 +287,12 @@ void draw_char_panel(std::vector<std::uint8_t>& framebuffer, const Scene& scene,
         if (line.damage) {
             if (auto found = lookup_string(scene, std::uint16_t(0xfdd))) text(font6, rec[1].left, rec[1].right, rec[1].y, u16_to_latin1(*found));
             const int top = std::max(line.max, line.min + 1);
-            const auto range = std::to_string(line.min) + "-" + std::to_string(top);
+            // FUN_004e96e0: "%d-%d", and past 9999 "%s%d-%dK" (max only) or
+            // "%s%dK-%dK" (min too). The figure before K is the value / 1000.
+            // ponytail: char-panel.md does not say what that %s is, so no prefix.
+            std::string range = std::to_string(line.min) + "-" + std::to_string(top);
+            if (line.min > 9999) range = std::to_string(line.min / 1000) + "K-" + std::to_string(top / 1000) + "K";
+            else if (top > 9999) range = std::to_string(line.min) + "-" + std::to_string(top / 1000) + "K";
             const bool wide = font6.measure(range) * 11 / 7 > rec[2].right - rec[2].left;
             text(wide ? font6 : f16, rec[2].left, rec[2].right, rec[2].y - (wide ? 1 : 0), range, line.damage_colour);
         }
@@ -431,13 +436,15 @@ void draw_hud(std::vector<std::uint8_t>& framebuffer, const Scene& scene, const 
     // most or with a stambarblue state (flag 0x18) all of it, blue.
     auto nearest = [&](int red, int green, int blue) {
         int best = 1 << 30;
-        std::array<std::uint8_t, 3> out{};
-        for (std::size_t i = 0; i < 256 && i < pal.entries().size(); ++i) {
-            const auto colour = pal[std::uint8_t(i)];
+        std::uint8_t found = 0;
+        const auto source = pal.entries();
+        for (std::size_t index = 0; index < 256 && index < source.size(); ++index) {
+            const auto& colour = source[index];
             const int distance = (colour.r - red) * (colour.r - red) + (colour.g - green) * (colour.g - green) + (colour.b - blue) * (colour.b - blue);
-            if (distance < best) { best = distance; out = { colour.r, colour.g, colour.b }; }
+            if (distance < best) { best = distance; found = std::uint8_t(index); }
         }
-        return out;
+        const auto colour = pal[found];
+        return std::array<std::uint8_t, 3>{ colour.r, colour.g, colour.b };
     };
     std::int64_t stamina = stamina_shown, stamina_max = stats.values[kMaxStamina];
     auto rgb = nearest(0xf4, 0xc0, 0x4c);
@@ -746,16 +753,10 @@ int automap_cel(const Scene& scene, const Level& level, int orientation, int mai
     return -1;
 }
 
+// FUN_00457b00 on the cell's list: false when the tree drops it (same (x, y), no group or the group of the cell it meets).
 bool Automap::add(const Cell& cell) {
-    int group = -1;
-    for (const auto& pair : kCelGroups)
-        if (pair[0] == cell.cel) group = pair[1];
-    // ponytail: matches against every cell at (x, y); the tree only meets those on its search path.
-    const auto found = placed.lower_bound({ cell.list, cell.y, cell.x, -1 });
-    const bool taken = group < 0 ? found != placed.end() && std::get<0>(*found) == cell.list && std::get<1>(*found) == cell.y && std::get<2>(*found) == cell.x
-                                 : placed.count({ cell.list, cell.y, cell.x, group }) != 0;
-    if (taken) return false;
-    placed.insert({ cell.list, cell.y, cell.x, group });
+    if (cell.list < 0 || cell.list > 3) return false;
+    if (!trees[std::size_t(cell.list)].insert(cell.cel, cell.x, cell.y, d2d::rules::automap_cel_group(cell.cel))) return false;
     cells.push_back(cell);
     return true;
 }
@@ -960,9 +961,9 @@ void draw_automap(std::vector<std::uint8_t>& framebuffer, const Scene& scene, co
     };
     const auto& name_font = scene.font_tiny.line_height() > 0 ? scene.font_tiny : scene.font;
     for (const auto& other : automap.marks) {
-        const auto [x, y] = mark(other.x, other.y, nearest(other.rgb[0], other.rgb[1], other.rgb[2]));
-        if (x < 0 || other.name.empty()) continue;
-        name_font.draw_tinted(framebuffer, kScreenWidth, kScreenHeight, pal, x - name_font.measure(other.name) / 2, y - 10 - name_font.line_height() + 1,
+        const auto [mark_x, mark_y] = mark(other.x, other.y, nearest(other.rgb[0], other.rgb[1], other.rgb[2]));
+        if (mark_x < 0 || other.name.empty()) continue;
+        name_font.draw_tinted(framebuffer, kScreenWidth, kScreenHeight, pal, mark_x - name_font.measure(other.name) / 2, mark_y - 10 - name_font.line_height() + 1,
                               other.name, other.name_rgb[0], other.name_rgb[1], other.name_rgb[2]);
     }
     mark(player_x, player_y, nearest(0, 0, 0xff));                  // you: blue

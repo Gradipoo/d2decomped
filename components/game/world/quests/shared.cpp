@@ -18,6 +18,7 @@
 #include <monster_ids.hpp>
 #include <monsters.hpp>
 #include <object_ids.hpp>
+#include <quest_clock.hpp>
 #include <quest_music.hpp>
 #include <quests.hpp>
 #include <quests_act3.hpp>
@@ -109,14 +110,14 @@ auto World::andariel_died(const Fight::Kill& kill, std::uint32_t now_ms) -> void
         const bool killer_took_part = quest::bit(quests(), kQuest, 13);
         each_player([&](Player& player) { if (level->id == d2d::rules::level_ids::kCatacombsLevel4) andy.in_lair(quests(), player.id); });
         const int killer = actor->id;
-        each_player([&](Player& player) {
+        each_in_game([&](Player& player, int their_act) {      // the party in Act 1, whatever level they're on
             auto& bits = quests();
-            if (player.id == killer || !killer_took_part || act() != 0 || quest::bit(bits, kQuest, 0) || quest::bit(bits, kQuest, 1)) return;
+            if (player.id == killer || !killer_took_part || their_act != 0 || quest::bit(bits, kQuest, 0) || quest::bit(bits, kQuest, 1)) return;
             andy.cain.add(player.id); andy.akara.add(player.id); andy.kashya.add(player.id);
             quest::set(bits, kQuest, 13); quest::set(bits, kQuest, 1);
             open_act(1);
         });
-        each_player([&](Player&) {
+        each_in_game([&](Player&, int) {
             auto& bits = quests();
             if (!quest::bit(bits, kQuest, 0) && !quest::bit(bits, kQuest, 1)) quest::set(bits, kQuest, 14);
             if (quest::bit(bits, kQuest, 1) && quest::bit(bits, kQuest, 13)) class_cue("act1_complete_andariel", d2d::rules::quest_line_due(0x21, now_ms));
@@ -137,6 +138,7 @@ auto World::andariel_died(const Fight::Kill& kill, std::uint32_t now_ms) -> void
 // FrameCnt1 + 1 frames on taking it to mode 2 (FUN_00581490).
 auto World::mephisto_died(const Fight::Kill& kill, std::uint32_t now_ms) -> void {
         each_player([&](Player& player) { guardian.killed(player.id); });   // the killer and each player in the level: one level in co-op
+        guardian.arm_log();   // 12 ticks on, the log 4 (0x5bc9d6 -> 0x5bc720)
         class_cue("act3_complete_guardian", d2d::rules::quest_line_due(0x42, now_ms));   // FUN_005bc8b0: unit event 0x42
         music_cue("music_quest_mephisto");
         bridge_check = now_ms + 24 * kTickMs;
@@ -261,8 +263,7 @@ auto World::transmute(std::uint32_t now_ms) -> void {
         std::erase_if(actor->character.items, [](const Item& item) { return item.location == d2d::d2s::item_location::kStored && item.panel == d2d::d2s::item_panel::kCube; });
         const auto& layout = game_data->cube_layout;
         for (auto& item : made.items) {
-            if (item.code == "hst") {             // FUN_0059e5c0 -> FUN_0059b660
-                music_cue("music_quest_horadric");
+            if (item.code == "hst") {             // FUN_0059e5c0 -> FUN_0059b660 (its jingle is the orifice's)
                 d2d::rules::quest::set(quests(), d2d::rules::HoradricStaffQuest::kQuest, 11);
                 staff.staff_made = true;
                 arcane.staff_made(quests());
@@ -281,13 +282,17 @@ auto World::transmute(std::uint32_t now_ms) -> void {
     }
 
 // The way down to Duriel (FUN_0059d870): object 100 13 subtiles left of the
-// orifice and 3 down (FUN_00555230), in the true tomb.
+// orifice and 3 down (FUN_00555230), in the true tomb. Mode 1, its opening
+// (FUN_00624690(unit, 1), 0x59d986), unless the staff went in in an earlier
+// game (data +0xc, 0x59d976): then mode 2, open already, so its born time
+// goes back by the opening's length.
 auto World::durielportal_open(std::uint32_t now_ms) -> void {
         const Level* tomb = game_data->level(tombs.true_tomb);
         if (!tomb) return;
         const auto orifice = std::ranges::find(tomb->npcs, d2d::rules::operate_fn::kOrifice, &Npc::operate_fn);
         if (orifice == tomb->npcs.end()) return;
-        portal[6] = { tomb, orifice->x - 13.f / 5, orifice->y + 3.f / 5, now_ms };
+        const std::uint32_t opened_ms = tombs.later ? std::uint32_t(std::max(object_op_ticks(game_data->duriel_portal), 0)) * kTickMs : 0;
+        portal[6] = { tomb, orifice->x - 13.f / 5, orifice->y + 3.f / 5, now_ms - opened_ms };
         d2d::log::info("The Seven Tombs: the way down to Duriel opens");
     }
 
@@ -382,6 +387,7 @@ auto World::countess_died(std::uint32_t now_ms) -> void {
         each_player([&](Player& player) {
             if (!tower.killed(quests(), level->id == d2d::rules::TowerQuest::kCellar, player.id)) return;
             player.tower_line_held = now_ms;
+            player.events.push_back(ev::MusicCue{ .back_ms = d2d::rules::quest_music_event(0x25)->back * 40 });   // 0x4cbaad: no jingle, the music off 1500 ticks
             quest_kill = true;
         });
         if (quest_kill && act() == 0)
@@ -420,9 +426,10 @@ auto World::tower_treasure_made() -> void {
 // off the spawner's own. At 1 left, unit event 0x5c on the chest (0x5af381):
 // the client (FUN_004cbde0 -> FUN_004dce10) plays the line the Countess's
 // 0x25 held, 25 sound ticks (1 s) on, if that came under 1500 ticks (60 s)
-// ago (FUN_004dcaa0); later, the line's dropped.
-// ponytail: it runs only while the player's on its level (game.exe: while its room's up); the
-// music's 60 s hush round the line (FUN_004ba8f0 / FUN_004ba890) isn't played.
+// ago (FUN_004dcaa0); later, the line's dropped. The 0x25 turned the music
+// off for those 1500 ticks (FUN_004dcd40 -> FUN_004ba8f0); the 0x5c brings
+// it back 0x32 ticks after the line (FUN_004dce10).
+// ponytail: it runs only while the player's on its level (game.exe: while its room's up).
 auto World::tower_treasure(std::uint32_t now_ms) -> void {
         using Tower = d2d::rules::TowerQuest;
         for (auto& spawner : treasure) {
@@ -450,7 +457,10 @@ auto World::tower_treasure(std::uint32_t now_ms) -> void {
             }
             if (spawner.left == 1)
                 each_player([&](Player& player) {
-                    if (const auto held = std::exchange(player.tower_line_held, std::nullopt); held && now_ms - *held < 60'000) class_cue("act1_complete_tower", now_ms + 1'000);
+                    if (const auto held = std::exchange(player.tower_line_held, std::nullopt); held && now_ms - *held < 60'000) {
+                        class_cue("act1_complete_tower", now_ms + 1'000);
+                        player.events.push_back(ev::MusicCue{ .back_ms = (25 + 0x32) * 40 });   // FUN_004dce10: the music back 0x32 ticks after the line
+                    }
                 });
             --spawner.left;
         }
@@ -469,12 +479,12 @@ auto World::tower_treasure(std::uint32_t now_ms) -> void {
 // ponytail: the thinks' idles (1, 20 frames) stand in for the AI's own
 // tick. FUN_005e77a0's spot-already-noted branch (FUN_005944f0, stat 6 0,
 // mode 0xc at his spot) isn't kept: d2d's Cain takes his first think once.
-auto World::cain_step(std::uint32_t now_ms, float elapsed) -> void {
+auto World::cain_step(std::uint32_t now_ms, float /* elapsed: a step is a frame */) -> void {
         if (cain_walk.npc < 0 || level->id != d2d::rules::CainQuest::kTristram || std::size_t(cain_walk.npc) >= npc_states.size()) return;
         const auto& npc = level->npcs[std::size_t(cain_walk.npc)];
         auto& unit = npc_states[std::size_t(cain_walk.npc)];
         if (unit.walking) {
-            unit.walking = walk_on(*level, unit, cells_per_sec(npc.velocity) * elapsed);
+            unit.walking = walk_on(*level, unit, path_velocity(int(npc.velocity)));
             if (unit.walking) return;
             unit.path.clear();
         }
@@ -582,7 +592,7 @@ auto World::find_voice(std::uint32_t tick_ms) -> void {
         namespace q = d2d::rules::quest;
         if (closed_at_join[quest] || game_quest_done(quest) || q::bit(bits, row->quest, 0) || q::bit(bits, row->quest, 1) || q::bit(bits, row->quest, 14)) return;
         if (row->quest == d2d::rules::DenQuest::kQuest && den.log_state(bits) >= 5) return;
-        if (actor->voice_at && tick_ms - actor->voice_at < kWait) return;
+        if (actor->voice_at && (tick_ms < actor->voice_at || tick_ms - actor->voice_at < kWait)) return;   // a line still due counts
         class_cue(row->line, tick_ms);
     }
 
@@ -601,6 +611,13 @@ auto World::music_cue(std::string_view sound) -> void {
             music.jingle_ms = row->jingle_at * 40; music.back_ms = row->back * 40; music.from_block = row->from_block;
         }
         actor->events.push_back(music);
+    }
+
+// The four client-side jingles (rules::QuestMusic's object rows): the
+// client plays one only when the unit it looks for is in its player's
+// room's near list (FUN_00620bb0 -> FUN_0065a620 walks FUN_00619790's).
+auto World::music_cue_near(std::string_view sound, float x, float y) -> void {
+        each_player([&](Player& player) { if (near_room(player.player.x, player.player.y, x, y)) music_cue(sound); });
     }
 
 // FUN_00546270 for a later player: each record's +0xd8 (quests.md "Joins").
@@ -688,10 +705,14 @@ auto World::cain_operate(int npc_index, std::uint32_t now_ms) -> void {
         cues.cue("object_townportal", now_ms, spot_x, spot_y);
         // FUN_00593710 ends on S->C 0x89 event 1 (FUN_00545760); each client's
         // 0x46aee0 dips its ambient, from missile cairnstones, in level 4.
-        // ponytail: every player gets it; game.exe's client only with a
-        // StoneAlpha (object 17) in its near rooms (FUN_0065a620).
+        // Only with a StoneAlpha (object 17) in the rooms near the player's
+        // (FUN_0065a620(room, 2, 0x11) at 0x46aefc).
         if (const auto stones = game_data->missiles.find("cairnstones"); stones != game_data->missiles.end())
             each_player([&](Player& player) {
+                const auto rooms_near = near_rooms(*game_data, *level, player.player.x, player.player.y);
+                if (std::ranges::none_of(level->npcs, [&](const Npc& stone) {
+                        return stone.object_id == 17 && std::ranges::any_of(rooms_near, [&](const auto& room) { return room.first == level && room.second == stone.room; });
+                    })) return;
                 const auto frames = d2d::rules::cairn_dip(stones->second.param1, stones->second.range);
                 player.events.push_back(ev::AmbientDip{ frames.fade_in, frames.hold, frames.back, d2d::rules::level_ids::kStonyField });
             });
@@ -709,7 +730,7 @@ auto World::den_count(std::uint32_t now_ms) -> void {
             if (kill == d2d::rules::DenQuest::Kill::cleared) {
                 d2d::log::info("Den of Evil: cleared");
                 music_cue("music_quest_den");
-                den_log_at = now_ms + 8 * kTickMs;     // the log's "Return to Akara" 8 ticks on (LAB_00590230)
+                den_log_in = d2d::rules::quest_timer_steps(8);   // the log's "Return to Akara" 8 ticks on (0x5903d9 -> LAB_00590230)
                 // FUN_00590260 at 0x590387..0x5903bd, as Blood Raven's (kill_credit):
                 // the participants (FUN_005455f0); each player with bit 13 brings
                 // their party in Act 1 (LAB_00590190 → FUN_00540510 → LAB_00590120;

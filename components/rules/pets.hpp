@@ -19,7 +19,8 @@ namespace d2d::rules {
 // (where it's at on its path), `end` its end (+0x18). `arrive`: where the
 // owner last arrived through a warp or teleport (player data +0x148,
 // FUN_00554ea0). `pets`: how many pets the owner has (FUN_00574f40);
-// `crowd`: how many of them stand within 2 of this one (FUN_005e3900).
+// `crowd`: how many of them, the merc too, stand within 2 of this one
+// (FUN_005e3900; Fight::pet_crowd).
 // `velocity` / `run`: MonStats. The foe (FUN_005dd7f0): its spot, the
 // search's distance and whether it's in melee (FUN_00622c40), `ignored`
 // its +0xc4 bit 30; `clear` a line to it (FUN_005dc640).
@@ -32,6 +33,7 @@ struct PetView {
     int velocity = 0, run = 0;
     bool foe = false, foe_melee = false, foe_ignored = false, clear = true;
     int foe_x = 0, foe_y = 0, foe_distance = 0;
+    bool slowed = false;   // state 0x3c (Decrepify): FUN_005deeb0 downgrades a run to a walk
 };
 
 // The units a think deals with: itself, its owner, the foe its search
@@ -113,8 +115,8 @@ public:
     // `reach`. 5: path type 7, `reach` about the owner, `reach` away, its
     // path end. 2 and 4 stand 15 when nothing took.
     bool follow(int mode, bool run, int pct, int reach) {
-        // A run (FUN_005deeb0): RN, a walk in state 0x3c (slowed, never on in d2d).
-        const int move_mode = run ? kMonsterRun : kMonsterWalk;
+        // A run (FUN_005deeb0): RN, a walk in state 0x3c (decrepify).
+        const int move_mode = run && !view_.slowed ? kMonsterRun : kMonsterWalk;
         const int pet_x = view_.x, pet_y = view_.y, own_x = view_.owner_x, own_y = view_.owner_y, end_x = view_.end_x, end_y = view_.end_y;
         if (mode == 3) { act = { .kind = PetAct::Kind::teleport }; return true; }   // ponytail: d2d's teleport always lands
         if (mode == 0) {
@@ -142,16 +144,16 @@ public:
             bool tried = false;
             for (int looked = 0, cursor = view_.cursor;;) {
                 cursor = cursor == 0 ? 0x13 : cursor - 1;
-                const auto [x, y] = view_.ring[std::size_t(cursor)];
-                if (x != 0 && y != 0 && npc_distance(pet_x, pet_y, x, y) > 5) {
+                const auto [step_x, step_y] = view_.ring[std::size_t(cursor)];
+                if (step_x != 0 && step_y != 0 && npc_distance(pet_x, pet_y, step_x, step_y) > 5) {
                     pace(0, pct, 100);
-                    if (set_out(x, y, move_mode)) return true;
+                    if (set_out(step_x, step_y, move_mode)) return true;
                     pace(0xf, pct, 100);
-                    if (set_out(x, y, move_mode)) return true;
+                    if (set_out(step_x, step_y, move_mode)) return true;
                     if (!tried) {
                         tried = true;
                         pace(1, pct, 100);
-                        if (set_out(x, y, move_mode)) return true;
+                        if (set_out(step_x, step_y, move_mode)) return true;
                     }
                 }
                 if (++looked > 0x13) {
@@ -280,7 +282,7 @@ inline bool traced_pet_ai(std::string_view ai_name) {
 // target (AI params [2] is `foe2`, [5] its distance, [6] in melee); per unit
 // a clear line (FUN_005dc640), in melee of the pet (FUN_00622c40), dying
 // (FUN_005541b0); the foe2 poisoned (state 2) and its poison resist (stat
-// 0x2d), the pet slowed (state 0x3c) or in Fenris's rage (0x8a), the
+// 0x2d), the pet in decrepify (state 0x3c) or Fenris's rage (0x8a), the
 // owner's life / mana (stats 6 / 8) and their max (FUN_00625d10 / d60);
 // the owner's summoning skill: its calc (FUN_00646ca0: shots, hits, life
 // frames, radius), level, mode (FUN_00644360); the Death Sentry's corpse
@@ -595,6 +597,10 @@ void fenris_think(PetBrain<World>& brain) {
     brain.wait(brain.aip(0));
 }
 
+// The Raven's init (FUN_005ecb70, row 107): +0x14 -1, +0x18 aip3 + 1, +0x1c
+// a seed step's low bit (the side it circles the owner first).
+inline std::array<int, 3> raven_init(int aip3, Rng& seed) { return { -1, aip3 + 1, int(seed.next() & 1) }; }
+
 // MonAI 107 Raven (FUN_005ecc10). +0x14: hits left (Skill1's calc at the
 // first think, 3 without a Skill1); none left, it dies. Over 50 from the
 // owner a teleport, over 28 after it. The driver's target, past the +0x18
@@ -783,6 +789,11 @@ void death_sentry_think(PetBrain<World>& brain) {
     }
     brain.stand(brain.aip(1));
 }
+
+// The Blade Sentinel's init (FUN_005ea510, MonAI 102's init, the row's second
+// dword at 0x73d07c): +0x14 -1 (its first think sets its last frame), +0x18 1,
+// +0x1c 0 (its missile not made yet).
+inline std::array<int, 3> blade_sentinel_init() { return { -1, 1, 0 }; }
 
 // MonAI 102 BladeCreeper (FUN_005ea540: Blade Sentinel). +0x14 its last
 // frame (Skill1's calc on), then it dies. Its missile is made once (+0x1c).

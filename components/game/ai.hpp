@@ -7,6 +7,7 @@
 
 #include <combat.hpp>
 #include <missiles.hpp>
+#include <mon_equip.hpp>
 #include <monsters.hpp>
 #include <rules.hpp>
 #include <town_npcs.hpp>
@@ -18,6 +19,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
+#include <format>
 #include <functional>
 #include <iterator>
 #include <memory>
@@ -35,12 +37,39 @@ namespace d2d::game {
 // A monster's velocitypercent (stat 0x43) as its stat initialiser sets it (FUN_00573cb0, SetStat(0x43, 0x4b) at 0x573f16).
 inline constexpr int kMonsterVelocityPct = 75;
 
+// A unit's coordinate as game.exe keeps it: 16.16 subtiles (path +0 / +4),
+// which a walk steps (rules::walk_frame). It reads as cells, kept on its
+// subtile (a float holds 24 bits of the 27); cells written in go to the
+// nearest 1/65536 subtile, and centre() is a subtile's centre exactly.
+struct Fine {
+    std::uint32_t raw = 0;
+    Fine() = default;
+    explicit Fine(float cells) : raw(std::uint32_t(std::llround(double(cells) * 5 * 65536))) {}
+    Fine& operator=(float cells) { return *this = Fine(cells); }
+    [[nodiscard]] static Fine centre(int subtile) {
+        Fine fine;
+        fine.raw = (std::uint32_t(subtile) << 16) + 0x8000;
+        return fine;
+    }
+    [[nodiscard]] int subtile() const { return std::int32_t(raw) >> 16; }
+    operator float() const {
+        float cells = float(std::int32_t(raw)) / (65536.f * 5);
+        while (int(std::floor(cells * 5)) > subtile()) cells = std::nextafter(cells, cells - 1);
+        while (int(std::floor(cells * 5)) < subtile()) cells = std::nextafter(cells, cells + 1);
+        return cells;
+    }
+    // Moved by cells in 16.16, so the place keeps the bits a float can't hold.
+    Fine& operator+=(float cells) { raw += Fine(cells).raw; return *this; }
+    Fine& operator-=(float cells) { raw -= Fine(cells).raw; return *this; }
+};
+
 // Where each world NPC is right now (index-aligned with Level::npcs):
 // patrolling NPCs walk their DS1 path, pausing at each point.
 struct UnitState {
-    float x = 0, y = 0;
+    Fine x, y;                        // cells, held in 16.16 subtiles (Fine)
     UnitShape shape;                  // its collision (gamedata.hpp); a player's by default
-    int dir = 0;
+    int dir = 0;                      // its facing drawn, 16 directions in DCC order
+    d2d::rules::Facing facing;        // a walk's facing in 64 (path +0x64 / +0x65 / +0x66)
     bool walking = false;
     bool greets = false;              // a town NPC's think greeted the player just now (unit sound 0x12; World plays it)
     std::size_t next = 0;             // path point being walked to
@@ -120,27 +149,36 @@ void npc_patrol(const GameData& game_data, const Level& level, std::vector<UnitS
 // A player's walk from (x, y) to (gx, gy), in cells: game.exe's path type 7
 // (rules::player_path: the toward pather, the search when close) over
 // subtiles with the unit collision test, `to_unit` when walking up to a
-// monster or NPC (near 1, FUN_006498a0). Points are subtile centres; the
-// leading ones it stands on are skipped (FUN_0064fe40), and a repeat.
+// monster or NPC (near 1, FUN_006498a0), `target` that unit: its stamp,
+// as its own, isn't in the way (flag 0x800, FUN_00649560). A blocked end is
+// walked back toward the start (flag 0x1000, rules::end_walk_back). Points
+// are subtile centres; the leading ones it stands on are skipped
+// (FUN_0064fe40), and a repeat.
 std::vector<std::pair<float, float>> player_walk(const Level& level, float x, float y, float goal_x, float goal_y, bool to_unit,
-                                                 const Crowd& crowd = {}, const UnitState* self = nullptr);
+                                                 const Crowd& crowd = {}, const UnitState* self = nullptr, const UnitState* target = nullptr);
 
 // A walk as a monster's (town NPCs, Cain, the merc, pets) to (gx, gy) in
 // cells: rules::monster_path's points as subtile centres, a budget of 0x14
 // points (FUN_005a7c20 -> FUN_006490e0). False with no step to take.
 bool set_off(const Level& level, UnitState& unit, float goal_x, float goal_y, bool to_unit, const Crowd& crowd = {});
 
-// A frame of that walk (FUN_00650840): along its path; run out short of its
-// end, it paths again while the budget lasts, the points walked coming off
-// it (FUN_006503f0 -> FUN_00650350). Blocked, it ends (FUN_00650150).
-// False once it's over.
-bool walk_on(const Level& level, UnitState& unit, float step, const Crowd& crowd = {});
+// A frame of that walk (FUN_00650840): along its path. False once it's
+// over: at its last point or blocked (FUN_00650150), short of the goal or
+// not; FUN_006507b0 zeroes the path's count then, so FUN_006503f0 (the
+// re-path) doesn't run again. Further on is the next think's walk.
+// With a `target` (a walk at a unit) its check comes first
+// (rules::chase_check): within 0 of it (+0x93), over; more than 5 subtiles
+// off the goal on either axis, a new path to it while the budget lasts.
+bool walk_on(const Level& level, UnitState& unit, int velocity, const Crowd& crowd = {}, const UnitState* target = nullptr);
 
-// Moves u along its path by `step` cells, dropping reached points and
-// turning it to face the way; blocked by a wall or another unit, it
-// drops the route and stands on its subtile's centre (FUN_00650150), and
-// `blocked`, if given, is set. False once there (or stuck).
-bool follow_path(const Level& level, UnitState& unit, float step, const Crowd& crowd = {}, bool* blocked = nullptr);
+// A frame of u's walk along its path at `velocity` (path_velocity)
+// (rules::walk_frame: FUN_00650840 in 16.16 subtiles), dropping reached
+// points and turning it to face the way; a new subtile blocked by a wall or
+// another unit ends it on the centre of the last free one (FUN_00650150),
+// and `blocked`, if given, is set. False once it's over: no path left, and
+// the unit on its subtile's centre (FUN_006507b0; with no path or no step
+// too).
+bool follow_path(const Level& level, UnitState& unit, int velocity, const Crowd& crowd = {}, bool* blocked = nullptr);
 
 // A pet follows the player about camp: it sets off when more than 3 cells
 // behind and stops within 1.5, at `speed` cells/s on a monster's walk;
@@ -237,6 +275,7 @@ struct Monster {
     bool fleeing = false, flee_sound = false;  // Fallen's flee event while a nearby monster dies
     bool first_sight = false, taunt_sound = false;   // AI flag 0x10: its first-sight taunt (unit event 0x10) is sent
     bool help_sound = false;                  // a caged prisoner's cry (RescueQuest::kHelpMe)
+    int skill_sound = -1;                     // the skill it just started (its start sounds, FUN_004c6140: Fight::monster_sounds), -1 none
     // In a game target list (+0xd0 not 0xb): an evil monster's search takes a
     // good one only from list 8. A prisoner (FUN_00588600's) is in none till its
     // think finds its door broken (FUN_005ee3c0 -> FUN_005b1990(8)).
@@ -597,12 +636,25 @@ struct Foe {
     }
 };
 
+// A knockback's pace: FUN_00623f50 gives a player in KB (mode 0x13) or a
+// monster in KB (0xd) path velocity 0x1000 (FUN_00648690), whatever its
+// speed, and FUN_00554ca0 -> FUN_00650840 steps it velocity x dir >> 8 a
+// frame (FUN_006502d0): one subtile, 0.2 cells. The last step snaps onto
+// the path's end once it's within a step on both axes (FUN_00650090), so
+// `length` cells take ceil(5 x length) frames.
+inline constexpr float kKnockCellsPerFrame = 0.2f;
+inline float knock_moved(std::uint32_t elapsed_ms, float length) { return std::min(float(elapsed_ms) * kKnockCellsPerFrame / 40.f, length); }
+inline std::uint32_t knock_ms(float length) { return std::uint32_t(std::ceil(length / kKnockCellsPerFrame - 1e-4f)) * 40; }
+
 // A knocked-back unit's slide (mode KB, Fight::knock_back: a monster, a
-// pet or the merc): along to its leap_to over the mode. True while it lasts.
+// pet or the merc): at the knockback's pace to its leap_to, then it stands
+// till the mode ends (LAB_005a8630 steps the path each frame and leaves
+// only at the mode's end, FUN_006217c0). True while the mode lasts.
 inline bool knock_slide(Monster& monster, std::uint32_t now_ms) {
-    const float done = std::clamp(float(now_ms - monster.unit.mode_ms) / float(std::max<std::uint32_t>(monster.mode_until - monster.unit.mode_ms, 1)), 0.f, 1.f);
-    monster.unit.x = monster.leap_from_x + (monster.leap_to_x - monster.leap_from_x) * done;
-    monster.unit.y = monster.leap_from_y + (monster.leap_to_y - monster.leap_from_y) * done;
+    const float dx = monster.leap_to_x - monster.leap_from_x, dy = monster.leap_to_y - monster.leap_from_y, length = std::hypot(dx, dy);
+    const float done = length > 0 ? knock_moved(now_ms - monster.unit.mode_ms, length) / length : 1.f;
+    monster.unit.x = monster.leap_from_x + dx * done;
+    monster.unit.y = monster.leap_from_y + dy * done;
     return now_ms < monster.mode_until;
 }
 
@@ -691,10 +743,10 @@ struct Missile {
     const GameData::MissileInfo* sub = nullptr;          // a monster's spawner's SubMissile1 (the Countess's firewall maker)
     // Its flight in act subtiles, 16.16 (rules::MissileFlight), from its
     // first step: toward `to` (cells, FUN_0059fa30's target point) when
-    // set, else along its velocity, at the velocity's path speed
-    // (missile_speed). Charged Bolt's: `bolt` its index (FUN_005c9290).
+    // set, else FUN_0064fc60 at the start plus (1, 1), at the velocity's
+    // path speed (missile_speed). Charged Bolt's: `bolt` its index (FUN_005c9290).
     // `rooms`: its room, then the near list's (missile_rooms); `follow`:
-    // sent outside that room, so the room moves with it.
+    // the target point lay outside that room, so the room moves with it.
     std::optional<std::pair<float, float>> to;
     int bolt = -1;
     bool wall_maker = false;                    // FUN_005cd110: a draw first, under 20 its path stays straight
@@ -722,8 +774,8 @@ inline float missile_speed(const GameData::MissileInfo& info, int level) {
 // where it was put when moved by hand. Its subtiles are the act's;
 // `blocked` tests the 0x04 bit, and a subtile off its rooms reads 0x27
 // (blocked). False: the flight is over (a wall, or off its rooms).
-// ponytail: one aimed along its velocity, not at a point, takes the float
-// ratio for FUN_0064fc60's and counts as sent outside its room.
+// ponytail: a hand move and a velocity change in flight still take
+// missile_aim_along's float ratio for FUN_0064fc60.
 template <class Reach>
 bool missile_fly(const Level& level, Missile& missile, Reach&& reach) {
     const int origin_x = level.world_x * 5, origin_y = level.world_y * 5;
@@ -734,19 +786,19 @@ bool missile_fly(const Level& level, Missile& missile, Reach&& reach) {
         const int path_velocity = int(std::lround(std::hypot(missile.velocity_x, missile.velocity_y) * 4096 / 5));
         const int max_velocity = missile.info ? missile.info->max_vel << 8 : path_velocity, accel = missile.info ? missile.info->accel : 0;
         const bool aimed = missile.to && !moved_by_hand;
-        const int to_x = aimed ? origin_x + subtile(missile.to->first) : from_x, to_y = aimed ? origin_y + subtile(missile.to->second) : from_y;
+        int to_x = aimed ? origin_x + subtile(missile.to->first) : from_x, to_y = aimed ? origin_y + subtile(missile.to->second) : from_y;
+        if (to_x == from_x && to_y == from_y) { ++to_x; ++to_y; }   // FUN_0059fa30: target = start moves + (1, 1)
         missile.flight = d2d::rules::MissileFlight::launch(from_x, from_y, to_x, to_y, path_velocity, max_velocity, accel);
-        if (!aimed) std::tie(missile.flight.aim_x, missile.flight.aim_y) = d2d::rules::missile_aim_along(missile.velocity_x, missile.velocity_y);
+        if (moved_by_hand) std::tie(missile.flight.aim_x, missile.flight.aim_y) = d2d::rules::missile_aim_along(missile.velocity_x, missile.velocity_y);
         if (missile.bolt >= 0 && aimed) {                    // FUN_005c9290 / FUN_005cd110: 77 frames at most, its wiggle
-            const int bolt_to_x = to_x == from_x && to_y == from_y ? to_x + 1 : to_x, bolt_to_y = to_x == from_x && to_y == from_y ? to_y + 1 : to_y;
             missile.dies = std::min(missile.dies, missile.born + 77 * 40);
-            d2d::rules::Rng seed{ std::uint32_t(bolt_to_x + missile.bolt) };
+            d2d::rules::Rng seed{ std::uint32_t(to_x + missile.bolt) };
             if (!missile.wall_maker || seed.next() % 100 >= 20)
-                missile.flight.points = d2d::rules::wiggle_points(from_x, from_y, bolt_to_x, bolt_to_y, int(missile.dies - missile.born) / 40, seed);
+                missile.flight.points = d2d::rules::wiggle_points(from_x, from_y, to_x, to_y, int(missile.dies - missile.born) / 40, seed);
         }
         missile.rooms = reach(missile.x, missile.y);
         const auto& room = missile.rooms.empty() ? std::array<int, 4>{} : missile.rooms.front();
-        missile.follow = !aimed || to_x < room[0] || to_y < room[1] || to_x >= room[0] + room[2] || to_y >= room[1] + room[3];   // FUN_006492f0: path flag 1
+        missile.follow = to_x < room[0] || to_y < room[1] || to_x >= room[0] + room[2] || to_y >= room[1] + room[3];   // FUN_006492f0: path flag 1 when the target lies outside the room
         missile.launched = true;
         missile.aimed_x = missile.velocity_x; missile.aimed_y = missile.velocity_y;
     } else if (missile.velocity_x != missile.aimed_x || missile.velocity_y != missile.aimed_y) {
@@ -1077,10 +1129,14 @@ void missiles_update(const Level& level, std::vector<Missile>& ms_, std::span<Fo
             return;
         }
         const auto ring = [&](int first, int step, int velocity) {
+            const int at_x = int(std::floor(missile.x * 5)), at_y = int(std::floor(missile.y * 5));
             for (int way = first; way < 16; way += step) {
-                const float dx = float(kRingWayX[std::size_t(way)]), dy = float(kRingWayY[std::size_t(way)]), span = std::hypot(dx, dy);
+                const int dx = kRingWayX[std::size_t(way)], dy = kRingWayY[std::size_t(way)];
+                const float span = std::hypot(float(dx), float(dy));
                 const float speed = missile_speed((velocity << 7) * 75 / 100);   // flags 0x14: the velocity as is
-                laid.push_back(missile_from(missile, *sub, missile.x, missile.y, dx / span * speed, dy / span * speed, now_ms));
+                laid.push_back(missile_from(missile, *sub, missile.x, missile.y, float(dx) / span * speed, float(dy) / span * speed, now_ms));
+                // FUN_005a9370 flags 0x17 include flag 2: this offset is the target, relative to the start.
+                laid.back().to = { (float(at_x + dx) + 0.5f) / 5.f, (float(at_y + dy) + 0.5f) / 5.f };
             }
         };
         ring(0, 2, sub->param1);
@@ -1107,9 +1163,15 @@ std::string unique_name(const GameData& game_data, int name_seed);
 // A champion / unique / superunique / minion (rules/uniques.hpp,
 // FUN_005a2120): a higher level, more life, damage and to-hit,
 // resistances, speed, an element; its name. At full life. `players`: in
-// the game (rules::monster_stats' bonus).
+// the game (rules::monster_stats' bonus). `gear`: what it wears from the
+// start (wear_gear), before its mods scale it.
 void make_boss(const GameData& game_data, Monster& monster, d2d::rules::Boss kind, const std::vector<int>& mods, int super, int name_seed,
-               int difficulty, d2d::rules::Rng& rng, int players = 1);
+               int difficulty, d2d::rules::Rng& rng, int players = 1, const d2d::rules::GearSum* gear = nullptr);
+// A made monster's MonEquip items (rules::SpawnGear), each made as a drop on
+// its seeds, summed (rules::gear_sum); and that gear on its stats: every
+// mode's blow as FUN_0057b420 reads it, its defence (stat 31).
+[[nodiscard]] d2d::rules::GearSum spawn_gear(const GameData& game_data, std::span<const d2d::rules::SpawnGear> gear, int difficulty);
+void wear_gear(d2d::rules::MonStats& stats, const d2d::rules::GearSum& gear);
 // MonUMod poison hit's init (FUN_005a1e00): its own poison stats.
 void poison_hit(const GameData& game_data, Monster& monster, int difficulty, bool unique);
 // Whether a skill may put the monster on a special think (FUN_0056e2f0 ->
@@ -1270,3 +1332,10 @@ std::optional<std::pair<int, int>> free_spot_near(const Level& level, const Crow
 std::string merc_name(const GameData& game_data, const GameData::Merc& merc, int index);
 
 }  // namespace d2d::game
+
+// A Fine prints as its cells (the logs, devctl). Any context: libc++ 18
+// (the Android NDK's) tests formattable with one that isn't format_context.
+template <>
+struct std::formatter<d2d::game::Fine> : std::formatter<float> {
+    auto format(d2d::game::Fine fine, auto& context) const { return std::formatter<float>::format(float(fine), context); }
+};

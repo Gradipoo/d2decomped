@@ -160,8 +160,26 @@ weaponsnd.
   `Fight::strike` (`Hero::seq_sounded`), a monster's through
   `Monster::seq_sounds` (ai.cpp's sequence rows) in `Fight::monster_sounds`,
   dropped for a monster that is dead or away from the players.
-- Not ported: prgsound (charge-ups, Hurricane), monsters' own stsound, a
-  monster's Charge start sound (FUN_004f4f40).
+- **A monster's start.** The server's skill start sends S→C 0x4c / 0x4d
+  for monsters too (builder `FUN_00597d70`); the client's unit commands
+  0x16 / 0x15 (`FUN_004c6eb0` / `FUN_004c6f40`) call FUN_004c6140, whose
+  sounds (0x4c64a4..0x4c65d3) test the unit type only for the class sound
+  (type 0, at 0x4c6581): a monster plays the stsound as a player does, with
+  the weaponsnd swing and stsounddelay timed by its MonStats2 HitClass
+  (+0x14, `FUN_00623c20`) and its rate (+0x4c), and no class sound. A
+  cltstfunc that gives 0 silences a stsuccessonly skill (flag bit 12,
+  0x4c649e). Oracle `tools/emu/skill_start_sound.py` (unit types 0, 1, 2;
+  item casts; the three flags; a cltstfunc giving 1, 0 or none).
+  d2d: `rules::sound_ids::skill_start`; `Monster::skill_sound` set where
+  the AI starts a skill (`ThinkCtx::use`, teleport, Charge's start,
+  DiabRun), played in `Fight::monster_sounds`. Mephisto's, Diablo's, the
+  Council's and the Summoner's casts, Zakarum priests, Fallen Shaman's
+  resurrect and the sand maggots' burrow / emerge are the classic ones.
+  ponytail: a stsuccessonly monster start (Hydra's cltstfunc 17
+  `FUN_004e39a0`, Charge's 25 `FUN_004c9b40`) always sounds; d2d doesn't
+  run the client's cltstfunc.
+- Not ported: prgsound (charge-ups, Hurricane), a monster's Charge start
+  sound (FUN_004f4f40).
 
 ## Missiles
 
@@ -180,7 +198,10 @@ state comes on (FUN_004d9b20, S→C state packets), +0x28 offsound as it goes
 Per class (0x72a008 → 11 dwords): hit, death, impossible, needmana, needkey,
 cantcarry, cantuseyet, not_in_town, chat_a, the first quest line
 (act1_complete_andariel), the first footstep (light / medium / heavy walk
-dirt). FUN_004cc410 plays hit on GH / KB and death on DT, after the impact;
+dirt). The row pointer FUN_004ca3e0 (`UNITSND_GetBaseSoundId`) returns for
+each class, and the row's hit / death / step dwords, match `kPlayerVoice`
+for all 7 classes (oracle `tools/emu/unit_snd_tables.py`). FUN_004cc410
+plays hit on GH / KB and death on DT, after the impact;
 the hit (modes 4 / 0x13) not while one of the player's speech lines plays
 (FUN_004b9e90 → FUN_004b9700: a playing instance, state 1, rows 0xb76..0x1230,
 the unit in its list +0x28). FUN_004cb9c0's 0x13..0x18 (below) take the same
@@ -266,7 +287,9 @@ FUN_004cb9c0 are the refusals, the mana check and this table. See
 stubs.md. The same holds for two completions, act2_complete_tightspot
 (0x35) and act3_complete_beneath (0x3f), and for act2_begin_tainted
 (0x31), act2_near_tightspot (0x3d) and act2_trigger_field (0x3e):
-no site passes them, constant or computed (checked again 2026-10-25;
+no site passes them, constant or computed (checked again 2026-10-25,
+and 2026-11-11: the 99 calls to FUN_00553380 in the code, each one's EDX
+read back to its `mov` or `lea`;
 the pass-through helpers FUN_00595420 / FUN_005455f0 / FUN_0055c9a0
 only get 0x25, 0 and 0x13 / 0x17).
 
@@ -285,10 +308,10 @@ The clock is `FUN_0044db00` (DAT_007a0498), 25 a second. In address order:
 
 | Address | Trigger | Jingle | EDX | Back | Line at | Speaks | From block |
 |---|---|---|---|---|---|---|---|
-| `0046b146` | Horadric Staff (object mode, `FUN_004ad1a0`) | music_quest_horadric | 0 | 725 | 0 | no | yes |
-| `0046b33e` | the Hellforge | music_quest_forge | 0 | 350 | 0 | no | no |
-| `0046b883` | the Compelling Orb | music_quest_compelling | 0 | 350 | 0 | no | no |
-| `0046bc28` | Izual | music_quest_izual | 0 | 250 | 0 | no | no |
+| `0046b146` | S→C 0x89 event 3, the staff placed (`FUN_0059dd80`) | music_quest_horadric | 0 | 725 | 0 | no | yes |
+| `0046b33e` | 0x89 event 14, the forge's third blow (0x5b5dfc) | music_quest_forge | 0 | 350 | 0 | no | no |
+| `0046b883` | the orb monster (0x16e) dies | music_quest_compelling | 0 | 350 | 0 | no | no |
+| `0046bc28` | Izual (0x100) dies | music_quest_izual | 0 | 250 | 0 | no | no |
 | `004cba72` | unit event 0x23, the Den | music_quest_den | 0 | 300 | 250 | yes | yes |
 | `004cba9c` | 0x22, Blood Raven | music_quest_bloodraven | 475 | 800 | 525 | yes | yes |
 | `004cbac0` | 0x25, the Tower | none | 0 | 1500 | 0 | no | no |
@@ -302,8 +325,31 @@ LoD's 0x50 (Shenk), 0x52 (Nihlathak) and 0x53 (Baal) follow at 0x4cbbaa..0x4cbbf
 The server sends 0x4b from `FUN_005b49c0` to each player with Terror's End
 bit 13 (0x5b4a20). d2d: `rules::QuestMusic`, `World::music_cue` and
 `rules::quest_line_due` (the line's delay), `Audio::quest_music`
-(`test_quest_music`). Not done: the four objects' jingles start where d2d
-already had them, not at the object's client mode (`FUN_004ad1a0`).
+(`test_quest_music`).
+
+**The four the client starts itself.** Two come from S→C 0x89 (handler
+0x4b9330 → 0x46b630, the table at 0x7129d8): event 3's entry
+(0x46b100) and event 14's (0x46b300). Each looks for its object (152 the
+orifice, 376 the Hellforge) among the units of the local player's room's
+near list (`FUN_00463de0`, `FUN_00620bb0`, `FUN_0065a620` over
+`FUN_00619790`'s rooms) and plays the jingle only when it's there; event 14
+also plays quest_hellforge_smash (0x23) on the forge. The server sends 3
+from `FUN_0059dd80` (the staff placed in the orifice) and 14 from the
+Hellforge's third blow (`FUN_005b5c10`, 0x5b5dfc), each to the whole game
+(`FUN_00545760`). Nothing plays music_quest_horadric when the staff is
+made: these four `mov ecx` sites are the only immediates of 0x124f,
+0x1251..0x1253 in the code. The other two are the questcomplete mod's (22)
+client hook for event 1, after a mode change: `FUN_004aff60` (the monster's
+unit command) ends with `FUN_004ade50` → `FUN_004add90`, which runs the
+table at 0x724e28 by mod × 5 + event; mod 22's entry is 0x4ad2f0. In mode 0
+(death) it switches on the class: 0x100 Izual → 0x46bc10, the jingle; 0x16e
+the compelling orb → 0x46b850, the jingle when object 386 is in the orb's
+near list (the server's `FUN_005dfee0` asserts it is). The orb dies by
+`FUN_005ddfc0` (mode 0) on the second hit with Khalim's Will
+(`FUN_005bb980`). d2d: `World::music_cue_near`, for each player whose
+room's near list holds the unit (`test_quest_jingles`). For the two deaths
+that is d2d's reading of "a client that has the unit": which rooms' units
+the server sends a client isn't traced here.
 
 ## Footsteps (FUN_004caf60 → FUN_004caeb0)
 
@@ -316,9 +362,21 @@ each at least ⅔ of a step after the last (+0x84). The row: the first
 1) + 24 running. Material (FUN_004cadb0): the floor tile under the unit, its
 DT1 material flags 0x20 → 1 dirt, 0x08 → 2 indoor stone, 0x10 → 3 outdoor
 stone, 0x40 → 4 sand, 0x400 → 5 snow, 0x80 → 6 wood; none, the level's
-SoundEnviron Material 1. When several floor tiles share the cell,
-FUN_004cadb0 uses the first, and the level default when that tile's flags
-name none. A monster's FootstepLayer plays with it at FsPrb %.
+SoundEnviron Material 1 (FUN_004817a0 → FUN_00481920 +0x1c; 1 unless 1..6).
+When several floor tiles share the cell, FUN_004cadb0 uses the first, and
+the level default when that tile's flags name none. It looks in the unit's
+room (FUN_004cace0: the room's floors, FUN_00619660, 0x30 bytes a record,
+cell at +8 / +0xc, tile at +0x18), then in each room of its near list
+(FUN_00619790). **Verified**: `tools/emu/floor_material.py` runs
+FUN_004cadb0, FUN_004cace0 and FUN_004cad60 for real (20,000 cases, none
+differ). The Rogue Encampment's floors never name a material: none of the
+floor tiles in its DT1s (LvlTypes 1 by LvlPrest 1's Dt1Mask, FUN_0066f240)
+has one of those flags, so every step there takes SoundEnviron 1's
+Material 1, dirt, as d2d's do (`test_camp_floors`). `Fight::floor_material_at`
+asks `floor_material_near` for the unit's room (`room_of`), then each room
+of `near_rooms`, and a neighbour level's tiles are shifted by the two world
+origins (`test_floor_material`). A monster's
+FootstepLayer plays with it at FsPrb %.
 
 ## Monsters (MonSounds.txt, 0x96bc5c)
 
@@ -349,6 +407,18 @@ a mode (8 any; FUN_004cb3e0), replayed while it's in sight and in that mode.
 Object 0x3d's loops are by mode at 0x728338. The 13 objects sharing record
 0x729328 play only going to a later mode. Dumped whole into
 `components/rules/object_sounds.hpp`.
+
+FUN_004cb380 (`UNITSND_GetModeChangeSound`) and FUN_004cb3e0
+(`UNITSND_GetSpecialSoundByMode`) are each driven over every row of
+0x7295f8 (`GetSndUnitClassId` hooked to hand back the row's own id) and
+checked, mode by mode, against a model of their branches alone (the row's
+own data, not a transcribed copy): a null row returns 0; the shared record
+blocks on `prevMode > newMode`; the special-sound slots (row + 0x20..0x2c)
+fall back from the first pair to the second, 8 meaning "any mode", and
+class 0x3d reads 0x728338 instead. `--mutation-check` plants four defects
+(swapped special-sound slots, the shared check dropped, the "any mode"
+sentinel changed, class 0x3d treated like any other) and requires each to
+be caught. Oracle `tools/emu/unit_snd_tables.py`.
 
 One object calls on its own: the Gibbet (26, Cain caged in Tristram). FUN_004cb460's
 object branch plays 0xe57 `cain_act1_help` on it while it's in mode 0, when the
@@ -519,7 +589,7 @@ already dead as it comes waits), Neutral and footsteps. A monster the host
 removes is dropped, so one that comes back plays its Init again.
 The host's hit class isn't read, so a joined game's monsters play no impact
 on GH / KB / DT.
-Left: the player's quest lines, monsters' own skill stsound,
+Left: the player's quest lines,
 prgsound, ProgSound, state 0x92, the town's floor material (its DS1 tiles
 aren't in `room_floors`: dirt). Cursor item sounds (identify, repair, break,
 point-drop and convert) are cued at their successful actions; only the

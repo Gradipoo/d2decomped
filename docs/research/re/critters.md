@@ -20,6 +20,14 @@ When a room comes up on the client (`FUN_0044c750`: once per room, room
   free for the critter's size (MonStats2 +8) under mask 0x3f11; then
   `FUN_00466730` makes it (id from the client counter `DAT_00711f30`,
   unit flags 0x600000, the client unit table 0x7a5270).
+  `FUN_00466730` (ECX, EDX and three stack words) steps `DAT_00711f30`
+  (0xffffffff wraps to 0). Type 1 (stack word 2) builds a 7-dword record
+  (counter, ECX, EDX, stack word 1, 0, 0, 1) and calls `FUN_00466360`.
+  Any other type asks `FUN_00620290(0, type)` for a record, returns when
+  there is none, else ORs 0x600000 into its +0xc4 and calls
+  `FUN_00465fd0(counter, ECX, stack 1, type, stack 3, 0)`.
+  `tools/emu/ui_client_helpers.py` runs it for 48 cases with those three
+  callees hooked (they log their arguments); no d2d comparison.
 
 Levels (cmon / cpct): camp chicken 30; Act 1 / 2 dungeons rat 30 + bat 30
 (sewers, Ancient Tunnels: bat 100) + scorpion 20 in Act 2; Act 2 outdoors
@@ -43,7 +51,7 @@ Act 5 outdoors bunny 2..3; Duriel's lair larva 100.
 
 | Rows | Function | Does |
 |---|---|---|
-| 149 chicken, 268 bug | `FUN_0046ccd0` | in NU: another critter near (`FUN_0046c570`/`FUN_0046c600`)? under 4 away: flee (`FUN_0046c7d0`, 4, 0xc, 0x78), else wander 4; else 30 %: wander 2; else wait 5 |
+| 149 chicken, 268 bug | `FUN_0046ccd0` | in NU: another unit near (below) (`FUN_0046c570`/`FUN_0046c600`)? under 4 away: flee (`FUN_0046c7d0`, 4, 0xc, 0x78), else wander 4; else 30 %: wander 2; else wait 5 |
 | 151 rat, 269 scorpion, 283 larva, 339 minispider | `FUN_0046d110` | on the player's subtile: stand; player under 4: flee 6; past 7, a corpse (below); with one and not resting: walk to it, wait 6, rest (+0x34); not resting: rand(100) > 74 wander 5, else wait 30; resting: rand(100) < 20 stops it, wait 32 |
 | 157 / 158 bird, 319 parrot | `FUN_0046ce40` | flown (+0x34) and the player past 25: gone (`FUN_00465f00`); else flies (below) |
 | 159 bat | `FUN_0046cdc0` | player under 5: 66 % flee 8, else wander 12; else wander 9 |
@@ -57,6 +65,16 @@ The rat's corpse (`FUN_0046c570` over the units of its room's near list,
 `FUN_0046c660`): a dead player (mode 0 / 0x11) or monster (0 / 0xc) 3..25
 subtiles from the rat and over 7 from the local player; each one a
 rand(2) on the rat's seed, the last that hits wins.
+
+A chicken's or bunny's nearest unit (`FUN_0046c570` over its room's near
+list with the callback `FUN_0046c600(ECX critter, EDX candidate, out,
+best)`): not the critter itself, a player (type 0) or a monster (type 1)
+other than a chicken (0x95) or bunny (0x22c), then the dead test
+`FUN_00464820` at `0x46c62d`, and the nearest by `FUN_006416d0` wins. The
+dead test reads ECX, which still holds the critter (`0x46c607 mov edi,
+ecx`), not the candidate (ESI), so corpses count (bugs.md row 110). d2d:
+`rules::critter_neighbour` (critters.hpp); `tools/emu/critter_neighbour.py`
+runs it over types, classes, modes and the 0x10000 flag of both units.
 
 A bird's flight: four steps of its seed. The first odd: x 40, y rand(40);
 even: x rand(40), y 40; the next two negate x, then y on odd. It flies to

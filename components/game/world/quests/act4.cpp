@@ -11,6 +11,7 @@
 #include <d2s_items.hpp>
 #include <level_ids.hpp>
 #include <object_ids.hpp>
+#include <quest_clock.hpp>
 #include <quest_music.hpp>
 #include <quests.hpp>
 #include <quests_act4.hpp>
@@ -75,7 +76,10 @@ auto World::act4_join() -> void {
         if (!actor->character.fresh) hellforge.join(quests(), carries(d2d::rules::HellforgeQuest::kStone));   // fresh: no +0xd4
         terror = {};
         terror.join(quests(), actor->character.header.expansion());
-        izual_ghost_at = diablo_at = diablo_dead_at = gems_at = 0;
+        diablo_dead_at = gems_at = 0;
+        izual_ghost_in = 0;
+        izual_ghost_due = false;
+        izual_level = nullptr;
         gem_rounds = 0;
         forge_inited = false;
         seal_bosses.clear();
@@ -159,8 +163,11 @@ auto World::act4_kill(const Fight::Kill& kill, std::uint32_t now_ms) -> void {
                 if (quest::bit(bits, kIzualQuest, 13)) class_cue("act4_free_izual", now_ms);
                 else if (!quest::bit(bits, kIzualQuest, 0) && !quest::bit(bits, kIzualQuest, 1)) quest::set(bits, kIzualQuest, 14);
             });
-            music_cue("music_quest_izual");
-            izual_ghost_at = now_ms + 3 * kTickMs;
+            // His death (mode 0) runs his questcomplete mod's client hook (0x4ad2f0,
+            // class 0x100): the jingle for each client seeing him.
+            music_cue_near("music_quest_izual", kill.x, kill.y);
+            izual_ghost_in = d2d::rules::quest_timer_steps(3);
+            izual_level = level;                       // the kill's turn is its level's (kill.level is the monster's level, not an area)
             d2d::log::info("The Fallen Angel: Izual is dead");
         }
         if (kill.type == d2d::rules::HellforgeQuest::kHephasto) {         // FUN_005b65d0: the Hellforge Hammer
@@ -219,8 +226,15 @@ auto World::diablo_release(std::uint32_t now_ms) -> void {
                     set_mode(*game_data, monster, "DT", now_ms);
                     fight.killed(i, now_ms, false);
                 }
-        diablo_at = now_ms + d2d::rules::TerrorQuest::kRelease * kTickMs;
+        terror.arm();
         d2d::log::info("Terror's End: the seals are broken, Diablo comes");
+    }
+
+// A quest-clock step: a4q1's timer (3 ticks, 0x5b3e60) and a4q2's
+// release (1 tick, again till Diablo comes: FUN_005b4be0) run.
+auto World::act4_quest_step() -> void {
+        if (izual_ghost_in > 0 && --izual_ghost_in == 0) izual_ghost_due = true;
+        if (terror.release_step()) terror.diablo_due = true;
     }
 
 auto World::act4_update(std::uint32_t now_ms) -> void {
@@ -233,17 +247,17 @@ auto World::act4_update(std::uint32_t now_ms) -> void {
             }
         // a4q1's timer (FUN_005b3e60): the log 3, then Izual's ghost (0x196)
         // where he fell, an NPC.
-        if (izual_ghost_at && now_ms >= izual_ghost_at) izual.ghost_timer();
-        if (izual_ghost_at && now_ms >= izual_ghost_at && izual.ghost_due) {
-            izual_ghost_at = 0; izual.ghost_due = false;
-            if (const auto& ghost = game_data->mon_npc[std::size_t(d2d::rules::IzualQuest::kGhost)]; !ghost.code.empty()) {
-                auto npc = ghost;
-                std::tie(npc.x, npc.y) = level->nearest_free(izual.spot_x, izual.spot_y);
-                const_cast<Level&>(*level).npcs.push_back(std::move(npc));   // GameData owns its levels mutable (gamedata.cpp)
-                d2d::log::info("The Fallen Angel: Izual's ghost");
-            }
+        if (std::exchange(izual_ghost_due, false)) {
+            izual.ghost_timer();
+            if (std::exchange(izual.ghost_due, false))
+                if (const auto& ghost = game_data->mon_npc[std::size_t(d2d::rules::IzualQuest::kGhost)]; !ghost.code.empty()) {
+                    const Level& died = izual_level ? *izual_level : *level;
+                    auto npc = ghost;
+                    std::tie(npc.x, npc.y) = died.nearest_free(izual.spot_x, izual.spot_y);
+                    const_cast<Level&>(died).npcs.push_back(std::move(npc));   // GameData owns its levels mutable (gamedata.cpp)
+                    d2d::log::info("The Fallen Angel: Izual's ghost");
+                }
         }
-        if (izual_ghost_at && now_ms >= izual_ghost_at) izual_ghost_at = 0;
         // A log moved with flag 1 (FUN_00544300): sent again (S->C 0x5d) to a
         // player it's for (act4_detail::told).
         for (auto [news, quest] : { std::pair{ &izual.news, d2d::rules::IzualQuest::kQuest }, { &hellforge.news, d2d::rules::HellforgeQuest::kQuest },
@@ -293,9 +307,10 @@ auto World::act4_update(std::uint32_t now_ms) -> void {
                 }
             }
         }
-        // a4q2's timer (FUN_005b4be0): 10 ticks on, Diablo at his start
-        // point (object 255) in the sanctuary, wherever the player is.
-        if (diablo_at && now_ms >= diablo_at && sanctuary && !terror.diablo_made) {
+        // a4q2's timer (FUN_005b4be0), its 10th run on: Diablo at his start
+        // point (object 255) in the sanctuary, wherever the player is. Not
+        // there (+8 not found): it waits for its next run.
+        if (std::exchange(terror.diablo_due, false) && sanctuary && !terror.diablo_made) {
             const auto start = std::ranges::find(sanctuary->npcs, d2d::rules::object_ids::kDiabloStart, &Npc::object_id);
             if (start != sanctuary->npcs.end()) {
                 const int diff = actor->character.header.active_difficulty();
@@ -308,7 +323,7 @@ auto World::act4_update(std::uint32_t now_ms) -> void {
                 }
                 diablo.aware = true;
                 fight.add_monster(std::move(diablo), sanctuary);
-                terror.diablo_made = true; diablo_at = 0;
+                terror.diablo_came();
                 d2d::log::info("Terror's End: Diablo");
             }
         }
@@ -374,7 +389,9 @@ auto World::act4_operate(int npc_index, std::uint32_t now_ms) -> bool {
                 gem_rounds = d2d::rules::HellforgeQuest::kRounds;
                 gems_at = now_ms + d2d::rules::HellforgeQuest::kStrikeFrames * kTickMs;
                 cues.cue("quest_hellforge_smash", now_ms, object.x, object.y);
-                music_cue("music_quest_forge");
+                // S->C 0x89 event 14 (0x5b5dfc) to the game; its client entry (0x46b300)
+                // plays the jingle with the forge (object 376) near its player.
+                music_cue_near("music_quest_forge", object.x, object.y);
                 d2d::log::info("The Hellforge: the soulstone is shattered");
             }
             return true;

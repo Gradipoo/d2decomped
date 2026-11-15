@@ -19,15 +19,18 @@
 #include <d2s_items.hpp>
 #include <hud_globe.hpp>
 #include <light.hpp>
+#include <melee_reach.hpp>
 #include <monster_ids.hpp>
 #include <monsters.hpp>
 #include <object_ids.hpp>
+#include <quest_clock.hpp>
 #include <quests.hpp>
 #include <rules.hpp>
 #include <shrines.hpp>
 #include <skills.hpp>
 #include <sound_ids.hpp>
 #include <town_npcs.hpp>
+#include <unit_size.hpp>
 
 #include <algorithm>
 #include <array>
@@ -227,6 +230,62 @@ auto World::stamina_frame() -> void {
 // Runs one game frame with these orders; it also steps the day and the environment's
 // intensity for the player's act and level (FUN_0061bb80).
 auto World::tick(std::span<const Order> orders, std::uint32_t now_ms, std::uint32_t last_ms) -> void {
+        // The day moves a frame a tick (40 ms); a stall doesn't fast-forward it.
+        if (now_ms - day_at > 1000) day_at = now_ms;
+        day_frames.clear();
+        for (; now_ms - day_at >= kTickMs; day_at += kTickMs) day_frames.push_back(day_at);
+        first_turn = true;
+        if (!split_levels) {
+            tick_level(orders, now_ms, last_ms);
+            gidbinn_due = false;                             // a3q3's one look (FUN_005b9a30): this tick's turns only
+            hand_out_announced();
+            if (turn_done) turn_done();
+            return;
+        }
+        // Stage 9: a turn for each level with players on it, the lead's last.
+        for (auto& player : players) if (!player->on_level) player->on_level = level;
+        std::vector<const Level*> turns;
+        for (const auto& player : players)
+            if (player->on_level != lead().on_level && std::ranges::find(turns, player->on_level) == turns.end()) turns.push_back(player->on_level);
+        turns.push_back(lead().on_level);
+        const Level* const lead_level = lead().on_level;
+        auto everyone = std::move(players);
+        std::vector<Fight::Hero*> all_heroes = fight.heroes;
+        auto between = std::exchange(fight.kills, {});           // kills since the last tick (a debug kill): the lead's level's, for its turn
+        std::vector<bool> ticked(everyone.size(), false);
+        for (const Level* turn : turns) {
+            std::vector<std::size_t> slots;
+            for (std::size_t i = 0; i < everyone.size(); ++i) if (!ticked[i] && everyone[i]->on_level == turn) slots.push_back(i);
+            if (slots.empty()) continue;                     // all left it this tick (a warp): ticked already
+            players.clear();
+            fight.heroes.clear();
+            for (const auto slot : slots) { ticked[slot] = true; fight.heroes.push_back(everyone[slot].get()); players.push_back(std::move(everyone[slot])); }
+            elsewhere.clear();
+            for (const auto& other : everyone) if (other) elsewhere.push_back(other.get());
+            swap_to(turn);
+            if (turn == lead_level) fight.kills.insert(fight.kills.begin(), between.begin(), between.end());
+            act_as(*players.front());
+            tick_level(orders, now_ms, last_ms);
+            if (turn_done) turn_done();
+            for (std::size_t k = 0; k < slots.size(); ++k) everyone[slots[k]] = std::move(players[k]);
+            first_turn = false;
+        }
+        elsewhere.clear();
+        gidbinn_due = false;                                 // a3q3's one look (FUN_005b9a30): on the altar's level's turn, or none
+        players = std::move(everyone);
+        fight.heroes = std::move(all_heroes);
+        act_as(lead());
+        swap_to(lead().on_level);                                  // the host's screen: where its player is now
+        hand_out_announced();                                // the joiners have them in their next View
+    }
+
+auto World::hand_out_announced() -> void {
+        if (announced.empty()) return;
+        for (auto& player : players) for (const auto& message : announced) player->events.push_back(message);
+        announced.clear();
+    }
+
+auto World::tick_level(std::span<const Order> orders, std::uint32_t now_ms, std::uint32_t last_ms) -> void {
         const float elapsed = float(now_ms - last_ms) / 1000.f;
         now = now_ms;
         // The look follows what's worn (compcode::look, the save header's bytes).
@@ -253,10 +312,10 @@ auto World::tick(std::span<const Order> orders, std::uint32_t now_ms, std::uint3
         // (size 3, mask 0x3f11, 100 rings: Level::free_area); none, not made.
         if (const auto wanderer = std::ranges::find_if(fight.monsters, [](const Monster& monster) { return monster.gone && monster.type == d2d::rules::monster_ids::kDarkWanderer; });
             !afterglow_made && wanderer != fight.monsters.end() && !game_data->afterglow.code.empty()) {
-            if (afterglow_due == 0) afterglow_due = now_ms + 2 * kTickMs;
+            if (afterglow_in == 0 && !afterglow_due) afterglow_in = d2d::rules::quest_timer_steps(2);
         }
         if (const auto wanderer = std::ranges::find_if(fight.monsters, [](const Monster& monster) { return monster.gone && monster.type == d2d::rules::monster_ids::kDarkWanderer; });
-            !afterglow_made && afterglow_due != 0 && now_ms >= afterglow_due && wanderer != fight.monsters.end()) {
+            !afterglow_made && afterglow_due && wanderer != fight.monsters.end()) {
             afterglow_made = true;
             cues.cue_on(unit_key(kSoundOnMonster, wanderer->id), "object_wanderer_fissure", now_ms, wanderer->unit.x, wanderer->unit.y);
             static constexpr std::array<std::pair<int, int>, 8> kAround{ { { -3, -3 }, { -3, 0 }, { -3, 3 }, { 0, -3 }, { 0, 3 }, { 3, -3 }, { 3, 0 }, { -3, 3 } } };
@@ -269,19 +328,39 @@ auto World::tick(std::span<const Order> orders, std::uint32_t now_ms, std::uint3
         std::erase_if(fires, [&](const Fire& fire) { return fire.gone && now_ms >= fire.gone; });
         if (level != wanted_near) { want_nearby(*game_data, *level); wanted_near = level; }
         each_player([&](Player&) { item_ids(); });
-        // The day moves a frame a tick (40 ms); a stall doesn't fast-forward it.
-        if (now_ms - day_at > 1000) day_at = now_ms;
-        for (; now_ms - day_at >= kTickMs; day_at += kTickMs) {
-            day.step(act(), level->id);
-            credit_party([&] { act1_tick(); act2_tick(); });
-            each_player([&](Player&) { stamina_frame(); life_update_frame(day_at); footstep_frame(day_at); find_voice(day_at); });
+        // This tick's day frames (tick): the day and the quests' timers step
+        // once a tick, in the first turn; every turn's players each frame.
+        // ponytail: split levels run the quest timers (act1_tick, act2_tick)
+        // in the first turn's level only; their level tests see that one.
+        const std::uint32_t day_end = day_at;
+        for (const std::uint32_t frame_at : day_frames) {
+            day_at = frame_at;
+            if (first_turn) {
+                day.step(act(), level->id);
+                const bool quest_step = quest_clock.frame_step();   // the quest timers: every 20th frame (FUN_0052d870)
+                credit_party([&] { act1_tick(); act2_tick(); if (quest_step) { act1_quest_step(); act2_quest_step(); act3_quest_step(); act4_quest_step(); act5_quest_step(); } });
+            }
+            each_player([&](Player&) { stamina_frame(); life_update_frame(frame_at); footstep_frame(frame_at); find_voice(frame_at); });
         }
+        day_at = day_end;
         each_player([&](Player& player) {
             if (player.boost.until && now_ms >= player.boost.until) {     // the state runs out
                 if (shrine_code(player.boost.shrine) == 14) player.character.stats.values[d2d::d2s::kStamina] = player.character.stats.values[d2d::d2s::kMaxStamina];
                 player.boost = {};
             }
+            // Deaths and Find Item drop inside update_fighters (deaths.cpp, strike.cpp).
+            // The walk's crowd is built later; this one is who stands as the drop lands.
+            Crowd drop_crowd;
+            for (const auto& one : players) {
+                drop_crowd.units.push_back(&one->player);
+                if (one->merc) drop_crowd.units.push_back(&one->merc->unit);
+            }
+            for (std::size_t i = 0; i < npc_states.size() && i < level->npcs.size(); ++i)
+                if (level->npcs[i].root != "objects" && !npc_states[i].hidden) drop_crowd.units.push_back(&npc_states[i]);
+            if (!in_town(level)) fight.crowd(drop_crowd);
+            loot.standing = &drop_crowd;
             fight.update_fighters(now_ms);
+            loot.standing = nullptr;
         });
         spring_traps(now_ms);
         // Used shrines and chests: OP while it plays, then ON; a shrine back
@@ -311,6 +390,7 @@ auto World::tick(std::span<const Order> orders, std::uint32_t now_ms, std::uint3
             entry = back ? operated.erase(entry) : std::next(entry);
         }
         fissure_frame(now_ms);
+        slime_doors_on(now_ms);
         for (const auto& [key, door] : doors)                  // doors in the mode they were left in
             if (key.first == level && std::size_t(key.second) < npc_states.size())
                 std::tie(npc_states[std::size_t(key.second)].mode, npc_states[std::size_t(key.second)].mode_ms) = std::pair{ kObjectModes[std::size_t(door.mode)], door.when };
@@ -328,8 +408,11 @@ auto World::tick(std::span<const Order> orders, std::uint32_t now_ms, std::uint3
         }
         for (std::size_t i = 0; i < npc_states.size() && i < level->npcs.size(); ++i)
             if (level->npcs[i].root != "objects" && !npc_states[i].hidden) crowd.units.push_back(&npc_states[i]);
-        const bool in_moor = !in_town(level);     // outside: this level's monsters are about
+        bool in_moor = !in_town(level);           // outside: this level's monsters are about
+        const Level* tick_level = level;
         if (in_moor) fight.crowd(crowd);       // the monsters around the player
+        loot.standing = &crowd;                // FUN_00555da0: this level's 0x1000 / 0x2000
+        drop_wirt_gold(now_ms);
         // Dead: the death plays out, then Resurrect respawns in camp; a
         // swing or a flinch holds the player in place until it ends, and
         // an attack goes on while the button's held (the left skill sent
@@ -353,25 +436,27 @@ auto World::tick(std::span<const Order> orders, std::uint32_t now_ms, std::uint3
             const bool resurrect = std::ranges::any_of(cmds, [](const Command& command) { return std::holds_alternative<cmd::Resurrect>(command); });
             // Back in camp after dying: alone, or in co-op once no one's left alive. A dead
             // hardcore character leaves the game instead (FUN_0054c0e0: flag 4 at 0054c12c,
-            // then FUN_0052caf0 drops the client).
+            // then FUN_0052caf0 drops the client). LAN: a joiner's screen is its own, so no one waits.
             if (fight.player_modes(button, now_ms, elapsed) && resurrect) {
                 const auto& header = actor->character.header;
                 if (header.hardcore() && header.died()) actor->out = true;
-                else if (players.size() == 1 || !anyone_alive()) respawn(now_ms);
+                else if (!shared_screen() || !anyone_alive()) respawn(now_ms);
             }
             if (actor->pmode != actor->last_pmode) {                 // death's stages: the penalty as it starts, the corpse as it ends
                 if (actor->pmode == kModeDT) {
                     death_penalty(now_ms);
                     actor->interact_npc = -1;
                     actor->character.header.status |= 0x08;   // the save's died bit (FUN_00580ec0: FUN_00538650 with 8 at 00580f7c)
+                    if (split_levels) { announce({ ev::Message::slain, actor->character.name, {} }); d2d::log::info("{} died", actor->character.name); }   // ponytail: the killer's name (game.exe's "was slain by")
                 }
-                if (actor->pmode == kModeDD) { if (players.size() > 1) become_ghost(player); else make_corpse(); }   // co-op: a ghost, the gear kept
+                if (actor->pmode == kModeDD) { if (shared_screen()) become_ghost(player); else make_corpse(); }   // co-op (one screen): a ghost, the gear kept; a screen of one's own: a corpse, as game.exe
                 actor->last_pmode = actor->pmode;
             }
+            for (const auto& command : cmds) if (std::holds_alternative<cmd::Say>(command)) apply(command, now_ms);   // the dead chat too
             if (!fight.dead() || actor->ghost) {
             const bool busy = actor->pmode >= 0 && !actor->ghost;
             for (const auto& command : cmds) {
-                if (std::holds_alternative<cmd::Resurrect>(command)) continue;
+                if (std::holds_alternative<cmd::Resurrect>(command) || std::holds_alternative<cmd::Say>(command)) continue;
                 if (actor->ghost && !std::holds_alternative<cmd::Move>(command) && !std::holds_alternative<cmd::Run>(command)) continue;   // a ghost only walks
                 apply(command, now_ms);
                 // ItemMode.cpp's server moves end with FUN_0055dbc0: a hand's or body
@@ -386,15 +471,27 @@ auto World::tick(std::span<const Order> orders, std::uint32_t now_ms, std::uint3
             // In reach as the server's interact has it (FUN_005b0f50): an
             // object by rules::object_reach (a player's size 2) with no wall
             // between (FUN_00622b50, 0x804), an NPC under 7 (unit_distance).
+            // The client walks on to an NPC till FUN_00480c80 (LAB_00480d06)
+            // has it in melee reach (FUN_00622c40, + 1 while it walks:
+            // FUN_00622dc0), so that ends the walk first.
             if (actor->interact_npc >= 0) {
                 const auto& npc = level->npcs[std::size_t(actor->interact_npc)];
                 const auto& state = npc_states[std::size_t(actor->interact_npc)];
                 const float npc_x = npc.path.empty() ? npc.x : state.x, npc_y = npc.path.empty() ? npc.y : state.y;
                 const auto subtile = [](float cell) { return int(std::floor(cell * 5)); };
                 const int from_x = subtile(actor->player.x), from_y = subtile(actor->player.y), to_x = subtile(npc_x), to_y = subtile(npc_y);
+                const auto talk_reach = [&] {
+                    namespace rules = d2d::rules;
+                    const int apart = rules::unit_distance(from_x - to_x, from_y - to_y, 2, npc.size_x);
+                    const auto wall = [this](int at_x, int at_y) { return level->blocked((float(at_x) + 0.5f) / 5, (float(at_y) + 0.5f) / 5, 0x804); };
+                    const int extra = rules::unit_moving(rules::UnitType::kMonster, state.walking ? 2 : 1, -1) ? 1 : 0;   // walking (WL) or standing
+                    return apart < 7 && rules::melee_reach(apart, fight.weapon_range(), false, extra, [&] {   // no NPC is a tentacle
+                        return rules::sight_blocked(from_x, from_y, 2, to_x, to_y, npc.size_x, wall);
+                    });
+                };
                 const bool in_reach = npc.root == "objects"
                     ? d2d::rules::object_reach(from_x - to_x, from_y - to_y, 2, npc.size_x, npc.size_y) && !wall_to(npc, from_x, from_y, 2)
-                    : d2d::rules::unit_distance(from_x - to_x, from_y - to_y, 2, npc.size_x) < 7;
+                    : talk_reach();
                 if (in_reach && !state.hidden && !busy) {
                     if (operable(npc.operate_fn) || npc.operate_fn == d2d::rules::operate_fn::kMoldyTome || npc.operate_fn == d2d::rules::ToolsQuest::kStand || quest_object(npc.operate_fn)) {
                         credit_party([&] { operate(actor->interact_npc, now_ms); });
@@ -467,8 +564,13 @@ auto World::tick(std::span<const Order> orders, std::uint32_t now_ms, std::uint3
                         loot.take(i, now_ms);
                     }
                 }
-            bool to_unit = (actor->interact_npc >= 0 && std::size_t(actor->interact_npc) < level->npcs.size()) || actor->take_portal >= 0;   // an NPC, object or portal: a path to the unit
-            if (const auto target = fight.engage(now_ms)) { std::tie(actor->target_x, actor->target_y) = *target; actor->player.walking = true; to_unit = true; }
+            const bool to_npc = actor->interact_npc >= 0 && std::size_t(actor->interact_npc) < level->npcs.size();
+            bool to_unit = to_npc || actor->take_portal >= 0;   // an NPC, object or portal: a path to the unit
+            const UnitState* walk_target = to_npc && std::size_t(actor->interact_npc) < npc_states.size() ? &npc_states[std::size_t(actor->interact_npc)] : nullptr;
+            if (const auto target = fight.engage(now_ms)) {
+                std::tie(actor->target_x, actor->target_y) = *target; actor->player.walking = true; to_unit = true;
+                walk_target = &fight.monsters[std::size_t(actor->attack_mon)].unit;
+            }
             if (actor->player.walking && (actor->pmode < 0 || actor->ghost)) {
                 // A route to the target (path type 7), re-planned as
                 // FUN_006503f0 has it: a target unit more than 5 subtiles off
@@ -480,17 +582,16 @@ auto World::tick(std::span<const Order> orders, std::uint32_t now_ms, std::uint3
                 const auto subtile = [](float value) { return int(std::floor(value * 5)); };
                 const int off_x = std::abs(subtile(actor->player.goal_x) - subtile(actor->target_x)), off_y = std::abs(subtile(actor->player.goal_y) - subtile(actor->target_y));
                 if (actor->player.path.empty() || (to_unit ? off_x > 5 || off_y > 5 : off_x != 0 || off_y != 0)) {
-                    actor->player.path = player_walk(*level, actor->player.x, actor->player.y, actor->target_x, actor->target_y, to_unit, walk_crowd, &actor->player);
+                    actor->player.path = player_walk(*level, actor->player.x, actor->player.y, actor->target_x, actor->target_y, to_unit, walk_crowd, &actor->player, walk_target);
                     actor->player.goal_x = actor->target_x; actor->player.goal_y = actor->target_y;
                 }
                 const auto save_class = std::size_t(std::max(actor->character.character_class, 0));
                 // FUN_00623f50: the walk velocity x a % (at least 25) of 100 (run: run x 100 / walk),
                 // faster run/walk's effective % (150 x v / (150 + v)) and chill's -50.
                 const int walk = std::max(game_data->walk_velocity[save_class], 1);
-                const float vel = float(walk * walk_percent(*actor, now_ms)) / 100.f;
                 const float before_x = actor->player.x, before_y = actor->player.y;
                 bool blocked = false;
-                actor->player.walking = follow_path(*level, actor->player, cells_per_sec(vel) * elapsed, walk_crowd, &blocked);
+                actor->player.walking = follow_path(*level, actor->player, path_velocity(walk, walk_percent(*actor, now_ms)), walk_crowd, &blocked);
                 // The merc's think reads the player's footsteps (FUN_00580c20): walking or
                 // running, 25 ms on from the last, over 45 (squared) from it.
                 if (const int step_x = int(std::floor(actor->player.x * 5)), step_y = int(std::floor(actor->player.y * 5)); now_ms > actor->footstep_ms + 25) {
@@ -499,14 +600,40 @@ auto World::tick(std::span<const Order> orders, std::uint32_t now_ms, std::uint3
                 }
                 if (!actor->player.walking) {
                     actor->player.path.clear();
-                    // Short of the target with a step made and nothing in the way: it paths
-                    // again from here. A block ends the walk (the snap isn't a step).
-                    actor->player.walking = !blocked && (subtile(actor->player.x) != subtile(actor->target_x) || subtile(actor->player.y) != subtile(actor->target_y))
+                    // A walk to a unit short of it, with a step made and nothing in the way,
+                    // paths again from here: the client's queued action keeps it going
+                    // (FUN_00481600). One to a spot ends where its path does: a ground click
+                    // queues nothing (FUN_00650840's stop, LAB_006508ff). A block ends either
+                    // (the snap isn't a step).
+                    actor->player.walking = to_unit && !blocked && (subtile(actor->player.x) != subtile(actor->target_x) || subtile(actor->player.y) != subtile(actor->target_y))
                                      && (actor->player.x != before_x || actor->player.y != before_y);
+                    // An item or a warp out of reach when the walk ends, blocked or not, gets
+                    // one more walk (FUN_00580c20 -> FUN_00548b00, LAB_00580e73, which clears
+                    // pending, LAB_00580e88); the second's end is plain idle. In reach, the
+                    // pick-up and use_warp take it this tick or the next.
+                    const int lying = actor->pick_item >= 0 ? loot.index_of(actor->pick_item) : -1;
+                    const bool item_far = lying >= 0 && std::hypot(loot.ground[std::size_t(lying)].x - actor->player.x, loot.ground[std::size_t(lying)].y - actor->player.y) > 1.f;
+                    const bool warp_far = actor->take_warp >= 0 && std::size_t(actor->take_warp) < level->warps.size()
+                                       && !warp_close(level->warps[std::size_t(actor->take_warp)], actor->player.x, actor->player.y);
+                    if (item_far || warp_far) {
+                        if (std::exchange(actor->walk_pending, false)) actor->player.walking = true;
+                        else actor->pick_item = actor->take_warp = -1;
+                    }
                 }
             }
             }
         });
+        in_moor = !in_town(level);                // a command above may have changed levels
+        if (level != tick_level) {
+            crowd.units.clear();
+            for (const auto& player : players) {
+                crowd.units.push_back(&player->player);
+                if (player->merc) crowd.units.push_back(&player->merc->unit);
+            }
+            for (std::size_t i = 0; i < npc_states.size() && i < level->npcs.size(); ++i)
+                if (level->npcs[i].root != "objects" && !npc_states[i].hidden) crowd.units.push_back(&npc_states[i]);
+            if (in_moor) fight.crowd(crowd);
+        }
         leash(before);
         // The world goes on with the player dead (game.exe runs the rooms
         // around the corpse till the respawn): monsters see the dead player
@@ -552,7 +679,6 @@ auto World::tick(std::span<const Order> orders, std::uint32_t now_ms, std::uint3
             player->owner_mode = !player->player.walking ? 1 : player->running && player->character.stats.values[d2d::d2s::kStamina] > 0 ? 3 : in_moor ? 2 : 6;
         fight.world(in_moor, now_ms, elapsed, crowd);
         den_count(now_ms);                                       // the killers' credit, then their party's (den_count)
-        if (den_log_at && now_ms >= den_log_at) { den.log = 5; den_log_at = 0; }
         each_player([&](Player& player) {
             if (std::exchange(player.reassigned, false)) player.events.push_back(ev::Reassigned{});
             if (std::exchange(player.storm_struck, false)) player.events.push_back(ev::Lightning{});
@@ -588,7 +714,7 @@ auto World::tick(std::span<const Order> orders, std::uint32_t now_ms, std::uint3
             act5_update(now_ms);
         });
         each_player([&](Player&) { cross_level(); });
-        for (const auto& player : players) fight.rooms_up(*level, player->player.x, player->player.y, false);
+        for (const auto& player : players) if (here(*player)) fight.rooms_up(*level, player->player.x, player->player.y, false);
         act3_bind_new_bosses();
         init_new_objects();
         reopen_doors();
@@ -601,6 +727,7 @@ auto World::tick(std::span<const Order> orders, std::uint32_t now_ms, std::uint3
         raise_step(elapsed, now_ms);
         if (in_town(level))                                      // the party in a town: its ghosts are up again
             each_player([&](Player& player) { if (player.ghost) revive(player, now_ms); });
+        loot.standing = nullptr;                                 // the crowd dies with this tick
     }
 
 // State 153 on a unit: each client's setfunc 2 (FUN_004d87e0) dips its

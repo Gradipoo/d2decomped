@@ -14,6 +14,7 @@
 #include "party.hpp"
 #include "platform.hpp"
 #include "scene.hpp"
+#include "storage_close.hpp"
 #include "ui.hpp"
 
 #include <cues.hpp>
@@ -58,16 +59,20 @@ auto Town::publish() -> void {
         net.to_client = encode_view(*scene, out, view_enc);
         // D2D_VIEW_STATS=1: each View's size in the log (the replication budget).
         if (std::getenv("D2D_VIEW_STATS")) d2d::log::info("VIEWSTAT total={} monsters={} ground={} items={}", net.to_client.size(), out.monsters.size(), out.ground.size(), out.items.size());
-        if (!apply_view(*scene, net.to_client, view)) {         // lost track: the next one is whole
-            d2d::log::warn("a View didn't apply ({} bytes)", net.to_client.size());
-            view_enc.reset();
-            return;
+        if (!take_view(net.to_client, &out)) view_enc.reset();   // lost track: the next one is whole
+    }
+
+auto Town::take_view(std::span<const std::uint8_t> bytes, const View* local) -> bool {
+        if (!apply_view(*scene, bytes, view)) {
+            d2d::log::warn("a View didn't apply ({} bytes)", bytes.size());
+            return false;
         }
-        if (!net_game && out.merc && view.merc) view.merc->fhr = out.merc->fhr;   // the wire has none: a local game keeps what World::view() computed
+        if (local && !net_game && local->merc && view.merc) view.merc->fhr = local->merc->fhr;   // the wire has none: a local game keeps what World::view() computed
+        if (lan_client) lan_take_npcs();
         level = view.level;
         if (net_game) net_overlay();
         cues.due.insert(cues.due.end(), view.sounds.begin(), view.sounds.end());
-        if (!view.has_character) return;
+        if (!view.has_character) return true;
         const auto hotkeys = character.header.hotkeys;  // client-owned bindings, not replicated gameplay state
         character.header = view.header;
         character.header.hotkeys = hotkeys;
@@ -99,6 +104,7 @@ auto Town::publish() -> void {
         hire_offers = view.hire_offers;
         if (const auto found = scene->mercs.find(character.header.merc_type); view.merc && found != scene->mercs.end())
             merc_label = merc_name(*scene, found->second, character.header.merc_name);
+        return true;
     }
 
 // Where the automap's files go: beside the save (none with saving off).
@@ -111,7 +117,7 @@ std::filesystem::path automap_dir(const World& world) { return world.characters 
 auto Town::enter() -> void {
         shake = {}; quest_quakes.clear(); shake_rng = d2d::rules::Rng{ 666 };
         automap.cells.clear();                    // a new game: what the files beside the save kept
-        automap.placed.clear();
+        for (auto& tree : automap.trees) tree.clear();
         automap_reveal.new_game();                // its rooms' tiles come with clear flags
         other_automaps.clear();
         quest_log = {};                           // done animations play again in a new game
@@ -150,10 +156,14 @@ auto Town::enter() -> void {
 // (FUN_0045a5c0).
 auto Town::save() -> std::string {
         if (scene && level) save_automap(automap, automap_dir(world), character.name, scene->map_seed, level->layer);
-        world.each_player([&](World::Player& other) {    // the other co-op players' characters too
-            if (&other == &hero) return;
-            if (const auto why = world.save(); !why.empty()) d2d::log::warn("{}: {}", other.character.name, why);
-        });
+        if (lan_client) { lan_leave(); return ""; }      // a joined game: the host's Save is ours
+        for (auto& lan_player : lan_players) lan_send_save(lan_player);
+        for (const auto& other : world.players) {         // the other co-op players' characters too, whatever level they're on
+            if (other.get() == &hero || other->own_screen) continue;   // a LAN joiner's is on their machine
+            world.act_as(*other);
+            if (const auto why = world.save(); !why.empty()) d2d::log::warn("{}: {}", other->character.name, why);
+        }
+        world.act_as(hero);
         return world.save();
     }
 
@@ -205,6 +215,29 @@ auto Town::toggle_quest_log() -> void {
         if (quest_log.open) { quest_log.open = false; return; }
         quest_log_open(quest_log, quest_bits(), quest_state(), view_act());
         char_open = stash_open = cube_open = false;
+    }
+
+// The Inventory, Character and Skill Tree keys and the mini-panel's
+// buttons: not past the stash, the Cube or a store (storage_close.hpp).
+// The inventory stays drawn beside them all; a store passes UI 1, whose
+// flag then toggles unseen under it (not modelled: d2d shuts the
+// inventory with the store).
+auto Town::toggle_inventory() -> void {
+        if (d2d::client::panel_key_refused(d2d::client::kUiInventory, stash_open, cube_open, store.npc >= 0) || store.npc >= 0) return;
+        inv_open = !inv_open;
+        if (inv_open) tree_open = false;
+    }
+
+auto Town::toggle_character() -> void {
+        if (d2d::client::panel_key_refused(d2d::client::kUiCharacter, stash_open, cube_open, store.npc >= 0)) return;
+        char_open = !char_open;
+        if (char_open) stash_open = cube_open = quest_log.open = hireling.open = false;
+    }
+
+auto Town::toggle_skill_tree() -> void {
+        if (d2d::client::panel_key_refused(d2d::client::kUiSkillTree, stash_open, cube_open, store.npc >= 0)) return;
+        tree_open = !tree_open;
+        if (tree_open) inv_open = false;
     }
 
 auto Town::quest_log_button_now() const -> QuestLogButton {

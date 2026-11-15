@@ -25,18 +25,11 @@ Ranked by Seen, then by how much play it touches.
 | # | What | Kind | Seen | Where / notes |
 |---|---|---|---|---|
 | 1 | Nobody has played an act end to end by play: the quest tests set each quest up with debug verbs. A play bot (clicks only) would give the real gap list | check | yes | PLAN.md "Checkpoint 2026-10-14 (later)", `tests/play_d2d.py` (planned) |
-| 5 | MonEquip.txt is hardcoded to Blood Raven's bow; the Valkyrie's gear by skill level (rows by `level`) isn't rolled. Traced: `FUN_005d6b60` (skills.md), called by `FUN_005c4470` with the skill level | build | maybe | objgroups.cpp:552; pets.hpp |
-| 6 | MonItemPercent.txt (TreasureClassPercent 20: a monster's own gear dropping) isn't read | check | maybe | Matters once #5 gives monsters gear |
 | 7 | Council S1: compare built d2d timing, including speed modifiers. The original event is traced; the current source already waits for the action frame. | check | maybe | [council-s1.md](council-s1.md): stock original scheduler/dispatch checked; no built-d2d differential yet |
 | 8 | Skills: every class skill works, fidelity varies by skill | exact | maybe | skills.md, each phase's "gaps" |
 | 9 | Unique monster mods still untraced: the act bosses' deaths (the thief is traced: never applied, monsters.md) | trace | maybe | PLAN.md phase 6, monster-ai.md |
 | 13 | Quests keep one player's lists | build | no | Single player is fine; matters once d2d hosts. Left: quests-act2.md's "one player" ponytails. The Den's clear now reaches the killer's party (quests.md "A monster dies") |
 | 14 | Seed stand-ins: d2d's rng where game.exe rolls a unit's or the game's own seed (same odds, different rolls) | exact | no | ~32 notes, act1-gaps.md. Matters once machines share a game |
-| 37 | The get-hit oracles `hit_absorb.py` and `hit_render.py` were cited but never committed: absorb and get-hit frames are cited, not re-checkable (`hit_rule.py` is in) | trace | no | combat.md, combat.hpp `absorb_blows`, `test_combat --get-hit-frames` |
-| 39 | A walk to an NPC ends at the server's reach (under 7, no line test), not the client's melee range with a clear line (FUN_00480c80 → FUN_00622c40) | exact | yes | collision.md "How near the client walks"; world/tick.cpp `in_reach` |
-| 40 | One click on the ground re-plans after a short path while it moves; game.exe's walk to a spot ends there | exact | maybe | collision.md "A walk to a spot just ends"; world/tick.cpp "Short of the target with a step made" |
-| 41 | `follow_path` tests the end of a step short of its next point, its own subtile too, and not a point it reaches; game.exe tests only a new subtile and every one crossed (FUN_00650150 from LAB_006501c0), so with a blocker come onto its footprint d2d's unit can't make a short step inside its subtile and game.exe's can | exact | hardly | collision.md "A walk's stop"; ai.cpp `follow_path` |
-| 47 | A walk to a warp has no two-walk limit (FUN_00548a50, FUN_00580c20): it re-plans while it steps | exact | hardly | collision.md "The server's pending interact"; world/tick.cpp, world/travel.cpp `use_warp` |
 | 48 | `use_warp` takes a warp mid-walk at reach; a single click in game.exe tests when the walk ends (LAB_00580e73), up to 4 subtiles later | exact | hardly | collision.md "The server's pending interact"; world/travel.cpp `use_warp` |
 | 49 | A held button over a warp forgets it after a stop; game.exe clicks again after a stop (LAB_00461fb7; FUN_00462930 stops a held frame while it walks), and refuses warp clicks inside that time | exact | hardly | collision.md "The server's pending interact"; world/commands.cpp `walk_to` |
 | 50 | A held button re-aims each tick, and a joined game sends C->S 0x01 / 0x03 each drawn frame the aim moves to a new subtile (`NetGame::send` drops a repeat within 200 ms, as FUN_00478350); game.exe's walking player sends every 7 client frames, 280 ms (FUN_004623c0) | exact | hardly | collision.md "What a held frame sends"; town/input.cpp, netgame.cpp `move_to` |
@@ -55,11 +48,9 @@ to 70% and the menu's fade-out.
 
 | # | What | Count | Kind | Seen | Notes |
 |---|---|---|---|---|---|
-| 16 | The hero's quest lines: each quest's "find" and "complete" voice, five classes | 70 | build | yes | Triggers include Cain rescue, Diablo (0x4b, with the quest music's delays: unit-sounds.md "Quest music"), Seven Tombs, Act 3 completions and prior Act 1 / 2 cues. 14 remaining per classic class (70 sounds: act 2's begin_tainted, complete_tightspot and four find lines, events 0x31, 0x35, 0x39..0x3c) have no server dispatch in stock 1.14d (unit-sounds.md). |
-| 17 | The classic quest music jingles (Andariel, Blood Raven, Den, Forge, Horadric …) | 10 | trace | yes | Built and timed by FUN_004dcd40's arguments (unit-sounds.md "Quest music"); the four objects' start points are d2d's own |
 | 18 | Code-played one-offs: Andariel's quake loop and fire end, the Hellforge smash, shrine overlays, corpse loot, trap trigger, sewer water, Wanderer's fissure, monster casts, steal impacts | ~30 | build | yes | sound_coverage.py's "code:" buckets; Energy Shield, Barbarian Leap, town-restricted skill, leech, missile ProgSound, classic quest music cues, Andariel's quake, Diablo's arrival taunt and Diablo's death schwing / hit are wired. The monster cast / skeleton cast / Izual taunt_2 rows are never played (unit-sounds.md). |
 | 19 | NPC lines left: Alkor / Asheara / Hratli / Ormus act 3 q4, Cain's act 4 greeting, Tyrael after a4q2, Warriv's act 2 gossip, guard greeting, rogue / Iron Wolf hireling confirms | 21 | build | yes | Cain's act 1 help is wired (the Gibbet's call). As traced, stock 1.14d plays none of the rest: not in the speech table, no client code plays them, and the rogue confirm's C→S 0x46 is never sent (unit-sounds.md). |
-| 20 | Skills' prgsound; monsters' own skill stsound | — | build | yes | unit-sounds.md; dosound a / b are in (only Jab's is ever played); the player's block and kick sounds are in |
+| 20 | Skills' prgsound | — | build | yes | unit-sounds.md; monsters' own stsound is in (FUN_004c6140); dosound a / b are in (only Jab's is ever played); the player's block and kick sounds are in |
 | 21 | Camp floors: DS1 tiles aren't in `room_floors`, so footsteps there are always dirt | — | exact | yes | unit-sounds.md |
 
 ## Animation and drawing
@@ -78,17 +69,14 @@ Known differences in the ones it draws, and what's left to check:
 
 | # | What | Kind | Seen | Where |
 |---|---|---|---|---|
-| 52 | Video Options' Gamma and Contrast move but do nothing. game.exe's default driver (DirectDraw) shows the palette through `FUN_006be190`'s ramp at gamma 155: every colour 1.55 times, clipped; `-w` (GDI) has no gamma | build | yes | video-drivers.md "Gamma and Contrast", design/rendering.md item 1 |
 | 25 | Timings from the COF, where AnimData.d2 is game.exe's | exact | maybe | world_view.hpp:140, fight.hpp:498, fight.hpp:729 |
 | 27 | Kind 8's visible state overlays aren't rotated after 50 ticks; active states draw together | exact | maybe | states.md, town.hpp `StateClock`; Radius is stamped and LoopWaitTime applies only to kind 6 |
 | 28 | A joined monster's act lasts 600 ms, not its animation | exact | maybe | town/net.cpp `net_overlay`; balloon starts and rate now traced (quests.md) |
-| 29 | COF draw effect 6 (the max-component table) draws opaque | build | maybe | cof-draw-order.md "Draw effects", deviations.md approximation 9 |
+| 29 | COF draw effect 6 (the max-component table) is the greater of each RGB channel; the PL2 table is still unread | build | maybe | cof-draw-order.md "Draw effects", deviations.md approximation 9 |
 | 30 | Palette blends (additive / multiply missiles, blended shadows, rain) done in RGB, not through the PL2 tables | exact | slightly | deviations.md approximation 1 |
 | 31 | Static lights' shadows (type 2) are read each frame; game.exe caches them (FUN_004750f0), so a later change to the map doesn't re-shade them | exact | hardly | lighting.md, deviations.md approximation 5 |
 | 32 | Light Quality always high; unit shadows darken once; lit tiles per pixel, not per 32-pixel block | exact | hardly | deviations.md approximations 2–4 |
 | 36 | The play tests reach a quarter of the animations; a run (or devctl tour) that gives each class every weapon class, casts every skill, opens every object type and fights every monster would show which ones d2d really never asks for | check | — | tools/anim_coverage.py; `tests/play_d2d.py` (planned, #1) |
-| 45 | Rooms over a level's edge take the player's level's ambient, not their own: at least three Act 4 borders differ (140 / 120, 120 / 80, 80 / 40; the listing leaves out River of Flame, 107) | exact | hardly | lighting.md "What fills it"; `FUN_00474610`; `level_ambient.py borders` |
-
 ## Tables
 
 Every excel table that drives classic play is read, apart from #2, #5

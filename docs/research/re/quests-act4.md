@@ -42,6 +42,12 @@ Seis, 0x26 Grand Vizier of Chaos → 0x17.
 Tyrael (0x16f) has 664 (0x298) and "!" (`FUN_005b3750`) till word 0x18
 bit 0 (`FUN_005b36d0`: block 0). Hearing 664 (`LAB_005b36a0`) sets bit 0.
 
+The opening alert `FUN_005b3750` tests word 0x18 bit 0 only for NPC 0x16f,
+returning true in the low byte only when that test returns zero. Other NPCs
+return a zero low byte without testing flags. `tools/emu/quest_act4_open_alert.py`
+checks 24 synthetic cases with the flag helper hooked; upper EAX is not a
+boolean result and the helper itself is not checked.
+
 ## The Fallen Angel (a4q1.cpp, word 0x19)
 
 Data (0x1c bytes): +4 / +8 Izual's spot at death, +0xc told-by-ghost, +0xd
@@ -78,6 +84,13 @@ ghost spoke, +0x14 the killer.
   `ev::QuestNews`.
 - **Join** (`LAB_005b4220`): not done or closed: bit 4 → state 3, log 2,
   data +0xc; bit 3 → 3 / 1; bit 2 → 2 / 1.
+
+Izual's search helper `FUN_005b43f0` looks up quest 0x16. With a record and
+nonzero data +0x12, it clears data +0x18, stores the supplied unit at +0x14,
+and runs `FUN_005538d0` with callback `FUN_005b43d0`; it returns whether
++0x18 remains zero. Otherwise it returns zero without these writes. The
+18-case oracle `tools/emu/quest_izual_nearby.py` hooks lookup and iteration,
+including scripted changes to +0x18; it does not check the callback.
 
 ## Terror's End (a4q2.cpp, word 0x1a)
 
@@ -123,7 +136,10 @@ deaths.
   once (+0x13): every monster in level 108 but Diablo, not dead, not a
   pet, set to mode 0 (dies: `FUN_005a7e60` / `FUN_005a7c20`); and if not
   armed: +2, +1, the 1-tick timer `FUN_005b4be0`.
-- **The timer** (`FUN_005b4be0`): with +2, +0x18 counts ticks; past 9 and
+- **The timer** (`FUN_005b4be0`): with +2, +0x18 counts its runs. It
+  returns 0 till Diablo comes, so the 1-tick timer runs every 2 quest
+  steps (quests.md "The quest clock"): the 10th run, 20 steps (about
+  16 s) after the release, is the first past 9. Past 9 and
   with the start point's object (+8, object 255 "diablo start point"),
   wherever the players are: Diablo (0xf3) at its
   spot, mode 1, within −1 / 5 / 10 (`FUN_005b4b60` → `FUN_005b2f20`), flags
@@ -145,10 +161,29 @@ deaths.
   0 or 13: in act 4 sets word 0x1c bits 0 and 13, sound 0x55a and the
   waypoint (`FUN_00554190`), then to level 0x6d (109, Harrogath,
   `FUN_0054b830`). d2d has no Act 5: it stops there.
+  `Q27_InitPandemoniumAndSendState` (`FUN_005b4a30`) is a standalone
+  variant of the same move: `InitLevel(..., LEVEL_ThePandemoniumFortress,
+  0)` then S->C **0x5D** quest-state {quest 0x17, alert flags 1} to the
+  player's own client. Its `__FILE__` literal is `a4q2.cpp` line 0x1b8,
+  the same translation unit as the rest of this section, but it isn't
+  reached from any of the record callbacks traced here.
 - **Entering** (`LAB_005b4ea0`): the fortress at state 2 → state; the
   Chaos Sanctuary (0x6c) → state, logs.
 - **Join** (`FUN_005b5080`): LoD bit 9 without word 0x1c bit 0 → bit 9
   cleared (again on `LAB_005b5030`); bits 4 / 3 / 2 → states as a4q1.
+
+The player callback `FUN_005b4da0` reads word 0x1a bit 0 at the game's
+difficulty. Unless the flag helper returns exactly 1, it gets the player's
+room and level and calls `FUN_005b4d20` when the act helper's low byte is 3.
+No room skips the call. `tools/emu/quest_diablo_act_share.py` checks 72 cases
+with all helpers hooked, including non-boolean flag and act return values;
+it does not verify the helpers, the share operation or d2d parity.
+
+Object initializer `FUN_005b5840` looks up quest record 0x17. With a record,
+if data +0x40 is already 2 it sets the supplied object to mode 2; otherwise
+it writes 2 there and sets mode 1. With no record it does nothing.
+`tools/emu/quest_diablo_object_mode.py` checks ten cases with lookup and mode
+setting hooked; the object identity and helper internals are not checked.
 
 ## The Hellforge (a4q3.cpp, word 0x1b)
 
@@ -201,6 +236,37 @@ hammers about, +0x14 gems per round, +0x1c the soulstone given.
   +0xc4 / +0xd8 count hammers about.
 - **Join** (`FUN_005b64e0`): `mss ` not carried → state 1 (`FUN_00558110('mss ')` 0, the push at 0x5b654d); carried: bit 5 → state 2,
   log 4; bits 3 / 2 → states as a4q1.
+
+Hellforge alert `FUN_005b5ee0` tests word 0x1b bits 0 then 1 for NPC
+0xf6. Its low return byte is 1 only when both tests return zero, record +9
+is nonzero, state is exactly 1 and data +0x1c is zero; other NPCs skip both
+flag tests. `tools/emu/quest_hellforge_alert.py` checks 486 combinations with
+the flag helper hooked, including non-boolean values. The upper EAX bytes and
+helper internals are outside the check.
+
+## Tyrael's farewell gossip ("Spoke to Malachai", not a journal quest)
+
+An internal pseudo-quest slot (namespace `A4Q4`,
+`nQuestIdReal = QUEST_SpokeToMalachai`), registered through
+`Q30_InitData` the same way Quest 39 is (`quests.md` "Quest slot 39"),
+drives Tyrael's (MonStats 0x198) Act 4 → Act 5 transition chatter.
+`Q30_Callback00_NpcActivate` (`FUN_005b6940`) only fires for Tyrael:
+while the Hellforge (a4q3.cpp, word 0x1b, above) is not yet
+Completed/RewardAwaits/JustCompleted, it queues gossip line 0; once the
+forge is done, it checks `QUESTINT_TerrorsEnd`'s own
+`bDiabloKilledBroadcast` flag and, while Diablo isn't dead yet, queues
+line 1 instead. `Q30_ActiveFilter` (`FUN_005b69f0`) only shares the
+Hellforge gate, not the Diablo one: once the forge is done it checks
+the player's own `QUESTSTATE_JustCompleted` / `QUESTSTATE_Completed`
+bits on `QUEST_TerrorsEnd`, not the callback's game-wide
+`bDiabloKilledBroadcast` flag. The two can disagree: a player who
+already completed Terror's End in an earlier game carries those bits
+set, so the filter goes inactive, while a game where Diablo is still
+alive (`bDiabloKilledBroadcast` unset) would have the callback still
+queue line 1 if that player did talk to Tyrael. So Tyrael keeps a line
+of dialog for most of the act, but the option's visibility and the
+line it plays can come from different players' state. Flavor text
+only; reads `QuestRecord` but never writes it. Not ported.
 
 ## Act 4's other objects
 

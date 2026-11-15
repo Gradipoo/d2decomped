@@ -17,6 +17,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <exception>
+#include <functional>
 #include <optional>
 #include <span>
 #include <sstream>
@@ -27,6 +28,7 @@
 
 using namespace d2d::rules;
 
+// Each block below is one AI or subsystem; see the file header for the source of its cases.
 int main() try {
     // Andariel (MonAI 34): distances, facing, her think's draws, the spray's sweep.
     {
@@ -162,6 +164,25 @@ int main() try {
                     });
                 assert(next == entry.tried.size() && act.kind == entry.kind && seed.low == entry.after_low && seed.high == entry.after_high);
             }
+            // A requested run at the footsteps (FUN_005dede0,
+            // MONSTERAI_CommandMoveToCoords) downgrades to a walk under
+            // Decrepify (state 0x3c): traced against stock 1.14d,
+            // tools/emu/ai_merc_decrepify_probe.py (game_mode 15 unslowed, 2 slowed).
+            {
+                for (const bool slowed : { false, true }) {
+                    d2d::rules::MercView view; view.mode = d2d::rules::kMonsterNeutral;
+                    view.x = 5000; view.y = 5000; view.owner_x = 5100; view.owner_y = 5000;
+                    view.owner_mode = d2d::rules::kMonsterNeutral; view.end_x = 5100; view.end_y = 5000;
+                    for (auto& spot : view.ring) spot = { 5050, 5000 };
+                    view.slowed = slowed;
+                    d2d::rules::Rng seed;
+                    int calls = 0;
+                    const auto act = d2d::rules::hireable_think(view, seed, [](int, int, int, int) { return 1; },
+                        [&](const d2d::rules::MercMove&) { return ++calls == 2; });
+                    assert(act.kind == d2d::rules::MercAct::Kind::moved);
+                    assert(act.move.mode == (slowed ? d2d::rules::kMonsterWalk : d2d::rules::kMonsterRun));
+                }
+            }
         }
             // The pets' think (MonAI 67 NecroPet, FUN_005e4cf0; tools/emu/necropet.py
             // --dump: game.exe's own runs). From the pet (at 5000, 5000): size, the
@@ -243,6 +264,21 @@ int main() try {
                     assert(seed.low == entry.after_low && seed.high == entry.after_high);
                 }
             }
+            // A requested run (FUN_005deeb0) downgrades to a walk under
+            // Decrepify (state 0x3c): traced against stock 1.14d,
+            // tools/emu/ai_pet_decrepify_probe.py (game_mode 15 unslowed, 2 slowed).
+            {
+                for (const bool slowed : { false, true }) {
+                    PetView view; view.x = 100; view.y = 100; view.owner_x = 110; view.owner_y = 110;
+                    view.end_x = 110; view.end_y = 110; view.slowed = slowed;
+                    Rng rng(1);
+                    auto area = [](int, int, int, int) { return 1; };
+                    auto move = [](const MercMove&) { return true; };
+                    PetFollow follower(view, rng, area, move);
+                    assert(follower.follow(0, true, 100, 0));
+                    assert(follower.act.move.mode == (slowed ? kMonsterWalk : kMonsterRun));
+                }
+            }
             // The other pets' thinks (rules::*_think on PetBrain; tools/emu/pet_ais.py
             // --dump: game.exe's own runs, the follow / decide answers replayed):
             // the scene, the calls each makes and what it comes to.
@@ -311,7 +347,7 @@ int main() try {
                     scene.skill1 = read(); scene.skill2 = read(); scene.mode1 = read(); scene.mode2 = read(); scene.velocity = read(); scene.run = read();
                     if (const bool corpse = read() != 0; which == 6) scene.nearby = corpse;   // the Death Sentry's corpse is its `nearby`
                     scene.ends = read() != 0;
-                    for (auto& [x, y] : scene.end) { x = read(); y = read(); }
+                    for (auto& [end_x, end_y] : scene.end) { end_x = read(); end_y = read(); }
                     scene.left = read(); scene.right = read(); scene.owner_class = read(); scene.pet_attack = read() != 0;
                     scene.aip8_nightmare = read(); scene.aip8_hell = read();
                     for (auto& skill : scene.skills) { skill.id = read(); skill.cls = read(); skill.ai_ok = read() != 0; skill.mana = read(); skill.kind = read(); skill.mode = read(); skill.delay = scene.skill_calc; }
@@ -480,13 +516,22 @@ int main() try {
                         assert(asked < asks.size() && asks[asked].first == reach);
                         return asks[asked++].second != 0;
                     };
+                    std::vector<std::function<Think()>> otherwise;        // a walk asked whether it set off: its next act when not
+                    input.otherwise = &otherwise;
                     const auto& think = kAis[std::size_t(which)];
                     const auto ai_name = think.name;
                     if (ai_name == "BloodRaven") command = ctrl[2];                // her flag is AI control word 3 in game.exe, the command word here
-                    const auto act = ai_name == "DimVision" ? d2d::rules::dim_vision_think(input, seed)
+                    const auto first_act = ai_name == "DimVision" ? d2d::rules::dim_vision_think(input, seed)
                                    : ai_name == "Terror" ? d2d::rules::terror_think(input, seed, away)
                                    : think.other ? d2d::rules::other_think(ai_name, input)
                                                  : d2d::rules::mon_think(ai_name, input, seed, away);
+                    auto act = first_act;
+                    for (std::size_t tried = 0; tried < otherwise.size(); ++tried) {   // a next act may add its own
+                        assert(asked < asks.size() && asks[asked].first == act.n);
+                        if (asks[asked++].second != 0) break;
+                        const auto next = std::move(otherwise[tried]);
+                        act = next();
+                    }
                     if (ai_name == "BloodRaven") ctrl[2] = command;
                     if (input.dying) effects.push_back(ThinkEffect{ ThinkEffect::command_done, 0, 0 });   // ai.cpp clears the leader's command on a flee (FUN_0058ed10)
                     if (rally && ai_name == "Fallen") effects.push_back(ThinkEffect{ ThinkEffect::rally, 0, 0 });                  // the leader's rally, as game.exe's effect
@@ -591,8 +636,8 @@ int main() try {
                 assert(attacks > 900 && stands < 100);
             }
             // The Shadows (tools/emu/shadow_init.py / shadow_master.py --dump:
-            // game.exe's own runs): the Warrior's init and the Master's, then the
-            // Master's think (the log of what it asks and does), then its scan.
+            // game.exe's own runs): the Master's init (FUN_005eb490), the Raven's
+            // (FUN_005ecb70) and the Warrior's (FUN_005eaf50), then the Master's think (the log of what it asks and does), then its scan.
             {
                 static constexpr std::array<std::string_view, 2> kInits{
 #include "shadow_init_cases.inc"
@@ -616,7 +661,7 @@ int main() try {
                     std::string bar;
                     fields >> bar;
                     std::array<int, 3> ctrl{ 7, 7, 7 };
-                    const auto gifts = d2d::rules::shadow_warrior_init(ctrl, owner && owner_type == 0, summoned ? summon_level : -1, has_attack, ids,
+                    const auto gifts = d2d::rules::shadow_master_init(ctrl, owner && owner_type == 0, summoned ? summon_level : -1, has_attack, ids,
                         [&](int id) {
                             const auto& row = *std::ranges::find(rows, id, &Row::id);
                             return id >= 0 && id < 400 && d2d::rules::shadow_may_have(row.summon, row.pet_type, pet_class, pet_type, 20);
@@ -629,9 +674,11 @@ int main() try {
                     assert(got == want);
                     for (const int value : ctrl) assert(value == read());
                     fields >> bar;
-                    const auto master = d2d::rules::shadow_master_init(aip3, seed);
-                    for (const int value : master) assert(value == read());
+                    const auto raven = d2d::rules::raven_init(aip3, seed);
+                    for (const int value : raven) assert(value == read());
                     assert(seed.low == std::uint32_t(read()) && seed.high == std::uint32_t(read()));
+                    fields >> bar;
+                    assert(d2d::rules::shadow_warrior_init(owner, summoned ? summon_level : -1)[2] == read());
                     ++checked;
                 }
                 assert(checked > 40);

@@ -48,9 +48,25 @@ address	name	evidence
 0045c3e0	seed_rand_below	ECX seed {low, high}, EDX n: one step low*0x6ac690c5+high, n&(n-1) mask or % n, 0 for n < 1 (missiles.md "The seed draw")
 0045c4b0	skill_row	ECX skill id: id*0x23c + [0x744304]+0xb98, 0 when id < 0 or >= [0x744304]+0xba0; no assert (cited, decompile only; skills.md "Iron Maiden's event function")
 0045c4f0	item_stat_cost_row	ECX stat id: id*0x144 + tables+0xbcc, 0 when id < 0 or >= tables+0xbd4
+004609f0	player_stat_change_hook	EDX unit, stack source, stat<<16|layer, unused, value; RET 0x10: stats 0x59 / 0x5a forward, 0x61 / 0x6b add or remove the layer's skill, 0xcc the charged skill (unit-player-trace.md)
+00460bf0	client_player_unit_init	ECX unit, EDX room, stack x, y; RET 8: path, inventory, stat hook FUN_004609f0, stats 0x43..0x45 = 100, light, player data (unit-player-trace.md)
+00460d50	client_player_unit_free	ECX unit: frees gfx, path, inventory, light and player data, tail jump FUN_004608c0; no null check (unit-player-trace.md)
+00460de0	unit_room_pos_query_61acd0	ESI unit: FUN_0061acd0(room, x, y, FUN_00620f50(unit)); static path +0xc / +0x10 for types 2, 4, 5 unchecked (unit-player-trace.md)
 00461010	client_unit_dead_reset	ESI unit: clears +0xc4 bits 4 (and 2 without state 7), trims the COF list, sets stat 6 (life) to 0; FUN_00461250 commands 8 / 9 (collision.md "The client's command switch")
 00461180	skill_slot_reask	EAX unit, ESI slot {id, guid}, arg: FUN_006439b0 node, FUN_004610c0, slot id = node id, guid -1 when it changed (collision.md "The client's command switch")
+004611f0	unit_skill_flag1_step	EDI unit, stack flag, RET 4: skill flags bit 0 sets bit 1 and calls FUN_004c68f0; else flag 0 and +0xc4 bit 6 clear call it (unit-player-trace.md)
 00461250	client_unit_command	fastcall (ECX command, EDX unit, record, flag) RET 8: prelude (skill list +0x14, FUN_004611f0, FUN_00620210, path restore) then the switch at 0x4616a4, mode set by FUN_00480e70 (collision.md "The client's command switch")
+00461700	click_skill_send	ESI click record, stack mode, RET 4: actions 6/7/9/0xa and 0xd/0xe/0x10/0x11 on a unit, 5/8 and 0xc/0xf at a spot, through FUN_00481030 (unit-player-trace.md)
+00461890	click_object_by_id	EBX click record, stack object id, RET 4: send 0x13 in reach, else walk and queue; class 0x3b with state 0x66 sends nothing; assert 0x4c4 (unit-player-trace.md)
+004619e0	click_player_interact	ESI click record, EDI id: within 2 with a clear 0x804 line sends 0x13 on type 0, else walks (+0x18) and writes the pending interact (unit-player-trace.md)
+00461a70	client_player_interact_unit	ECX target: a stack click record (+4 local player, +8 target, +0x18 = 2) into FUN_004619e0; no caller in game-calls.tsv (unit-player-trace.md)
+00461ac0	skill_target_in_range	ECX node, EDX target, stack range / distance outs, RET 8: FUN_006416d0 distance <= FUN_00646ca0 range, signed; 0 with no outs written (unit-player-trace.md)
+00461b40	click_skill_walk_in_range	EAX id, ECX type, EDX click record: shift or in range casts (FUN_00461700(1)), else queues 6 / 0xd and walks to distance - range; asserts 0x52f, 0x530, 0x548, 0x549 (unit-player-trace.md)
+00461d60	pending_interact_is	stack type, id, RET 8: 1 when the local player's pending action is 0x13 on that type and id (unit-player-trace.md)
+00461dc0	click_unit_interact	EAX click record, stack type, id, RET 8: per target type reach, line, held and timer gates, then send 0x13 or walk and queue it (unit-player-trace.md)
+00462370	held_walk_resend	ESI click record: a player in mode 2 / 6 walks (1), mode 3 runs (3) to the spot through FUN_00461840 (unit-player-trace.md)
+00462560	skill_row_byte5_bit0	EAX skill node: Skills row byte +5 bit 0 as 0/1; 0 for a null node; no null-row check (unit-player-trace.md)
+00462920	click_frame_latch_clear	no args: 0x7a5264 = 0, the word FUN_00462d00 sets once per frame (unit-player-trace.md)
 00463260	client_run_stamina_stop	EAX unit, from FUN_00463390 in mode 3: the local player at stat 10 (stamina) 0 re-walks to its target or spot in walk mode (collision.md "The client's command switch")
 00463390	client_player_tick	ECX unit: per-frame step by the 12-byte mode rows at 0x711e00; walk / skill handling, frame step, end of mode, then FUN_00463260 in mode 3 (collision.md "The client's command switch")
 00463720	unit_flags_any	ECX unit, EDX mask: unit +0xc8 & mask != 0; null unit false
@@ -90,6 +106,9 @@ address	name	evidence
 00465ee0	unit_remove_table_a	ECX id, EDX type: FUN_00465e80 on table A (0x7a5e70) + type * 0x200, bucket id & 0x7f; verified by unit_client.py
 00465f00	unit_remove_table_b	ECX id, EDX type: FUN_00465e80 on table B (0x7a5270) + type * 0x200, bucket id & 0x7f; verified by unit_client.py
 004661c0	unit_create	ECX id, EDX class, stack x, y, type, mode: FUN_00620290(0, type); a unit gets FUN_00465fd0 (EAX unit, EBX = the first stack argument, then ECX, EDX, the other three, 0); 0 when none; verified by unit_client.py
+00466730	critter_make	ECX, EDX, three stack words: counter DAT_00711f30 + 1 (-1 wraps to 0); type 1 builds a record for FUN_00466360, else FUN_00620290(0, type) record +0xc4 |= 0x600000 then FUN_00465fd0 (critters.md; ui_client_helpers.py)
+00469aa0	keyconfig_key_of	ECX function, EDX slot: the key (low word) of the first of the 114 records at 0x7a6f90 that matches, else 0xffff (controls.md; ui_client_helpers.py)
+0046a530	keyconfig_key_label	ECX function, EDX slot: 32 keys tail-jump to FUN_00524a30 with a string id, any other key or none to FUN_00469de0 with ECX, EDX kept (controls.md; ui_client_helpers.py)
 0046b3c0	client_spawn_at_unit_19	ECX unit: FUN_004cdb40 at the unit's position words (+0xc, +0x10), result tagged 0x19 at data +0x28 (missiles.md "Client unit spawn at a unit's spot")
 0046b530	client_spawn_on_object	ECX object unit of class 0x21c / 0x21d / 0x21e: finds the paired object (0x1db / 0x1dc / 0x1da) in its room, client missile row 0x21d there tagged with its id (missiles.md "Client missile spawn on an object")
 0046b680	client_spawn_missiles_11c	no args: client missiles of rows 0x11c, 0x128, 0x125 via FUN_004cd540, the first tagged 0x32 at data +0x28 (missiles.md "Client missile spawn: FUN_0046b680")
@@ -165,6 +184,7 @@ address	name	evidence
 00472280	seed_roll_base	ECX seed pair (low, high), EDX base, stack n: n < 1 returns EDX; low * 0x6ac690c5 + high; EDX + (low & (n - 1)) for a power of two, else EDX + low % n
 00472da0	splash_spawn	ECX, EDX draw point, stack subtile << 16: slot from pool DAT_007a89fc (0x200 x 0x18; -1 ends it before any roll), diamond spot, kind (low & 1) + 2 (weather.md)
 00472ec0	bubble_spawn	ECX, EDX draw point, stack subtile << 16: slot from pool DAT_007a8a00 (0x80 x 0x18; -1 ends it before any roll), diamond spot y - 30, kind 2 (weather.md)
+004750f0	static_light_build_shadow_cache	ESI light: samples 64x64 room collision, propagates shadow rings, copies to cache and sets +0x2c; tools/emu/static_light_cache.py
 00477730	driver_option	returns DAT_00712ccc: below 4 the software light table, 4 or more the 3D vertex fill (FUN_004de410)
 00478830	net_send_0x66	ECX data, EDX length (<= 0x1fd, else fatal line 0x452): C->S 66 u16len data via FUN_00478350; verified by warden_client.py
 004791b0	utrans_pet_colour	the 0x7a pet list's owner, the roster's flag 8 (0x46665c reads it)
@@ -172,16 +192,53 @@ address	name	evidence
 00479320	roster_self	the local player's record (id at FUN_00463dd0 +0xc); fatal line 0x75 without one; verified roster_small.py
 004795a0	roster_next	ECX roster entry: +0x80; null gives the first (DAT_007bb5c0); verified roster_small.py
 004795c0	roster_name	ECX roster entry: entry + 0x66 (the name); null is fatal, line 0x174; verified roster_small.py
+004795f0	roster_sort_key_u16	stack head: insertion sort by the zero-terminated 16-bit units at +0, returns head (group sort)
+004796d0	roster_sort_key_18	EAX head: insertion sort ascending by dword +0x18, returns head (group sort)
+004797c0	roster_free_groups	frees each group node (DAT_007bb5c8 chain, +8) to pool 0x6d7268, line 0x22f; clears the head
+00479800	roster_group_take	EDI group: moves roster records with the group's party word to the group's list
+00479860	roster_sort_groups	sorts the group chain DAT_007bb5c8 ascending by word +0
+004798c0	roster_group_front	DX party word, EBX id: group to the chain front, then the record to its list front
+00479940	roster_build_groups	makes a 0xc-byte group per party word (pool 0x6d7268, line 0x1fc), fills them with roster_group_take
+004799c0	roster_sort_group_lists	sorts each group's list (FUN_004796d0 or FUN_004795f0 by FUN_0047a980), then roster_sort_groups
+00479a00	roster_flatten_groups	sets DAT_007bb5c0 to the group lists concatenated in chain order
+00479a60	roster_front_id	ESI id: moves each roster record with that id, not the head, to the front
+00479b80	roster_field_18	ECX record: dword +0x18, null 0; sort key of FUN_004796d0 (party.md "More roster functions")
 00479b90	roster_level	ECX roster entry: u16 +0x20; null 0; verified roster_small.py
 00479ba0	roster_class	ECX roster entry: +0x1c; null 0; verified roster_small.py
+00479bb0	roster_find_ecx	ECX id, jmp FUN_004792e0 (roster_find) (party.md)
+00479c20	roster_relation_1	ECX record: relation bit 1 from the local player to it, null 0 (party.md)
+00479c60	roster_relation_2	ECX record: relation bit 2 from the local player to it, null 0 (party.md)
+00479ca0	roster_relation_4	ECX record: relation bit 4 from the local player to it, null 0 (party.md)
+00479ce0	roster_relation_8	ECX record: relation bit 8 from the local player to it, null 0 (party.md)
+00479d20	roster_relationship	ECX record: dword +0x30, null 1 (party.md)
 00479d30	roster_toggle_relation	custom call, EBX record and DI mask: adds the relation node if missing, then sets every mask bit when none is set, else clears them all; fatal line 0x463 on null; verified roster_small.py
+00479da0	roster_send_relation_1	ECX record: toggles bit 1, sends C->S 0x5d type 1 (FUN_00478740)
+00479de0	roster_send_relation_2	ECX record: toggles bit 2, sends C->S 0x5d type 2 (FUN_00478740)
 00479e20	roster_squelch	flips relation bit 4, sends C->S 0x5d (ECX 3), adds or removes the name in the ignore list (vtable slot 0 or 1); verified roster_small.py
 00479f60	roster_leave_area	own record area +0x22 := 0xffff, +0x30 := 1, redraw FUN_00479ab0 and FUN_0049a640; fatal line 0x4ed; verified roster_small.py
+00479fc0	roster_leave_area_send	FUN_00479f60 then C->S 0x5e type 9 with the local id (FUN_00478780)
 00479fe0	roster_hostile	flips relation bit 8 if level >= 9 or already hostile, sends 0x5d (ECX 4), leaves the area when both share one; verified roster_small.py
 0047a0c0	roster_unit_id	ECX roster entry: +0x10; null -1; verified roster_small.py
+0047a0d0	roster_set_field_14_24	ECX id, EDX dword to +0x14, stack word to +0x24, then FUN_00479ab0 and FUN_0049a640
 0047a100	roster_set_position	ECX id, EDX x, stack y: record +0x28 / +0x2c (S->C 0x90); verified roster_small.py
+0047a120	roster_same_party_as_local	ECX record: 1 when its +0x22 equals the local player's party (FUN_00465400)
+0047a150	roster_field_14	ECX id: dword +0x14 of roster_find, 0 when absent
+0047a170	roster_not_squelched	ECX id: 1 when the record is absent or relation bit 4 is clear
+0047a1b0	roster_get_position	ECX record, EDX and stack pointers: +0x28 and +0x2c, null 0 (inverse of roster_set_position)
 0047a1e0	roster_area	ECX roster entry: +0x24; null 0; verified roster_small.py
 0047a210	roster_unit_name	player unit: its record's name (+0x66), else the player data pointer; fatal lines 0x5db, 0x5dc, 0x5e5; verified roster_small.py
+0047a270	roster_set_alt_ids	ECX id, EDX and stack dwords to +0x3c and +0x40
+0047a290	roster_name_by_alt_id	ECX id: name (+0x66) of the record whose +0x3c or +0x40 is the id, else 0
+0047a2c0	roster_party_other	ECX unit: 1 when another roster record shares its party word (FUN_00465400)
+0047a370	roster_set_relation_word	ECX id, EDX dword, stack word: FUN_004dc320 and FUN_004dc4c0, then FUN_0049a640
+0047a3d0	roster_add_id	ECX id, EDX dword: creates the record on DAT_007bb5c4 when absent, adds EDX to its +0x38 list
+0047a520	roster_same_party_pair	ECX and EDX ids: 1 when both records share a party word other than 0xffff
+0047a560	roster_any_hostile_to_local	no args: 1 when a roster record has FUN_004dc440(record, local, 8) nonzero (swapped order)
+0047a5b0	roster_other_hostile_to_local	ECX record: FUN_004dc440(record, local, 8) nonzero (swapped order)
+0047a5e0	roster_local_hostile_to	ECX record: FUN_004dc440(local, record, 8) nonzero
+0047a610	roster_other_loot_to_local	ECX record: FUN_004dc440(record, local, 1) nonzero (swapped order)
+0047a640	roster_local_loot_to	ECX record: FUN_004dc440(local, record, 1) nonzero
+0047a670	roster_class_check	ECX record: 0 for class 0, 1 or 6, else 1; null 1 (+0x1c)
 0047a690	roster_set_life	ECX id, DL zero-extended and stored as a dword at record +0x14 (clears +0x15..+0x17; the party life bar); verified roster_small.py
 0047f8c0	rc4_crypt	ECX state (0x102 bytes), stack buffer, length: RC4 keystream xor in place; verified by warden_client.py
 0047f990	warden_digest	EAX length, EBX data, ESI skip, stack salt, out: SHA-1 of data[skip:], data[:skip], then the upper-cased salt (20 bytes to out); verified by warden_client.py
@@ -202,12 +259,14 @@ address	name	evidence
 004802e0	warden_packet	S->C 0xAE: 0x45f5f0 JMPs here (ECX packet + 3, EDX u16 +1); module +8, then FUN_00480230
 00480320	warden_tick	FUN_0044efa0 per frame: module +0xc, then FUN_00480230
 004803c0	warden_init	ECX seed: shutdown, seed = ECX, API = FUN_00518c10 (0 gives 0), loads the built-in module and starts it; verified by warden_client.py
+00480490	unit_path_ptr_touch	ECX unit, plain RET: FUN_00650590(unit+0x2c); sole caller FUN_004ae1d0; collision.md "Replaying a path-target action"
 00481860	sound_row	ECX id: id*0x8e + DAT_007bc9a0, 0 when id < 0 or >= DAT_007bc9a4 (Sounds.txt's records, music.md)
 004833e0	char_stats_row	ECX class: class*0xc4 + tables+0xbc4, 0 past tables+0xbc8 (the 0xc4-byte class record FUN_005706d0 reads)
 00483410	sets_row	ECX id: id*0x128 + tables+0xc0c, 0 past tables+0xc10: 32 rows loaded, Sets.txt's count
 00483440	set_items_row	ECX id: id*0x1b8 + tables+0xc18, 0 past tables+0xc1c: 127 rows loaded, SetItems.txt's count
 00483470	unique_items_row	ECX id: id*0x14c + tables+0xc24, 0 past tables+0xc28: 402 rows loaded, UniqueItems.txt's count with its Expansion row
 00499040	belt_key_labels	SetFont(1) at 0x499053, then the belt slots' key names
+0049e3a0	chat_line_add	ECX text, EDX kind: wrapped to <= 6 lines in a 0x26 node (expiry tick + 10000), appended to the queue DAT_007bf1e4, one head dropped past 18 lines (net-packets.md; ui_client_helpers.py)
 004a0000	speech_box_open	12 bytes, no args: xor eax,eax / cmp dword [0x7bf0a4],eax / setnz al / ret. 1 when the speech record is set (npc-talk.md)
 004a89d0	skill_desc_record	Skills row index -> SkillDesc record: Skills +0x194 in [0, tables+0xb94), record tables+0xb8c + n*0x120, else 0 (char-panel.md)
 004a9ae0	skill_count_search_2	fastcall (unit, skill id): the same list search as FUN_004a9a90 and always returns 0; bugs.md 24; skills.md "Skill list accessors and the hotkey sweep"
@@ -220,13 +279,19 @@ address	name	evidence
 004ade50	monster_mod_dispatch_1	ECX unit: FUN_004add90(unit, 0, 1); verified by unit_client.py
 004ade60	monster_mod_dispatch_2	ECX unit: FUN_004add90(unit, 0, 2); verified by unit_client.py
 004ade70	monster_mod_dispatch_3	ECX unit: FUN_004add90(unit, 0, 3); verified by unit_client.py
+004ade80	monster_mod_dispatch_4	ECX unit, EDX forwarded value: FUN_004add90(unit, EDX, 4), a fifth slot beside monster_mod_dispatch_0..3; sole caller FUN_004cd540; collision.md "A fifth monster-mod dispatch slot"
 004ae080	monster_flags_masked	ECX unit, DX mask: a monster's data +0x28 word & mask; 0 for a non-monster or no data; verified by unit_client.py
+004ae0a0	monster_data_set_monstats_row	ECX unit, EDX AI-control word: writes monster data +0x28's low 16 bits, then sets monster data +0x0 to the class's MonStats row address (0 out of range); callers FUN_00466360, FUN_004ae8d0, FUN_004aedd0; collision.md "Two more monster type-data accessors"
 004ae110	monster_data_list	ECX unit: monster data + 0x30 (the modifier list); 0 for a non-monster or no data; verified by unit_client.py
+004ae170	monster_data_state_gate_addr	ECX unit: returns the address of monster data +0x34, not dereferenced; callers FUN_0046ce40, FUN_0046d110; collision.md "Two more monster type-data accessors"
+004ae1d0	monster_replay_path_target	naked ESI unit: in mode 1-0xb/0xd-0xf, FUN_00465bf0(unit, 0), FUN_00480490(unit), tail-calls FUN_00480e70(unit, 1); sole caller FUN_004aff60; collision.md "Replaying a path-target action"
 004ae320	monster_type_test_04	ECX unit: a monster gives FUN_004ac7e0(unit, 4), else 0; verified by unit_client.py
 004ae340	monster_type_test_40	ECX unit: a monster gives FUN_004ac7e0(unit, 0x40), else 0; verified by unit_client.py
 004ae360	monster_type_test_08	ECX unit: a monster gives FUN_004ac7e0(unit, 8), else 0; verified by unit_client.py
 004ae380	monster_type_test_10	ECX unit: a monster gives FUN_004ac7e0(unit, 0x10), else 0; verified by unit_client.py
 004ae3a0	monster_type_test_02	ECX unit: a monster gives FUN_004ac7e0(unit, 2), else 0; verified by unit_client.py
+004ae4f0	unit_client_event_hook	ECX unit, naked EAX event code: two jump tables dispatching client-side event codes; callers FUN_004ae8d0, FUN_004aedd0; collision.md "A per-event client hook"
+004afbc0	monstats2_mode_flag_test	ECX unit, naked EAX struct {+0 bit index, +4 gate}: tests a MonStats2 row's +0x104 byte array via FUN_00451fe0; two call sites in FUN_004aff60; collision.md "A per-mode MonStats2 flag test"
 004c6ac0	skill_client_start	fastcall (unit, ...), caller FUN_0045d5e0: state list + stat set to the level, start-function table 0x727ba8 per level; skills.md "Stat-list helpers and skill starts" (table meaning not read)
 004c7630	unit_command_on_target	fastcall (unit, target): builds the unit command {0, -1, target type, target id, 1, 0, 0} (type 6 / id -1 for none) and runs FUN_00480c10 with 1; returns 1; caller FUN_004c9b40; skills.md "Skill record and skill-list accessors"
 004c7950	target_stat_list_kind6	fastcall (target): stat list FUN_006251f0(0, 6, 0x32, target type, id) with callback FUN_004c7890, linked to the target (d2d_rules_socket_props); caller FUN_004c9b40; skills.md "Skill record and skill-list accessors"
@@ -454,6 +519,79 @@ address	name	evidence
 00526800	wide_length	ECX: u16 units before the 0; null 0
 00526f20	narrow_to_wide	ECX dst u16*, EDX src bytes, stack count (ret 4): each byte zero-extended, stops at the NUL or count; then dst[i] = 0, or dst[count-1] = 0 when src[count] is not 0 (cursor-units.md)
 00537860	client_player_unit	(client, force): client +0x174, revalidated through FUN_00552f60(game +0x1a8, type +0x16c, id +0x170) unless +0x3d4 bit 0 or force; a null client asserts 0xfb (items.md)
+00537ac0	game_free_clients	ECX game: releases each record on the client list (+0x88, next +0x4a8) to the game pool, line 0x617; leaves the id and name tables alone (net-join.md)
+00537d10	near_players_insert	EAX player x, ESI table, stack unit, y, max-distance pointer, client, limit (ret 0x14): sorted insert of a type 0 unit by |dx| + |dy| into 12-byte entries, nearest `limit` kept (net-join.md "The nearby-player list")
+00537ee0	near_players_export	ESI client, stack table (ret 4): writes the chain as 9-byte entries at client +0x1cc and the count at +0x3bc; the last entry of a chain of two or more is not written (net-join.md)
+00537fd0	client_collect_near_players	ECX client, EDX limit: every type 0 unit in the rooms of the client's area, nearest first, into +0x1cc; fatal lines 0x70b, 0x70d (net-join.md)
+005381c0	game_has_client_id	ECX game, EDX id: 1 when a record on the game list has that id (net-join.md)
+00538260	client_set_unit_ref	ECX client, EDX unit or null: +0x198 := type, +0x19c := id and +0x3d4 mask 2, or clears the mask; fatal line 0x7ce (net-join.md)
+00538320	client_set_save_tag_1	ECX client: +0x178 := 1; fatal line 0x7f5 (net-join.md)
+00538350	client_save_checksum	ECX client: +0x18c; fatal line 0x7ff (net-join.md)
+00538380	client_set_save_checksum	ECX client, EDX: +0x18c; fatal line 0x80a (net-join.md)
+00538410	client_unit_add_check	ECX client, EDX unit: when the unit's room is not in the client's area, FUN_00571f90(game, unit, client); fatal lines 0x83b, 0x840 (net-join.md)
+005384e0	client_unit_remove_check	ECX client, EDX unit: when the unit's room is not in the client's area, FUN_00571600(unit, client); fatal lines 0x853, 0x859, 0x85e; no static caller (net-join.md)
+005385c0	stub_return_minus_one	returns 0xffffffff; FUN_00568f20 stores it in the save header at +0x34 (stubs.md)
+005385d0	stub_ret4	ret 4; FUN_00569f80 calls it with 1 (stubs.md)
+00538640	client_flag_word	ECX client: word +0xa whole, no null check (net-join.md)
+00538e60	client_save_copy	ECX client, EDX data, stack size (ret 4): reuses or reallocates the +0x17c buffer, copies size bytes; fatal line 0xb69 (net-join.md)
+00539000	client_set_flag_0x20	ECX client: +0x3d4 |= 0x20; fatal line 0xbaf (net-join.md)
+00539030	client_flag_0x20	ECX client: +0x3d4 bit 5 as 0 or 1; fatal line 0xbba (net-join.md)
+00539070	game_first_client	ECX game: +0x88 (net-join.md)
+00539080	client_next	ECX client: +0x4a8 (net-join.md)
+005390a0	client_set_slot	ECX client, EDX slot, stack word, byte, dword (ret 0xc): +0x3dc + slot * 8; null client does nothing (net-join.md)
+00539110	client_word_45e	ECX client: word +0x45e (net-join.md)
+00539120	client_set_word_45e	ECX client, DX: word +0x45e (net-join.md)
+00539130	client_dword_460	ECX client, EDX pointer: *EDX := dword +0x460 (net-join.md)
+00539140	client_set_dword_460	ECX client, EDX pointer: +0x460 := *EDX (net-join.md)
+00539150	client_string_464	ECX client, EDX destination: copies the NUL-terminated string at +0x464 (net-join.md)
+00539170	client_set_string_464	ECX client, EDX source: copies a NUL-terminated string to +0x464 (net-join.md)
+00539190	client_bytes_480	ECX client, EDX, stack, stack (ret 8): bytes +0x480..+0x482 to three pointers (net-join.md)
+005391c0	client_set_bytes_480	ECX client, DL, stack, stack (ret 8): bytes +0x480..+0x482 (net-join.md)
+005391e0	client_set_field_508	ECX client, EDX: +0x508, negative is fatal line 0xc5e (net-join.md)
+00539210	client_field_508	ECX client: +0x508 (net-join.md)
+00539230	client_set_byte_45c	ECX client, DL: byte +0x45c (net-join.md)
+00539270	client_queue_set_head	ECX client, EDX node: next := 0; head +0x1b8 := node, tail +0x1bc only when the queue was not empty (net-join.md)
+005392a0	client_queue_pop	ECX client: drops the head of the packet queue (+0x1b8, next +0x204), clears both ends when they were equal (net-join.md)
+005392e0	client_queue_head	ECX client: +0x1b8 (net-join.md)
+005392f0	client_string_1d	ECX client, EDX destination: FUN_004135d0(EDX, client + 0x1d, 0x32) (net-join.md)
+00539300	client_field_60	ECX client, EDX pointer: *EDX := dword +0x60 (net-join.md)
+00539310	client_field_68	ECX client, EDX pointer: *EDX := dword +0x68 (net-join.md)
+00539320	client_set_field_68	ECX client, EDX: dword +0x68 (net-join.md)
+00539330	client_sent_life_block	ECX client: client + 0x48c, the block FUN_00548760 reads for the life last sent; fatal line 0xd10 (net-join.md)
+00539360	client_stamp_ring_add	ECX game, EDX unit (type 0): game +0xa8 into the first free of five dwords at +0x3c0 of FUN_005531c0(unit)'s record; fatal lines 0xd1b, 0xd1e (net-join.md "A ring of five stamps on the player record")
+005393f0	client_stamp_ring_full	ECX game, EDX unit (type 0): 1 when the five slots hold a stamp within 0x8ca of game +0xa8; fatal lines 0xd2d, 0xd30 (net-join.md)
+00539be0	client_fill_record_25	ECX client, EDX 0x25-byte buffer: bytes from the player's look codes, class, level, flags, +0x45e, +0x480.., +0x460; first byte 0 when invalid; only caller FUN_00539da0 (net-join.md)
+0053b400	scmd_id_u32	S->C 5 bytes: id (DL), u32 a0 at +1 (net-packets.md, SCmd builders)
+0053c1d0	scmd_id_u8_u32_u32	S->C 10 bytes: id, u32 a0, u8 a1 at +5 (fatal at word 0xff or more, line 0x4b8), u32 a2 at +6
+0053cab0	scmd_0x77	S->C 2 bytes: 0x77, u8 DL (net-packets.md, SCmd builders)
+0053cad0	scmd_copy_21_b	S->C 0x15 bytes copied from the structure EDX points at (net-packets.md, SCmd builders)
+0053cbe0	scmd_0x79	S->C 6 bytes: 0x79, u8 a0 at +1, u32 EDX at +2
+0053cdf0	scmd_unit_0x7f_0x90	S->C unit info: 0x7f (10 bytes, gated by FUN_0053cd80) and 0x90 (13 bytes, gated by FUN_006416d0 > 0x32); fatal line 0x72a on a null unit (net-packets.md)
+0053d220	scmd_0x3f_unit	S->C 8 bytes: 0x3f, u8 a0 or 0xff, u32 [EDX+0xc] or 0, u16 a3 at +6 (net-packets.md, SCmd builders)
+0053d270	scmd_0x40_unit	S->C 13 bytes: 0x40, u32 [EDX+0xc] (or -1) at +1, u32 a0 at +5, u32 a1 at +9 (net-packets.md, SCmd builders)
+0053d330	scmd_0x13_wrap_9d	calls FUN_0053cef0(a0, 0x13, a1, 0) (the 0x9d builder) with ECX and EDX as they came in (net-packets.md)
+0053d370	scmd_0x47_unit	S->C 11 bytes: 0x47, u8 from [EDX] or 6 at +1, zero at +2, u32 [EDX+0xc] or -1 at +3 (net-packets.md)
+0053d3c0	scmd_0x48_unit	S->C 11 bytes: 0x48, u8 from [EDX] or 6, u8 a0 at +2, u32 [EDX+0xc] or -1 at +3 (net-packets.md)
+0053d6d0	scmd_id_u8_u32	S->C 7 bytes: id (DL), u8 a0 at +1, u32 a1 at +2 (net-packets.md, SCmd builders)
+0053d7b0	scmd_copy_7_b	S->C 7 bytes copied from the structure EDX points at (u32 +0, u16 +4, u8 +6) (net-packets.md)
+0053d830	scmd_copy_38	S->C 0x26 bytes copied from the structure EDX points at (net-packets.md, SCmd builders)
+0053d840	scmd_copy_42	S->C 0x2a bytes copied from the structure EDX points at (net-packets.md, SCmd builders)
+0053d850	scmd_0x11	S->C 8 bytes: 0x11, u8 DL at +1, u32 a0 at +2, u16 a1 at +6 (net-packets.md)
+0053d880	scmd_0x57	S->C 14 bytes: 0x57, u32 EDX at +1, u8 a0 at +5, u16 a1..a4 at +6, +8, +0xa, +0xc (net-packets.md)
+0053d900	scmd_0x60_unit	S->C 7 bytes: 0x60, u8 FUN_006222c0 low byte, u8 [[unit+0x14]+4], u32 [unit+0xc] at +3 (net-packets.md)
+0053d9c0	scmd_0x65	S->C 7 bytes: 0x65, u32 EDX at +1, u16 a0 at +5 (net-packets.md)
+0053da10	scmd_copy_32	S->C 32 bytes copied from the structure EDX points at (net-packets.md, SCmd builders)
+0053da40	scmd_0x74_two_units	S->C 10 bytes: 0x74, u8 a1, u32 [EDX+0xc] or -1 at +2, u32 [a0+0xc] or -1 at +6 (net-packets.md)
+0053db20	scmd_0x7b	S->C 8 bytes: 0x7b, u8 DL, u16 a0 & 0xfff (0x8000 when a1 is set) at +2, u32 a2 at +4 (net-packets.md)
+0053db70	scmd_0x7e	S->C 5 bytes: 0x7e at +0; +1..+4 not written (net-packets.md)
+0053db90	scmd_0x82_player_name	S->C 29 bytes: 0x82, u32 [P+0xc], 16-byte name from FUN_006221a0(P), u32 a0 at +0x15, u32 a1 at +0x19; sent only when both FUN_00552f60 lookups succeed (net-packets.md)
+0053df50	scmd_record_callback_8e	per-unit callback of FUN_0053df80: queues its 10-byte record with EDI from FUN_005531c0(unit, 0xbff) (net-packets.md)
+0053df80	scmd_0x8e_record_walk	stores a 10-byte 0x8e record and passes it to FUN_005538d0 with EDX = 0x53df50; not a direct sender (net-packets.md)
+0053dff0	scmd_struct_6	S->C 6 bytes copied from the structure EDX points at (u32 +0, u16 +4) (net-packets.md)
+0053e0a0	scmd_0x98	S->C 7 bytes: 0x98, u32 EDX at +1, u16 a0 at +5 (net-packets.md)
+0053e0e0	scmd_0x9b	S->C 7 bytes: 0x9b, u16 DX at +1, u32 a0 at +3 (net-packets.md)
+0053e110	scmd_0x97	S->C 1 byte: 0x97 (net-packets.md)
+0053ec00	scmd_wrap_eae0	calls FUN_0053eae0(0, a0, 0) with ECX and EDX as they came in; not a sender here (net-packets.md)
 00543db0	quest_event_item_dropped	FUN_005439a0(0): event 5 (+0xb4) over the item's own quest list (act1-end.md)
 005379d0	unit_look_codes	fastcall (_, unit, out, size): asserts 0x3d4 for size < 0x10 or no unit, out = 0xff x16, FUN_0063e510 fills it with the layer codes (items.md)
 00537a40	unit_look_tints	fastcall (_, unit, out, size): as FUN_005379d0 (assert 0x3df) but out receives the layer tints (items.md)
@@ -596,6 +734,7 @@ address	name	evidence
 005466b0	quest_item_give	QUESTS.CPP 0x9d2: FUN_00633640 row, FUN_00559ce0 at the player's level, FUN_00560200 into the inventory else FUN_00558aa0 on the ground
 00548a50	player_walk_to_unit_queued	EBX unit, ECX game, EDI type, ESI id, stack marker (-1, or -2 when FUN_00548b00's fourth argument is set): FUN_00580a70 mode 3 then FUN_00641f20 sets pending +0x150 = 1, +0x154 marker, +0x158 type, +0x15c id (collision.md "The pending interact's fields")
 00548b00	player_interact_unit	ECX player, EDX type 0..5, stack id, to_cursor, game: within 0x33 of unit_distance, by type: 0 player (corpse FUN_0057fb70), 1 NPC (talk FUN_00573020), 2 object (FUN_00584540), 4 item (FUN_00563560 / FUN_0055cf50), 5 warp (FUN_005550b0); out of reach walks by FUN_00548a50 (collision.md "The pending interact's fields")
+00554120	unit_set_interaction	stdcall (unit, type, id): if byte +0x6c is 0, +0x64 = id, +0x68 = type, +0x6c = 1; else nothing (a busy player logs a sprintf to a dead buffer) (act1-end.md "Operate")
 00556b60	item_roll_sockets	(EDI item, drop record, roll +0x6d difficulty): quality >= 2, hasinv, not stackable; most = FUN_0062bc20 cut to 3 / 4 / 6; rand(100) < 33 on the item's seed; count seed field % most + 1 (version 100+), flag 0x800, FUN_0062bcb0
 00556e80	item_type_fixups	(EAX item, EDI drop record): ItemTypes 0xd FUN_00556a60; 0x28 / 7 item data +0x28 = record +0x40 or *record +4 (7 also flag 0x10000); 0x16 / 0x12 books row into item data +0x3e; then FUN_005c1260
 00556f60	item_roll_quality	(item, record): forced quality at record +0x30 in an expansion item, else ItemRatio row by FUN_00637910, tries 7..2 by rand(b - past / d), else 3 or 1 by record +0x80 & 0x40 (drops.md "The quality roll")
@@ -675,6 +814,7 @@ address	name	evidence
 0056de40	passives_then_pet_limits	fastcall (unit): FUN_00646f20, then a player (type dword +0 is 0) tail-jumps to FUN_00575900 with unit +0x80 in ECX; skills.md
 0056b3e0	unit_takes_filter	ECX caster, EDX target, stack flags: by target type (player 0x1, monster 0x2, object 0x10, missile 0x8, item 0x20) then 0x80/0x400 unit flags, 0x100 town, 0x10000/0x8000/0x20000, state 0x56, 0x200 line (skills.md "aurafilter")
 0056dfa0	skills_refresh_passives	fastcall (unit): for each node of the unit +0xa8 skill list whose passivestate > 0: state on (FUN_00639db0) and FUN_00646d60; skills.md "Skill accessors"
+0056e170	skill_phys_roll	fastcall (caster ECX, damage record EDX; stack skill, level): nothing for a bad id or null row; else damage +8 += FUN_00647bc0 + FUN_0045c3e0(caster seed +0x20, FUN_00647d00 - FUN_00647bc0); combat.md; skills_combat_helpers.py
 0056e520	unit_add_attackrate_list	fastcall (unit, value): kind-4 stat list (FUN_006251f0) linked to the unit, stat 0x44 = value, then FUN_00623f50; Skills.cpp line 0x12ab; skills.md "Stat-list helpers and skill starts"
 0056ff10	skill_state_list_apply	(unit in EDI, skill): record flag +4 & 0x20 needed; state +0x80 on, list tagged state / skill / level, stats 0x15e / 0x15f set, or d2d_ai_castable when +5 & 0x80; then FUN_0056cda0; skills.md "Stat-list helpers and skill starts"
 00570080	skill_learn	fastcall (unit, skill) -> 1 learned: cost 1 or the calc at record +0x170 (likely skpoints); needs stat 5 >= cost; stat 5 -= cost, FUN_00647110 grants a level, FUN_00646f20 refreshes passives; cost given back when the grant returns 0; skills.md "Skill accessors"
@@ -742,9 +882,13 @@ address	name	evidence
 005ae480	missile_do_stamp_then_strike	path velocity 0: ORs 0x40 into its subtile's room word (FUN_0064cb90), then FUN_005ae1f0; called by FUN_005b04a0 (missiles.md "Standing missiles")
 005ae520	missile_do_burn_footprint	missile do 5 (data ref 0x73c77c): stamps 0x40 on its footprint (FUN_0064ea00), steps its animation frame by range left, then FUN_005ae1f0 (missiles.md "Standing missiles")
 005b30e0	quest_callback_pack	pack registers and seven stack arguments into callback record for FUN_005b2a00
+005b3750	act4_opening_alert	NPC 0x16f and word 0x18 bit 0 gate the low-byte result
+005b43f0	izual_search_gate	quest 0x16 data gate and player iteration
+005b4da0	diablo_act4_share_gate	quest bit, room and act gate player share callback
 005b4ff0	quest_activate_waypoint_6d	level 0x6d index sets current difficulty player waypoint buffer
 005b5210	quest17_data13_get	quest 0x17 data byte +0x13 or zero
 005b5810	quest17_game_gate	game +0x70 zero and absent quest 0x17 or data byte +0x14 nonzero
+005b5840	act4_quest_object_init	quest 0x17 data +0x40 selects mode 1 or 2
 005b9ca0	quest11_data_coords	quest 0x11 data byte +6 gates copying dwords +0x10 and +0x14
 005b9cd0	quest11_object_timer	quest 0x11 clears data +6 and schedules the object at data +0x28
 005ba2f0	quest_party_callback	valid low-word party ID dispatches callback FUN_005ba290
@@ -756,6 +900,7 @@ address	name	evidence
 005c4180	pet_variant	caster seed (+0x20) & 3 into monster data +0xf (skeletal mage element)
 005c5f10	heal_unit_life	EAX amount (256ths), EBX unit: 0 when amount < 1, else stat 6 += amount capped at d2d_unit_max_life, returns the amount that fitted (skills.md "Iron Maiden's function"; cited)
 005c5f50	aura_event_iron_maiden	aura event function 4 (table 0x7325b0 slot 0x7325c0), ECX game, 5 stack args (wearer, struck, hit, skill, level): hits the wearer calc1 / 2 / 3 % of the hit's damage (skills.md "Iron Maiden's function"; cited)
+005c6cc0	skill_aurastats_apply	fastcall (unit ECX, stat list EDX; stack row or 0, id, level): per aurastat slot (row +0x54 / +0x68) a nonzero FUN_00646ca0 value added with FUN_006270b0, stat 0x44 also sets 0x45; then FUN_00623f50; missiles.md; skills_combat_helpers.py
 005d7090	skill_start_dragon_tail	srvstfunc 27 (fastcall): FUN_0056e520, to-hit + stat 325 (FUN_0057ec10), on a hit kick damage FUN_005d54b0, FUN_0057dbf0 with HitClass +0x1a5 (0x80 if 0); skills.md "Stat-list helpers and skill starts"
 005d7ea0	skill_start_bash	srvstfunc 32 (fastcall): town refusal (FUN_0061ab00), calc3, FUN_0056e520, to-hit roll, flags, ED, element, aurastate list; skills.md "Melee skills" and "Stat-list helpers and skill starts"
 005dd0b0	unit_search	mode table at 0x6e3300: kind 1 FUN_005dcee0, 2 FUN_005dcf70, 3 FUN_005dd050, else FUN_005dce60
@@ -972,7 +1117,7 @@ address	name	evidence
 00620190	left_skill	FUN_00643930: the skill list's +8
 006201d0	right_skill	FUN_00643960: the skill list's +0xc
 00620210	unit_set_skill_node	stdcall (unit, node): FUN_00643990 stores node at the skill list header's +0x10; null unit asserts (id 0x653) and exits -1; act1-end.md:335
-00620250	unit_skill_list	fastcall (unit) -> unit +0x10 skill-list header via FUN_006439a0 (0 if none); a null unit asserts (message 0x65c) and exits -1; skills.md "Skill record and skill-list accessors"
+00620250	unit_skill_list	stdcall (unit), RET 4: FUN_006439a0(ECX = unit +0xa8 skill-list header) -> the header's +0x10, the selected skill node (0 if none); a null unit asserts (message 0x65c) and exits -1; skills.md "Skill record and skill-list accessors"
 00620300	unit_free	FUN_00626d10, FUN_00643a60, type 6, id -1 (Units.cpp 0x69a, 0x6a4)
 00620360	tile_path_set4	type 5 static path +0xc..+0x18 (Units.cpp 0x6af, 0x6b1)
 006203b0	unit_precise_x	static x << 16 or FUN_00648940 (Units.cpp 0x6c4)
@@ -1029,6 +1174,7 @@ address	name	evidence
 00622830	monster_weapon	FUN_0063c9b0 on unit +0x60
 00622dc0	unit_622d00_set	FUN_00622d00 != 0
 00622de0	unit_missing_vitals_cost	missing life + mana >> 8, times stat 0xc >> 2
+00622e70	unit_stat12_x10000	FUN_00625480(unit, 12, 0) * 10000, 32-bit (party.md "Gold picked up")
 00622e90	units_stub_ret8	ret 8; touches nothing (stubs.md)
 00622ea0	player_keep_right_skill	player data +0x70/+0x78 (Units.cpp 0x13f6, 0x13fa)
 00622f10	player_keep_left_skill	player data +0x74/+0x7c (Units.cpp 0x1405, 0x1409)
@@ -1185,6 +1331,7 @@ address	name	evidence
 00639cb0	runes_count_ptr	returns &0x96ca98
 00639cc0	runes_set_row	0x120-byte rows (ItemTbls.cpp 0x95b)
 00639db0	unit_set_state_checked	(unit, state, on): only for 0 <= state < [0x744304]+0xc4; FUN_00625a70 sets or clears the bit, then FUN_0064c040 links the unit into a list once (flag 0x2000); skills.md "Skill accessors"
+0063a130	state_words_intersect	EAX unit, EBX set: any shared bit between FUN_00625bb0 words and the set over (count [+0xc4] + 31) / 32 words (drops.md "Does a unit have a state of one set")
 0063a690	unit_has_state_of_set144	stdcall (unit): any bit of the unit's state words (FUN_00625bb0) in the set at [0x744304] +0x144, over (count [+0xc4] + 31) / 32 words, via FUN_0063a130 (drops.md "Does a unit have a state of one set")
 0063a970	inv_grid_unlink	unlinks item data +0x6c/+0x70 from a grid and clears its cells (Inventory.cpp 0x199)
 0063aaf0	inv_remove_item	clears item data +0x5c/+0x68/+0x69, inventory +0x20 or +0x28 count, wielded id +0x1c
@@ -1257,7 +1404,7 @@ address	name	evidence
 00643a60	skill_list_free	stdcall (unit): frees each skill of the unit's +0xa8 list from FUN_004dc0b0's pool (the free call gets line 0x505), then the list from the unit's pool +8 (0x508), and clears +0xa8; no unit or list does nothing; skills.md "Skills.cpp accessors and helpers (SKILLS gap batch)"; verified by skill_table_rows.py
 00643b00	skill_node_item_info	(node, *out_item_id, *out_skill_id, *out_+0x28, *out_+0x38) -> 0 when node +0x34 is -1 (a base entry), else 1 and each non-null out filled from +0x34, *record, +0x28, +0x38; null node asserts (Skills.cpp line 0x641); skills.md "Skill list accessors and the hotkey sweep"
 00643b70	skill_set_charges	stdcall (skill, value): a skill with owner (+0x34) -1 answers 0; else +0x3c = 1, +0x38 = value, answers 1; a null skill asserts (line 0x657); skills.md "Skills.cpp accessors and helpers (SKILLS gap batch)"; verified by skill_accessors.py
-00643ce0	skill_node_id	(node) -> *(short *)node[0], the skill id from the node's record; 0 for a null node; skills.md "Skill accessors"
+00643ce0	skill_node_id	stdcall (node, file, line), RET 0xc; file and line unread -> *(short *)node[0], the skill id from the node's record; 0 for a null node; skills.md "Skill accessors"
 00643d00	skill_sequence	fastcall (unit, skill): 0 for no unit or skill; a player gets the record's seqnum (byte +0x13); any other unit type gets MonStats aSkSeq (+0x188) of the slot whose aSkill (+0x170) equals the skill id, 0 for skill 0xc7 or no slot; skills.md "Skills.cpp accessors and helpers (SKILLS gap batch)"; verified by skill_table_rows.py
 00644140	skill_record	a skill entry's +0: its Skills.txt record, 0 for no entry (cast_mana.py:86 hook; char-panel.md)
 006442a0	skill_level	(unit, skill entry, with_items): +0x28, plus FUN_00644180 when +0x34 == -1 and with_items; >= 0, capped by FUN_00611830(0)
@@ -1294,6 +1441,7 @@ address	name	evidence
 00645a70	skill_damage_reduction	stdcall (n): (n + 1) * 100 / (n + 8) (32-bit product, signed division); no callers; n = -8 divides by zero; skills.md "Skills.cpp accessors and helpers (SKILLS gap batch)"; verified by skill_table_rows.py
 00645b70	skill_params_01_diminishing	stdcall (level, skill id): 0 for level <= 0 or a bad id; else FUN_00645b20(level, par1, par2) from Skills.txt +0x148 / +0x14c; skills.md "Skills.cpp accessors and helpers (SKILLS gap batch)"; verified by skill_table_rows.py
 00645bc0	skill_params_23_diminishing	stdcall (level, skill id): as FUN_00645b70 with par3 / par4 (+0x150 / +0x154); skills.md "Skills.cpp accessors and helpers (SKILLS gap batch)"; verified by skill_table_rows.py
+00645c10	skill_params_pair_diminishing	stdcall (level, skill id): 0 for level <= 0, a bad id or null row, else FUN_00645b20(level, row +0x158, +0x15c); skills.md; skills_combat_helpers.py
 00645fb0	skill_flag_bit1	stdcall (skill id): Skills.txt byte +6 & gadwBitMasks[1] (0x6ce26c), 0 for a bad id; skills.md "Skills.cpp accessors and helpers (SKILLS gap batch)"; verified by skill_table_rows.py
 00646170	skill_attack_frames	stdcall (unit): for a shapeshifted player, frame count (+0x48) & ~0xff over the weapon's speed (FUN_0062a710, 19 with no weapon), 0 when that speed is below 1; else 0; skills.md "Skills.cpp accessors and helpers (SKILLS gap batch)"; verified by skill_table_rows.py
 00646ca0	skill_calc_at	(unit, offset, skill, level): evaluates the Skills.txt calc bytecode at [0x744304]+0x40 + offset (length +0x44 less offset) with d2d_skills_eval_calc, 0 when the buffer is null or offset is past it; the skill record's calc1 / calc2 / calc3 (+0x138 / +0x13c / +0x140) are such offsets (cited; FUN_005c5f50)
@@ -1386,6 +1534,7 @@ address	name	evidence
 0065b3c0	tokens_free	TokTbls.cpp 0xd6, 0xe2; verified by tok_overlay.py
 0065b620	row34_assert	(index): asserts (string 0x150) when index * 0x34 + [0x96d4e8] is 0, i.e. tests the row address, not its content (items.md)
 00663210	missiles_free	MissileTbls.cpp 0x19e; verified by tok_overlay.py
+00663270	missile_velocity	stdcall (missile id, level): Missiles.txt byte +0x9a + byte +0x9b * level / 8 (32-bit multiply, truncating); 0 for a bad id; skills.md; skills_combat_helpers.py
 00663d40	misstream_alloc	8 bytes (MisStream.cpp 0x2e)
 00663d90	misstream_free	MisStream.cpp 0x3b, 0x3c
 00663e00	misstream_touch_walk	FUN_0064d9b0, missile touches, IsBadCodePtr (MisStream.cpp 0x71)
@@ -1411,7 +1560,9 @@ address	name	evidence
 0066eee0	room_tiles_alloc_arrays	fastcall (room): block = room +0x54; walls +0x14 (capacity +0x18, line 0x545), floors +0x1c (+0x20, line 0x54b), shadows +0x24 (+0x28, line 0x551, only when +0x24 is 0); 0x30 bytes per entry, zeroed; ".\DRLG\RoomTile.cpp"
 0066f990	outdoor_substitution_groups	LvlSub BordType 0 draws FUN_0045c3e0(seed +0x1c4, groups) and stops at the first group FUN_0066f690 places; else tries every group; previous border -1 becomes 0x3e
 006707a0	lvlsub_stamp_by_mask	LvlSub row of lookup id +0x30 (FUN_0061fa90), per set bit of mask +0x38: FUN_006704e0, then FUN_00670170 (CheckAll 0) or FUN_0066ff50
+006709b0	maze_pick_room_preset	EBX room, stack flag (ret 4): mask of its link directions (0 left 1, 1 above 8, 2 right 2, 3 below 4) + a base or table per LevelType (+0x1c0; 3 gives 0x34 + mask) into the preset's def, file -1; flag 0 sets preset flags bit 1, else clears it; other types fatal; EAX = room
 00670d70	maze_alloc_room_ex	new maze room (FUN_0066b3e0, type 2) sized from its level's LvlMaze SizeX / SizeY; FUN_00670880 failing frees it (FUN_0066c100) and gives 0; else links, picks presets if asked, adds to the level
+00670de0	maze_alloc_room_prescribed	ECX source room, EAX side, stack def, file, flag: FUN_0066b3e0 room sized from LvlMaze, FUN_00670880 fails -> FUN_0066c100, 0; else link, insert, flag: FUN_006709b0 on the source, then the new room flags |= 2 and def / file as given; returns the new room
 00670e70	maze_alloc_room_and_pick	orphan: FUN_00670d70 then the source's (flag set) and the new room's preset (FUN_006709b0); no call, jump or pointer
 00673b10	maze_initialize_level	level +0x14 = LvlMaze row of level id +0x1d0 (FUN_0061f490), then tail-calls FUN_00642d10(DRLG +0x1b4, level)
 00675f80	outplace_corner_border_coords	orphan: EAX level rect, ECX output rect, EDX variant, stack corner 0..7: x / y beside the rect, variant 1 shifts by half the size and 8
@@ -1419,6 +1570,12 @@ address	name	evidence
 00678df0	goal_dir_bytes	thiscall (out, a, b): out[0..2] = bytes 0x6f1648 + 3 * FUN_00678c10(a, b), widened (collision.md "Is a subtile blocked for a unit")
 00679b30	path_smooth_points	step packed source to destination (limit +0x18) by FUN_00678d70 triplet + path +0x98, FUN_006793e0, table 0x6f1798; stores turn points at path +0x9c, count at +0x28
 0067db00	outroom_spawn_preset_if_flagged	grid flags (FUN_0067c570, wild +0x2c) bit 0x400: FUN_006743c0 with preset, direction +1 for level 0x6e else -1; returns 1
+00688bbd	crt_decode_pointer	DecodePointer from the CRT's TLS table (+0x1fc) or GetProcAddress(KERNEL32, "DecodePointer"); returns the argument when absent (crt.md)
+00688d96	crt_getptd_noexit	_getptd_noexit: TLS thread block, __calloc_crt(1, 0x214) on first use, +0 thread id, +4 = -1; keeps GetLastError (crt.md)
+00689635	crt_invalid_parameter	_invalid_parameter: decodes DAT_0096de70, JMP EAX to the handler, else FUN_0069a28d(2) and a tail jump to __invoke_watson (crt.md)
+006896ad	crt_errno	_errno: FUN_00688d96() + 8, else 0x0074a1d8 (crt.md)
+006896c0	crt_doserrno	__doserrno: FUN_00688d96() + 0xc, else 0x0074a1dc (crt.md)
+0069a28d	crt_debugger_hook	_crt_debugger_hook: writes 0 to DAT_00993b20, the argument unread (crt.md)
 006be3c0	qs_flush_queues	every class head/tail cleared, records freed
 006be450	qs_client_count	+0x880
 006be470	qs_is_local	+0x86c is 1 or 2

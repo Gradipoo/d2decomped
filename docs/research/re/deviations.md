@@ -21,7 +21,7 @@ off with `--toggle name=off[,name=off...]` (apps/d2d/main.cpp `kToggles`):
 `light_grid` (improvement 1), `trans_roof` (improvement 4), `autoloot` (improvement 5),
 `autoparty` (improvement 7), `pad_controls` (improvement 11), `coop_lobby` (improvement 12),
 `splash_centre` (improvement 14), `click_keys` (improvement 15), `unit_slide` (improvement 16),
-`hwcursor` (improvement 19).
+`hwcursor` (improvement 19), `touch_classic_hud` (improvement 20).
 `--toggle scalemode=pixelart|nearest|linear` picks the upscale filter (Additions).
 
 ## Improvements
@@ -48,7 +48,7 @@ off with `--toggle name=off[,name=off...]` (apps/d2d/main.cpp `kToggles`):
 | 18 | Equip a bag item from the pad | game.exe equips the item in the hand (`cmd::ToBody`, FUN_0063dd90). The piece that was worn comes off into the hand | `cmd::EquipFromBag` (d2d opcode 0x64, not a game.exe packet and not sent on a joined game) wears a bag item in head, neck, torso, feet or gloves when `can_wear` passes and the old piece fits in the bag after the new one leaves its cells. Weapons, shields, rings and belts are refused. A refusal changes nothing. Hold A for 0.40 s sends it | One hold equips a chest without leaving either piece on the cursor | yes, once the hold completes | rules.hpp `equip_from_bag`, protocol.hpp `EquipFromBag` |
 | 19 | The mouse cursor | Hidden OS pointer (USER32 `ShowCursor`; game-imports.tsv has `ShowCursor` and `LoadCursorA`, no `SetCursor` or `CreateCursor`); CURSOR\ohand.dc6 drawn into each frame, so it moves only when a frame is drawn | The same gauntlet frame and palette handed to the OS as a colour cursor (`SDL_CreateColorCursor`), scaled to the window, hot spot where the frame drawing puts it. Only the plain hand: a held item, an identify pick, a pad-moved cursor or a driver without colour cursors draws into the frame, as game.exe. `--toggle hwcursor=off` turns it off | The hand follows the mouse with no frame of lag, even when frames drop | yes: the hand moves ahead of slow frames | hw_cursor.hpp `cursor_image`, window.hpp `show_cursor` |
 
-| 20 | Touch input prototype | No touch adapter | Opt-in `--touch-controls` / `touch_controls = 1`: independent movement and skill fingers, fixed Attack/Use, four skills per latching I/II page, belt buttons, drag-to-aim/lift-to-cast and an explicit cancel region. Original skill commands and eligibility checks; separate `.touchskills` assignments. No cast on cancelled or interrupted gestures. Off by default | Landscape touch controls using existing skill icons and fonts | yes, once enabled | touch_input.hpp, town/touch.cpp; docs/design/controller-touch.md |
+| 20 | Touch input prototype | No touch adapter | Opt-in `--touch-controls` / `touch_controls = 1`: corner thumb layout, attack-only primary button, contextual Interact, four skills per I/II page, compact life/mana bars top-left on the field; game.exe's bottom bar, belt strip and mini menu row hidden there (`--toggle touch_classic_hud=on` restores them). Map opens full-screen; skill tree pins left on touch. Drag-to-aim, cancel region, `.touchskills` sidecars. Off by default | Mobile-style field HUD on the existing 800×600 view | yes, once enabled | touch_input.hpp, town/touch.cpp; docs/design/controller-touch.md |
 
 ## Approximations
 
@@ -62,7 +62,7 @@ off with `--toggle name=off[,name=off...]` (apps/d2d/main.cpp `kToggles`):
 | 6 | Ambience at dusk and dawn | Cross-fades over 250 sound ticks (`FUN_004e42e0`) | matched since this commit (`Audio::crossfade_ambience`) | — | audio.hpp |
 | 7 | Rain's random rolls | The player unit's seed | A client seed of its own | no (same odds) | weather.hpp `Rain::rng` |
 | 8 | Where a town portal opens by its caster | Nearest free spot from the caster, collision 0x3e01, size 3 | matched since this commit (`World::portal_spot`) | — | world/travel.cpp `portal_spot` |
-| 9 | COF draw effect 6 | The PL2 max-component table (+0x5b500, `FUN_006c8250` mode 6) | Opaque: not ported yet, `blit_dcc_frame` has no max-component mode | on the layer 8 of monster token EG's COFs and object token PY's | world_view.hpp `draw_mode` |
+| 9 | COF draw effect 6 | The PL2 max-component table (+0x5b500, `FUN_006c8250` mode 6) | The blend is the greater of each RGB channel. The PL2 table at +0x5b500 is still unread | on the layer 8 of monster token EG's COFs and object token PY's | world_view.hpp `draw_mode` |
 | 10 | JOIN GAME's address check | Connects once to test the host, and shows "Cannot Connect to Server" there (`FUN_00434790`) | Goes straight to char-select; picking a character finds out, with the same popup and OK back to TCP/IP | yes: the error comes one screen later | main.cpp `Screen::TcpIp`, tcpip-menu.md |
 | 11 | A host's refusal (B4) | Its message in Font42 over the game screen, since the join runs in the game loop (`FUN_0044cb60`) | The same message in the OK popup on char-select | yes | main.cpp `join_error_text`, tcpip-menu.md |
 | 12 | TCP/IP Options' own address | Read again every 5 s (record 0x10b) | Read once as the screen opens | only if the network changes while it's up | main.cpp `Screen::TcpIp` |

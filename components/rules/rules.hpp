@@ -69,12 +69,17 @@ struct ItemType {
 // entries (item codes, other classes, "gld" or "gld,mul=N"; Prob >= 1).
 // group / level: a monster's level moves it on to the group's next rows
 // (FUN_00654e00); `next` is that row's name ("" past the group's last).
+// entry_flags / entry_index, parallel to items (empty: all 0): entry +0xc
+// (1 unique item, 2 set item, 4 a class) and +0xa (the unique / set index).
+// flag_mod: the two flag chances (bin +0x30 / +0x32). The txt leaves them 0.
 struct TreasureClass {
     int picks = 1, nodrop = 0;
     std::array<int, 4> mod{};
     std::vector<std::pair<std::string, int>> items;
     int group = 0, level = 0;
     std::string next;
+    std::vector<int> entry_flags, entry_index;
+    std::array<int, 2> flag_mod{};
 };
 // ItemRatio.txt per [class specific * 2 + uber][unique, set, rare, magic,
 // superior, normal]: odds base, level divisor, minimum (FUN_00637910: the
@@ -106,6 +111,7 @@ struct ItemBase {
     int version = 0;                                   // version (+0xf6): 100 an expansion item
     std::string type2;                                 // type2 (+0x120)
     int hit_class = 0;                                 // weapons.txt "hit class" (sound_ids::hit_class): its swing and impact sounds
+    std::string wclass;                                // weapons.txt wclass (the item record's +0xc0 class key): attack_start_frame's row
     int min_misdam = 0, max_misdam = 0;                // weapons.txt minmisdam / maxmisdam: a thrown one's (stats 159 / 160)
 };
 // Prices (FUN_0062efb0, docs/research/re/store.md): npc.txt by MonStats Id.
@@ -1145,8 +1151,9 @@ inline std::string type_class(const Tables& tables, const std::string& type, int
 inline constexpr std::string_view kClassCode[7] = { "ama", "sor", "nec", "pal", "bar", "dru", "ass" };   // by d2s class
 
 // What the player brings to an equip check: d2s class and the current
-// strength, dexterity and level.
-struct Wearer { int cls = 0, str = 0, dex = 0, lvl = 1; };
+// strength, dexterity and level. `holy_shield` is the effective Holy
+// Shield level while state 0x65 is on (FUN_00485be0 / FUN_00485d40), else 0.
+struct Wearer { int cls = 0, str = 0, dex = 0, lvl = 1, holy_shield = 0; };
 
 inline const ItemInfo* info_of(const Tables& tables, const d2d::d2s::Item& item) {
     const auto found = tables.item_info.find(item.code);
@@ -1636,15 +1643,37 @@ struct ClassGains {
     int mana_regen = 120;                              // ManaRegen (record +0x3a): seconds to fill the mana globe
 };
 
-// The player's mana a frame (FUN_005806f0, 256ths), unless state 0x55
-// (nomanaregen) is on: max mana over ManaRegen x 25 frames (7500 when it's
-// 0), at least 1, times (100 + manarecoverybonus (27)) / 100 (FUN_00483360,
-// truncating); plus
-// manarecovery (26), flat. The caller caps it at what's missing.
-inline std::int64_t mana_per_frame(std::int64_t max_mana, int regen_seconds, int bonus_pct, int flat) {
-    const std::int64_t frames = regen_seconds * 25 != 0 ? regen_seconds * 25 : 7500;
-    const std::int64_t base = std::max<std::int64_t>(max_mana / frames, 1);
-    return base * (100 + bonus_pct) / 100 + flat;
+// game.exe's MulDiv (FUN_00483360): value x times / over, truncated, 0 over
+// 0. Up to 0x100000 with times up to 0x10000 it multiplies in 32 bits (the
+// product wraps); a bigger times over at most times / 16 divides it first,
+// as a bigger value over at most value / 16 does the value (each multiply
+// wrapping); else 64 bits.
+inline int mul_div(int value, int times, int over) {
+    if (over == 0) return 0;
+    if (value <= 0x100000) {
+        if (times <= 0x10000) return int(std::uint32_t(value) * std::uint32_t(times)) / over;
+        if (over <= times >> 4) return int(std::uint32_t(times / over) * std::uint32_t(value));
+    } else if (over <= value >> 4) {
+        return int(std::uint32_t(value / over) * std::uint32_t(times));
+    }
+    return int(std::int64_t(value) * times / over);
+}
+
+// The player's mana a frame (FUN_005806f0 up to 0x58079e, 256ths), in its
+// 32-bit math: unless state 0x55 (nomanaregen, `no_regen`: 0x580724) is
+// on, the max (FUN_00625d60) over the CharStats ManaRegen byte x 25 frames
+// (7500 when it's 0; idiv), at least 1, then MulDiv(that, 100 +
+// manarecoverybonus (27), 100) (FUN_00483360); plus manarecovery (26),
+// flat, the add wrapping. The caller caps it at what's missing.
+// tools/emu/mana_frame.py runs it against game.exe (tests/test_mana_frame.cpp).
+inline std::int64_t mana_per_frame(std::int64_t max_mana, int regen_seconds, int bonus_pct, int flat, bool no_regen = false) {
+    std::uint32_t amount = 0;
+    if (!no_regen) {
+        const int frames = regen_seconds * 25 != 0 ? regen_seconds * 25 : 7500;
+        const int base = std::max(int(std::uint32_t(max_mana)) / frames, 1);
+        amount = std::uint32_t(mul_div(base, int(std::uint32_t(bonus_pct) + 100u), 100));
+    }
+    return int(amount + std::uint32_t(flat));
 }
 
 // Spends up to n unspent stat points (stat 4) on stat (0 strength, 1
@@ -2289,16 +2318,15 @@ inline bool imbuable(const Tables& tables, const d2d::d2s::Item& item, bool expa
     if (found->second.quest && item.code != "leg") return false;
     return !item.socketed && item.socketed_items.empty() && item.quality >= 1 && item.quality <= 3;
 }
-// A player's default item level (FUN_00558200): max(clvl, 1), +4 past 5.
-inline int player_ilvl(int clvl) {
-    const int ilvl = clvl < 2 ? 1 : clvl;
-    return ilvl > 5 ? ilvl + 4 : ilvl;
-}
+// A player's item level (FUN_00558200): the base level, at least 1.
+// No +4 here. Charsi's imbue (FUN_00579d60) adds 4 when this is past 5.
+inline int player_ilvl(int clvl) { return clvl < 2 ? 1 : clvl; }
 // The imbued item (FUN_00579d60, kind 0 at Charsi): the same base made
-// anew — rare (+0x30 = 6), item level player_ilvl, a fresh seed; ethereal
-// stays so (flag 4 / 2) and a personalized name is kept.
+// anew, rare (+0x30 = 6), item level player_ilvl plus 4 when that is past
+// 5, a fresh seed; ethereal stays so (flag 4 / 2) and a personalized name is kept.
 inline d2d::d2s::Item imbue_item(const Tables& tables, const d2d::d2s::Item& item, int clvl, Rng& rng) {
-    auto made = generate_item(tables, item.code, player_ilvl(clvl), 6, rng);
+    const int ilvl = player_ilvl(clvl);
+    auto made = generate_item(tables, item.code, ilvl > 5 ? ilvl + 4 : ilvl, 6, rng);
     made.ethereal = item.ethereal;
     made.personalized = item.personalized;
     made.owner = item.owner;

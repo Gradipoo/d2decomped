@@ -2,8 +2,9 @@
 
 Every hireling row in MonStats (roguehire 0x10f, act2hire 0x152, act3hire
 0x167, act5hire1 / 2 0x230 / 0x231) has AI `Hireable`, MonAI row 61: AI
-table `0x73ca20 + 61*16` = `{think 0x5e52d0, init 0x5e5280, 1, 0}`. The init
-clears state 0xc, sets the AI mode and stands 1 frame.
+table `0x73ca18 + 61*16` = `{0, no init, think 0x5e52d0, other think
+0x5e5280}`. The other think (Diablo's, monster-ai.md "Curse thinks and
+other thinks") clears state 0xc, toggles the AI back and stands 1 frame.
 
 Port: `components/rules/merc.hpp` (`hireable_think`), run by
 `Fight::merc_turn`. Checked: `tools/emu/merc.py` runs FUN_005e52d0 natively
@@ -52,7 +53,15 @@ is rand(n) (`FUN_0045c3e0`); two more steps flip x, then y.
 pace, [18] reach)`. A move's ctx is set by `FUN_005de190(unit, EDX type,
 pace, steps)` → `FUN_005a6260`: path type, pace % (velocitypercent for the
 next mode) and steps (cap 0x4d), each only when not 0; the next
-`FUN_005a7c20` uses and clears them.
+`FUN_005a7c20` uses and clears them. (`FUN_005de190` inlines the same
+lookup `FUN_005a6190`/`GetAiParamFromUnit(unit)` does — not a call to
+it: the unit's `pUnitDataMonster->pPathParamOrName.pPathParam`, null
+unless the unit is `UNIT_MONSTER` with monster data. Mode 1's "once"
+extra call below calls `GetAiParamFromUnit` itself and feeds
+`FUN_005a6260`/`SetCombatAndMonStats` directly, skipping `FUN_005de190`.
+`GetAiParamFromUnit` has exactly two callers in game.exe: here (mode 1's
+extra call) and the pet's `FUN_005e3ea0` follow, `pet-ai.md`
+"FUN_005e3ea0 (after the owner)".)
 
 - **Mode 0.** The owner's heading: `direction64` from him to his path end
   (path +0x18 / +0x1a), into 8 (`DAT_00745600`). Round the compass from
@@ -63,9 +72,12 @@ next mode) and steps (cap 0x4d), each only when not 0; the next
 - **Mode 1.** With the owner walking (mode 2): steps 100 to his path end.
   Else his footsteps, newest first (player data +0xa0 the cursor, +0xa8 20
   spots of 8 bytes): the first over 5 off (`FUN_005dc5c0`), walking at the
-  pace, steps 100; then as the mode asks with path type 0xf; then, once,
-  with type 1. Twenty tried: a wander of a quarter of the gap (4 at least),
-  pace 15.
+  pace, steps 100; then as the mode asks with path type 0xf (`FUN_005dede0`,
+  a walk in state 0x3c, Decrepify: traced against stock 1.14d,
+  `tools/emu/ai_merc_decrepify_probe.py`; `rules::MercView::slowed` — the
+  same decrepify-gated Run/Walk pattern as the pet's `FUN_005deeb0`,
+  `pet-ai.md` "FUN_005e3ea0 (after the owner)"); then, once, with type 1.
+  Twenty tried: a wander of a quarter of the gap (4 at least), pace 15.
 - **Mode 3.** A spot in the owner's room (`FUN_0054dc40`: up to 20 tries
   inside the room's rect less a subtile each side, `FUN_0054dac0`, on the
   room's seed +0x6c, where MonStats class 0x16b fits, `FUN_005b2f20`), the

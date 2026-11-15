@@ -17,8 +17,10 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
+#include <functional>
 #include <optional>
 #include <span>
+#include <string>
 #include <string_view>
 #include <utility>
 #include <vector>
@@ -111,6 +113,15 @@ inline Region monster_region(const Monsters& monsters, const LevelMon& level_mon
     return region;
 }
 
+// An item a monster wears from the start (FUN_005d6b60 as it's made): its
+// code, body slot, quality and item level, and the two game seed steps
+// FUN_00573b20 -> FUN_00559ce0 took for it (its unit and item seeds).
+struct SpawnGear {
+    std::string code;
+    int loc = 0, quality = 0, ilvl = 1;
+    std::uint32_t unit_seed = 0, item_seed = 0;
+};
+
 // A spawned monster, in level-relative subtiles; `leader` is the index
 // of its group's first monster (itself for a leader).
 struct Spawn {
@@ -124,6 +135,7 @@ struct Spawn {
     std::vector<std::pair<int, int>> path;                    // its preset's map AI points (FUN_00555910), subtiles
     bool dead = false;                                        // made in mode 12 (FUN_0054e600's dead MonPlace codes)
     int cage = -1;                                            // a5q2's prisoner: its cage's slot (FUN_00588600)
+    std::vector<SpawnGear> gear;                              // its MonEquip items
 };
 
 // A level's population so far (monster region +4 rooms done, +0xc rooms
@@ -480,9 +492,11 @@ struct DiabloPick {
 // mask 4) 75, plus 100 when Diablo is past 0x55 from his point and the
 // player inside it (FUN_005dc480), both x 5; (the hands' level x attackrank
 // / 4, state 0xb 200, the max damages / 2) x 2; 300 under 20 % life; all
-// / 22, at least 1.
-inline int diablo_score(const DiabloPick& pick, int life_pct, bool reach, bool line_clear, bool point_bonus) {
-    const int resists = ((pick.damage_resist + pick.magic_resist * 2) * 4 + (reach ? pick.cold_resist : 0) + pick.light_resist + pick.fire_resist) / 15;
+// / 22, at least 1. `cold_in_reach`: false for Baal's own copy (FUN_005fbb00,
+// chooser_pick's point_far 0x4b), which counts cold whether or not the
+// player is in reach (a mismatch traced against stock 1.14d).
+inline int diablo_score(const DiabloPick& pick, int life_pct, bool reach, bool line_clear, bool point_bonus, bool cold_in_reach = true) {
+    const int resists = ((pick.damage_resist + pick.magic_resist * 2) * 4 + (reach || !cold_in_reach ? pick.cold_resist : 0) + pick.light_resist + pick.fire_resist) / 15;
     const int closeness = (reach ? 100 : line_clear ? 75 : 0) + (point_bonus ? 100 : 0);
     const int ranked = (pick.left_level * pick.left_rank + pick.right_level * pick.right_rank) / 4;
     const int score = ((life_pct < 20 ? 100 : 0) * 3 + resists + closeness * 5 + (ranked + (pick.state_b ? 200 : 0) + pick.max_damage / 2) * 2) / 22;
@@ -567,6 +581,66 @@ inline constexpr std::array<std::array<int, 2>, 8> kDir{ { { 1, 0 }, { 1, 1 }, {
 inline constexpr std::array<std::array<int, 3>, 25> kTry{ { { 5, 4, 6 }, { 4, 5, 6 }, { 4, 3, 5 }, { 4, 3, 2 }, { 3, 4, 2 }, { 6, 5, 4 }, { 5, 4, 6 },
     { 4, 3, 5 }, { 3, 4, 2 }, { 2, 3, 4 }, { 6, 7, 5 }, { 6, 7, 5 }, { 6, 7, 5 }, { 2, 1, 3 }, { 2, 1, 3 }, { 6, 7, 0 }, { 7, 0, 6 }, { 0, 1, 7 },
     { 1, 0, 2 }, { 2, 1, 0 }, { 7, 0, 6 }, { 0, 7, 6 }, { 0, 1, 7 }, { 0, 1, 2 }, { 1, 0, 2 } } };   // DAT_006f1518
+// DAT_006f1648: the three ways back toward the start a blocked end tries
+// (FUN_00678df0, by FUN_00678c10's 5x5 index; 0xff: no third). Straight
+// ways only, unlike kTry.
+inline constexpr std::array<std::array<int, 3>, 25> kBackTry{ { { 4, 6, 0xff }, { 4, 6, 0xff }, { 4, 2, 6 }, { 4, 2, 0xff }, { 4, 2, 0xff },
+    { 6, 4, 0xff }, { 4, 6, 0xff }, { 4, 2, 6 }, { 4, 2, 0xff }, { 2, 4, 0xff }, { 6, 0, 4 }, { 6, 0, 4 }, { 6, 0, 4 }, { 2, 0, 4 }, { 2, 0, 4 },
+    { 6, 0, 0xff }, { 0, 6, 0xff }, { 0, 2, 6 }, { 2, 0, 0xff }, { 2, 0, 0xff }, { 0, 6, 0xff }, { 0, 6, 0xff }, { 0, 2, 6 }, { 0, 2, 0xff },
+    { 0, 2, 0xff } } };
+
+// A path's blocked end walked back toward its start (FUN_00648120, which
+// FUN_00649970 runs for a path type with flag 0x1000, PATHTYPEFLAGS
+// 0x6eb690: types 0, 1 and 7, when FUN_0064d910 finds the end blocked).
+// Three spots leave the end: one steps the first way back each round (the
+// way read anew from where it stands), the other two keep stepping the
+// second and third ways of the first read. The first free one is the new
+// end. False (no path at all) when the first spot reaches the start with
+// none free, or the free one is the start. A player's end is then pushed
+// on (FUN_00648050): while it's under 5 off the start on both axes, a step
+// along the longer axis from the start (both on a diagonal: the table
+// 0x6eb490) up to 4 off, stopping at the first blocked.
+// tools/emu/walk_back.py; tests/test_walk_back.cpp.
+template <class Blocked>
+bool end_walk_back(int x, int y, int& to_x, int& to_y, bool player, Blocked&& blocked) {
+    auto tries = [&](int from_x, int from_y) -> const std::array<int, 3>& {   // FUN_00678c10
+        const int dx = x - from_x, dy = y - from_y, adx = std::abs(dx), ady = std::abs(dy);
+        int aim_x = dx, aim_y = dy;
+        if (adx >= ady * 2) aim_y = dy < 0 ? -1 : dy & 1;
+        else if (adx * 2 <= ady) aim_x = dx < 0 ? -1 : dx & 1;
+        return kBackTry[std::size_t(std::clamp(aim_x, -2, 2) * 5 + 12 + std::clamp(aim_y, -2, 2))];
+    };
+    const auto first = tries(to_x, to_y);
+    int way = first[0];
+    std::pair<int, int> lead{ to_x, to_y }, second = lead, third = lead, found = lead;
+    auto step = [](std::pair<int, int>& spot, int dir) { spot.first += kDir[std::size_t(dir)][0]; spot.second += kDir[std::size_t(dir)][1]; };
+    for (;;) {
+        if (lead == std::pair{ x, y }) return false;
+        step(lead, way);
+        if (!blocked(lead.first, lead.second)) { found = lead; break; }
+        step(second, first[1]);
+        if (!blocked(second.first, second.second)) { found = second; break; }
+        if (first[2] != 0xff) {
+            step(third, first[2]);
+            if (!blocked(third.first, third.second)) { found = third; break; }
+        }
+        way = tries(lead.first, lead.second)[0];
+    }
+    std::tie(to_x, to_y) = found;
+    if (found == std::pair{ x, y }) return false;
+    if (!player) return true;
+    const int dx = to_x - x, dy = to_y - y, adx = std::abs(dx), ady = std::abs(dy);
+    if (adx >= 5 || ady >= 5) return true;
+    const int push_x = adx >= ady ? (dx > 0) - (dx < 0) : 0, push_y = ady >= adx ? (dy > 0) - (dy < 0) : 0;
+    int at_x = to_x, at_y = to_y;
+    for (int off = std::max(adx, ady); off < 5; ++off) {
+        at_x += push_x; at_y += push_y;
+        if (blocked(at_x, at_y)) break;
+        to_x = at_x; to_y = at_y;
+    }
+    return true;
+}
+
 // A move's path toward subtile (to_x, to_y), the toward pather of path
 // types 2 / 5 / 6 / 0xd (FUN_00679c80; a monster's walk and run are 0xd,
 // `steps` path +0x91: 5, FUN_005a63f0). The straight line (FUN_00679720, a
@@ -1254,6 +1328,10 @@ struct ThinkIn {
     bool second = false, kin = false, aid = false, usable = true, aura_on = true;
     int second_dist = 0x7fffffff, kin_dist = 0, in_reach = 0;
     ThinkUnit* away_from = nullptr;             // whom `away` backs off from (the second target's back-offs)
+    // What it does when the walk it returned can't set off: game.exe's think
+    // drops the pending think event (FUN_00540e60(2, 0)) and goes on down
+    // its list. Tried in order, each only when the one before failed too.
+    std::vector<std::function<Think()>>* otherwise = nullptr;
     std::vector<ThinkEffect>* effects = nullptr;
     int* steps = nullptr;
     // The Vulture's: its spot and the target's (subtiles); the target in its
@@ -1448,11 +1526,17 @@ inline SearchMiss search_missed(std::string_view ai_name, bool has_walk, bool go
 // in melee under aip3 + 10 A1, out of it under aip1 a run at the target;
 // else stands aip2. A firewall (FUN_005e5b70): at her map AI's next point
 // (state: its index; state2: the frame of the last), until they run out;
-// 700 frames on from the last they start over.
-// ponytail: a walk home always sets off, so FUN_00540e60(2, 0)'s fallback
-// (on down the list) doesn't come up.
-struct CountessIn { bool away = false, target_away = false, at_home = false; };
+// 700 frames on from the last they start over. A walk home that can't set
+// off (FUN_005dede0 0: 0x5e5ded, 0x5e5f51 and the one between) drops the
+// think event (FUN_00540e60(2, 0)) and she goes on down the list: `stuck`,
+// the think again by ThinkIn::otherwise. tools/emu/ai_countess_home.py.
+struct CountessIn { bool away = false, target_away = false, at_home = false, stuck = false; };
 inline Think countess_think(const ThinkIn& input, const CountessIn& where, std::span<const std::pair<int, int>> path, Rng& rng) {
+    auto home = [&] {
+        if (input.otherwise)
+            input.otherwise->emplace_back([&input, where, path, &rng] { auto again = where; again.stuck = true; return countess_think(input, again, path, rng); });
+        return Think{ MonAct::home };
+    };
     auto firewall = [&](Think& out) {
         if (*input.state < int(path.size())) {
             const auto [point_x, point_y] = path[std::size_t(*input.state)];
@@ -1464,13 +1548,12 @@ inline Think countess_think(const ThinkIn& input, const CountessIn& where, std::
         return false;
     };
     Think out;
-    if (where.away) return { MonAct::home };
-    if (where.target_away) {
-        if (!where.at_home) return { MonAct::home };
+    if (where.away && !where.stuck) return home();
+    if (where.target_away && where.at_home) {
         if (input.dist < 25 && firewall(out)) return out;
         return { MonAct::idle, 10 };
     }
-    if (input.home_dist > 40) return { MonAct::home };
+    if ((where.target_away || input.home_dist > 40) && !where.stuck) return home();
     if (firewall(out)) return out;
     const int roll = rng(100);
     if (input.in_melee) return roll < input.aip[2] + 10 ? Think{ MonAct::a1 } : Think{ MonAct::idle, input.aip[1] };

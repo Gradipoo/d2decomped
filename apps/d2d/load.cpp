@@ -199,6 +199,9 @@ void load_ui_sprites(Scene& scene, const d2d::mpq::Stack& mpqs) {
     sprite(R"(data\global\ui\menu\waygateicons.dc6)", scene.wp_icons);
     sprite(R"(data\global\ui\menu\waygatetabs.dc6)", scene.wp_tabs[0]);
     sprite(R"(data\global\ui\menu\expwaygatetabs.dc6)", scene.wp_tabs[1]);
+    if (auto bytes = mpqs.try_read(R"(data\local\FONT\LATIN\fontformal10.tbl)"))
+        if (auto sheet_bytes = mpqs.try_read(R"(data\local\FONT\LATIN\fontformal10.dc6)"))
+            scene.font_formal10 = d2d::font::Font(*bytes, d2d::dc6::Sprite(*sheet_bytes));
     if (auto bytes = mpqs.try_read(R"(data\local\FONT\LATIN\fontformal11.tbl)"))
         if (auto sheet_bytes = mpqs.try_read(R"(data\local\FONT\LATIN\fontformal11.dc6)"))
             scene.font_formal11 = d2d::font::Font(*bytes, d2d::dc6::Sprite(*sheet_bytes));
@@ -328,12 +331,20 @@ void load_monster_sprites(Scene& scene, const d2d::mpq::Stack& mpqs) {
     // StormLib handles aren't shared).
     {
         std::atomic<std::size_t> next = 0;
-        std::vector<std::jthread> pool(std::max(1u, std::thread::hardware_concurrency()));
-        for (auto& worker : pool) worker = std::jthread([&] {
-            for (std::size_t i; (i = next++) < cels.size();)
-                try { *cels[i].first = d2d::dcc::Sprite(cels[i].second); }
-                catch (const std::exception& error) { d2d::log::warn("missile cel: {}", error.what()); }
-        });
+        // std::thread, joined by hand: Xcode 16.4's libc++ (the Intel runner) has no std::jthread.
+        std::vector<std::thread> pool(std::max(1u, std::thread::hardware_concurrency()));
+        const auto join_all = [&] { for (auto& worker : pool) if (worker.joinable()) worker.join(); };
+        try {
+            for (auto& worker : pool) worker = std::thread([&] {
+                for (std::size_t i; (i = next++) < cels.size();)
+                    try { *cels[i].first = d2d::dcc::Sprite(cels[i].second); }
+                    catch (const std::exception& error) { d2d::log::warn("missile cel: {}", error.what()); }
+            });
+        } catch (...) {                          // a thread that can't start: the ones running finish first
+            join_all();
+            throw;
+        }
+        join_all();
     }
 }
 
@@ -353,6 +364,28 @@ Character character_of_save(const Scene& scene, std::size_t index) {
     character.expansion = header.expansion();
     character.header = header;
     return character;
+}
+
+std::optional<Character> character_of_bytes(const Scene& scene, std::span<const std::byte> bytes) {
+    if (!scene.item_tables) return std::nullopt;
+    try {
+        const auto header = d2d::d2s::parse_header(bytes);
+        Character character;
+        character.character_class = header.cls;
+        character.name = header.name;
+        character.appearance = header.look();
+        character.items = d2d::d2s::parse_items(bytes, *scene.item_tables);
+        character.stats = d2d::d2s::parse_stats(bytes, *scene.item_tables);
+        character.corpse = d2d::d2s::parse_corpse(bytes, *scene.item_tables).items;
+        character.merc_items = d2d::d2s::parse_merc_items(bytes, *scene.item_tables);
+        character.panel = panel_stats(scene, header, character.items, character.stats);
+        character.expansion = header.expansion();
+        character.header = header;
+        return character;
+    } catch (const std::exception& error) {
+        d2d::log::warn("a joiner's save: {}", error.what());
+        return std::nullopt;
+    }
 }
 
 Character made_character(const Scene& scene, int save_cls, const std::string& name, bool hardcore, bool expansion, d2d::rules::Rng& rng) {
@@ -486,6 +519,8 @@ std::optional<Scene> load_scene(const fs::path& data_dir, const fs::path& patch_
         scene.font42 = font("font42");
         scene.font_formal12 = font("fontformal12");
         scene.font24 = font("font24");
+        scene.font_exocet10 = font("fontexocet10");
+        scene.font_ridiculous = font("fontridiculous");
         scene.cursor = d2d::dc6::Sprite(mpqs.read(R"(data\global\ui\CURSOR\ohand.dc6)"));
         scene.cursor_buysell = d2d::dc6::Sprite(mpqs.read(R"(data\global\ui\CURSOR\buysell.dc6)"));
         scene.class_anims = [&] {
@@ -574,13 +609,14 @@ void load_act_palettes(Scene& scene, const d2d::mpq::Stack& mpqs, int act) {
     scene.act_lit = {};
     scene.act_text_red = {};
     scene.act_text_blue = {};
+    scene.act_text_grey = {};
     if (auto bytes = mpqs.try_read(dir + "pal.dat"))
         scene.act_pal = d2d::palette::Palette(*bytes);
     if (scene.act_pal.entries().empty()) { scene.palette_act = act; return; }
     if (auto bytes = mpqs.try_read(dir + "Pal.pl2"); bytes && bytes->size() >= 0x400 + 32 * 256)
         for (std::size_t level = 0; level < 32; ++level) {
             std::array<d2d::palette::Rgba, 256> entries{};
-            for (std::size_t i = 0; i < 256; ++i) entries[i] = scene.act_pal[std::uint8_t((*bytes)[0x400 + level * 256 + i])];
+            for (std::size_t i = 0; i < 256; ++i) entries[i] = scene.act_pal.entries()[std::uint8_t((*bytes)[0x400 + level * 256 + i])];
             entries[0].a = 0;
             scene.act_lit[level] = d2d::palette::Palette(entries);
         }
@@ -589,12 +625,13 @@ void load_act_palettes(Scene& scene, const d2d::mpq::Stack& mpqs, int act) {
         const auto text_colour = [&](std::size_t colour) {
             const std::size_t shift = bytes->size() - 13 * 256 + colour * 256;
             std::array<d2d::palette::Rgba, 256> entries{};
-            for (std::size_t i = 0; i < 256; ++i) entries[i] = scene.act_pal[std::uint8_t((*bytes)[shift + i])];
+            for (std::size_t i = 0; i < 256; ++i) entries[i] = scene.act_pal.entries()[std::uint8_t((*bytes)[shift + i])];
             entries[0].a = 0;
             return d2d::palette::Palette(entries);
         };
         scene.act_text_red = text_colour(1);
         scene.act_text_blue = text_colour(3);
+        scene.act_text_grey = text_colour(5);
     }
     scene.palette_act = act;
 }

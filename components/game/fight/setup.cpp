@@ -75,6 +75,7 @@ auto Fight::new_game(int difficulty) -> void {
         actor->chilled = 0;
         actor->stunned = 0;
         kept.clear();
+        kept_missiles.clear();
         next_id = 1;
         missiles.clear();
         actor->regen.clear();
@@ -252,7 +253,9 @@ auto Fight::apply_regen(std::uint32_t now_ms, std::uint32_t last_ms) -> void {
         life += actor->player_combat.life_regen * 256.0 / 256.0 * elapsed / 40.0;
         // The steady mana comes a whole frame at a time (FUN_005806f0).
         const auto& gains = game_data->class_gains[std::size_t(std::max(actor->character.character_class, 0))];
-        mana += double(d2d::rules::mana_per_frame(actor->character.stats.values[kMaxMana], gains.mana_regen, actor->player_combat.mana_regen, int(actor->psum[kManaRecovery])))
+        // State 0x55 on (Prayer's): the ManaRegen part is skipped, manarecovery (26) alone.
+        mana += double(d2d::rules::mana_per_frame(actor->character.stats.values[kMaxMana], gains.mana_regen, actor->player_combat.mana_regen, int(actor->psum[kManaRecovery]),
+                                                  actor->no_mana_regen))
               * double(now_ms / 40 - last_ms / 40);
         actor->regen_acc_life += life; actor->regen_acc_mana += mana;
         if (actor->merc && actor->merc->hit_points > 0 && last_ms < actor->merc_poison_until) {   // its poison: life lost with the next hits
@@ -306,6 +309,19 @@ auto Fight::monster_sounds(Monster& monster, std::uint32_t now_ms) -> void {
                 neutral_gap = 30 + sound_rng(90);
             }
         }
+        // A skill it starts (S→C 0x4c / 0x4d, unit command 0x15 / 0x16 -> FUN_004c6140):
+        // the start sounds as a player's, on a monster (unit type 1, never a class sound).
+        // ponytail: a stsuccessonly start's cltstfunc (Hydra's FUN_004e39a0, Charge's
+        // FUN_004c9b40) isn't run here, so it always sounds.
+        if (const int started = std::exchange(monster.skill_sound, -1); started >= 0 && monster.alive())
+            if (const auto* skill = game_data->skills.get(started)) {
+                const auto& anim = game_data->npc_timing(monster.npc, monster.mode);
+                const int rate = int(anim.speed ? anim.speed : anim.cof_speed ? anim.cof_speed : 256) * (100 + anim_rate_pct(*game_data, monster, monster.mode)) / 100;
+                const d2d::rules::sound_ids::SkillStart start{ .st_sound = skill->st_sound, .st_sound_class = skill->st_sound_class, .item_cast_sound = skill->item_cast_sound,
+                                                              .delay = skill->st_sound_delay, .weapon = skill->weapon_sound };
+                for (const auto cue : d2d::rules::sound_ids::skill_start(start, 1, monster.type, monster.npc.hit_class, rate, false, false))
+                    if (cue.sound > 0) play(cue.sound, now_ms + std::uint32_t(std::max(cue.ticks, 0)) * 40);
+            }
         if (monster.mode != monster.last_mode) {
             monster.last_mode = monster.mode;
             monster.sound_ms = now_ms;                  // a mode's sound (unit +0x7c: FUN_004cb6a0, FUN_004cc410, FUN_004cb890)
@@ -379,7 +395,25 @@ auto Fight::monster_sounds(Monster& monster, std::uint32_t now_ms) -> void {
 
 auto Fight::floor_material_at(float x, float y) const -> int {
         const int cell_x = int(std::floor(x)), cell_y = int(std::floor(y));
-        return d2d::rules::sound_ids::first_floor_material(level->room_floors, cell_x, cell_y, level->material);
+        // FUN_004cadb0: the unit's room (FUN_004cace0), then each room of its
+        // near list (FUN_00619790) when that room has no floor at the cell.
+        // A neighbour level's tiles sit on its own origin.
+        const int here = room_of(*level, x, y);
+        struct Step {
+            const std::vector<Level::Floor>* tiles = nullptr;
+            int shift_x = 0;
+            int shift_y = 0;
+        };
+        std::vector<Step> steps;
+        auto add = [&](const Level* holder, int room) {
+            if (!holder || room < 0 || std::size_t(room) >= holder->room_floors.size()) return;
+            steps.push_back({ &holder->room_floors[std::size_t(room)], level->world_x - holder->world_x, level->world_y - holder->world_y });
+        };
+        if (here >= 0) add(level, here);
+        if (game_data)
+            for (const auto& [holder, room] : near_rooms(*game_data, *level, x, y))
+                if (holder != level || room != here) add(holder, room);
+        return d2d::rules::sound_ids::floor_material_near(steps, cell_x, cell_y, level->material);
     }
 
 auto Fight::gfx() const -> const GameData::Appearance& {
@@ -402,6 +436,10 @@ auto Fight::play_player_hit(std::uint32_t now_ms) -> void {
         }
     }
 
+auto Fight::action_at() const -> std::uint32_t {
+        return attack_mode(actor->pmode) ? actor->action_ms : std::uint32_t(float(player_anim(actor->pmode).action_ms()) / actor->prate);
+    }
+
 auto Fight::set_pmode(int mode, std::uint32_t now_ms) -> void {
         actor->pmode = mode;
         if (mode != kModeSC && mode != kModeA1) actor->owed = {};   // a cast cut off before its action frame pays nothing
@@ -410,9 +448,16 @@ auto Fight::set_pmode(int mode, std::uint32_t now_ms) -> void {
         actor->player.path.clear();
         const auto& anim = player_anim(mode);
         std::uint32_t len = anim.length_ms();
+        std::optional<std::uint32_t> strike;   // an attack's action tick in ms
         if (attack_mode(mode) && anim.frames) {
-            const auto ticks = d2d::rules::attack_ticks(int(anim.frames), int(anim.speed ? anim.speed : 256), actor->player_combat.ias, actor->player_combat.wsm, actor->player_combat.sias + chill_rate(now_ms));
+            // An Amazon's or Sorceress's plain swing starts frames in (FUN_00623b10); a skill that swings another record (a throw plays A1 here) does not.
+            const auto* swing_row = game_data->skills.get(actor->swing_skill);
+            const bool plain = actor->swing_skill == 0 || (swing_row && swing_row->anim == "A1");
+            const int start = mode == kModeA1 && plain ? actor->player_combat.attack_start : 0;
+            const int rate = int(anim.speed ? anim.speed : 256), sias = actor->player_combat.sias + chill_rate(now_ms);
+            const auto ticks = d2d::rules::attack_ticks(int(anim.frames), rate, actor->player_combat.ias, actor->player_combat.wsm, sias, start);
             len = std::uint32_t(ticks) * 40;
+            if (anim.action >= 0) strike = std::uint32_t(d2d::rules::attack_action_tick(anim.action, rate, actor->player_combat.ias, actor->player_combat.wsm, sias, start)) * 40;
             // The swing (FUN_004cc5b0: A1 / A2, a Barbarian's S3, an Assassin's S4): its weapon_* that many frames in.
             // A sequence plays in SQ (0x12), which the dispatcher leaves silent (the table at 0x4cc74c).
             const int cls = actor->character.character_class;
@@ -434,7 +479,7 @@ auto Fight::set_pmode(int mode, std::uint32_t now_ms) -> void {
             len = std::uint32_t(shown) * anim.ms_per_frame();
         }
         actor->prate = len ? float(anim.length_ms()) / float(len) : 1.f;
-        actor->action_ms = std::uint32_t(float(anim.action_ms()) / actor->prate);
+        actor->action_ms = strike ? *strike : std::uint32_t(float(anim.action_ms()) / actor->prate);
         if (mode == kModeSC && anim.frames && anim.action >= 0)
             actor->action_ms = std::uint32_t(d2d::rules::cast_action_ticks(anim.action, int(anim.speed ? anim.speed : 256), actor->player_combat.fcr)) * 40;
         actor->pmode_until = mode == kModeDD ? 0 : now_ms + len;

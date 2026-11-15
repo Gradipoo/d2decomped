@@ -45,10 +45,14 @@
 #include <devctl.hpp>
 #include <install.hpp>
 #include <join.hpp>
+#include <lan.hpp>
 #include <log.hpp>
 #include <mpq.hpp>
+#include <palette.hpp>
 #include <screenshot.hpp>
+#ifdef D2D_WITH_SENTRY
 #include <sentry.h>
+#endif
 #include <sound_ids.hpp>
 #include <switches.hpp>
 #include <tcp.hpp>
@@ -68,6 +72,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <exception>
+#include <expected>
 #include <filesystem>
 #include <format>
 #include <fstream>
@@ -88,6 +93,16 @@
 #include <utility>
 #include <vector>
 
+#if defined(__APPLE__)
+#include <TargetConditionals.h>
+#endif
+#if defined(TARGET_OS_IPHONE) && TARGET_OS_IPHONE
+#include "ios/import.hpp"
+#include "ios/keyboard.hpp"
+#include "ios/quit.hpp"
+#include <SDL3/SDL_main.h>
+#endif
+
 #if defined(_WIN32) && (defined(_M_IX86) || defined(_M_X64))
 #include <intrin.h>
 #elif defined(__APPLE__)
@@ -97,11 +112,27 @@
 #ifdef _WIN32
 #include <windows.h>
 #endif
+#ifdef __vita__
+#include <SDL3/SDL_main.h>   // SDL's main runs ours on a 512 KB stack
+#endif
+#ifdef __ANDROID__
+#include <SDL3/SDL_main.h>   // SDL's activity calls ours as SDL_main
+#endif
 
 using namespace d2d::client;
 
+#ifdef __vita__
+// newlib's heap: most of the extended-memory app mode (ATTRIBUTE2=12,
+// apps/d2d/CMakeLists.txt), where D2Vita sees ~355 MiB free at boot.
+// ponytail: a guess, not measured on a Vita; lower it if SDL's GXM runs short.
+extern "C" {
+unsigned int _newlib_heap_size_user = 300 * 1024 * 1024;
+}
+#endif
+
 namespace {
 
+#ifdef D2D_WITH_SENTRY
 std::string cpu_model() {
 #if defined(_WIN32) && (defined(_M_IX86) || defined(_M_X64))
     int registers[4]{};
@@ -153,6 +184,7 @@ constexpr const char* cpu_architecture() {
     return "unknown";
 #endif
 }
+#endif   // D2D_WITH_SENTRY
 
 std::string crash_notes_from_environment() {
 #ifdef _WIN32
@@ -170,6 +202,7 @@ std::string crash_notes_from_environment() {
 #endif
 }
 
+#ifdef D2D_WITH_SENTRY
 void sentry_log_sink(d2d::log::Level level, std::string_view line) {
     const std::string message(line);
     auto breadcrumb = sentry_value_new_breadcrumb("default", message.c_str());
@@ -346,6 +379,19 @@ private:
     sentry_uuid_t attachment_{};
     std::thread worker_;
 };
+#else   // -DD2D_GAME_ONLY=ON builds without Sentry (apps/d2d/CMakeLists.txt)
+class SentrySession {
+public:
+    SentrySession(bool requested, const fs::path&, std::string_view, std::string_view) {
+        if (requested) d2d::log::warn("This d2d was built without crash reporting.");
+    }
+    [[nodiscard]] bool enabled() const { return false; }
+};
+
+struct SentryFrameAttachment {
+    void update(std::span<const std::uint8_t>) {}
+};
+#endif   // D2D_WITH_SENTRY
 
 // Set by main() before entering the loop — a lazy way to plumb --start-*
 // through without threading extra parameters everywhere.
@@ -359,6 +405,7 @@ static bool        g_click_keys = true;   // Configure Controls' Attack / Use an
 static keys::Clicks g_click_bindings = keys::kNoClicks;   // d2d.cfg click_attack / click_skill
 static bool        g_coop_lobby = true;   // the title's "SINGLE PLAYER / COOP" and character select's co-op lobby; off: --toggle coop_lobby=off // Configure Controls' gamepad page (deviations.md); off: --toggle pad_controls=off
 static int         g_master_volume = 100, g_music_volume = 50;   // d2d.cfg master_volume / music_volume (the game menu sets them)
+static int         g_gamma = 155, g_contrast = 100;   // d2d.cfg gamma / contrast (DirectDraw FUN_006be190; 100 is the flat ramp)
 static int         g_start_class = -1;   // none: char-create opens with no class picked
 static std::string g_start_name;
 static bool        g_start_hardcore = false;
@@ -373,6 +420,10 @@ static int         g_start_cam_y = -1;
 // improvement 2; game.exe takes it as the seed).
 static std::string   g_join_host;           // the game.exe TCP/IP host char-select joins: --join, or TCP/IP's JOIN GAME
 static std::string   g_cli_join;            // --join's own, what SINGLE PLAYER goes back to
+static std::string   g_lan_connect;        // --connect: char-select's OK joins this d2d host (lan-host.md)
+static int           g_lan_host_port = 0;   // --host: d2d players join this game over the LAN (lan-host.md); 0 off
+static std::string   g_cli_lan_connect;    // --connect's and --host's own, what SINGLE PLAYER goes back to
+static int           g_cli_lan_host_port = 0;
 static std::string   g_last_tcp_ip;         // d2d.cfg last_tcp_ip: the join box's start (game.exe's LastTcpIp)
 static fs::path      g_game_exe;            // --game-exe: its tables (the codec's, read at runtime)
 static bool          g_seed_fixed = false;  // --seed
@@ -449,6 +500,49 @@ inline void pace_frame(std::uint64_t frame_start_ns, FrameBudget budget) {
     }
 }
 
+// Map the window safe area into the centre 800-wide touch band (logical px).
+// Widescreen spare columns live outside that band; touch input and draw_touch
+// stay 800-wide, so insets are only within [0, 800].
+void apply_safe_inset(const Window& win) {
+#if SDL_VERSION_ATLEAST(3, 4, 0)
+    SDL_Rect area{};
+    float left = 0, top = 0, right = 0, bottom = 0;
+    // Safe area is window points. RenderCoordinatesFromWindow lands in the
+    // logical view, same as the touch path. Pairing those points with
+    // SizeInPixels clamped a false inset and slid corner HUD inward.
+    if (!win.window || !win.renderer || !SDL_GetWindowSafeArea(win.window, &area)
+        || !SDL_RenderCoordinatesFromWindow(win.renderer, float(area.x), float(area.y), &left, &top)
+        || !SDL_RenderCoordinatesFromWindow(win.renderer, float(area.x + area.w), float(area.y + area.h), &right, &bottom)
+        || win.view_w <= 0) {
+        touch::safe_inset = {};
+        return;
+    }
+    const float band_left = (float(win.view_w) - float(kScreenWidth)) / 2.f;
+    const float band_right = band_left + float(kScreenWidth);
+    const float left_from_safe = std::max(0.f, left - band_left);
+    const float right_from_safe = std::max(0.f, band_right - right);
+#if defined(TARGET_OS_IPHONE) && TARGET_OS_IPHONE
+    // The landscape notch sits in the widescreen gutter, outside this band.
+    // A few points of sliver, plus the home indicator. Not both side edges.
+    constexpr float kMaxHorizontal = 20.f;
+    constexpr float kMaxVertical = 36.f;
+#else
+    constexpr float kMaxHorizontal = 48.f;
+    constexpr float kMaxVertical = 48.f;
+#endif
+    auto clamp_h = [kMaxHorizontal](float value) { return std::clamp(value, 0.f, kMaxHorizontal); };
+    auto clamp_v = [kMaxVertical](float value) { return std::clamp(value, 0.f, kMaxVertical); };
+    touch::safe_inset.left = touch::safe_inset.right = 0.f;
+    if (left_from_safe >= right_from_safe && left_from_safe > 0.f) touch::safe_inset.left = clamp_h(left_from_safe);
+    else if (right_from_safe > 0.f) touch::safe_inset.right = clamp_h(right_from_safe);
+    touch::safe_inset.top = clamp_v(std::max(0.f, top));
+    touch::safe_inset.bottom = clamp_v(std::max(0.f, float(kScreenHeight) - bottom));
+#else
+    // ponytail: this SDL has no SDL_GetWindowSafeArea, so the touch layout stays put.
+    (void)win;
+#endif
+}
+
 /**
  * Run the interactive window loop, routing SDL and controller input to the current screen. Touch
  * gestures and character-selection cursor ownership are resolved before gameplay and UI updates.
@@ -483,9 +577,11 @@ int run_windowed(std::vector<std::uint8_t>& framebuffer,
     Window win;
     win.scale_mode = g_scale_mode;
     if (!win.open(int(kScreenWidth), int(kScreenHeight), g_scale, g_fullscreen, g_widescreen, g_widescreen ? 1066 : 0)) { SDL_Quit(); return 1; }
+    apply_safe_inset(win);
     // A set cap is the sleep's alone: a present held to the next refresh after it would miss the rate.
     if (g_fps_cap > 0) SDL_SetRenderVSync(win.renderer, 0);
     SentryFrameAttachment crash_frame;
+#ifdef D2D_WITH_SENTRY
     if (sentry_is_enabled()) {
         auto graphics = sentry_value_new_object();
         sentry_value_set_by_key(graphics, "renderer",
@@ -507,6 +603,7 @@ int run_windowed(std::vector<std::uint8_t>& framebuffer,
         }
         sentry_set_context("graphics", graphics);
     }
+#endif
     d2d::log::info("  Window: {}x{} (scale {}), renderer {}", kScreenWidth * g_scale, kScreenHeight * g_scale, g_scale,
                    SDL_GetRendererName(win.renderer));
     // The title shows while finish_scene loads the rest (only the menus'
@@ -708,9 +805,22 @@ int run_windowed(std::vector<std::uint8_t>& framebuffer,
     // IMKCFRunLoopWakeUpReliable"). It was left on permanently as a
     // beachball suspect; that beachball was the pan-left float loop.
     bool text_active = false;
+#if defined(TARGET_OS_IPHONE) && TARGET_OS_IPHONE
+    // Enter or a tap outside the name field closes the keyboard and leaves it
+    // closed. CharCreate would otherwise start text input again every frame.
+    bool ios_text_paused = false;
+#endif
+    bool in_background = false;
     Town town(scene ? &*scene : nullptr, character, g_start_cam_x, g_start_cam_y);
     town.set_pad_config(g_pad_config);
     town.touch_enabled = g_touch_controls;
+    if (g_touch_controls) town.last_device = touch::LastDevice::Touch;
+    if (g_lan_host_port > 0) {
+        if (auto listening = d2d::net::lan::Host::listen(std::uint16_t(g_lan_host_port))) {
+            town.lan_host.emplace(std::move(*listening));
+            d2d::log::info("lan: hosting on port {} ({})", g_lan_host_port, d2d::net::own_address());
+        } else d2d::log::warn("lan: can't host on port {}: {}", g_lan_host_port, listening.error());
+    }
     // The left button is down while a source holds it: the physical button or an Attack / Use key.
     const auto attack_key_held = [&] { return std::ranges::any_of(town.click_keys[keys::kClickAttack], key_held); };
     // A pad's seat; a new seat's player picks their character (Town::coop_seat's roster).
@@ -793,10 +903,26 @@ int run_windowed(std::vector<std::uint8_t>& framebuffer,
         const std::uint32_t frame_start_ms = std::uint32_t(frame_start_ns / 1'000'000);
         // Toggled inside the `input` timing window, so any IME cost of the
         // switch itself shows up there.
-        if (const bool want = screen == Screen::CharCreate || (screen == Screen::InGame && (town.chat_typing || town.coop_typing() || town.gold_box))
-                               || (screen == Screen::CharSelect && lobby.typing())
-                           || (screen == Screen::TcpIp && tcpip.box_open); want != text_active) {
+#if defined(TARGET_OS_IPHONE) && TARGET_OS_IPHONE
+        if (screen != Screen::CharCreate) ios_text_paused = false;
+        const bool want = (screen == Screen::CharCreate && !ios_text_paused)
+#else
+        const bool want = screen == Screen::CharCreate
+#endif
+                          || (screen == Screen::InGame && (town.chat_typing || town.coop_typing() || town.gold_box))
+                          || (screen == Screen::CharSelect && lobby.typing())
+                          || (screen == Screen::TcpIp && tcpip.box_open);
+        if (want != text_active) {
             if (want) {
+#if defined(TARGET_OS_IPHONE) && TARGET_OS_IPHONE
+                // A 1-point rect at the top of the window. SDL's offset stays zero
+                // (keybottom < rectbottom is false). A null rect keeps iOS from
+                // presenting the keyboard and does not stop updateKeyboard from
+                // assigning UIKit_ComputeViewFrame, which is not the full phone
+                // in landscape. The helper pins the view back and presents the field.
+                const SDL_Rect area{ 0, 0, 1, 1 };
+                SDL_SetTextInputArea(win.window, &area, 0);
+#else
                 // The field being typed in, so Steam's keyboard opens clear of it.
                 const int side = screen == Screen::InGame ? (win.view_w - int(kScreenWidth)) / 2 : 0;
                 const SDL_Rect field = screen == Screen::CharCreate ? SDL_Rect{ 319, rec_top(519, 26), 169, 26 }
@@ -808,9 +934,18 @@ int run_windowed(std::vector<std::uint8_t>& framebuffer,
                 SDL_RenderCoordinatesToWindow(win.renderer, float(field.x + field.w), float(field.y + field.h), &right, &bottom);
                 const SDL_Rect area{ int(left), int(top), int(right - left), int(bottom - top) };
                 SDL_SetTextInputArea(win.window, &area, 0);
+#endif
                 SDL_StartTextInput(win.window);
+#if defined(TARGET_OS_IPHONE) && TARGET_OS_IPHONE
+                d2d::ios::present_text_keyboard();
+#endif
             }
-            else      SDL_StopTextInput(win.window);
+            else {
+                SDL_StopTextInput(win.window);
+#if defined(TARGET_OS_IPHONE) && TARGET_OS_IPHONE
+                d2d::ios::dismiss_text_keyboard();
+#endif
+            }
             text_active = want;
         }
         heartbeat_ms.store(frame_start_ms, std::memory_order_relaxed);
@@ -828,6 +963,23 @@ int run_windowed(std::vector<std::uint8_t>& framebuffer,
         town.touch_input.frame();
         SDL_Event event;
         while (SDL_PollEvent(&event)) {
+            if (event.type == SDL_EVENT_WILL_ENTER_BACKGROUND || event.type == SDL_EVENT_DID_ENTER_BACKGROUND) {
+                if (!in_background) {
+                    in_background = true;
+                    audio.suspend();
+                    d2d::log::info("Background: rendering and audio paused. Leaving mid-game does not create a new save.");
+                }
+                continue;
+            }
+            if (event.type == SDL_EVENT_WILL_ENTER_FOREGROUND || event.type == SDL_EVENT_DID_ENTER_FOREGROUND) {
+                if (in_background) {
+                    in_background = false;
+                    audio.resume();
+                    d2d::log::info("Foreground: rendering and audio resumed.");
+                }
+                continue;
+            }
+            if (in_background) continue;
             // SDL3 doesn't rescale event coords under logical presentation;
             // convert so the mouse lands in 800x600 game pixels.
             SDL_ConvertEventToRenderCoordinates(win.renderer, &event);
@@ -839,21 +991,51 @@ int run_windowed(std::vector<std::uint8_t>& framebuffer,
             }
             else if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN || event.type == SDL_EVENT_MOUSE_BUTTON_UP) event.button.x -= view_off;
             else if (event.type == SDL_EVENT_MOUSE_WHEEL) event.wheel.mouse_x -= view_off;
+#if defined(TARGET_OS_IPHONE) && TARGET_OS_IPHONE
+            if (text_active && event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat
+                && (event.key.key == SDLK_RETURN || event.key.key == SDLK_KP_ENTER)) {
+                ios_text_paused = true;
+                SDL_StopTextInput(win.window);
+                d2d::ios::dismiss_text_keyboard();
+                text_active = false;
+            }
+            const bool tap_down = (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN && event.button.button == SDL_BUTTON_LEFT)
+                               || event.type == SDL_EVENT_FINGER_DOWN;
+            if (tap_down) {
+                const float tap_x = event.type == SDL_EVENT_FINGER_DOWN ? event.tfinger.x - view_off : event.button.x;
+                const float tap_y = event.type == SDL_EVENT_FINGER_DOWN ? event.tfinger.y : event.button.y;
+                const int name_top = rec_top(519, 26);
+                const bool name_field = screen == Screen::CharCreate && tap_x >= 319 && tap_x < 319 + 169
+                                     && tap_y >= name_top && tap_y < name_top + 26;
+                if (name_field) ios_text_paused = false;
+                else if (text_active) {
+                    ios_text_paused = true;
+                    SDL_StopTextInput(win.window);
+                    d2d::ios::dismiss_text_keyboard();
+                    text_active = false;
+                }
+            }
+#endif
             if (town.touch_enabled && screen == Screen::InGame) {
-                if (event.type == SDL_EVENT_WINDOW_FOCUS_LOST) { town.touch_input.clear(); town.touch_item_finger = -1; }
+                if (event.type == SDL_EVENT_WINDOW_FOCUS_LOST) {
+                    town.touch_input.clear(); town.touch_item_finger = -1; town.touch_fingers = 0;
+                    town.touch_pointer = {}; town.touch_sheet = {}; town.touch_item_drag = false;
+                }
                 if ((event.type == SDL_EVENT_MOUSE_MOTION && event.motion.which == SDL_TOUCH_MOUSEID) ||
                     ((event.type == SDL_EVENT_MOUSE_BUTTON_DOWN || event.type == SDL_EVENT_MOUSE_BUTTON_UP) && event.button.which == SDL_TOUCH_MOUSEID)) continue;
                 // Sidecar/Pencil may arrive as a single pointer rather than SDL fingers.
-                // Reserve a distinct owner; never synthesize a second finger.
-                if ((event.type == SDL_EVENT_MOUSE_BUTTON_DOWN || event.type == SDL_EVENT_MOUSE_BUTTON_UP) && event.button.button == SDL_BUTTON_LEFT) {
+                // While touch is last, keep those packets as owner -2 so a leftover mouse
+                // packet cannot hand the seat to keyboard/mouse.
+                const bool touch_last = town.last_device == touch::LastDevice::Touch;
+                if (touch_last && (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN || event.type == SDL_EVENT_MOUSE_BUTTON_UP) && event.button.button == SDL_BUTTON_LEFT) {
                     const auto phase = event.type == SDL_EVENT_MOUSE_BUTTON_DOWN ? touch::Phase::Down : touch::Phase::Up;
                     if (town.touch_event(-2, phase, event.button.x, event.button.y)) continue;
                 }
-                if (event.type == SDL_EVENT_MOUSE_MOTION && (event.motion.state & SDL_BUTTON_LMASK))
+                if (touch_last && event.type == SDL_EVENT_MOUSE_MOTION && (event.motion.state & SDL_BUTTON_LMASK))
                     if (town.touch_event(-2, touch::Phase::Move, event.motion.x, event.motion.y)) continue;
                 if (event.type == SDL_EVENT_FINGER_DOWN || event.type == SDL_EVENT_FINGER_UP ||
                     event.type == SDL_EVENT_FINGER_MOTION || event.type == SDL_EVENT_FINGER_CANCELED) {
-                    pad_in_use = true;
+                    town.last_device = touch::LastDevice::Touch;
                     const auto phase = event.type == SDL_EVENT_FINGER_DOWN ? touch::Phase::Down : event.type == SDL_EVENT_FINGER_UP ? touch::Phase::Up
                                      : event.type == SDL_EVENT_FINGER_MOTION ? touch::Phase::Move : touch::Phase::Cancel;
                     const float touch_x = event.tfinger.x - view_off, touch_y = event.tfinger.y;
@@ -866,8 +1048,18 @@ int run_windowed(std::vector<std::uint8_t>& framebuffer,
                 }
             }
             gamepads.handle_event(event);
-            if (event.type == SDL_EVENT_MOUSE_MOTION || event.type == SDL_EVENT_MOUSE_BUTTON_DOWN) { pad_in_use = false; mouse_took_over = true; }
-            if (event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat) pad_in_use = false;
+            const bool touch_mouse = (event.type == SDL_EVENT_MOUSE_MOTION && event.motion.which == SDL_TOUCH_MOUSEID)
+                || ((event.type == SDL_EVENT_MOUSE_BUTTON_DOWN || event.type == SDL_EVENT_MOUSE_BUTTON_UP) && event.button.which == SDL_TOUCH_MOUSEID);
+            if ((event.type == SDL_EVENT_MOUSE_MOTION || event.type == SDL_EVENT_MOUSE_BUTTON_DOWN)
+                && !touch_mouse
+                && !(town.touch_enabled && (town.last_device == touch::LastDevice::Touch || town.touch_fingers > 0 || town.touch_pointer.active))) {
+                pad_in_use = false; mouse_took_over = true;
+                if (town.touch_enabled) town.last_device = touch::LastDevice::MouseKeyboard;
+            }
+            if (event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat) {
+                pad_in_use = false;
+                if (town.touch_enabled) town.last_device = touch::LastDevice::MouseKeyboard;
+            }
             // The click keys (deviations.md improvement 15): a key or mouse button bound to
             // Attack / Use clicks the left button (held while it's held), Right-hand Skill
             // the right; not while typing or in Configure Controls, where it's a key to bind.
@@ -889,6 +1081,11 @@ int run_windowed(std::vector<std::uint8_t>& framebuffer,
             handle_sdl_events(event, mouse, screen, text_this_frame,
                               backspace_this_frame, keys_this_frame, quit);
             if (keep_down) { mouse.down = true; mouse.release_this_frame = false; }   // an Attack / Use key still holds it
+        }
+        if (in_background) {
+            heartbeat_ms.store(std::uint32_t(SDL_GetTicks()), std::memory_order_relaxed);
+            SDL_Delay(100);
+            continue;
         }
         // A partner's roster name and the keyboard's Enter (Steam's keyboard
         // on a Deck): their character is made, and the Enter is theirs, not
@@ -1015,7 +1212,10 @@ int run_windowed(std::vector<std::uint8_t>& framebuffer,
                                     || pad_actions.snap_x != 0 || pad_actions.snap_y != 0 || pad_actions.trade_press || pad_actions.tab_step != 0
                                     || pad_actions.skill_picker || pad_actions.recentre_cursor || pad_actions.focus_step != 0 || pad_actions.skill_busy;
             if (pad_active && !pad_in_use) d2d::log::info("gamepad: in use (screen {})", int(screen));
-            if (pad_active) pad_in_use = true;
+            if (pad_active) {
+                pad_in_use = true;
+                if (town.touch_enabled) town.last_device = touch::LastDevice::Gamepad;
+            }
             town.skill_actions = pad_actions;
             if (town.drive_skill_ui(pad_actions, mouse.x, mouse.y)) {
                 pad_actions.click_press = false;
@@ -1035,20 +1235,32 @@ int run_windowed(std::vector<std::uint8_t>& framebuffer,
                 pad_actions.click_release = false;
             }
             // In the field a pad plays without a cursor: its buttons hit what is in reach (Town::pad_act).
-            const bool pad_field = screen == Screen::InGame && pad_in_use && town.pad_field();
-            if (pad_field != pad_was_field && !mouse_took_over) { mouse.x = int(kScreenWidth) / 2; mouse.y = int(kScreenHeight) / 2; }   // the cursor comes back centred
+            if (town.touch_pointer.active || town.touch_pointer.press || town.touch_pointer.release) {
+                mouse.x = int(town.touch_pointer.x);
+                mouse.y = int(town.touch_pointer.y);
+                if (town.touch_pointer.press) { mouse.down = true; mouse.press_this_frame = true; }
+                if (town.touch_pointer.release) { mouse.down = false; mouse.release_this_frame = true; }
+                town.touch_pointer.press = town.touch_pointer.release = false;
+            }
+            const bool pad_field = screen == Screen::InGame && pad_in_use && town.last_device == touch::LastDevice::Gamepad && town.pad_field();
+            const bool touch_owns_pointer = town.touch_enabled && town.last_device == touch::LastDevice::Touch
+                && (town.touch_fingers > 0 || town.touch_pointer.active || town.touch_sheet.open);
+            if (pad_field != pad_was_field && !mouse_took_over && !touch_owns_pointer && town.last_device != touch::LastDevice::Touch)
+                { mouse.x = int(kScreenWidth) / 2; mouse.y = int(kScreenHeight) / 2; }   // the cursor comes back centred
             pad_was_field = pad_field;
             // A menu opening puts the pad's cursor on the choice to start from.
-            const auto pad_focus = screen == Screen::InGame && pad_in_use && !mouse_took_over ? town.pad_focus() : std::nullopt;
+            const auto pad_focus = screen == Screen::InGame && pad_in_use && town.last_device == touch::LastDevice::Gamepad
+                && !mouse_took_over && !touch_owns_pointer ? town.pad_focus() : std::nullopt;
             if (pad_focus && pad_focus->key != pad_focus_key) { mouse.x = pad_focus->x; mouse.y = pad_focus->y; }
             pad_focus_key = pad_focus ? pad_focus->key : 0;
             if (screen != Screen::CharSelect || pad_actions.cursor_dx != 0 || pad_actions.cursor_dy != 0 || pad_actions.focus_step != 0) roster_navigation = false;
             if (screen == Screen::CharSelect && !csu.confirm_delete && !csu.pick_difficulty)
                 for (const auto key : pad_actions.keys)
                     if (key == pad::Key::Up || key == pad::Key::Down || key == pad::Key::Left || key == pad::Key::Right) roster_navigation = true;
-            pad_cursor_hidden = pad_field || roster_navigation;
-            town.pad_playing = pad_in_use;
-            town.pad_cue = pad_field && !town.pad_config.skill_buttons && !town.touch_enabled;
+            pad_cursor_hidden = pad_field || roster_navigation
+                || (town.touch_enabled && town.last_device == touch::LastDevice::Touch && !town.held);
+            town.pad_playing = pad_in_use && town.last_device == touch::LastDevice::Gamepad;
+            town.pad_cue = pad_field && !town.pad_config.skill_buttons && town.last_device == touch::LastDevice::Gamepad;
             // The button labels of the pad playing the UI: a co-op partner's while they have the screen.
             const int label_pad = seats.label_pad(coop_game, ui_seat);
             town.pad_family = label_pad >= 0 ? gamepads.family(SDL_JoystickID(label_pad))
@@ -1077,7 +1289,7 @@ int run_windowed(std::vector<std::uint8_t>& framebuffer,
                     else if (csu.pick_difficulty) buttons({ &csu.difficulty_btn[0], &csu.difficulty_btn[1], &csu.difficulty_btn[2] });
                     else buttons({ &csu.create_btn, &csu.convert_btn, &csu.delete_btn, &csu.cancel_btn, &csu.ok_btn });
                 } else if (screen == Screen::InGame && town.controls.open && scene) {
-                    for (const auto& [x, y] : town.controls.buttons(*scene)) points.push_back({ x, y });
+                    for (const auto& [point_x, point_y] : town.controls.buttons(*scene)) points.push_back({ point_x, point_y });
                 }
                 return points;
             };
@@ -1135,6 +1347,7 @@ int run_windowed(std::vector<std::uint8_t>& framebuffer,
                                 pad_field && pad_actions.click_press, pad_field && pad_actions.click_down, pad_field && pad_actions.rclick_press,
                                 pad_actions.aim_active, pad_actions.aim_x, pad_actions.aim_y }
                 : Town::PadMove{};
+            if (town.touch_enabled && town.last_device == touch::LastDevice::Touch && town.pad_field()) town.pad.move = {};
         }
         current_phase.store(std::uint32_t(MainPhase::Devctl),
                             std::memory_order_relaxed);
@@ -1155,6 +1368,7 @@ int run_windowed(std::vector<std::uint8_t>& framebuffer,
                 for (std::size_t i = 3; i < framebuffer.size(); i += 4) framebuffer[i] = 0xFF;
                 g_view_width = want;
             }
+            apply_safe_inset(win);
         }
         const std::uint32_t t_after_input = std::uint32_t(SDL_GetTicks());
         current_phase.store(std::uint32_t(MainPhase::Render),
@@ -1264,7 +1478,11 @@ int run_windowed(std::vector<std::uint8_t>& framebuffer,
                     if (std::exchange(video_return, Screen::Title) == Screen::Endgame) { screen = Screen::Endgame; break; }
                 }
                 for (auto& button : title.buttons) update_button(button, mouse, screen, quit);
-                if (screen == Screen::CharSelect) g_join_host = g_cli_join;   // SINGLE PLAYER
+                if (screen == Screen::CharSelect) {           // SINGLE PLAYER
+                    g_join_host = g_cli_join;
+                    g_lan_connect = g_cli_lan_connect;
+                    g_lan_host_port = g_cli_lan_host_port;
+                }
                 render_title(framebuffer, *scene, title.buttons, now_ms);
                 break;
             case Screen::OtherMultiplayer:
@@ -1302,7 +1520,13 @@ int run_windowed(std::vector<std::uint8_t>& framebuffer,
                         if (!d2d::userdir::save_cfg(g_user_dir / "d2d.cfg", { { "last_tcp_ip", g_last_tcp_ip } }))
                             d2d::log::warn("d2d.cfg: last_tcp_ip not saved");
                         tcpip.box_open = false;
-                        if (auto test = d2d::net::TcpConnection::connect(tcpip.address, 4000, 5000); !test) {
+                        g_lan_host_port = 0;
+                        g_lan_connect.clear();
+                        g_join_host.clear();
+                        if (auto lan_test = d2d::net::TcpConnection::connect(tcpip.address, d2d::net::lan::kDefaultPort, 1500)) {   // a d2d host (lan-host.md)
+                            g_lan_connect = tcpip.address;
+                            screen = Screen::CharSelect;
+                        } else if (auto test = d2d::net::TcpConnection::connect(tcpip.address, 4000, 5000); !test) {
                             d2d::log::warn("join {}: {}", tcpip.address, test.error());
                             tcpip.popup = tcpip.no_connect;
                         } else {
@@ -1312,7 +1536,12 @@ int run_windowed(std::vector<std::uint8_t>& framebuffer,
                     }
                 } else {
                     const bool join = clicked(tcpip.join) && tcpip.has_ip;
-                    clicked(tcpip.host);
+                    if (clicked(tcpip.host) && tcpip.has_ip) {   // d2d hosts d2d players (lan-host.md)
+                        g_lan_host_port = d2d::net::lan::kDefaultPort;
+                        g_lan_connect.clear();
+                        g_join_host.clear();
+                        screen = Screen::CharSelect;
+                    }
                     update_button(tcpip.cancel, mouse, screen, quit);
                     if (escape) screen = Screen::OtherMultiplayer;
                     if (join) { tcpip.box_open = true; tcpip.address = g_last_tcp_ip; }
@@ -1452,7 +1681,7 @@ int run_windowed(std::vector<std::uint8_t>& framebuffer,
                     d2d::log::info("charselect: {}", csu.popup);
                 }
                 // Past Normal, game.exe asks first (FUN_00439840); joining, the host's game sets it.
-                if (screen == Screen::InGame && chosen_difficulty < 0 && g_join_host.empty() && csu.selected >= 0 && csu.selected < count
+                if (screen == Screen::InGame && chosen_difficulty < 0 && g_join_host.empty() && g_lan_connect.empty() && csu.selected >= 0 && csu.selected < count
                     && asks_difficulty(scene->saves[std::size_t(csu.selected)])) {
                     screen = Screen::CharSelect;
                     csu.pick_difficulty = true;
@@ -1468,8 +1697,52 @@ int run_windowed(std::vector<std::uint8_t>& framebuffer,
                     if (chosen_difficulty >= 0)   // the pick is now the save's current difficulty, its act kept
                         for (int index = 0; index < 3; ++index)
                             character.header.difficulty[std::size_t(index)] = std::uint8_t((character.header.difficulty[std::size_t(index)] & 0x7f) | (index == chosen_difficulty ? 0x80 : 0));
-                    if (g_join_host.empty()) {
+                    if (!g_lan_connect.empty()) {
+                        // --connect: a d2d host's game. The host plays the character and keeps it;
+                        // this World only draws what the host's Views say (lan-host.md).
+                        std::ifstream save_file(save_dir / (header.name + ".d2s"), std::ios::binary);
+                        std::vector<std::uint8_t> save{ std::istreambuf_iterator<char>(save_file), {} };
+                        std::expected<d2d::net::lan::Client, std::string> joined = std::unexpected(std::string("the character's save didn't read"));
+                        if (save_file) {
+                            d2d::log::info("lan: joining {} as {}", g_lan_connect, header.name);
+                            joined = d2d::net::lan::Client::join(g_lan_connect, { .name = header.name, .save = std::move(save) });
+                        }
+                        std::optional<d2d::net::lan::Client::Event> welcome;
+                        std::string refused = joined ? "" : joined.error();
+                        for (int wait = 0; joined && !welcome && refused.empty() && wait < 500; ++wait) {
+                            for (auto& reply : joined->poll()) {
+                                if (reply.type == d2d::net::lan::Client::Event::Type::Welcome) welcome = std::move(reply);
+                                else if (reply.type != d2d::net::lan::Client::Event::Type::View) refused = reply.reason;
+                            }
+                            if (!welcome) std::this_thread::sleep_for(std::chrono::milliseconds(10));
+                        }
+                        if (!welcome || !refused.empty() || welcome->info.size() < 6) {   // a Refuse can come with the Welcome (a hardcore check, a full game)
+                            d2d::log::error("lan: join failed: {}", refused.empty() ? "no welcome from the host" : refused);
+                            screen = Screen::CharSelect;
+                            csu.popup = join_error_text(*scene, { .what = refused.empty() ? "Cannot Connect to Server" : refused, .no_connect = refused.empty() || !joined }, header.expansion());
+                            csu.popup_return = g_cli_lan_connect.empty() ? Screen::TcpIp : Screen::CharSelect;
+                        } else {
+                            std::uint32_t seed = 0;
+                            for (int shift = 0; shift < 32; shift += 8) seed |= std::uint32_t(welcome->info[std::size_t(shift / 8)]) << shift;
+                            const int difficulty = std::clamp(int(welcome->info[4]), 0, 2);
+                            d2d::log::info("lan: in {}'s game as player {}: act {}, map seed {:#x}, difficulty {}", g_lan_connect, welcome->player, welcome->info[5] + 1, seed, difficulty);
+                            set_map_seed(*scene, seed, difficulty);
+                            character.header.difficulty = {};
+                            character.header.difficulty[std::size_t(difficulty)] = 0x80;
+                            town.lan_store = town.world.characters;  // the host's Saves of the character go here
+                            town.world.characters = nullptr;          // the host writes the save
+                            town.lan_client = std::move(*joined);
+                            town.lan_client->send_resync();   // Views that came while we joined were dropped: a whole one, once we're in
+                            town.enter();
+                        }
+                    } else if (g_join_host.empty()) {
                         set_map_seed(*scene, game_seed(character.header), character.header.active_difficulty());
+                        if (g_lan_host_port > 0 && !town.lan_host) {   // TCP/IP's HOST GAME
+                            if (auto listening = d2d::net::lan::Host::listen(std::uint16_t(g_lan_host_port))) {
+                                town.lan_host.emplace(std::move(*listening));
+                                d2d::log::info("lan: hosting on port {} ({})", g_lan_host_port, d2d::net::own_address());
+                            } else d2d::log::warn("lan: can't host on port {}: {}", g_lan_host_port, listening.error());
+                        }
                         town.enter();                            // the World takes the character
                     } else {
                         // --join: the host's game, at its map seed. d2d's World saves
@@ -1529,6 +1802,7 @@ int run_windowed(std::vector<std::uint8_t>& framebuffer,
                 if (const int act = town.view_act(); act != scene->palette_act)
                     load_act_palettes(*scene, scene->mpqs, act);
                 town.update(framebuffer, mouse, keys_this_frame, screen, audio, now_ms, last_ms);
+                if (town.quit_app) quit = true;
                 // A panel key moved the cursor with the view (FUN_00468770's SetCursorPos):
                 // the game's copy, and the OS cursor unless a pad drives it.
                 if (const auto moved = std::exchange(town.cursor_move, std::nullopt)) {
@@ -1572,6 +1846,23 @@ int run_windowed(std::vector<std::uint8_t>& framebuffer,
                     town.world.hosted_quests = false;
                     town.world.host_warps = false;
                     town.world.characters = g_no_save ? nullptr : &characters;
+                }
+                if (town.lan_client && !town.lan_lost.empty()) {        // the d2d host's gone: back to the characters
+                    d2d::log::warn("lan: {}; leaving the game", town.lan_lost);
+                    csu.popup = join_error_text(*scene, { .what = town.lan_lost, .no_connect = true }, character.expansion);
+                    csu.popup_return = Screen::CharSelect;
+                    town.lan_client.reset();
+                    screen = Screen::CharSelect;
+                }
+                if (screen == Screen::CharSelect && (town.lan_client || town.lan_store || town.lan_host)) {   // a LAN game left
+                    town.lan_client.reset();
+                    town.lan_lost.clear();
+                    town.lan_resyncing = false;
+                    town.lan_views = 0;
+                    if (town.lan_store) town.world.characters = g_no_save ? nullptr : &characters;
+                    town.lan_store = nullptr;
+                    town.lan_host.reset();                         // the joiners get Lost (their saves went at Town::save)
+                    town.lan_players.clear();
                 }
                 if (screen == Screen::CharSelect && scene) {         // left the game (saved): the roster again,
                     load_saves(*scene, save_dir);                      // the character just played first
@@ -1750,6 +2041,9 @@ int run_windowed(std::vector<std::uint8_t>& framebuffer,
     g_current_phase_ptr = nullptr;
     gamepads.close();   // before SDL goes away, not at scope exit
     SDL_Quit();
+#if defined(TARGET_OS_IPHONE) && TARGET_OS_IPHONE
+    d2d::ios::request_app_termination();
+#endif
     return 0;
 }
 
@@ -1795,6 +2089,12 @@ int main(int argc, char** argv) {
     }
 #endif
 
+#ifdef __ANDROID__
+    // No HOME there: the app's own external folder
+    // (Android/data/<package>/files), which needs no permission and which
+    // adb can fill (docs/android.md).
+    if (const char* files = SDL_GetAndroidExternalStoragePath(); files && *files) setenv("D2D_USER_DIR", files, 0);
+#endif
     // Per-user dir, thirdeye layout (components/userdir): d2d.cfg, save/,
     // screenshots/. Config loads global -> ./ -> user, later wins.
     const fs::path user_dir = d2d::userdir::user_dir("d2d");
@@ -1872,7 +2172,7 @@ int main(int argc, char** argv) {
     // d2d's own changes to game.exe (deviations.md), each on by default:
     // --toggle trans_roof=off,... Names in kToggles.
     std::string toggles;
-    app.add_option("--toggle", toggles, "Turn d2d's deviations on/off: name=on|off[,...] (trans_roof, autoloot, autoparty, pad_controls, click_keys, coop_lobby, light_grid, splash_centre, unit_slide, hwcursor); scalemode=pixelart|nearest|linear");
+    app.add_option("--toggle", toggles, "Turn d2d's deviations on/off: name=on|off[,...] (trans_roof, autoloot, autoparty, pad_controls, click_keys, coop_lobby, light_grid, splash_centre, unit_slide, hwcursor, touch_classic_hud); scalemode=pixelart|nearest|linear");
     app.add_flag  ("--no-video", no_video, "Skip the startup cinematics");
     int fps_cap = cfg.contains("fps_cap") ? std::atoi(cfg["fps_cap"].c_str()) : 0;
     app.add_option("--fps-cap", fps_cap, "Frames a second at most, 0 = the display's refresh (also `fps_cap =` in d2d.cfg)")
@@ -1880,6 +2180,10 @@ int main(int argc, char** argv) {
     std::string join_host, game_exe, log_level = "info";
     app.add_option("--log-level", log_level, "error, warning, info, debug or trace");
     app.add_option("--join", join_host, "Join a game.exe TCP/IP game at this address (your own network only)");
+    int lan_host_port = 0;
+    std::string lan_connect;
+    app.add_option("--connect", lan_connect, "Join a d2d game hosted with --host at this address (your LAN)");
+    app.add_option("--host", lan_host_port, "Host this game for d2d players on your LAN, on this port (6113 is the usual)")->check(CLI::Range(1, 65535));
     app.add_option("--game-exe", game_exe, "Your 1.14d game.exe, for --join (else $D2_GAME_EXE, game.exe or bin/game.exe beside the MPQs)");
     int start_cam_x = -1, start_cam_y = -1;
     app.add_option("--start-cam-x", start_cam_x,
@@ -1918,10 +2222,29 @@ int main(int argc, char** argv) {
         const char* env = std::getenv("D2_MPQ_DIR");
         const char* base = SDL_GetBasePath();
         std::error_code cwd_ec;
-        const auto found = d2d::install::resolve_data_dir(data_dir_str, env ? env : "", base ? fs::path(base) : fs::path{},
-                                                          fs::current_path(cwd_ec), cfg["data"]);
+#if defined(__vita__) || defined(__SWITCH__) || defined(__ANDROID__)
+        if (cfg["data"].empty()) cfg["data"] = user_dir.string();   // the MPQs' folder there (userdir.hpp)
+#endif
+        auto found = d2d::install::resolve_data_dir(data_dir_str, env ? env : "", base ? fs::path(base) : fs::path{},
+                                                    fs::current_path(cwd_ec), cfg["data"]);
+#if defined(TARGET_OS_IPHONE) && TARGET_OS_IPHONE
+        // No device scan. Stale d2d.cfg paths miss after reinstall; Documents/gamedata may still be valid.
+        if (!found.error.empty()) {
+            const auto gamedata = user_dir.parent_path() / "gamedata";
+            if (d2d::ios::adopt_game_data_if_present(gamedata, user_dir / "d2d.cfg")) {
+                d2d::userdir::load_cfg(user_dir / "d2d.cfg", cfg);
+                found = d2d::install::resolve_data_dir({}, {}, {}, {}, cfg["data"]);
+            } else if (d2d::ios::import_game_data(gamedata, user_dir / "d2d.cfg")) {
+                d2d::userdir::load_cfg(user_dir / "d2d.cfg", cfg);
+                found = d2d::install::resolve_data_dir({}, {}, {}, {}, cfg["data"]);
+            }
+        }
+#endif
         if (!found.error.empty()) {
             d2d::log::error("{}", found.error);
+#if defined(TARGET_OS_IPHONE) && TARGET_OS_IPHONE
+            d2d::log::error("Pick the folder that contains d2data.mpq again.");
+#endif
             return 1;
         }
         data_dir = found.dir;
@@ -1939,7 +2262,11 @@ int main(int argc, char** argv) {
     // rather than go on to a game with no data.
     if (!scene) {
         const auto message = std::format("Couldn't load the Diablo II game data from\n{}\n\n"
+#if defined(TARGET_OS_IPHONE) && TARGET_OS_IPHONE
+                                         "Pick the folder that contains d2data.mpq again. "
+#else
                                          "Check that its MPQ files are complete, readable copies from Diablo II. "
+#endif
                                          "The log has the details:\n{}",
                                          data_dir.string(), (user_dir / "d2d.log").string());
         if (!headless) SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "d2d", message.c_str(), nullptr);
@@ -1975,14 +2302,20 @@ int main(int argc, char** argv) {
         if (args.size() != 2 || args[1] != "CONFIRM_CRASH")
             return std::string("err usage: crash-test CONFIRM_CRASH\n");
         d2d::log::warn("Triggering the explicitly requested Sentry crash test.");
+#ifdef D2D_WITH_SENTRY
         sentry_set_tag("crash_test", "true");
         sentry_crash();
+#endif
         return std::string("err Sentry crash test unexpectedly returned\n");
     });
     channel.listen(devctl_path);
 
     g_start_screen   = start_screen;
     g_video          = !no_video && cfg["video"] != "0";
+#ifdef D2D_NO_VIDEO
+    g_video = false;
+    d2d::log::info("Bink cinematics are not in this build.");
+#endif
     {
         static const std::pair<std::string_view, bool*> kToggles[] = {
             { "trans_roof", &g_roof_cutout },   // the see-through circle in roofs round the player
@@ -1995,6 +2328,7 @@ int main(int argc, char** argv) {
             { "splash_centre", &g_splash_centre }, // rain splashes and mud bubbles centred on their water
             { "unit_slide", &g_unit_slide },       // units slide between ticks, not step at 25 Hz
             { "hwcursor", &g_hw_cursor },          // the gauntlet as the OS cursor, not drawn into the frame
+            { "touch_classic_hud", &d2d::client::touch::g_touch_classic_hud },   // touch: keep the PC bottom bar on the field
         };
         if (const auto mode = scale_mode_named(cfg["scalemode"])) g_scale_mode = *mode;
         std::string_view rest = toggles;
@@ -2011,7 +2345,7 @@ int main(int argc, char** argv) {
             }
             const auto toggle = std::ranges::find(kToggles, name, &std::pair<std::string_view, bool*>::first);
             if (toggle == std::end(kToggles) || (value != "on" && value != "off")) {
-                d2d::log::warn("--toggle: unknown '{}' (known: trans_roof, autoloot, autoparty, pad_controls, click_keys, coop_lobby, light_grid, splash_centre, unit_slide, hwcursor; values on|off; scalemode=pixelart|nearest|linear)", std::string(item));
+                d2d::log::warn("--toggle: unknown '{}' (known: trans_roof, autoloot, autoparty, pad_controls, click_keys, coop_lobby, light_grid, splash_centre, unit_slide, hwcursor, touch_classic_hud; values on|off; scalemode=pixelart|nearest|linear)", std::string(item));
                 continue;
             }
             *toggle->second = value == "on";
@@ -2021,6 +2355,10 @@ int main(int argc, char** argv) {
     g_join_host      = join_host;
     g_cli_join       = join_host;
     g_last_tcp_ip    = cfg["last_tcp_ip"];
+    g_lan_connect = lan_connect;
+    g_lan_host_port = lan_host_port;
+    g_cli_lan_connect = lan_connect;
+    g_cli_lan_host_port = lan_host_port;
     if (!game_exe.empty()) g_game_exe = game_exe;
     else if (const char* env = std::getenv("D2_GAME_EXE")) g_game_exe = env;
     else g_game_exe = fs::exists(data_dir / "game.exe") ? data_dir / "game.exe" : data_dir / "bin" / "game.exe";
@@ -2030,13 +2368,22 @@ int main(int argc, char** argv) {
     g_start_hardcore = start_hardcore;
     g_start_classic  = start_classic;
     g_no_save        = no_save;
+#if defined(TARGET_OS_IPHONE) && TARGET_OS_IPHONE
+    // On unless the cfg says 0. --touch-controls still forces them on.
+    g_touch_controls = g_touch_controls || cfg["touch_controls"] != "0";
+#else
     g_touch_controls = g_touch_controls || cfg["touch_controls"] == "1";
+#endif
     g_start_cam_x    = start_cam_x;
     g_start_cam_y    = start_cam_y;
     g_scale          = std::clamp(scale, 1, 8);   // cfg value isn't CLI-checked
     g_fps_cap        = std::clamp(fps_cap, 0, 1000);
     g_fullscreen     = cfg["fullscreen"] == "1";
     g_widescreen     = cfg["widescreen"] == "1" || cli_widescreen || view_width > 0;
+#if defined(TARGET_OS_IPHONE) && TARGET_OS_IPHONE
+    g_fullscreen = true;
+    g_widescreen = true;
+#endif
     g_forced_view_w  = std::clamp(view_width, 0, kMaxViewWidth);
     if (cfg.contains("master_volume")) g_master_volume = std::clamp(std::atoi(cfg["master_volume"].c_str()), 0, 100);
     {
@@ -2052,6 +2399,9 @@ int main(int argc, char** argv) {
             if (cfg.contains(kAutomapKeys[option].first)) g_automap_options[option] = std::clamp(std::atoi(cfg[kAutomapKeys[option].first].c_str()), 0, kAutomapKeys[option].second);
     }
     if (cfg.contains("music_volume")) g_music_volume = std::clamp(std::atoi(cfg["music_volume"].c_str()), 0, 100);
+    if (cfg.contains("gamma")) g_gamma = std::clamp(std::atoi(cfg["gamma"].c_str()), d2d::palette::kGammaMin, d2d::palette::kGammaMax);
+    if (cfg.contains("contrast")) g_contrast = std::clamp(std::atoi(cfg["contrast"].c_str()), d2d::palette::kContrastMin, d2d::palette::kContrastMax);
+    d2d::palette::Palette::set_ramp(g_gamma, g_contrast);
 
     if (headless) {
         if (!channel.active()) {

@@ -94,20 +94,28 @@ void draw_monster_bar(std::vector<std::uint8_t>& framebuffer, const Scene& scene
 namespace {
 
 // A portal's look and light: the red one (object 60, PP) for the game's
-// permanent pairs, else the town portal's (World::portal_object).
-// ponytail: the true tomb's way down (object 100, SJ) is drawn as a town portal.
+// permanent pairs, the true tomb's way down (object 100, SJ), else the town
+// portal's (World::portal_object).
 const Npc& portal_look(const Scene& scene, int which) {
     if (which == int(d2d::game::World::kGamePortals)) return scene.cain_portal;
-    return d2d::game::World::portal_object(std::size_t(which)) == 60 ? scene.red_portal : scene.town_portal;
+    switch (d2d::game::World::portal_object(std::size_t(which))) {
+    case 60: return scene.red_portal;
+    case 100: return scene.duriel_portal;
+    default: return scene.town_portal;
+    }
 }
 
 // A portal's mode and when it began: a town portal OP for its 768 ms, then
-// ON; object 189 by its events (rules::CainQuest::portal_mode: OP 25
-// frames, ON, S1 the 25 before its mode 4, then S2 held).
-std::pair<std::string_view, std::uint32_t> portal_mode(const View::Portal& portal, std::uint32_t now_ms) {
+// ON; the way down to Duriel OP for its client counter (object_op_ticks:
+// 16 frames at FrameDelta 200, 20 ticks), then ON (quests-act2.md "The
+// way down"); object 189 by its events (rules::CainQuest::portal_mode: OP
+// 25 frames, ON, S1 the 25 before its mode 4, then S2 held).
+std::pair<std::string_view, std::uint32_t> portal_mode(const Scene& scene, const View::Portal& portal, std::uint32_t now_ms) {
     if (portal.which != int(d2d::game::World::kGamePortals)) {
-        const bool opening = now_ms - portal.born < kPortalOpenMs;
-        return { opening ? "OP" : "ON", opening ? portal.born : portal.born + kPortalOpenMs };
+        const std::uint32_t open_ms = d2d::game::World::portal_object(std::size_t(portal.which)) == 100
+            ? std::uint32_t(std::max(d2d::game::object_op_ticks(scene.duriel_portal), 0)) * d2d::game::kTickMs : kPortalOpenMs;
+        const bool opening = now_ms - portal.born < open_ms;
+        return { opening ? "OP" : "ON", opening ? portal.born : portal.born + open_ms };
     }
     constexpr std::uint32_t kStepMs = 25 * 40;
     const int closed = portal.closed_ms ? int((portal.closed_ms - portal.born) / 40) : 0;
@@ -169,7 +177,7 @@ void view_units(const Scene& scene, const View& view, float camera_x, float came
     // being case-blind) has no name: Selectable0..2 all 0.
     for (const auto& portal : view.portals) {
         const Level* destination = portal.which < int(d2d::game::World::kGamePortals) ? scene.level(portal.destination) : nullptr;
-        const auto [mode, mode_ms] = portal_mode(portal, now_ms);
+        const auto [mode, mode_ms] = portal_mode(scene, portal, now_ms);
         out.push_back({ portal.x, portal.y, &scene.npc_anim(portal_look(scene, portal.which), mode), 0, destination ? &destination->name : nullptr,
                         mode_ms, -2000 - portal.which });
         out.back().shadow = false;
@@ -342,12 +350,26 @@ Lighting frame_light(const Scene& scene, const View& view, float cam_x, float ca
     // (18) past them, not game.exe's 48 round the player (bugs.md #11;
     // --toggle light_grid=off for that).
     const int half = (g_view_width / 2 / (kIsoW / 2) + (int(kScreenHeight) / 2 + kIsoH) / (kIsoH / 2)) * 5 / 2 + 18 + 1;
+    const int event_light = ambient;
     if (ambient < 0) ambient = view.level->light >= 0 ? view.level->light : view.day.intensity();
     const auto [player_x, player_y] = player_at ? *player_at : std::pair{ cam_x, cam_y };
     lighting.ambient = ambient;
     lighting.environment = view.day.environment;
     if (g_light_grid) lighting.grid.reset(int(cam_x * 5), int(cam_y * 5), ambient, half * 2);
     else lighting.grid.reset(int(player_x * 5), int(player_y * 5), ambient);
+    // The whole grid is the player's room. Each other near room of another
+    // level keeps that level's ambient (FUN_00474610, FUN_00619730).
+    const int player_id = view.level->id;
+    const bool player_release = d2d::rules::release_light(player_id, view.diablo_red) >= 0;
+    const bool den_flash = event_light >= 0 && player_id == d2d::rules::level_ids::kDenOfEvil && !player_release;
+    const int dip_light = event_light >= 0 && !den_flash && !player_release ? event_light : -1;
+    std::vector<d2d::rules::BorderRoom> border_rooms;
+    for (const auto& near_room : d2d::game::automap_rooms(scene, *view.level, player_x, player_y)) {
+        if (near_room.level == nullptr || near_room.level == view.level) continue;
+        border_rooms.push_back({ near_room.x, near_room.y, near_room.width, near_room.height,
+                                  d2d::rules::border_room_light(near_room.level->id, near_room.level->light, view.day.intensity(), dip_light, view.diablo_red) });
+    }
+    lighting.grid.paint_border_rooms(view.level->world_x, view.level->world_y, border_rooms);
     for (int j = 0; j < lighting.grid.grid_size; ++j)                            // what walls light (FUN_004756d0)
         for (int i = 0; i < lighting.grid.grid_size; ++i)
             lighting.grid.blocked[std::size_t(j * lighting.grid.grid_size + i)] =
@@ -397,7 +419,7 @@ Lighting frame_light(const Scene& scene, const View& view, float cam_x, float ca
         for (const auto& npc : neighbour.level->npcs) stamp(npc.x + float(neighbour.dx), npc.y + float(neighbour.dy), lit(npc, {}), true);
     for (const auto& monster : view.monsters) if (monster.alive()) lamp(4ull << 32 | std::uint32_t(monster.id), monster.unit.x + kHalf, monster.unit.y + kHalf, monster.npc.light, false);
     for (const auto& portal : view.portals)                        // its mode's Lit (Lit1 while it opens, then Lit2 ...)
-        lamp(5ull << 32 | std::uint32_t(portal.which), portal.x, portal.y, int(portal_look(scene, portal.which).lit[std::size_t(d2d::game::mode_index(portal_mode(portal, now).first))]) >> 1, true);
+        lamp(5ull << 32 | std::uint32_t(portal.which), portal.x, portal.y, int(portal_look(scene, portal.which).lit[std::size_t(d2d::game::mode_index(portal_mode(scene, portal, now).first))]) >> 1, true);
     for (const auto& missile : view.missiles) if (missile.info) stamp(missile.x, missile.y, missile.info->light, false);
     for (const auto& missile : effects) if (missile.info) stamp(missile.x, missile.y, missile.info->light, false);
     // States' overlays light their unit (Overlay.txt: InitRadius growing to

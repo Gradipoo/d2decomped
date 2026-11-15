@@ -69,6 +69,21 @@ auto Town::input(const Mouse& mouse, bool over_ui) const -> std::vector<Command>
             return out;
         }
         if (over_ui) return out;
+        if (touch_enabled && last_device == touch::LastDevice::Touch) {
+            // Touch stick and ground taps own locomotion; a leftover mouse packet must not click-to-walk.
+            if (!(pad_field() && !touch_pointer.active)) return out;
+            const float iso_u = float(mouse.x - int(kScreenWidth) / 2) / (kIsoW / 2);
+            const float iso_v = float(mouse.y - kViewY) / (kIsoH / 2);
+            const float world_x = cam_x + (iso_u + iso_v) / 2, world_y = cam_y + (iso_v - iso_u) / 2;
+            const int hovered_monster_index = hovered_monster();
+            const bool live = hovered_monster_index >= 0 && view.monsters[std::size_t(hovered_monster_index)].alive();
+            if (mouse.rpress_this_frame && skillbar.right == kResurrectSkill) {
+                if (const auto* body = body_near(world_x, world_y, 1.5f)) out.push_back(cmd::UseSkill{ kResurrectSkill, body->x, body->y, body->id });
+            } else if (mouse.rpress_this_frame) {
+                out.push_back(cmd::UseSkill{ skillbar.right, world_x, world_y, live ? view.monsters[std::size_t(hovered_monster_index)].id : -1, false, skillbar.right_item });
+            }
+            return out;
+        }
         // Screen -> world: invert the iso projection around the player,
         // who sits at (kW/2, kViewY).
         const float iso_u = float(mouse.x - int(kScreenWidth) / 2) / (kIsoW / 2);
@@ -111,7 +126,8 @@ auto Town::input(const Mouse& mouse, bool over_ui) const -> std::vector<Command>
 auto Town::pad_field() const -> bool {
         return have_world && !inv_open && !char_open && !tree_open && !stash_open && !cube_open && !belt_open && !belt_up.shown && !quest_log.open && !hireling.open && !help.open && !party.open
             && !game_menu.open && !controls.open && !waypoint.open && npc_menu.npc < 0 && speech.npc < 0 && store.npc < 0 && !held && identify_with < 0
-            && !skillbar.picking && skill_strip < 0 && touch_assign == skillpad::kUnset && !chat_typing && !gold_box && !(net_game && net_game->trade.state != 0);
+            && !skillbar.picking && skill_strip < 0 && touch_assign == skillpad::kUnset && touch_bind == TouchBindPhase::Off && !chat_typing && !gold_box
+            && !(net_game && net_game->trade.state != 0);
     }
 
 auto Town::mini_right() const -> bool {
@@ -488,8 +504,8 @@ auto Town::take_focus(int id) -> void {
  */
 auto Town::pad_focus() const -> std::optional<PadFocus> {
         if (controls.open) {                                            // Configure Controls: the selected row's column
-            const auto [x, y] = controls.focus();
-            return PadFocus{ 9000 + controls.sel * 2 + controls.column + (controls.pad_page ? 1000 : 0), x, y };
+            const auto [focus_x, focus_y] = controls.focus();
+            return PadFocus{ 9000 + controls.sel * 2 + controls.column + (controls.pad_page ? 1000 : 0), focus_x, focus_y };
         }
         if (skillbar.picking == 3) return std::nullopt;                // the wheel draws its own highlight
         if (skillbar.picking) {                                         // the hand's skill now, else its button
@@ -498,8 +514,8 @@ auto Town::pad_focus() const -> std::optional<PadFocus> {
             for (std::size_t row = 0; row < rows.size(); ++row)
                 for (std::size_t col = 0; col < rows[row].size(); ++col)
                     if (rows[row][col] == skillbar.hand(on_left)) {
-                        const auto [x, y] = skillbar.picker_at(rows, on_left, int(row), int(col));
-                        return PadFocus{ 3000 + skillbar.picking, x + SkillBar::kIcon / 2, y - SkillBar::kIcon / 2 };
+                        const auto [icon_x, icon_y] = skillbar.picker_at(rows, on_left, int(row), int(col));
+                        return PadFocus{ 3000 + skillbar.picking, icon_x + SkillBar::kIcon / 2, icon_y - SkillBar::kIcon / 2 };
                     }
             return PadFocus{ 3000 + skillbar.picking, (on_left ? SkillBar::kButtonLeftX : SkillBar::kButtonRightX) + SkillBar::kIcon / 2, int(kScreenHeight) - SkillBar::kIcon / 2 };
         }
@@ -564,8 +580,8 @@ auto Town::pad_snap_points() const -> std::vector<pad::Point> {
             const auto rows = skillbar.rows(on_left);
             for (std::size_t row = 0; row < rows.size(); ++row)
                 for (std::size_t col = 0; col < rows[row].size(); ++col) {
-                    const auto [x, y] = skillbar.picker_at(rows, on_left, int(row), int(col));
-                    centre(x, y - SkillBar::kIcon, SkillBar::kIcon, SkillBar::kIcon);
+                    const auto [icon_x, icon_y] = skillbar.picker_at(rows, on_left, int(row), int(col));
+                    centre(icon_x, icon_y - SkillBar::kIcon, SkillBar::kIcon, SkillBar::kIcon);
                 }
             for (const int x : { SkillBar::kButtonLeftX, SkillBar::kButtonRightX }) centre(x, int(kScreenHeight) - SkillBar::kIcon, SkillBar::kIcon, SkillBar::kIcon);
         }
@@ -573,7 +589,7 @@ auto Town::pad_snap_points() const -> std::vector<pad::Point> {
             const auto& list = scene->rules.class_skills[std::size_t(std::max(character.character_class, 0))];
             for (const auto& class_skill : list)
                 if (class_skill.page == tree_tab)
-                    if (const auto [x, y] = skill_icon_at(class_skill); x > -1000) centre(x, y - 0x30, 0x30, 0x30);
+                    if (const auto [icon_x, icon_y] = skill_icon_at(class_skill); icon_x > -1000) centre(icon_x, icon_y - 0x30, 0x30, 0x30);
             for (const int top : { kTreeB - 0x174, kTreeB - 0x108, kTreeB - 0x9c }) centre(kTreeR - 0x58, top, 0x58, 0x6b);
         }
         if (tree_open) {
@@ -626,7 +642,7 @@ auto Town::pad_snap_points() const -> std::vector<pad::Point> {
 // The inventory item under the cursor, or nullptr. Not the stash, the cube or the belt.
 auto Town::bag_at(int mouse_x, int mouse_y) const -> const d2d::d2s::Item* {
         if (!scene || !inv_open) return nullptr;
-        const auto& inventory = scene->inv_layout[std::size_t(std::max(character.character_class, 0))];
+        const auto& inventory = touch_enabled ? touch_inv_layout() : scene->inv_layout[std::size_t(std::max(character.character_class, 0))];
         for (const auto& item : character.items) {
             if (item.location != d2d::d2s::item_location::kStored || item.panel != d2d::d2s::item_panel::kInventory) continue;
             const auto rect = grid_rect(*scene, inventory, item);
@@ -638,7 +654,7 @@ auto Town::bag_at(int mouse_x, int mouse_y) const -> const d2d::d2s::Item* {
 // A store's X buys the stock under the cursor. Selling is Hold A, so X does not sell.
 auto Town::pad_trade(int mouse_x, int mouse_y) -> void {
         if (store.npc < 0 || !scene) return;
-        if (const int stock = store_item_at(*scene, store, mouse_x, mouse_y); stock >= 0) send(cmd::Buy{ stock, store.tab });
+        if (const int stock = store_item_at(*scene, store, mouse_x, mouse_y, touch_store_panel_x()); stock >= 0) send(cmd::Buy{ stock, store.tab });
     }
 
 /**
@@ -710,7 +726,7 @@ auto Town::drive_pad_hold(Mouse& mouse, float seconds) -> void {
         const bool can_sell = query.sellable && query.bag && query.hand_empty && query.shop && !query.gamble && !query.identify && !query.imbue
                               && query.store_mode != 1 && query.store_mode != 3;
         if (pad_playing && pad_config.skill_buttons && query.shop && query.hand_empty && scene &&
-            store_item_at(*scene, store, mouse.x, mouse.y) >= 0) {
+            store_item_at(*scene, store, mouse.x, mouse.y, touch_store_panel_x()) >= 0) {
             const auto& pair = pad_config.bindings[pad::Action::Trade];
             const auto button = pair[0] != pad::Bindings::kNone ? pair[0] : pair[1];
             if (button != pad::Bindings::kNone)

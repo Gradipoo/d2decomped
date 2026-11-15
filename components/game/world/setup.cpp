@@ -18,6 +18,7 @@
 #include <light.hpp>
 #include <monster_ids.hpp>
 #include <object_ids.hpp>
+#include <quest_clock.hpp>
 #include <quests.hpp>
 #include <rules.hpp>
 #include <uniques.hpp>
@@ -74,7 +75,11 @@ auto World::add_player() -> Player& {
 }
 
 auto World::anyone_alive() const -> bool {
-    return std::ranges::any_of(players, [](const auto& player) { return player->pmode != kModeDT && player->pmode != kModeDD; });
+    return std::ranges::any_of(players, [](const auto& player) { return !player->own_screen && player->pmode != kModeDT && player->pmode != kModeDD; });
+}
+
+auto World::shared_screen() const -> bool {
+    return !actor->own_screen && std::ranges::count_if(players, [](const auto& player) { return !player->own_screen; }) > 1;
 }
 
 auto World::become_ghost(Player& player) -> void {
@@ -123,14 +128,17 @@ auto World::raise_step(float elapsed, std::uint32_t now_ms) -> void {
 }
 
 auto World::leash(std::span<const std::pair<float, float>> before) -> void {
-    if (players.size() < 2 || before.size() != players.size()) return;
+    if (before.size() != players.size()) return;
+    std::vector<std::size_t> party;                     // the players on this screen (a LAN joiner has its own)
+    for (std::size_t slot = 0; slot < players.size(); ++slot) if (!players[slot]->own_screen) party.push_back(slot);
+    if (party.size() < 2) return;
     // The party on screen: its spread in screen pixels (isometric: a cell is
     // 160 x 80, x - y across, x + y down).
     const auto spread = [&](std::size_t moved_back) {
         float least_x = 1e9f, most_x = -1e9f, least_y = 1e9f, most_y = -1e9f;
-        for (std::size_t i = 0; i < players.size(); ++i) {
-            const auto [x, y] = i == moved_back ? before[i] : std::pair{ players[i]->player.x, players[i]->player.y };
-            const float screen_x = (x - y) * 80, screen_y = (x + y) * 40;
+        for (const std::size_t slot : party) {
+            const auto [tile_x, tile_y] = slot == moved_back ? before[slot] : std::pair{ players[slot]->player.x, players[slot]->player.y };
+            const float screen_x = (tile_x - tile_y) * 80, screen_y = (tile_x + tile_y) * 40;
             least_x = std::min(least_x, screen_x); most_x = std::max(most_x, screen_x);
             least_y = std::min(least_y, screen_y); most_y = std::max(most_y, screen_y);
         }
@@ -139,14 +147,14 @@ auto World::leash(std::span<const std::pair<float, float>> before) -> void {
     const auto too_far = [&](std::pair<float, float> span) { return span.first > kLeashWidth || span.second > kLeashHeight; };
     if (!too_far(spread(players.size()))) return;
     // Whoever pulled it further than it was stays where they were.
-    for (std::size_t i = 0; i < players.size(); ++i) {
-        const auto stretched = spread(players.size()), back = spread(i);
+    for (const std::size_t slot : party) {
+        const auto stretched = spread(players.size()), back = spread(slot);
         if (back.first < stretched.first || back.second < stretched.second) {
-            auto& unit = players[i]->player;
-            std::tie(unit.x, unit.y) = before[i];
+            auto& unit = players[slot]->player;
+            std::tie(unit.x, unit.y) = before[slot];
             unit.walking = false; unit.path.clear();
-            players[i]->interact_npc = -1;
-            players[i]->target_x = unit.x; players[i]->target_y = unit.y;
+            players[slot]->interact_npc = -1;
+            players[slot]->target_x = unit.x; players[slot]->target_y = unit.y;
         }
         if (!too_far(spread(players.size()))) return;
     }
@@ -294,6 +302,7 @@ auto World::enter(const Character& entering) -> void {
         const int save_act = act_byte & 0x80 ? act_byte & 7 : 0;
         const Level* act_town = save_act > 0 && save_act < int(d2d::rules::level_ids::kActTowns.size()) ? game_data->level(d2d::rules::level_ids::kActTowns[std::size_t(save_act)]) : nullptr;
         level = act_town && act_town->start.first >= 0 ? act_town : &game_data->town;   // set_map_seed may have rebuilt the camp
+        lead().on_level = nullptr;                    // not the last game's level (split levels set it on the first tick)
         other_npcs.clear();
         npc_states = npc_start(*level);
         actor->interact_npc = actor->pick_item = actor->take_warp = -1;
@@ -314,6 +323,7 @@ auto World::new_game() -> void {
         fight.new_game(actor->character.header.active_difficulty());
         set_waypoint(0);                          // the town's is always active (FUN_00661030 forces index 0 as the save loads)
         day = {};                                 // a new game starts at sunrise
+        quest_clock = {};                         // and its frame and quest count from 0 (game +0xa8, +0x10f4 +0x14)
         day_at = now;
         loot.ground.clear();
         loot.kept.clear();
@@ -334,10 +344,12 @@ auto World::new_game() -> void {
         act4_join();
         act5_join();
         den_left = -1;
-        den_log_at = 0;
+        den_log_in = 0;
+        stones_portal_in = 0;
         actor->voice_found.reset();               // FUN_004ca280: a new game's find lines
         actor->voice_checked = 0;
         operated.clear();
+        wirt_gold.clear();
         // The levels as built: no room populated (the units come again as
         // they do), doors back as they were made.
         for (const auto& [id, built] : game_data->levels) {
@@ -358,7 +370,8 @@ auto World::new_game() -> void {
         objects_inited.clear();
         fires.clear();
         afterglow_made = false;
-        afterglow_due = 0;
+        afterglow_in = 0;
+        afterglow_due = false;
         traps.clear();
         treasure.clear();
         cain_walk = {};
@@ -388,6 +401,10 @@ auto World::spawn_merc() -> void {
 auto World::swap_npcs(const Level* from) -> void {
         if (from && from != level)                           // each player's level change (event 3): the party moved too (bring_party)
             each_player([&](Player&) { act1_enter(*from); act2_enter(*from); act3_enter(*from); act4_enter(*from); act5_enter(*from); });
+        swap_npc_states(from);
+    }
+
+auto World::swap_npc_states(const Level* from) -> void {
         if (from) other_npcs[from] = std::move(npc_states);
         if (const auto found = other_npcs.find(level); found != other_npcs.end()) {
             npc_states = std::move(found->second);
@@ -411,8 +428,9 @@ auto World::swap_npcs(const Level* from) -> void {
     }
 
 // The stones as their room comes up (InitFn 6, FUN_005935e0, as each is
-// made): the portal again, the stones lit. A level's objects come with
-// their rooms, so it waits for StoneAlpha.
+// made): the stones lit and, at StoneAlpha with the portal not made
+// (+0x45) nor due (+0x44), the portal's 1-tick timer (0x59366e). A
+// level's objects come with their rooms, so it waits for StoneAlpha.
 auto World::stones_up() -> void {
         if (!stones_pending || level->id != d2d::rules::CainQuest::kStony) return;
         if (std::ranges::find(level->npcs, d2d::rules::object_ids::kStoneAlpha, &Npc::object_id) == level->npcs.end()) return;
@@ -422,11 +440,22 @@ auto World::stones_up() -> void {
             const auto& stone = level->npcs[i];
             if (stone.operate_fn != d2d::rules::operate_fn::kCairnStone) continue;
             operated.try_emplace({ level, int(i) }, 0u);
-            if (stone.object_id == d2d::rules::object_ids::kStoneAlpha && !portal[2].level) {
-                const auto [spot_x, spot_y] = level->nearest_free(stone.x + 4, stone.y + 4);
-                portal[2] = { level, spot_x, spot_y, now };
-            }
+            if (stone.object_id == d2d::rules::object_ids::kStoneAlpha && !portal[2].level && stones_portal_in == 0)
+                stones_portal_in = d2d::rules::quest_timer_steps(1);
         }
+    }
+
+// The stones' timer (FUN_00592d50): the red portal to Tristram
+// (FUN_0056d130, object 0x3c) at StoneAlpha + 4 subtiles; +0x45 made.
+// No StoneAlpha (FUN_00552f60): +0x44 cleared, done.
+auto World::stones_portal() -> void {
+        const Level* stony = game_data->level(d2d::rules::CainQuest::kStony);
+        if (!stony || portal[2].level) return;
+        const auto alpha = std::ranges::find(stony->npcs, d2d::rules::object_ids::kStoneAlpha, &Npc::object_id);
+        if (alpha == stony->npcs.end()) return;
+        const auto [spot_x, spot_y] = stony->nearest_free(alpha->x + 4, alpha->y + 4);
+        portal[2] = { stony, spot_x, spot_y, now };
+        d2d::log::info("Search for Cain: the stones' portal");
     }
 
 // Lut Gholein's palace NPCs as the quests stand (rules::palace_spots).
@@ -443,6 +472,27 @@ auto World::show_palace() -> void {
     }
 
 auto World::respawn(std::uint32_t now_ms) -> void {
+        if (split_levels && !in_town(level)) {               // stage 9: back to their act's town, their screen's party with them (go_alone's rule)
+            const Level* act_town = game_data->town_of(level->id);
+            const Level* town = act_town ? act_town : &game_data->town;
+            Player* const dead = actor;
+            for (auto& player : players) {
+                if (player.get() != dead && (dead->own_screen || player->own_screen)) continue;
+                act_as(*player);
+                actor->events.push_back(ev::LevelChanged{ level, false });
+                actor->on_level = town;
+                actor->interact_npc = actor->pick_item = actor->take_warp = -1;
+                actor->attack_mon = actor->merc_target = -1;     // the level's monsters stay behind (Fight::enter)
+                for (auto& pet : actor->pets) pet.target = -1;
+                std::tie(actor->player.x, actor->player.y) = town->nearest_free(town->start.first, town->start.second);
+                actor->target_x = actor->player.x; actor->target_y = actor->player.y;
+                actor->player.walking = false; actor->player.path.clear();
+            }
+            act_as(*dead);
+            fight.revive(now_ms);
+            d2d::log::info("{} respawned in {}", actor->character.name, level_name(*town));
+            return;
+        }
         if (!in_town(level)) {
             actor->events.push_back(ev::LevelChanged{ level, false });
             const Level* from = level;

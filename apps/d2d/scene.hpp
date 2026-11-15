@@ -73,6 +73,8 @@ struct Scene : GameData {
     d2d::font::Font       font24;             // Font24 (font id 7): popup messages
     d2d::font::Font       font42;             // Font42 (font id 3): screen titles
     d2d::font::Font       font_formal12;      // FontFormal12 (font id 5): edit boxes
+    d2d::font::Font       font_exocet10;      // FontExocet10 (font id 9): labels on buttons 0x23 high and up
+    d2d::font::Font       font_ridiculous;    // FontRidiculous (font id 10): labels on lower buttons
     d2d::dc6::Sprite      cursor;             // CURSOR\ohand.dc6 — D2's gauntlet, 8 frames
     d2d::dc6::Sprite      cursor_buysell;     // CURSOR\buysell.dc6 — the item-use cursors (frame 0 identify)
     // Character composites (in-game player, char-select portraits). The
@@ -146,7 +148,7 @@ struct Scene : GameData {
     [[nodiscard]] static d2d::palette::Palette mapped(const d2d::palette::Palette& base, const std::uint8_t* map) {
         if (!map) return base;
         std::array<d2d::palette::Rgba, 256> entries;
-        for (std::size_t i = 0; i < 256; ++i) entries[i] = base[i == 0 ? 0 : map[i]];
+        for (std::size_t i = 0; i < 256; ++i) entries[i] = base.entries()[i == 0 ? 0 : map[i]];
         return d2d::palette::Palette(entries);
     }
     [[nodiscard]] d2d::palette::Palette item_pal(const d2d::d2s::Item& item, const d2d::palette::Palette& base) const {
@@ -194,8 +196,10 @@ struct Scene : GameData {
     std::array<d2d::palette::Palette, 32>    act_lit;   // act_pal at each light level (PL2 +0x400)
     d2d::palette::Palette act_text_red;              // act_pal through PL2's text colour 1 shift (the last 13 x 256: FUN_004f64b0's colour)
     d2d::palette::Palette act_text_blue;             // ... and its text colour 3 (blue): a hovered list row, a mode-1 menu line
+    d2d::palette::Palette act_text_grey;             // text colour 5 (grey): a skill icon that cannot take a point (FUN_004abf60)
     int                                      palette_act = -1;   // the act act_pal is (0-based)
     d2d::dc6::Sprite focus16;                          // UI\CURSOR\focus16: menu hover marks
+    d2d::font::Font  font_formal10;                    // FontFormal10 (font id 4): skill levels from 10 up
     d2d::font::Font  font_formal11;                    // FontFormal11: NPC speech (font id 8)
     d2d::font::Font  font_chat;                        // FontInGameChat (font id 0xd): chat lines
     d2d::font::Font  font30;                           // Font30 (font id 2): the death screen's lines

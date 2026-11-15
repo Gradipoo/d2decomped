@@ -15,6 +15,7 @@
 #include <d2s_items.hpp>
 #include <level_ids.hpp>
 #include <merc.hpp>
+#include <missiles.hpp>
 #include <monsters.hpp>
 #include <pets.hpp>
 #include <rules.hpp>
@@ -29,6 +30,7 @@
 #include <cstdint>
 #include <cstdlib>
 #include <functional>
+#include <memory>
 #include <optional>
 #include <span>
 #include <string>
@@ -137,12 +139,17 @@ auto Fight::pet_aura(Pet& pet, std::uint32_t now_ms) -> void {
 // (El1MinD + rand(El1MaxD - El1MinD) on its seed) << 8, the normal
 // columns (+0x10e / +0x120) whatever the difficulty; FUN_0057e090 (flags
 // 0, so 0x583) within its level (stat 12) x aip3 (+0x62) subtiles.
-// ponytail: every monster of the level within that radius, not only the
-// near rooms' (FUN_0065a950).
+// FUN_0057e090 calls FUN_0065a950 and FUN_0065ac70. FUN_0065a6b0 keeps the
+// unit's own room when the square of the radius lies inside it; otherwise
+// the near list, and FUN_0065a710 lets every room of that list through
+// (bugs.md #23). A unit in none of those rooms is missed, however close.
+// FUN_0065ac70 walks each room's unit list from its head (room +0x74, next
+// at +0xe8). FUN_0064c2c0 inserts at the head, so the hits in a room run
+// newest first. monsters is oldest first.
 auto Fight::blast_due(const Monster& golem) const -> bool {
         return !golem.alive() && golem.mode == "DT" && !golem.fx_done && golem.type >= 0
             && (game_data->monsters.types[std::size_t(golem.type)].base == game_data->monsters.row("firegolem")
-                || std::ranges::contains(golem.mods, d2d::rules::umod::firespike));
+                || std::ranges::contains(golem.mods, d2d::rules::umod::firespike) || std::ranges::contains(golem.mods, d2d::rules::umod::lightningdeath));
     }
 
 auto Fight::golem_blast(Pet& pet, std::uint32_t now_ms) -> bool {
@@ -150,6 +157,7 @@ auto Fight::golem_blast(Pet& pet, std::uint32_t now_ms) -> bool {
         if (!blast_due(golem) || now_ms < golem.unit.mode_ms + 4 * 40) return false;
         golem.fx_done = true;
         if (pet.where != level) return false;
+        if (std::ranges::contains(golem.mods, d2d::rules::umod::lightningdeath)) { shadow_nova(pet, now_ms); return true; }
         const auto& type_info = game_data->monsters.types[std::size_t(golem.type)];
         const bool goboom = type_info.base == game_data->monsters.row("firegolem");
         int physical_fine = 0x6400, fire_fine = 0x6400, radius = 6;
@@ -161,19 +169,36 @@ auto Fight::golem_blast(Pet& pet, std::uint32_t now_ms) -> bool {
             radius = golem.stats.level * type_info.diff[std::size_t(std::clamp(golem.difficulty, 0, 2))].aip[2];
         }
         const int from_x = int(std::floor(golem.unit.x * 5)), from_y = int(std::floor(golem.unit.y * 5));
-        for (std::size_t j = 0; j < monsters.size(); ++j) {
-            const auto& other = monsters[j];
+        const int own = room_of(*level, golem.unit.x, golem.unit.y);
+        std::vector<int> rooms;
+        if (const auto rect = own >= 0 ? level_room(*level, std::size_t(own)) : std::nullopt;
+            rect && rect->x * 5 < from_x - radius && rect->y * 5 < from_y - radius
+                && from_x + radius < (rect->x + rect->width) * 5 && from_y + radius < (rect->y + rect->height) * 5)
+            rooms.push_back(own);
+        else {
+            for (const auto& [room_level, near_room] : near_rooms(*game_data, *level, golem.unit.x, golem.unit.y))
+                if (room_level == level) rooms.push_back(near_room);
+        }
+        std::vector<d2d::rules::RoomUnit> units;
+        units.reserve(monsters.size());
+        for (const auto& other : monsters) {
+            const int room = room_of(*level, other.unit.x, other.unit.y);
+            units.push_back({ room, std::ranges::contains(rooms, room) });
+        }
+        for (const int index : d2d::rules::room_order(units, rooms)) {
+            const auto monster_index = std::size_t(index);
+            const auto& other = monsters[monster_index];
             const int to_x = int(std::floor(other.unit.x * 5)), to_y = int(std::floor(other.unit.y * 5));
             if (!other.targetable() || d2d::rules::friends(2, other.align) || (to_x - from_x) * (to_x - from_x) + (to_y - from_y) * (to_y - from_y) > radius * radius
                 || d2d::rules::sight_blocked(from_x, from_y, 0, to_x, to_y, 0, [&](int at_x, int at_y) { return level->blocked((float(at_x) + 0.5f) / 5, (float(at_y) + 0.5f) / 5, 0x805); }))
                 continue;
-            const auto target = target_of(j);
+            const auto target = target_of(monster_index);
             const int physical = d2d::rules::resisted_fine(physical_fine, std::max(target.res[0], -100)), fire = d2d::rules::resisted_fine(fire_fine, target.res[2]);
             d2d::rules::Blow blow{ .hit = true };
             blow.phys = physical_fine >> 8; blow.phys_fine = physical;
             blow.damage = (physical >> 8) + (fire >> 8); blow.frac = (physical & 255) + (fire & 255);
             blow.elemental = fire > 0;
-            land(j, blow, false, now_ms, golem.id);
+            land(monster_index, blow, false, now_ms, golem.id);
         }
         if (const auto found = game_data->missiles.find("monstercorpseexplode"); goboom && found != game_data->missiles.end()) {
             Missile blast{ &found->second, golem.unit.x, golem.unit.y, 0, 0, 0, now_ms, now_ms + std::uint32_t(std::max(found->second.range, 1)) * 40, {} };
@@ -182,6 +207,31 @@ auto Fight::golem_blast(Pet& pet, std::uint32_t now_ms) -> bool {
         }
         d2d::log::info("{} blows up ({} physical, {} fire)", golem.npc.name, physical_fine >> 8, fire_fine >> 8);
         return true;
+    }
+
+// A Shadow's death nova (MonUMod 42, FUN_005a2910 4 frames after its death,
+// hook 1 FUN_005a3800): 64 of missile 90 (nova) round it (FUN_0056d400),
+// Nova's damage at rules::shadow_nova_level, hitting monsters.
+// ponytail: FUN_0056d400's last argument there is FUN_00663270(90, 0), the
+// row's +0x9a byte; like d2d's other novas, these fly the row's Range.
+auto Fight::shadow_nova(Pet& pet, std::uint32_t now_ms) -> void {
+        const auto found = game_data->missiles.find("nova");
+        const auto* nova = skill_named("Nova");
+        if (found == game_data->missiles.end() || !nova) return;
+        const auto& missile_info = found->second;
+        const auto& shadow = pet.monster;
+        const int life_percent = shadow.stats.hit_points > 0 ? std::max(shadow.hit_points, 0) * 100 / shadow.stats.hit_points : 0;
+        const int lvl = d2d::rules::shadow_nova_level(cast_level(0x10c), life_percent);
+        const float speed = missile_speed(missile_info, lvl);
+        const auto ring = std::make_shared<std::vector<int>>();
+        for (const auto& [aim_x, aim_y] : d2d::rules::kNovaRing) {
+            const float distance = std::max(std::hypot(float(aim_x), float(aim_y)), 0.01f);
+            Missile x{ &missile_info, shadow.unit.x, shadow.unit.y, float(aim_x) / distance * speed, float(aim_y) / distance * speed,
+                       missile_facing(shadow.unit.x, shadow.unit.y, float(aim_x), float(aim_y)), now_ms, now_ms + std::uint32_t(std::max(missile_info.range, 1)) * 40, {} };
+            x.friendly = true; x.caster = actor->id; x.level = lvl; x.skill = nova->id; x.striker = shadow.id; x.struck = ring;
+            pending.push_back(std::move(x));
+        }
+        d2d::log::info("{} goes up in a nova (level {})", shadow.npc.name, lvl);
     }
 
 auto Fight::pets_turn(std::uint32_t now_ms, float elapsed, const Crowd& crowd) -> void {
@@ -206,37 +256,8 @@ auto Fight::pets_turn(std::uint32_t now_ms, float elapsed, const Crowd& crowd) -
             if (monster.mode == "KB") { if (d2d::game::knock_slide(monster, now_ms)) continue; set_mode(*game_data, monster, "GH", now_ms); }   // knocked back, then its get-hit
             const auto& ai_name = game_data->monsters.types[std::size_t(monster.type)].ai_name;
             const bool traced = d2d::rules::traced_pet_ai(ai_name);
-            if (pet.shot_skill >= 0 && !traced) { trap_turn(pet, now_ms); continue; }
             if (pet.aura >= 0) pet_aura(pet, now_ms);
             if (pet.idle) continue;                            // Decoy stands where it was cast
-            if (const auto* skill = game_data->skills.get(pet.skill); !traced && skill && skill->srvdofunc == ServerDoFunction::kVine && now_ms >= pet.aura_next) {
-                // The vines: Poison Creeper poisons what's within 1.5 cells
-                // with the skill's poison; Carrion Vine / Solar Creeper eat a
-                // corpse within 5 cells for Param6 seconds, giving Param5 %
-                // of max life / mana a second.
-                // ponytail: their AI (Vines, CycleOfLife) and Vine Attack /
-                // the cyclers (do 130, st 63) aren't traced: the published
-                // behaviour.
-                pet.aura_next = now_ms + 1000;
-                using namespace d2d::d2s;
-                if (skill->etype == 3) {
-                    const auto damage = d2d::rules::missile_damage(game_data->skills, *skill, calc_env(), pet.monster.stats.level);
-                    for (std::size_t j = 0; j < monsters.size(); ++j)
-                        if (monsters[j].targetable() && std::hypot(monsters[j].unit.x - unit.x, monsters[j].unit.y - unit.y) < 1.5f)
-                            land(j, d2d::rules::missile_blow(damage, target_of(j), pierce(), rng), false, now_ms, pet.monster.id);
-                } else if (pet.hits > 0 || [&] {
-                               const int corpse = corpse_near(unit.x, unit.y);
-                               if (corpse < 0 || std::hypot(monsters[std::size_t(corpse)].unit.x - unit.x, monsters[std::size_t(corpse)].unit.y - unit.y) > 5) return false;
-                               monsters[std::size_t(corpse)].corpse_used = true;
-                               pet.hits = std::max(skill->par[5], 1);
-                               return true;
-                           }()) {
-                    --pet.hits;
-                    const bool life = skill->name == "Cycle of Life";
-                    auto& value = actor->character.stats.values[life ? kLife : kMana];
-                    value = std::min(actor->character.stats.values[life ? kMaxLife : kMaxMana], value + actor->character.stats.values[life ? kMaxLife : kMaxMana] * skill->par[4] / 100);
-                }
-            }
             if (monster.mode != "NU" && monster.mode != "WL" && monster.mode != "RN" && monster.mode != "GH" && monster.mode != "DT") {
                 if (!monster.struck && (pet.target >= 0 || pet.cast >= 0) && now_ms >= unit.mode_ms + game_data->npc_timing(monster.npc, monster.mode).action_ms()) {
                     monster.struck = true;
@@ -256,7 +277,6 @@ auto Fight::pets_turn(std::uint32_t now_ms, float elapsed, const Crowd& crowd) -
                         // A Shadow swings the owner's blow (its copied gear); its skills are shadow_cast's.
                         auto blow = d2d::rules::player_blow(pet.mirror ? actor->player_combat : d2d::rules::simple_fighter(monster.classic_stats().a1_min, monster.classic_stats().a1_max, monster.classic_stats().to_hit),
                                                          target, monster.stats.level, rng);
-                        if (!traced && pet.hits > 0 && --pet.hits == 0) { monster.hit_points = 0; set_mode(*game_data, monster, "DT", now_ms); }   // a Raven's last
                         if (blow.hit && pet.fire_hi > 0) blow.damage += d2d::rules::resisted(rng.range(pet.fire_lo, pet.fire_hi), target.res[2]);   // Fire Golem
                         pet_strike(pet, monster_index, blow, now_ms);
                     }
@@ -268,6 +288,15 @@ auto Fight::pets_turn(std::uint32_t now_ms, float elapsed, const Crowd& crowd) -
             if (monster.mode == "GH" && now_ms < monster.mode_until) continue;
             if (ai_name == "NecroPet") { necropet_turn(pet, now_ms, elapsed, crowd); continue; }
             if (traced) { pet_think_turn(pet, now_ms, elapsed, crowd); continue; }
+            // Only a revived monster gets here (Revive, do 58). game.exe raises
+            // the corpse itself (FUN_005c56c0: FUN_00553540 is the unit cast
+            // at) on its own MonStats think: FUN_005c55c0 sets its owner
+            // (FUN_0058f030) and its next think, and swaps no AI (no
+            // FUN_005b0e00).
+            // ponytail: d2d has no monster think aimed at monsters, so a
+            // stand-in: the nearest foe chased at max(Run, Velocity), else a
+            // follow at the owner's RunVelocity x 1.1. Port when monster thinks
+            // can take monsters for their targets.
             if (pet.target >= 0 && !monsters[std::size_t(pet.target)].alive()) pet.target = -1;
             if (pet.target < 0) {
                 float best = 1e9f;
@@ -279,7 +308,6 @@ auto Fight::pets_turn(std::uint32_t now_ms, float elapsed, const Crowd& crowd) -
                 }
             }
             const auto& type_info = game_data->monsters.types[std::size_t(monster.type)];
-            // ponytail: this untraced pet's chase keeps max(Run, Velocity) and no floor; FUN_00623f50 uses Velocity and a 25 floor, not claimed here.
             const float speed = cells_per_sec(float(std::max(type_info.run, type_info.velocity))) * float(100 + pet.speed_pct) / 100;
             if (speed <= 0) {                                // a Hydra: it stands and shoots what comes in range
                 if (pet.target >= 0 && std::hypot(monsters[std::size_t(pet.target)].unit.x - unit.x, monsters[std::size_t(pet.target)].unit.y - unit.y) > 6.f) pet.target = -1;
@@ -306,10 +334,8 @@ auto Fight::pets_turn(std::uint32_t now_ms, float elapsed, const Crowd& crowd) -
                 }
                 if (unit.path.empty() || std::hypot(unit.goal_x - target.unit.x, unit.goal_y - target.unit.y) > 1.f)
                     set_off(*level, unit, target.unit.x, target.unit.y, true, crowd);
-                if (!walk_on(*level, unit, speed * elapsed, crowd)) pet.target = -1;
+                if (!walk_on(*level, unit, int(std::lround(speed * elapsed * 5 * 4096)), crowd)) pet.target = -1;
             } else {
-                // ponytail: game.exe's walk rule for an untraced pet (no target, following) isn't traced or claimed here;
-                // the owner's RunVelocity x 1.1 stays as it was, outside the MonStats Velocity claim.
                 pet_follow(*level, unit, actor->player.x, actor->player.y, cells_per_sec(float(game_data->run_velocity[save_class])) * 1.1f, now_ms, elapsed, crowd);
             }
             const std::string_view want = unit.walking ? "WL" : "NU";
@@ -319,7 +345,7 @@ auto Fight::pets_turn(std::uint32_t now_ms, float elapsed, const Crowd& crowd) -
 
 // A pet's walk between thinks (a walk at its target ends in reach); true
 // while it walks or isn't due a think.
-auto Fight::pet_walking(Pet& pet, std::uint32_t now_ms, float elapsed, const Crowd& crowd) -> bool {
+auto Fight::pet_walking(Pet& pet, std::uint32_t now_ms, float /* elapsed: a turn is a frame */, const Crowd& crowd) -> bool {
         auto& monster = pet.monster;
         auto& unit = monster.unit;
         const auto& type_info = game_data->monsters.types[std::size_t(monster.type)];
@@ -350,14 +376,37 @@ auto Fight::pet_walking(Pet& pet, std::uint32_t now_ms, float elapsed, const Cro
                         if (monster.mode == "RN") run_pct = d2d::rules::run_percent(game_data->walk_velocity[cls], game_data->run_velocity[cls]);
                     }
                 const int sum = 100 + run_pct + monster.move_pct + pet.speed_pct + pet_buff_stat(pet, d2d::d2s::kVelocityPercent);   // Burst of Speed's on a Shadow
-                if (walk_on(*level, unit, cells_per_sec(float(velocity)) * float(std::max(sum, 25)) / 100 * elapsed, crowd)) return true;
+                const UnitState* walk_at = pet.to_owner ? &actor->player : pet.chase ? &monsters[std::size_t(pet.target)].unit : nullptr;
+                if (walk_on(*level, unit, path_velocity(velocity, std::max(sum, 25)), crowd, walk_at)) return true;
             }
-            pet.chase = false;
+            pet.chase = pet.to_owner = false;
             set_mode(*game_data, monster, "NU", now_ms);
             monster.next_act = now_ms;                                    // a walk's end thinks at once (FUN_005a8030)
         }
         return monster.mode != "NU" || now_ms < monster.next_act;
     }
+
+// FUN_00574de0 walks the owner's pet list (player data +0x44), every
+// PetType row from 1, and FUN_005e3900 counts each unit but this pet with
+// FUN_005dc380 (merc_gap from this pet's size) under 2. The merc is in it:
+// FUN_00573270 binds a hireling with FUN_00575e90(merc, 7, ..), PetType 7
+// "hireable". Only the count above 0 is read (FUN_005e3930 / FUN_005e3ea0
+// mode 4); the unit FUN_005e3900 keeps (+4) isn't, so the order doesn't
+// matter.
+// ponytail: a dead pet or merc doesn't count; when game.exe drops one from
+// the list isn't traced.
+auto Fight::pet_crowd(const Pet& pet) const -> int {
+        auto sub = [](float cells) { return int(std::floor(cells * 5)); };
+        const auto& unit = pet.monster.unit;
+        const int pet_x = sub(unit.x), pet_y = sub(unit.y);
+        const int size = std::max(game_data->monsters.types[std::size_t(pet.monster.type)].size, 1);
+        const auto close_by = [&](const UnitState& other) { return d2d::rules::merc_gap(pet_x, pet_y, size, sub(other.x), sub(other.y)) < 2; };
+        int crowd = int(std::ranges::count_if(actor->pets, [&](const Pet& other) {
+            return &other != &pet && other.monster.alive() && other.where == level && close_by(other.monster.unit);
+        }));
+        if (actor->merc && actor->merc->alive() && close_by(actor->merc->unit)) ++crowd;
+        return crowd;
+}
 
 // A NecroPet's frame outside an attack (the golems, the Valkyrie, the
 // skeletons and mages): a walk goes on (a walk at its foe ends in reach),
@@ -367,10 +416,10 @@ auto Fight::pet_walking(Pet& pet, std::uint32_t now_ms, float elapsed, const Cro
 // in a preset room that isn't Outdoors, or once after a walk at a foe found
 // no path (flag 0x40); its melee is MeleeRng + 1, its line FUN_005dc640.
 // A teleport is room_teleport (mode 3).
+// The crowd is pet_crowd's.
 // ponytail: the owner's path spot (+0x10) is the player's next path point;
-// the crowd counts by merc_gap from this pet's size
-// (FUN_005e3900's order of units isn't read); a good monster's own room
-// order isn't kept (the search runs over the monsters in fight order).
+// a good monster's own room order isn't kept (the search runs over the
+// monsters in fight order).
 auto Fight::necropet_turn(Pet& pet, std::uint32_t now_ms, float elapsed, const Crowd& crowd) -> void {
         auto& monster = pet.monster;
         auto& unit = monster.unit;
@@ -406,18 +455,18 @@ auto Fight::necropet_turn(Pet& pet, std::uint32_t now_ms, float elapsed, const C
         }
         const auto pick = d2d::rules::search_near(nears, 2, need_sight);
         const int found = pick.target >= 0 ? pick.target : pick.second;
+        // State 0x3c is decrepify: a monster's Decrepify on the pet (pet.curse).
+        const auto* curse = game_data->skills.get(pet.curse.skill);
+        const bool slowed = curse && now_ms < pet.curse.until && curse->auratarget == "decrepify";
         d2d::rules::PetView view{ .x = pet_x, .y = pet_y, .size = size, .owner_x = sub(actor->player.x), .owner_y = sub(actor->player.y), .owner_mode = actor->owner_mode,
                                   .cur_x = sub(actor->player.path.empty() ? actor->player.x : actor->player.path.front().first),
                                   .cur_y = sub(actor->player.path.empty() ? actor->player.y : actor->player.path.front().second),
                                   .end_x = sub(actor->player.path.empty() ? actor->player.x : actor->player.path.back().first),
                                   .end_y = sub(actor->player.path.empty() ? actor->player.y : actor->player.path.back().second),
                                   .ring = actor->footsteps, .cursor = actor->footstep_cursor, .arrive_x = actor->warp_spot.first, .arrive_y = actor->warp_spot.second,
-                                  .town = town, .velocity = type_info.velocity, .run = type_info.run };
+                                  .town = town, .velocity = type_info.velocity, .run = type_info.run, .slowed = slowed };
         view.pets = int(std::ranges::count_if(actor->pets, [](const Pet& other) { return other.monster.alive(); }));
-        view.crowd = int(std::ranges::count_if(actor->pets, [&](const Pet& other) {
-            return &other != &pet && other.monster.alive() && other.where == level
-                && d2d::rules::merc_gap(pet_x, pet_y, size, sub(other.monster.unit.x), sub(other.monster.unit.y)) < 2;
-        }));
+        view.crowd = pet_crowd(pet);
         if (found >= 0) {
             const auto& foe = monsters[std::size_t(found)];
             const auto& foe_type = game_data->monsters.types[std::size_t(foe.type)];
@@ -447,6 +496,7 @@ auto Fight::necropet_turn(Pet& pet, std::uint32_t now_ms, float elapsed, const C
             monster.move_pct = act.move.pct;
             pet.chase = act.kind == Kind::chase;
             pet.target = pet.chase ? found : -1;
+            pet.to_owner = false;
         } else if (act.kind == Kind::swing && found >= 0) {
             pet.target = found;
             unit.dir = direction16(monsters[std::size_t(found)].unit.x - unit.x, monsters[std::size_t(found)].unit.y - unit.y);
@@ -501,10 +551,11 @@ auto Fight::pet_second_foe(float x, float y, int size, int& gap) const -> int {
 // owner (Fenris: 10 subtiles; the cycle vines: their skill's calc, 5..50)
 // or near the Death Sentry. The AI driver's target is that foe too; the
 // Vines' and the Sentries' `foe2` is FUN_005ddc30's (0x5ddc30), below.
-// ponytail: no unit is ever poisoned (state 2), slowed (0x3c) or in
-// Fenris's rage (0x8a); the owner's life / mana are whole points; Blade
-// Sentinel isn't summoned, so its think doesn't run. The Shadows: the Warrior's scene and the Master's
-// think below.
+// The foe2 poisoned (state 2: its poison running), the pet under
+// Decrepify (0x3c), the owner's life / mana in 256ths.
+// ponytail: no pet is ever in Fenris's rage (0x8a: its rage's effect isn't
+// traced, pet_cast); Blade Sentinel isn't summoned, so its think doesn't run.
+// The Shadows: the Warrior's scene and the Master's think below.
 auto Fight::pet_think_turn(Pet& pet, std::uint32_t now_ms, float elapsed, const Crowd& crowd) -> void {
         using d2d::rules::PetUnit;
         auto& monster = pet.monster;
@@ -585,6 +636,7 @@ auto Fight::pet_think_turn(Pet& pet, std::uint32_t now_ms, float elapsed, const 
             scene.foe2_melee = d2d::rules::unit_distance(foe_x - pet_x, foe_y - pet_y, size, game_data->monsters.types[std::size_t(foe.type)].size) <= type_info.melee_rng + 1;
             scene.clear[4] = d2d::rules::pet_line_clear(pet_x, pet_y, size, foe_x, foe_y, [&](int at_x, int at_y) { return level->blocked(centre(at_x), centre(at_y), 0x805); });
             scene.poison_resist = target_of(std::size_t(second)).res[5];
+            scene.poisoned = now_ms < foe.poison_until;                 // state 2 while its poison runs
         }
         for (std::size_t k = 3; k < 6; ++k) {
             if (index[k] < 0) continue;
@@ -598,8 +650,10 @@ auto Fight::pet_think_turn(Pet& pet, std::uint32_t now_ms, float elapsed, const 
         scene.skill_level = std::max(monster.stats.level, 1);
         {
             using namespace d2d::d2s;
-            scene.life = int(actor->character.stats.values[kLife] >> 8); scene.max_life = int(actor->character.stats.values[kMaxLife] >> 8);
-            scene.mana = int(actor->character.stats.values[kMana] >> 8); scene.max_mana = int(actor->character.stats.values[kMaxMana] >> 8);
+            // Stats 6 / 8 against FUN_00625d10 / FUN_00625d60 (stats 7 / 9), all
+            // in 256ths.
+            scene.life = int(actor->character.stats.values[kLife]); scene.max_life = int(actor->character.stats.values[kMaxLife]);
+            scene.mana = int(actor->character.stats.values[kMana]); scene.max_mana = int(actor->character.stats.values[kMaxMana]);
         }
         const auto& per_difficulty = type_info.diff[std::size_t(difficulty)];
         for (std::size_t k = 0; k < 5; ++k) scene.aip[k] = per_difficulty.aip[k];
@@ -608,6 +662,8 @@ auto Fight::pet_think_turn(Pet& pet, std::uint32_t now_ms, float elapsed, const 
         scene.skill1 = skill1 ? skill1->id : -1; scene.skill2 = skill2 ? skill2->id : -1;
         scene.mode1 = monster_mode(type_info.sk_mode[0], 4); scene.mode2 = monster_mode(type_info.sk_mode[1], 4);
         scene.skill_mode = scene.mode1;
+        // State 0x3c is decrepify: a monster's Decrepify on the pet (pet.curse).
+        if (const auto* curse = game_data->skills.get(pet.curse.skill); curse && now_ms < pet.curse.until) scene.slowed = curse->auratarget == "decrepify";
         scene.velocity = type_info.velocity; scene.run = type_info.run;
         // How it follows: PetFollow on its PetView (as NecroPet's).
         d2d::rules::PetView view{ .x = pet_x, .y = pet_y, .size = size, .owner_x = sub(actor->player.x), .owner_y = sub(actor->player.y), .owner_mode = actor->owner_mode,
@@ -616,12 +672,9 @@ auto Fight::pet_think_turn(Pet& pet, std::uint32_t now_ms, float elapsed, const 
                                   .end_x = sub(actor->player.path.empty() ? actor->player.x : actor->player.path.back().first),
                                   .end_y = sub(actor->player.path.empty() ? actor->player.y : actor->player.path.back().second),
                                   .ring = actor->footsteps, .cursor = actor->footstep_cursor, .arrive_x = actor->warp_spot.first, .arrive_y = actor->warp_spot.second,
-                                  .town = town, .velocity = type_info.velocity, .run = type_info.run };
+                                  .town = town, .velocity = type_info.velocity, .run = type_info.run, .slowed = scene.slowed };
         view.pets = int(std::ranges::count_if(actor->pets, [](const Pet& other) { return other.monster.alive(); }));
-        view.crowd = int(std::ranges::count_if(actor->pets, [&](const Pet& other) {
-            return &other != &pet && other.monster.alive() && other.where == level
-                && d2d::rules::merc_gap(pet_x, pet_y, size, sub(other.monster.unit.x), sub(other.monster.unit.y)) < 2;
-        }));
+        view.crowd = pet_crowd(pet);
         auto area_under = [&](int from_x, int from_y, int x, int y) { return int(area_id_at(*game_data, *level, centre(from_x), centre(from_y), centre(x), centre(y))); };   // FUN_0061b130
         std::vector<std::pair<float, float>> route;
         int chased = -1;
@@ -860,6 +913,7 @@ auto Fight::pet_think_turn(Pet& pet, std::uint32_t now_ms, float elapsed, const 
             monster.move_pct = act.move.pct;
             pet.chase = act.kind == Kind::chase && chased >= 0;
             pet.target = pet.chase ? chased : -1;
+            pet.to_owner = act.kind == Kind::chase && act.move.unit == int(PetUnit::owner);
             break;
         }
         case Kind::swing:

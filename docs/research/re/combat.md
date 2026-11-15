@@ -337,6 +337,16 @@ on each record the state cast last takes first: Energy Shield cast after Bone /
 Cyclone Armor takes its percent before the armor's pool sees the field; the
 armor cast after the shield goes first (as d2d always did).
 
+FUN_005c0b50 (`SUNITEVENT_RemoveEventsByQueueAndOwner`, game, unit,
+queueNo, ownerKey) is driven directly over random event lists: a node
+whose queue and owner both match is unlinked and freed through
+`FreeServerMemory` when it isn't mid-execution (flag bit 0), or left
+linked with "free pending" (bit 1) set when it is; a non-matching node
+is untouched. 3000 cases plus `--mutation-check` (3 ways: keeping an
+executing match linked and unmarked, ignoring the owner key, freeing a
+non-matching node) pass against game.exe 1.14d. Oracle
+`tools/emu/unit_event_remove.py`.
+
 The same `+0x90` list is a general queued-event list, not only absorb
 events (its nodes carry a queue number, an owner key and a skill, read by
 the two functions below), and two more server functions (SUnitEvent.cpp)
@@ -407,8 +417,14 @@ works record by record too: `FUN_0057c1e0` raises state event 0xb
 total +0x4c, and Bone Armor (`FUN_005c6370`) takes from that record's
 physical field, Cyclone Armor (`FUN_005c87a0`) from its fire, cold, then
 lightning, the pool carrying to the next record; the get-hit then reads what
-is left, an element emptied no longer marks. d2d: `rules::absorb_blows`
-(its oracle, `hit_absorb.py`, was never committed: cited, not re-checkable).
+is left, an element emptied no longer marks. `FUN_0057ce30` reads the
+fields in 256ths, so an element with under a point left still marks. d2d:
+`rules::absorb_blows`. Its oracle, `tools/emu/hit_absorb.py`, runs
+`FUN_0057c1e0` on each record of a frame with either armor's handler, then
+`FUN_0057ce30`, against `test_combat --get-hit-absorb` (each record's total
+and mark, the pool after the frame): no difference on 100,000 records each
+for seeds 1 and 7. It has no reduction and no resistance on the defender
+(`monster_damage.py` and `cyclone_armor.py` have those).
 
 ## Approximations still in the port (marked `ponytail:` in code)
 
@@ -475,9 +491,35 @@ is left, an element emptied no longer marks. d2d: `rules::absorb_blows`
   17 ticks). A player's `FUN_00463390` (row 4 of 0x711e00, [0, 1, 2]) steps
   the same way and, re-testing after the step, ends the mode a tick before
   the server's event. Ported for monsters and the merc: `rules::get_hit_frame`
-  (`Unit::get_hit_rate` in the renderer), checked by the oracle `hit_render.py` (never committed: todo.md #37)
-  (the PR's; game.exe's step and draw run natively) against `test_combat --get-hit-frames`. Not ported: the player's own frames
+  (`Unit::get_hit_rate` in the renderer), checked by the oracle `tools/emu/hit_render.py`
+  (game.exe's step and draw run natively on hit_len.py's cases and its rate and ticks) against
+  `test_combat --get-hit-frames`: no difference on the 55,089 monster cases of `hit_len.py gen 100000 7`. Not ported: the player's own frames
   (prate, a stretch over the hold); a joined game's merc has no FHR on the wire.
+
+## A player's attack swing: the start frame and the strike tick (FUN_00623b10, FUN_005539b0)
+
+V (`tools/emu/swing_start.py`, game.exe's functions run natively, 11,270 cells of `test_swing_start --swing-start`).
+
+- `FUN_005539b0` files a mode's events from `start = FUN_00623b10(unit) << 8`: it walks the animation at the unit's rate (+0x4c) and
+  files the action event (an AnimData flag byte, 1, 2 or 4) on the tick its frame is reached and the end event (type 1) when the
+  position reaches frames x 256. In closed form, from the tick the mode starts: strike `max(1, ceil(256 (flag - start) / rate))`, end
+  `max(1, ceil(256 (frames - start) / rate))` (`rules::frame_tick`, `attack_ticks`, `attack_action_tick`). The strike is that tick
+  itself; it is not the flag frame scaled by the rounded swing length.
+- `FUN_00623b10` is 0 for a monster and for a player mode other than A1 and A2 (S3 and S4 only for a Barbarian or Assassin (`FUN_006235a0`, a class test),
+  whose table entries are 0 anyway). For A1 and A2 it takes the weapon in hand (`FUN_00623990`: slot 4, else slot 5, a weapon that is not broken and whose requirements are met,
+  `FUN_0063c9b0` -> `FUN_0062a4e0`), its class key (`FUN_00629fe0`: weapons.txt `wclass`
+  through the 8-entry map at 0x7446a0: bow 1, 1hs 2, 1ht 3, stf 4, 2hs 5, 2ht 6, xbw 7, ht1 12; nothing in hand 0; a key the map lacks also 0) and reads the
+  dword at `0x6e8e60 + 4 (row x 7 + player class)`. Only an Amazon and a Sorceress are not 0: 1 barehanded, 2 with a 1hs, 1ht, stf, 2hs
+  or 2ht weapon, 0 with a bow, crossbow or claws (`rules::attack_start_frame`, `kAttackStart`; `swing_start.py table` prints it).
+- d2d played the whole animation (no start frame) and scaled the action frame by the rounded swing length: an Amazon or Sorceress
+  swing was 1 to 3 ticks too long (815 of 840 cells with a start frame), its strike 1 to 4 ticks late; the other classes' swing length
+  was right but its strike one tick late in 1,068 of 8,120 cells (1,176 of the 10,430 cells without a start frame).
+- d2d applies the start frame to a plain swing and to a skill whose `anim` is A1 (Power Strike, Charged Strike, Lightning Strike, Fend,
+  the bow skills; `Fight::set_pmode`), as game.exe does. A skill whose `anim` is TH (a throw: d2d plays the A1 record) gets the strike rule
+  only, start 0, as the game's TH mode has; its record is still d2d's A1. Jab and Impale (`anim` SQ, `start_sequence`) keep their length.
+- The end event's floor in game.exe is 2 ticks (`frame + max(n, 1) + 1`), not 1: the two differ only when one tick covers the whole rest of the
+  animation (rate >= 256 (frames - start)), which no player record reaches; d2d's closed form gives the same for the real records.
+- U: which frames the client draws for a swing that starts in; d2d keeps drawing the whole animation over the shorter swing.
 
 ## Cold, freeze and poison lengths (SUnitDmg.cpp)
 
@@ -669,4 +711,93 @@ d2s `parse_corpse` / `write_save(..., corpse)`.
 ponytail: the gold pile isn't split; requirements aren't checked when
 items go back; a saved corpse lies by the camp's start (the save's x / y
 aren't read); goldlost isn't kept.
+
+## A unit's paired records — unit +0xac (SUnitDmg.cpp)
+
+A unit's +0xac is the head of its own singly-linked list of allocated
+records, each one naming a **pair** of units: +4 / +8 a u32 type and id
+(the list owner's own, i.e. the unit this list hangs off), +0xc / +0x10 a
+second unit's type and id, +0x14.. a payload not traced here, +0x84 the
+next node. `FUN_0040b430` / `FUN_0040b480` (file, line, size or pointer,
+a register the decompile drops) are the allocator's alloc / free, as in
+`path.md`'s `STRUCT_FreePath` and `items.md`'s inventory free; `0057c980`
+and `0057c9f0` free through them, so this is a pool-backed list, not a
+flag.
+
+- **`FUN_0057d690`** (`__fastcall`, ECX unit A, EDX unit B; no stack args):
+  read-only. Null A or B: 0. Else walks A's own +0xac list; a node
+  matches when its +4/+8 equal A's own type/id (`FUN_0044be50` /
+  `FUN_00451f50`, both already d2d-verified null-safe accessors) **and**
+  its +0xc/+0x10 equal B's. Returns the matching node +0x14 (the
+  payload), or 0 when A, B or no match. Callers: `FUN_0056f1f0`
+  (skills.md's srvdofunc [2], already ported, `components/game/fight.hpp`)
+  uses it to test "does A already have a record for (A, B)" before
+  granting the skill's target state at Skills.txt +0x82; `FUN_0056f115`
+  (not otherwise traced here) the same, before a freeze-length clamp. So
+  the pair is (self, the other unit a skill's state concerns), and the
+  payload holds at least a tick count the skills.md citation already
+  describes as "the calc at +0x60 ticks".
+- **`FUN_0057c9f0`** (`__fastcall`, ECX a pool-context pointer whose +0x1c
+  is passed to the free call, EDX unit A, one stack arg unit B): frees
+  (SUnitDmg.cpp:0x79f) every node in A's own +0xac list whose +4/+8 /
+  +0xc/+0x10 match (A, B) exactly (raw unit +0 / +0xc, not through the
+  accessors above), unlinking it from the list first. Null A, null B, or
+  an empty list: no-op. Callers run from `005caf30`..`005d8e00`
+  (monster/skill handling the batch didn't open) and `0057d4f0`: the
+  mirror of `FUN_0057d690`'s lookup, dropping the (A, B) record once it's
+  no longer wanted.
+- **`FUN_0057c980`** (`__fastcall`, ECX the same pool-context, EDX unit A;
+  no stack args, no null check on A — a null A faults reading `A[0x2b]`):
+  frees (SUnitDmg.cpp:0x769) every node in A's own +0xac list whose +4/+8
+  equal **A's own** type/id, regardless of what +0xc/+0x10 say — i.e.
+  every record this list's owner still tags as being about itself. Two
+  callers, both teardown: `FUN_005349d0` (a unit's death/removal chain,
+  passing the room/game's own pool at the caller's own +0x1c) and
+  `FUN_00553570` (freeze/resume, oracle `tools/emu/freeze_resume.py:188`,
+  which calls it right before `FUN_00624690` clears the freeze state).
+  Not traced: why a live node's self pair would ever stop matching its
+  own owner — this reads as a guard against stale self-tagged records
+  surviving a unit's teardown (and the pool slot's later reuse for a
+  different unit), not an everyday no-op.
+- **`FUN_0057e240`** (`__fastcall`, ECX / EDX plus two stack args, `RET
+  0x8`): forwards the same four arguments, unchanged and in the same
+  order, first to the already-ported `FUN_0056e170` (physical/leech
+  portion of a skill's damage) then to the already-ported `FUN_0056e0c0`
+  (elemental portion). No branch of its own; one caller, `FUN_005d3140`
+  (Static Field, skills.md:1129, already ported), which builds a damage
+  record from the result with `d2d_objects_take_blast`. d2d: no function
+  of its own found for this pairing; not flagged as a difference since
+  the two pieces it combines are already ported separately and the
+  combiner adds no logic.
+
+`FUN_0056e170(skill, level)` (ECX the caster, EDX the damage record) does
+nothing for an id outside `0 <= id < count` or a null row. Otherwise it
+takes FUN_00647bc0 (the minimum, by its use below) and FUN_00647d00 (the
+maximum), both called as (unit, skill, level, 0); then
+FUN_0045c3e0 on the caster's seed (`+0x20`) with bound `max - min` (so
+the roll is `0..max-min-1`: the maximum itself never comes up; a bound under 1
+gives 0 and leaves the seed alone); and adds `min + roll` to the record's `+8`.
+The decompile hides the bound argument (it is EDX at the call; seen in the
+disassembly, `0056e1c1`). Run with FUN_00647bc0 / FUN_00647d00 hooked (logged,
+scripted results) and the real seed draw, 36 cases:
+`tools/emu/skills_combat_helpers.py`. Their formulas and d2d are not compared.
+
+d2d: no function of its own for the +0xac list; nothing in `ai.cpp` or
+`fight.hpp` was found keeping a per-(caster, target) record list, so this
+is cited, not matched. Not a behavioural difference by itself — the
+callers above are already ported and credited to the functions that use
+this list's result.
+Re-check: `python3 tools/ghidra/fn.py 0057d690 0057c9f0 0057c980 0057e240
+0044be50 00451f50 0056f1f0 005d3140`.
+
+## A unit's +0xdc field — FUN_00553980 (SUnit.cpp)
+
+`__fastcall`, ECX the unit: null-safe getter, `unit[0xdc / 4]` (byte
++0xdc) or 0 for a null unit. No caller outside `.\UNIT\SUnit.cpp`'s own
+sequence/overlay helpers (`00540df0`, `00540e60`, `00540ea0`, `00540ee0`,
+`00540f30`, `005415a0`); the field itself isn't named here, not traced
+further. d2d: no function of its own; not flagged as a difference, since
+nothing was found reading or writing this field outside that same
+cluster.
+Re-check: `python3 tools/ghidra/fn.py 00553980`.
 

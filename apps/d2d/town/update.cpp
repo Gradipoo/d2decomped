@@ -22,7 +22,9 @@
 #include "skillpad.hpp"
 #include "skilltree.hpp"
 #include "speech_sound.hpp"
+#include "storage_close.hpp"
 #include "store.hpp"
+#include "touch_input.hpp"
 #include "ui.hpp"
 
 #include <cues.hpp>
@@ -33,6 +35,7 @@
 #include <level_ids.hpp>
 #include <light.hpp>
 #include <log.hpp>
+#include <palette.hpp>
 #include <panel_view.hpp>
 #include <quests.hpp>
 #include <rules.hpp>
@@ -239,6 +242,7 @@ auto Town::update(std::vector<std::uint8_t>& framebuffer, const Mouse& frame_mou
                             message = line.substr(space + 1);
                         }
                     if (net_game) net_game->say(message, target);
+                    else if (lan_host || lan_client) { send(cmd::Say{ std::string(message) }); d2d::log::info("lan: said {}", message); }   // the LAN game's host hands it to everyone
                     else add_chat(character.name + string_id(*scene, 0xfd0) + std::string(message), 0, character.name.size());
                 }
                 chat_typing.reset();
@@ -270,17 +274,17 @@ auto Town::update(std::vector<std::uint8_t>& framebuffer, const Mouse& frame_mou
             const bool covered_before = view_covered();
             bool cursor_follows = std::ranges::any_of(std::array{ keys::kInventory, keys::kSkillTree, keys::kCharacter, keys::kQuestLog, keys::kParty, keys::kHireling },
                                                       [&](int action) { return fires(action); });
-            if (fires(keys::kInventory)) { inv_open = !inv_open; if (inv_open) tree_open = false; }
-            if (fires(keys::kSkillTree)) { tree_open = !tree_open; if (tree_open) inv_open = false; }   // both right-hand panels
+            if (fires(keys::kInventory)) toggle_inventory();
+            if (fires(keys::kSkillTree)) toggle_skill_tree();   // both right-hand panels
             if (fires(keys::kToggleRun)) send(cmd::Run{ !view.running });
             if (fires(keys::kSwapWeapons) && character.expansion) send(cmd::SwapWeapons{});
             for (int slot = 0; slot < 16; ++slot)
                 if (fires(slot < 8 ? keys::kSkill1 + slot : keys::kSkill9 + slot - 8)) skill_hotkey(slot, mouse.x, mouse.y);
             if (fires(keys::kShowBelt)) belt_open = !belt_open;
             if (fires(keys::kAutomap)) automap.open = !automap.open;
-            if (fires(keys::kCharacter)) { char_open = !char_open; if (char_open) stash_open = cube_open = quest_log.open = hireling.open = false; }
+            if (fires(keys::kCharacter)) toggle_character();
             if (fires(keys::kQuestLog)) toggle_quest_log();
-            if (key == SDLK_ESCAPE && view.dead && (!view.ghost || view.all_dead)) { send(cmd::Resurrect{}); continue; }
+            if (key == SDLK_ESCAPE && view.dead && (!view.ghost || view.all_dead) && !game_menu.open) { send(cmd::Resurrect{}); continue; }
             for (int belt = 0; belt < 4; ++belt)
                 if (fires(keys::kBelt1 + belt)) net.send(cmd::UseBelt{ belt, (SDL_GetModState() & SDL_KMOD_SHIFT) != 0 });
             for (int phrase = 0; phrase < 8; ++phrase)
@@ -318,6 +322,7 @@ auto Town::update(std::vector<std::uint8_t>& framebuffer, const Mouse& frame_mou
             // not the automap or the mini-panel), else the menu opens.
             if (key == SDLK_ESCAPE) {
                 if (chat_typing) chat_typing.reset();                         // a chat line being typed first
+                else if (touch_bind != TouchBindPhase::Off) { touch_close_bind(); touch_input.clear(); }
                 else if (touch_assign != skillpad::kUnset) { touch_assign = skillpad::kUnset; tree_open = touch_assignment_from_tree; touch_assignment_from_tree = false; touch_input.clear(); }
                 else if (identify_with >= 0) identify_with = -1;
                 else if (gold_box) gold_box.reset();                          // then the gold box
@@ -363,7 +368,14 @@ auto Town::update(std::vector<std::uint8_t>& framebuffer, const Mouse& frame_mou
         for (std::size_t index = 0; index < world.players.size(); ++index) {
             auto& leaving = *world.players[index];
             if (!std::exchange(leaving.out, false)) continue;
-            if (const auto seat = std::ranges::find(coop, leaving.id, &CoopPlayer::id); seat != coop.end()) {
+            if (const auto lan_player = std::ranges::find(lan_players, leaving.id, &LanPlayer::id); lan_player != lan_players.end()) {
+                lan_send_save(*lan_player);              // a joiner: its dead save home, then out with game.exe's deeds line
+                lan_host->kick(lan_player->client, string_id(*scene, 0x13e8));
+                lan_remove(*lan_player, "dead in hardcore");
+                lan_players.erase(lan_player);
+            } else if (index == 0 && !lan_players.empty()) {
+                if (!game_menu.open) open_game_menu();   // a dead host keeps the game up; its Save and Exit ends it
+            } else if (const auto seat = std::ranges::find(coop, leaving.id, &CoopPlayer::id); seat != coop.end()) {
                 partner_left = seat->seat;
                 coop_leave(partner_left);
             } else if (index == 0 && (handed_over = lead_leaves()) < 0) {
@@ -383,6 +395,11 @@ auto Town::update(std::vector<std::uint8_t>& framebuffer, const Mouse& frame_mou
                                                       { "music_volume", std::to_string(audio.music_volume) } }))
                 d2d::log::warn("d2d.cfg: the volume not saved");
             game_menu.volume_changed = false;
+            if (game_menu.video_changed && !cfg_file.empty()
+                && !d2d::userdir::save_cfg(cfg_file, { { "gamma", std::to_string(d2d::palette::Palette::gamma()) },
+                                                      { "contrast", std::to_string(d2d::palette::Palette::contrast()) } }))
+                d2d::log::warn("d2d.cfg: gamma and contrast not saved");
+            game_menu.video_changed = false;
             if (action != GameMenu::kNone) close_game_menu();
             if (action == GameMenu::kControls) {          // CfgOptions (0x47f400): UI 0xb
                 controls.family = pad_family;
@@ -394,7 +411,14 @@ auto Town::update(std::vector<std::uint8_t>& framebuffer, const Mouse& frame_mou
             // player alone ends the game, in local co-op the next player leads and it goes on.
             if (action == GameMenu::kExit) {
                 if (const int seat = focus_seat(); seat > 0) { coop_leave(seat); partner_left = seat; }
-                else if ((handed_over = lead_leaves()) < 0) { save(); screen = Screen::CharSelect; }
+                else if ((handed_over = lead_leaves()) < 0) {
+                    save();
+#if defined(TARGET_OS_IPHONE) && TARGET_OS_IPHONE
+                    quit_app = true;
+#else
+                    screen = Screen::CharSelect;
+#endif
+                }
             }
             hud_click = true;
         } else {
@@ -402,9 +426,9 @@ auto Town::update(std::vector<std::uint8_t>& framebuffer, const Mouse& frame_mou
             const bool left_open = left_panel_open();
             int action = -1;
             hud_click = !coop_hud_hidden() && mini.input(*scene, audio, mouse, left_open, mini_right(), action);
-            if (action == MiniPanel::kCharacter) { char_open = !char_open; if (char_open) stash_open = cube_open = quest_log.open = false; }
-            if (action == MiniPanel::kInventory) { inv_open = !inv_open; if (inv_open) tree_open = false; }
-            if (action == MiniPanel::kSkills) { tree_open = !tree_open; if (tree_open) inv_open = false; }
+            if (action == MiniPanel::kCharacter) toggle_character();
+            if (action == MiniPanel::kInventory) toggle_inventory();
+            if (action == MiniPanel::kSkills) toggle_skill_tree();
             if (action == MiniPanel::kAutomap) automap.open = !automap.open;
             if (action == MiniPanel::kMessages) mini_panel::messages(belt_open, message_log);
             if (action == MiniPanel::kQuests) toggle_quest_log();
@@ -452,21 +476,59 @@ auto Town::update(std::vector<std::uint8_t>& framebuffer, const Mouse& frame_mou
             }
         }
         if (inv_open) tree_open = false;       // the stash / a store opened the inventory
-        const auto& lay = scene->inv_layout[std::size_t(std::max(character.character_class, 0))];
+        const Scene::InvLayout lay = touch_enabled ? touch_inv_layout() : scene->inv_layout[std::size_t(std::max(character.character_class, 0))];
         // The inventory's and the character panel's close buttons (buysellbtn
         // 10, 11 held): pressed, then let go over it, shuts the panel
         // (FUN_0048edf0 at W - 80 - 0x12e, H - 0x7c; FUN_004a7d00 at 80 + 0x80, H - 0x78).
+        // The press stays the UI's: dragged off the panel, it walks nowhere.
         auto close_button = [&](bool& down, bool& open, int left, int bottom) {
             const bool over = mouse.x >= left && mouse.x < left + 0x20 && mouse.y > bottom - 0x20 && mouse.y <= bottom;
-            if (mouse.press_this_frame && over) { down = true; mouse.press_this_frame = false; }
+            if (mouse.press_this_frame && over) { down = true; press_on_ui = true; mouse.press_this_frame = false; }
             if (mouse.release_this_frame && down) { down = false; if (over) open = false; mouse.release_this_frame = false; }
         };
-        if (inv_open && !held) close_button(inv_close_down, inv_open, lay.panel_x + 0x12, lay.panel_y + 416);
+        if (inv_open && !held) {
+            bool still_open = true;
+            close_button(inv_close_down, still_open, lay.panel_x + 0x12, lay.panel_y + 416);
+            // With the stash, the Cube or a store up, it shuts that one (storage_close.hpp).
+            if (!still_open) {
+                inv_open = false;
+                switch (d2d::client::inventory_close_shuts(stash_open, cube_open, store.npc >= 0)) {
+                    case d2d::client::InventoryCloseShuts::kStash: stash_open = false; break;
+                    case d2d::client::InventoryCloseShuts::kCube: cube_open = false; break;
+                    case d2d::client::InventoryCloseShuts::kStore: send(cmd::CloseTrade{}); break;
+                    case d2d::client::InventoryCloseShuts::kInventory: break;
+                }
+            }
+        }
+        // The stash's own close button (storage_close.hpp): held by a press
+        // over it, a release over it shuts the stash, an item in hand or not.
+        if (!stash_open || cube_open) stash_close_down = false;
+        else {
+            const bool over = d2d::client::over_stash_close(character.expansion, mouse.x, mouse.y);
+            if (mouse.press_this_frame && over) { stash_close_down = true; press_on_ui = true; mouse.press_this_frame = false; }
+            if (mouse.release_this_frame && stash_close_down) {
+                stash_close_down = false;
+                if (over) stash_open = inv_open = false;
+                mouse.release_this_frame = false;
+            }
+        }
+        // The Cube's, the same way (a joined game's host hears 0x4f 0x17: net.cpp).
+        if (!cube_open) cube_close_down = false;
+        else {
+            const bool over = d2d::client::over_cube_close(mouse.x, mouse.y);
+            if (mouse.press_this_frame && over) { cube_close_down = true; press_on_ui = true; mouse.press_this_frame = false; }
+            if (mouse.release_this_frame && cube_close_down) {
+                cube_close_down = false;
+                if (over) cube_open = inv_open = false;
+                mouse.release_this_frame = false;
+            }
+        }
         if (!tree_open || held) tree_close_down = false;
         if (tree_open && !held) {
-            const auto close = skill_tree_close(character.character_class, tree_tab);
+            const int tree_panel_right = kTreeR;
+            const auto close = skill_tree_close(character.character_class, tree_tab, tree_panel_right);
             const bool over = close.contains(mouse.x, mouse.y);
-            if (mouse.press_this_frame && over) { tree_close_down = true; mouse.press_this_frame = false; }
+            if (mouse.press_this_frame && over) { tree_close_down = true; press_on_ui = true; mouse.press_this_frame = false; }
             if (mouse.release_this_frame && tree_close_down) {
                 tree_close_down = false;
                 if (over) tree_open = false;
@@ -474,8 +536,9 @@ auto Town::update(std::vector<std::uint8_t>& framebuffer, const Mouse& frame_mou
             }
         }
         if (char_open && !held) close_button(char_close_down, char_open, kCharPanelX + 0x80, kCharPanelY + 420);
+        const int tree_hit_right = kTreeR;
         const bool over_panel =
-            (tree_open && mouse.x >= 400 && mouse.x < 720 && mouse.y >= 60 && mouse.y < 540) ||
+            (tree_open && mouse.x >= tree_hit_right - 320 && mouse.x < tree_hit_right && mouse.y >= 60 && mouse.y < 540) ||
             (inv_open && mouse.x >= lay.panel_x && mouse.x < lay.panel_x + 320
                       && mouse.y >= lay.panel_y && mouse.y < lay.panel_y + 432) ||
             ((char_open || stash_open || cube_open || store.npc >= 0 || waypoint.open || quest_log.open) && mouse.x >= kCharPanelX && mouse.x < kCharPanelX + 320
@@ -501,8 +564,12 @@ auto Town::update(std::vector<std::uint8_t>& framebuffer, const Mouse& frame_mou
         // sells the item.
         bool item_click = false;
         drive_pad_hold(mouse, frame_ms >= last_ms ? float(frame_ms - last_ms) / 1000.f : 0.f);
+        if (touch_enabled) drive_touch_hold(frame_ms >= last_ms ? float(frame_ms - last_ms) / 1000.f : 0.f);
         // With an identify scroll picked, a click names the item for it and ends the pick.
         if (identify_with >= 0 && (mouse.press_this_frame || (pad_playing && mouse.rpress_this_frame))) {
+            if (touch_enabled && last_device == touch::LastDevice::Touch) {
+                item_click = true;
+            } else {
             if (pad_playing) mouse.rpress_this_frame = false;
             const auto click = item_cursor_command(*scene, character.items, held, std::max(character.character_class, 0),
                                                 { inv_open, stash_open, cube_open, belt_up.shown, character.expansion }, mouse.x, mouse.y);
@@ -516,6 +583,7 @@ auto Town::update(std::vector<std::uint8_t>& framebuffer, const Mouse& frame_mou
             }
             if (!direct_ui) identify_with = -1;
             item_click = true;
+            }
         }
         // A keeps the ordinary inventory pickup/move action, including usable tomes.
         // Use starts Identify; the active Identify branch above accepts A to confirm.
@@ -608,9 +676,10 @@ auto Town::update(std::vector<std::uint8_t>& framebuffer, const Mouse& frame_mou
         // released spends a point (FUN_004ab7e0 / FUN_004abc30).
         if (tree_open) {
             const int cls = std::max(character.character_class, 0);
-            const int skill = skill_at(*scene, cls, tree_tab, mouse.x, mouse.y);
+            const int tree_panel_right = kTreeR;
+            const int skill = skill_at(*scene, cls, tree_tab, mouse.x, mouse.y, tree_panel_right);
             if (mouse.press_this_frame) {
-                if (const int tab = skill_tab_at(mouse.x, mouse.y); tab > 0) tree_tab = tab;
+                if (const int tab = skill_tab_at(mouse.x, mouse.y, tree_panel_right); tab > 0) tree_tab = tab;
                 skill_pressed = character.stats.get(d2d::d2s::kSkillPts) > 0
                     && d2d::rules::can_learn(scene->rules, cls, skill, character.stats.skills, int(character.stats.get(d2d::d2s::kLevel))) ? skill : -1;
             }
@@ -694,9 +763,12 @@ auto Town::update(std::vector<std::uint8_t>& framebuffer, const Mouse& frame_mou
         const bool day = view.day.phase >= 1 && view.day.phase <= 3;
         const int amb = day ? level->ambience : level->night_ambience;
         audio.quest_music_tick(*scene, frame_ms);
+        if (audio.music.sound == 0 && audio.ambience.sound != amb) {
+            audio.play(audio.ambience, *scene, amb);   // under a quest's hold too
+            audio.ambience.sound = amb;           // tried: not again every frame
+        }
         if (audio.music.sound == 0 && frame_ms >= audio.music_held_until) {
             audio.play_music(*scene, level->song);
-            if (audio.ambience.sound != amb) audio.play(audio.ambience, *scene, amb);
             if (audio.music.sound == 0) audio.music.sound = -1;   // don't retry every frame
         }
         // Another level's song: game.exe (FUN_004dcaa0) switches 75 sound
@@ -794,6 +866,34 @@ auto Town::update(std::vector<std::uint8_t>& framebuffer, const Mouse& frame_mou
                 d2d::rules::list_step(moved, d2d::rules::list_rows_whole(list.box, lines, moved.first), int(lines.size()), list.part == d2d::rules::ListPart::kDown);
                 npc_menu.set_list_scroll(moved);
             }
+        // The release (FUN_004bf530): on the arrow pressed, a step; on the
+        // track, a page (rules::list_page); over the row pressed, that offer
+        // is hired (the window's callback, 0x4b3660).
+        const auto list_release = [&] {
+            auto& list = *npc_menu.list;
+            const auto lines = npc_menu.list_lines();
+            const auto part = std::exchange(list.part, d2d::rules::ListPart::kNone);
+            auto moved = npc_menu.list_scroll();
+            const int whole = d2d::rules::list_rows_whole(list.box, lines, moved.first);
+            if (part != d2d::rules::ListPart::kNone) {
+                list.pressed = -1;
+                if (d2d::rules::list_part_at(list.box, mouse.x, mouse.y) == part) {
+                    if (part == d2d::rules::ListPart::kTrack)
+                        (void)d2d::rules::list_page(moved, whole, int(lines.size()), d2d::rules::list_thumb(list.box, lines, moved.first), d2d::rules::list_scroll_y(list.box), mouse.y);
+                    else
+                        d2d::rules::list_step(moved, whole, int(lines.size()), part == d2d::rules::ListPart::kDown);
+                    npc_menu.set_list_scroll(moved);
+                }
+            } else {
+                const int row = d2d::rules::list_row_at(list.box, lines, npc_menu.scroll, mouse.x, mouse.y);
+                const int pressed = std::exchange(list.pressed, -1);
+                list.hover = row;
+                if (row >= 0 && row == pressed && list.rows[std::size_t(row)].arg >= 0) {   // -1 both: a press and release in one frame over no row
+                    net.send(cmd::Hire{ list.rows[std::size_t(row)].arg });
+                    npc_menu = {};
+                }
+            }
+        };
         if (speech.npc >= 0 && (speech.done(frame_ms) || mouse.press_this_frame)) {
             menu_click = mouse.press_this_frame;          // a click skips the speech
             speech = {};
@@ -814,37 +914,13 @@ auto Town::update(std::vector<std::uint8_t>& framebuffer, const Mouse& frame_mou
             list.held = 0;
             list.held_ms = frame_ms;
             if (list.part == d2d::rules::ListPart::kNone) list.pressed = list.hover = d2d::rules::list_row_at(list.box, npc_menu.list_lines(), npc_menu.scroll, mouse.x, mouse.y);
+            if (mouse.release_this_frame) list_release();   // let go in the same frame: game.exe takes its messages in order
         } else if (npc_menu.list && mouse.release_this_frame && (npc_menu.list->pressed >= 0 || npc_menu.list->part != d2d::rules::ListPart::kNone)) {
-            // The release (FUN_004bf530): on the arrow pressed, a step; on the
-            // track, a page (rules::list_page); over the row pressed, that offer
-            // is hired (the window's callback, 0x4b3660).
-            auto& list = *npc_menu.list;
-            const auto lines = npc_menu.list_lines();
-            const auto part = std::exchange(list.part, d2d::rules::ListPart::kNone);
-            auto moved = npc_menu.list_scroll();
-            const int whole = d2d::rules::list_rows_whole(list.box, lines, moved.first);
-            if (part != d2d::rules::ListPart::kNone) {
-                list.pressed = -1;
-                if (d2d::rules::list_part_at(list.box, mouse.x, mouse.y) == part) {
-                    if (part == d2d::rules::ListPart::kTrack)
-                        (void)d2d::rules::list_page(moved, whole, int(lines.size()), d2d::rules::list_thumb(list.box, lines, moved.first), d2d::rules::list_scroll_y(list.box), mouse.y);
-                    else
-                        d2d::rules::list_step(moved, whole, int(lines.size()), part == d2d::rules::ListPart::kDown);
-                    npc_menu.set_list_scroll(moved);
-                }
-            } else {
-                const int row = d2d::rules::list_row_at(list.box, lines, npc_menu.scroll, mouse.x, mouse.y);
-                const int pressed = std::exchange(list.pressed, -1);
-                list.hover = row;
-                if (row == pressed && list.rows[std::size_t(row)].arg >= 0) {
-                    net.send(cmd::Hire{ list.rows[std::size_t(row)].arg });
-                    npc_menu = {};
-                }
-            }
+            list_release();
         } else if (npc_menu.npc >= 0 && mouse.press_this_frame) {
             menu_click = true;                            // the click is the menu's, not a walk
             menu_press = true;                            // ... and its release (a store button under it)
-            const int line_index = npc_menu.line_at(mouse.x, mouse.y);
+            const int line_index = npc_menu.line_at(mouse.x, mouse.y, touch_enabled ? touch::kNpcLinePad : 0);
             const auto action = line_index >= 0 ? npc_menu.lines[std::size_t(line_index)].action : NpcMenuState::kClose;
             const int npc_menu_arg = line_index >= 0 ? npc_menu.lines[std::size_t(line_index)].arg : -1;
             const int who = npc_menu.npc;
@@ -862,8 +938,10 @@ auto Town::update(std::vector<std::uint8_t>& framebuffer, const Mouse& frame_mou
                 net.send(cmd::OpenTrade{ who, action == NpcMenuState::kGamble });
             } else if (action == NpcMenuState::kTalk) {
                 npc_menu = open_talk_menu(*scene, *level, who, screen_x, screen_y, npc_quest);
+                if (touch_enabled) layout_npc_menu_touch(*scene, npc_menu);
             } else if (action == NpcMenuState::kRespec) {
                 npc_menu = open_respec_menu(*scene, who, screen_x, screen_y);
+                if (touch_enabled) layout_npc_menu_touch(*scene, npc_menu);
             } else if (action == NpcMenuState::kRespecOk) {
                 net.send(cmd::Respec{ who });
             } else if (action == NpcMenuState::kCaravan) {
@@ -902,7 +980,8 @@ auto Town::update(std::vector<std::uint8_t>& framebuffer, const Mouse& frame_mou
         if (store.npc >= 0 && npc_menu.npc < 0 && !menu_press) {
             static constexpr int kBtnX[4] = { 116, 169, 221, 273 };
             for (int i = 0; i < 4; ++i) {
-                const int button_x = kCharPanelX - 1 + kBtnX[i], button_y = 476 - 32 + 1;
+                const int store_x = touch_store_panel_x();
+                const int button_x = store_x - 1 + kBtnX[i], button_y = 476 - 32 + 1;
                 const bool hovered = mouse.x >= button_x && mouse.x < button_x + 32 && mouse.y >= button_y && mouse.y < button_y + 32;
                 if (hovered && mouse.down) store.pressed[std::size_t(i)] = true;
                 if (hovered && mouse.release_this_frame && i < 2) store.mode = store.mode == i + 1 ? 0 : i + 1;
@@ -918,13 +997,13 @@ auto Town::update(std::vector<std::uint8_t>& framebuffer, const Mouse& frame_mou
                 }
             }
             if (mouse.press_this_frame && mouse.y >= 60 && mouse.y <= 90
-                && mouse.x >= kCharPanelX && mouse.x < kCharPanelX + 320)
-                store.tab = (mouse.x - kCharPanelX) / 80;
+                && mouse.x >= touch_store_panel_x() && mouse.x < touch_store_panel_x() + 320)
+                store.tab = (mouse.x - touch_store_panel_x()) / 80;
             // Right-click on stock buys; with Buy or Sell toggled on,
             // a left click buys the stock item / sells your item. Shift +
             // right click on a multibuy item fills (FUN_004b2650: mouse
             // flag 4, Items +0x1a5).
-            const int store_index = store_item_at(*scene, store, mouse.x, mouse.y);
+            const int store_index = store_item_at(*scene, store, mouse.x, mouse.y, touch_store_panel_x());
             if (store_index >= 0 && (mouse.rpress_this_frame || (mouse.press_this_frame && store.mode == 1)))
             {
                 const auto& stock = store.tabs[std::size_t(store.tab)][std::size_t(store_index)];
@@ -949,7 +1028,8 @@ auto Town::update(std::vector<std::uint8_t>& framebuffer, const Mouse& frame_mou
         // Waypoint panel: tabs switch acts, cancel (or the row of the
         // level you're in) closes it.
         if (waypoint.open) {
-            const bool on_cancel = mouse.x >= kCharPanelX + 0x111 && mouse.x < kCharPanelX + 0x111 + 0x24
+            const bool store_x = touch_store_panel_x();
+            const bool on_cancel = mouse.x >= store_x + 0x111 && mouse.x < store_x + 0x111 + 0x24
                                 && mouse.y >= 60 + 0x183 && mouse.y < 60 + 0x183 + 0x22;
             waypoint.cancel_down = on_cancel && mouse.down;
             if (mouse.press_this_frame) {
@@ -1004,6 +1084,11 @@ auto Town::update(std::vector<std::uint8_t>& framebuffer, const Mouse& frame_mou
         // starts under a menu that just closed.
         if (mouse.press_this_frame) press_on_ui = over_ui;
         else if (!mouse.down) press_on_ui = false;
+        if (touch_enabled && last_device == touch::LastDevice::Touch
+            && (touch_item_drag || (pad_field() && !touch_pointer.active))) {
+            mouse.down = false;
+            mouse.press_this_frame = false;
+        }
         if (have_world) walk(mouse, over_ui || press_on_ui, audio, frame_ms, last_ms);
         // Walked away from the NPC whose windows are open: they shut, as Esc.
         // game.exe's panels leave no world to walk in; widescreen does
@@ -1034,7 +1119,7 @@ auto Town::update(std::vector<std::uint8_t>& framebuffer, const Mouse& frame_mou
             return std::nullopt;
         });
         audio.pause_world(false);                  // a cinematic's hold ends
-        audio.menu_paused = !net_game && (game_menu.open || controls.open);   // the world's sounds fade out (Audio::step_ducks)
+        audio.menu_paused = !net_game && !lan_host && (game_menu.open || controls.open);   // the world's sounds fade out (Audio::step_ducks); a hosted game plays on
         draw(framebuffer, mouse, frame_ms);
         // Screen Shot (FUN_004fa7a0): at most one a second, Screenshot%03d,
         // the first number free. d2d writes PNG in its screenshots folder

@@ -32,6 +32,7 @@ struct MercView {
     int cursor = 0;
     bool on_bit40 = false, town = false;
     int target = -1;
+    bool slowed = false;   // state 0x3c (Decrepify): FUN_005dede0 downgrades a run to a walk
 };
 
 // A move it sets off (FUN_005a7c20 through FUN_005dee50 and its kin): to a
@@ -76,6 +77,7 @@ struct MercAct {
 // as seen from the room holding another (FUN_0061b130, game::area_id_at);
 // `try_move(move)` sets off, true when it finds a path.
 template <class AreaAt, class TryMove>
+// Runs the think above; `view.slowed` (FUN_005dede0) downgrades its requested run to a walk.
 MercAct hireable_think(const MercView& view, Rng& seed, AreaAt&& area_at, TryMove&& try_move) {
     using Kind = MercAct::Kind;
     MercAct act{ .kind = Kind::failed };
@@ -101,7 +103,7 @@ MercAct hireable_think(const MercView& view, Rng& seed, AreaAt&& area_at, TryMov
         if (seed.next() & 1) off_y = -off_y;
         return std::pair{ centre_x + off_x, centre_y + off_y };
     };
-    auto wander = [&](int centre_x, int centre_y, int reach) { const auto [x, y] = about(centre_x, centre_y, reach); return set_out(x, y); };
+    auto wander = [&](int centre_x, int centre_y, int reach) { const auto [target_x, target_y] = about(centre_x, centre_y, reach); return set_out(target_x, target_y); };
     // FUN_005e3930 mode 0: 8 off the owner's path end, from where it heads
     // (rules::direction64 into 8, DAT_00745600) round the compass, on the
     // owner's level; else wander 4.
@@ -130,16 +132,16 @@ MercAct hireable_think(const MercView& view, Rng& seed, AreaAt&& area_at, TryMov
         bool searched = false;
         for (int looked = 0, cursor = view.cursor; looked < 20; ++looked) {
             cursor = cursor == 0 ? 0x13 : cursor - 1;
-            const auto [x, y] = view.ring[std::size_t(cursor)];
-            if (npc_distance(view.x, view.y, x, y) <= 5) continue;
+            const auto [step_x, step_y] = view.ring[std::size_t(cursor)];
+            if (npc_distance(view.x, view.y, step_x, step_y) <= 5) continue;
             pace(0, pct, 100);
-            if (set_out(x, y)) return;
+            if (set_out(step_x, step_y)) return;
             pace(0xf, pct, 100);
-            if (set_out(x, y, mode)) return;
+            if (set_out(step_x, step_y, mode)) return;
             if (searched) continue;
             searched = true;
             pace(1, pct, 100);
-            if (set_out(x, y, mode)) return;
+            if (set_out(step_x, step_y, mode)) return;
         }
         pace(0, 0xf, 0);
         wander(view.x, view.y, std::max(merc_gap(view.x, view.y, view.size, view.owner_x, view.owner_y) >> 2, 4));
@@ -147,7 +149,7 @@ MercAct hireable_think(const MercView& view, Rng& seed, AreaAt&& area_at, TryMov
     if (view.mode == kMonsterWalk || view.mode == kMonsterRun) return { .kind = Kind::none };
     const int gap = merc_gap(view.x, view.y, view.size, view.owner_x, view.owner_y);
     if (gap > 100) return { .kind = Kind::teleport };
-    if (gap > 24) { footsteps(kMonsterRun, 0x3c); return act; }
+    if (gap > 24) { footsteps(view.slowed ? kMonsterWalk : kMonsterRun, 0x3c); return act; }   // FUN_005dede0: a walk in state 0x3c (decrepify)
     if (gap > 16 && (view.owner_mode == kPlayerWalk || view.owner_mode == kPlayerTownWalk)) { near_owner(0); return act; }
     if (gap > 16 && view.owner_mode == kPlayerRun) { near_owner(0x3c); return act; }
     if (view.mode != kMonsterNeutral) return { .kind = Kind::stand, .frames = 5 };

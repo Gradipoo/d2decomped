@@ -19,6 +19,7 @@
 #include <exception>
 #include <fstream>
 #include <initializer_list>
+#include <span>
 #include <sstream>
 #include <string>
 #include <string_view>
@@ -27,6 +28,7 @@
 
 using namespace d2d::rules;
 
+// Runs every case below in order, or one oracle-dump mode per its first argument (--walk-rates, --get-hit, ...).
 int main(int argc, char** argv) try {
     // `--walk-rates`: the walk / run animation rate at every walk % 0..400,
     // as tools/emu/walk_rates.py prints game.exe's (`mode percent rate`).
@@ -48,7 +50,7 @@ int main(int argc, char** argv) try {
         return 0;
     }
     // `--get-hit-frames`: the frame drawn at each tick of a monster's (or the merc's) get-hit hold for
-    // the kind-1 cases on stdin (an uncommitted oracle's, hit_render.py, which ran game.exe's client step
+    // the kind-1 cases on stdin (hit_len.py's; tools/emu/hit_render.py runs game.exe's client step
     // FUN_004b1280 and the draw's FUN_00621810 on them): `id rate ticks f0 f1 ...` a case.
     if (argc > 1 && std::string_view(argv[1]) == "--get-hit-frames") {
         long case_id, kind, speed, frames, fhr;
@@ -138,6 +140,41 @@ int main(int argc, char** argv) try {
         }
         return 0;
     }
+    // `--get-hit-absorb`: an armor's pool over a frame's damage records (rules::absorb_blows) for the cases on stdin
+    // (`id armor pool physical fire ltng cold poison next`, as tools/emu/hit_absorb.py writes and runs game.exe's
+    // FUN_0057c1e0 and FUN_0057ce30 on): armor 0 Bone Armor, 1 Cyclone Armor; pool and physical in 256ths, the
+    // elements whole points; `next` 1: the following record lands on the same unit in the same frame. A line a
+    // record, `id total mark pool`: the record's total in 256ths, its element mark, and the pool left after the
+    // frame (-1 on the records before the frame's last). The blow is built as Foe::take builds one from a hit with
+    // no reduction and no resistance.
+    if (argc > 1 && std::string_view(argv[1]) == "--get-hit-absorb") {
+        long case_id, armor, pool, physical, fire, ltng, cold, poison, next;
+        char line[512];
+        std::vector<StruckBlow> blows;
+        std::vector<long> ids;
+        int left = 0;
+        bool elemental = false;
+        while (std::fgets(line, sizeof line, stdin)) {
+            if (line[0] == '#' || std::sscanf(line, "%ld %ld %ld %ld %ld %ld %ld %ld %ld", &case_id, &armor, &pool, &physical, &fire, &ltng, &cold, &poison, &next) != 9) continue;
+            if (blows.empty()) { left = int(pool); elemental = armor != 0; }
+            const int whole = int(fire + ltng + cold), total = int(physical) + whole * 256;
+            StruckBlow blow{ total >> 8, 0, whole > 0 || poison > 0, int(physical >> 8), whole, poison > 0, total & 255, int(physical), 0, 0 };
+            const std::array<long, 3> rolls{ fire, ltng, cold };
+            for (std::size_t type = 0; type < rolls.size(); ++type)
+                blow.parts[type] = { int(rolls[type]), int(rolls[type]), 0, rolls[type] > 0 ? int(rolls[type]) * 256 : StruckBlow::kNoFine };
+            blow.sum = total;
+            blows.push_back(blow);
+            ids.push_back(case_id);
+            if (next != 0) continue;
+            if (left > 0) (void)absorb_blows(blows, left, elemental);
+            for (std::size_t index = 0; index < blows.size(); ++index)
+                std::printf("%ld %lld %d %d\n", ids[index], static_cast<long long>(std::max<std::int64_t>(blow_total(blows[index]), 0)), blows[index].marked ? 1 : 0,
+                            index + 1 == blows.size() ? left : -1);
+            blows.clear();
+            ids.clear();
+        }
+        return 0;
+    }
     // A walk's animation rate (FUN_00623f50): RN 0x65, WL / TW 0xd5, x the walk % (at least 25).
     assert(moving_anim_rate(false, 100) == 213 && moving_anim_rate(true, 150) == 151);
     assert(moving_anim_rate(false, 0) == 53 && moving_anim_rate(true, 400) == 404);
@@ -175,6 +212,16 @@ int main(int argc, char** argv) try {
         blows = { { 10, 2, true, 4, 6, true } };
         pool = 6 * 256;
         assert(absorb_blows(blows, pool, true) == 6 * 256 && blows[0].damage == 4 && blows[0].marked);
+        // Cyclone Armor a 256th short of a 3-point fire blow: the field is still above 0, so FUN_0057ce30 marks it
+        // (tools/emu/hit_absorb.py); a pool that takes it all clears the mark.
+        for (const int short_by : { 1, 0 }) {
+            StruckBlow fire{ .damage = 3, .marked = true, .elemental = 3 };
+            fire.parts[0] = { .raw = 3, .dealt = 3, .res = 0, .fine = 3 * 256 };
+            fire.sum = 3 * 256;
+            pool = 3 * 256 - short_by;
+            assert(absorb_blows(std::span(&fire, 1), pool, true) == 3 * 256 - short_by && pool == 0 && fire.damage == 0 && fire.frac == short_by);
+            assert(fire.marked == (short_by != 0));
+        }
         // Two class-2 blows of 6 on 64 life: each under max / 8, no get-hit (their sum of 12 would roll).
         blows = { { 6, 2, false, 6, 0 }, { 6, 2, false, 6, 0 } };
         for (int sample = 0; sample < 64; ++sample) assert(!struck_big(blows, 64 << 8, seed));
@@ -186,6 +233,12 @@ int main(int argc, char** argv) try {
     for (const auto& [exp, clvl, mlvl, award] : std::to_array<std::array<int, 4>>({ { 1950, 48, 54, 1733 }, { 537, 61, 34, 27 }, { 3007937, 70, 78, 2699410 },
                                                                                    { 1471826, 75, 30, 74737 }, { 2188, 9, 62, 42 }, { 1741519, 3, 49, 34010 }, { 1056068, 20, 28, 379500 } }))
         assert(kill_exp(exp, clvl, mlvl) == award);
+    // FUN_0057e390's ratio/shift step, game.exe's own ratio and shift (tools/emu/xp_ratio.py 40 3):
+    // ratio shift award result, both branches (overflow and not), ratio 1024 (no-op), 0 and a negative award.
+    for (const auto& [ratio, shift, award, result] : std::to_array<std::array<long long, 4>>({ { 1024, 10, 4459, 4459 }, { 35, 10, 1796287291, 61396510 },
+                                                                                                { 1024, 10, 1543662609, 1543662592 }, { 592, 10, 0, 0 }, { 1024, 10, -2876, -2876 },
+                                                                                                { 448, 10, 1089296009, 476566720 }, { 352, 10, 4582, 1575 }, { 544, 10, 1092, 580 } }))
+        assert(exp_ratio_apply(award, int(ratio), int(shift)) == result);
     // FUN_0057e480: ExpRatio past 69 (976 at 70, >> 10), item_addexperience %, 1 for none, 0 at the cap.
     const std::vector<int> ratios(100, 1024);
     auto ratio70 = ratios; ratio70[70] = 976;
@@ -250,6 +303,7 @@ int main(int argc, char** argv) try {
         assert(snd::first_floor_material(sand_then_wood, 1, 2, 3) == 4);
         assert(snd::first_floor_material(blank_then_sand, 1, 2, 3) == 3);
         assert(snd::first_floor_material(other_cell, 1, 2, 3) == 3);
+        assert(snd::first_floor_material(other_cell, 1, 2, 0) == 1 && snd::first_floor_material(other_cell, 1, 2, 7) == 1);   // Material 1 outside 1..6
         tables.item_base["hax"].hit_class = 0;
     }
     sum[17] = sum[18] = 100;                                          // enhanced damage off the weapon: no effect (op 13)

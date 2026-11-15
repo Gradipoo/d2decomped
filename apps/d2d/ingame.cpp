@@ -9,6 +9,7 @@
 #include "scene.hpp"
 #include "store.hpp"
 #include "tile_blit.hpp"
+#include "touch_input.hpp"
 #include "ui.hpp"
 #include "watchdog.hpp"
 #include "world_view.hpp"
@@ -271,11 +272,15 @@ void render_ingame(std::vector<std::uint8_t>& framebuffer,
         if (show_items) {
             const auto& pal = scene.act_pal.entries().empty() ? scene.pal : scene.act_pal;
             std::array<std::uint8_t, 3> hover_blue{};
-            for (int best = 1 << 30, index = 0; index < 256 && std::size_t(index) < pal.entries().size(); ++index) {
-                const auto colour = pal[std::uint8_t(index)];
+            const auto source = pal.entries();
+            std::uint8_t found = 0;
+            for (int best = 1 << 30, index = 0; index < 256 && std::size_t(index) < source.size(); ++index) {
+                const auto& colour = source[std::size_t(index)];
                 const int distance = colour.r * colour.r + (colour.g - 64) * (colour.g - 64) + (colour.b - 128) * (colour.b - 128);
-                if (distance < best) { best = distance; hover_blue = { colour.r, colour.g, colour.b }; }
+                if (distance < best) { best = distance; found = std::uint8_t(index); }
             }
+            const auto chosen = pal[found];
+            hover_blue = { chosen.r, chosen.g, chosen.b };
             std::erase_if(items, [](const auto& entry) { return entry.first->label_rank < 0 || !entry.first->name || entry.first->name->empty(); });
             std::ranges::sort(items, {}, [](const auto& entry) { return entry.first->label_rank; });
             const int line_height = scene.font.line_height();
@@ -321,13 +326,23 @@ void render_ingame(std::vector<std::uint8_t>& framebuffer,
                             framebuffer.begin() + std::ptrdiff_t(y * kScreenWidth * 4));
         // Who reads the hover text: red requirements, class lines, attack speed.
         std::optional<d2d::rules::Wearer> wearer_value;
-        if (inventory && hud_stats && class_idx >= 0 && class_idx < 7) wearer_value = d2d::game::wearer(scene, kUiToSaveClass[class_idx], *inventory, *hud_stats);
+        if (inventory && hud_stats && class_idx >= 0 && class_idx < 7) {
+            wearer_value = d2d::game::wearer(scene, kUiToSaveClass[class_idx], *inventory, *hud_stats);
+            wearer_value->holy_shield = hud.holy_shield;
+        }
         const d2d::rules::Wearer* hover_wearer = wearer_value ? &*wearer_value : nullptr;
         // The automap, under the border and every panel, and not at all with
         // both sides covered (FUN_00456ee0: FUN_0045ad60 first, while
         // FUN_0045ae90 isn't 3). Round the camera less the panel's quarter, which
         // the map makes its own (rules::automap_scroll).
         if (automap && !automap->covered) {
+            if (hud.touch_compact && automap->open) {
+                for (std::size_t index = 0; index < framebuffer.size(); index += 4) {
+                    framebuffer[index] = std::uint8_t(framebuffer[index] * 3 / 4);
+                    framebuffer[index + 1] = std::uint8_t(framebuffer[index + 1] * 3 / 4);
+                    framebuffer[index + 2] = std::uint8_t(framebuffer[index + 2] * 3 / 4);
+                }
+            }
             const float unshift = float(d2d::rules::panel_view_shift(automap->panel_side, world_w)) / kIsoW;
             draw_automap(framebuffer, scene, *automap, cam_x - unshift + float(level.world_x), cam_y + unshift + float(level.world_y));
         }
@@ -351,7 +366,19 @@ void render_ingame(std::vector<std::uint8_t>& framebuffer,
         auto draw_inventory_panel = [&] {
             if (inventory && class_idx >= 0 && class_idx < 7)
             {
-                draw_inventory(framebuffer, scene, scene.inv_layout[std::size_t(kUiToSaveClass[class_idx])], *inventory,
+                Scene::InvLayout layout = scene.inv_layout[std::size_t(kUiToSaveClass[class_idx])];
+                if (hud.touch_inv_anchor) {
+                    const int dx = touch::kTouchInvPanelX - layout.panel_x, dy = touch::kTouchInvPanelY - layout.panel_y;
+                    layout.panel_x += dx;
+                    layout.panel_y += dy;
+                    layout.grid_x += dx;
+                    layout.grid_y += dy;
+                    for (auto& slot : layout.slots) {
+                        slot[0] += dx;
+                        slot[1] += dy;
+                    }
+                }
+                draw_inventory(framebuffer, scene, layout, *inventory,
                                mouse_x, mouse_y, hover_wearer, &sell_price, hud.weapon_set_two, hud.header);
                 if (hud_stats) draw_gold(framebuffer, scene, *hud_stats, false);
             }
@@ -359,7 +386,8 @@ void render_ingame(std::vector<std::uint8_t>& framebuffer,
         auto draw_store_panel = [&] {
             if (store && store->npc >= 0)
             {
-                draw_store(framebuffer, scene, *store, mouse_x, mouse_y, hover_wearer, inventory);
+                const int store_x = hud.touch_store_right ? touch::kTouchStorePanelX : kCharPanelX;
+                draw_store(framebuffer, scene, *store, mouse_x, mouse_y, hover_wearer, inventory, store_x);
                 if (hud_stats) draw_gold(framebuffer, scene, *hud_stats, true);
             }
         };
@@ -381,7 +409,7 @@ void render_ingame(std::vector<std::uint8_t>& framebuffer,
             }
         }
         if (npc_menu) draw_npc_menu(framebuffer, scene, *npc_menu, mouse_x, mouse_y, elapsed_ms);
-        if (speech) draw_speech(framebuffer, scene, *speech, elapsed_ms);
+        if (speech) draw_speech(framebuffer, scene, *speech, elapsed_ms, hud.touch_compact);
         if (hud_stats && !hud.hidden) draw_hud(framebuffer, scene, *hud_stats, hud, mouse_x, mouse_y);
         if (belt && !hud.hidden) draw_belt(framebuffer, scene, *belt, mouse_x, mouse_y, hover_wearer,
                             belt_popup, hud.belt_keys, hud.pad_bar, &sell_price);

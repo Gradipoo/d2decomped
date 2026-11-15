@@ -286,12 +286,12 @@ Act 3's MonAIs (levels 75..102, same table). Search type in brackets where it is
 | FetishShaman | 65 | FUN_005f9a80 | Inferno (Skill1) when the target's AI distance is under Skill1's *level* (FUN_006442a0) and state 0xc is off, its group told to attack (FUN_0058f730 command 1); a dead fetish (class 0x8d / 0x18c) within aip5 (squared): aip1 % its group sent there (command 14) and Resurrect's sequence (Skill3) when the squared distance is at most aip3 (unsquared in game.exe), else about it 10; else aip4 % circles 4. Other think FUN_005f9950: state 0xc off, toggled back |
 | ZakarumZealot | 48 | FUN_005f6e60 | spares (runs off 8, else wanders 6) a player, or a pet whose owner is one (FUN_0058f090), in act 3 (FUN_006427f0) with quest 0x15 bit 0 (FUN_0065c310); hit under aip3 % life runs off 8 once (state2 5); on 0x40 circles 4 / walks in; out of melee aip4 % runs in (mode RN, FUN_005ded20), else walks; in melee aip2 % A2 else A1, after a swing aip1 % on, else 80 % stands 10, 20 % circles 4. Pace Run / Velocity |
 | ZakarumPriest | 49 | FUN_005f72d0 | hit or in melee under 33 % life, Skill3 (teleport) every aip5 × 4 frames to a point past the target (×2, ×4 in melee); in melee aip1 % A1; Skill1 (heal) 25 % at the last zakarum (0xeb / 0xee, friendly, not converted) under 61 % within aip6 in FUN_005dd0b0 mode 1 order (FUN_005f7240, bugs.md #22); no line to the target (FUN_005dd290, mask 4): aip1 % then aip2 % Skill4 (cooldown aip5); a line: aip4 %, Skill4, then Skill2 aip3 % (cooldown 20); else 30 % circles 4, stands 20 |
-| Mephisto | 50 | FUN_005f78b0 | hurt = (100 - life %) / 5; a case kept in state3 (jump table 0x5f7ef0): 1 runs off 8 (in melee Skill3), 2 casts by his chooser (FUN_005f77c0; bugs.md #21) over the skills set in a row, past Normal Skill6 at a unit with no line or past 30, Skill5 within 15, else by thirds Skill4 / Skill2 / Skill1, every other one circling 3; 3 A1 / Skill3 / circles 3; 4 about the target 6 |
+| Mephisto | 50 | FUN_005f78b0 | hurt = (100 - life %) / 5; a case kept in state3 (jump table 0x5f7ef0): 1 runs off 8 (in melee Skill3), 2 casts by his chooser (FUN_005f77c0; bugs.md #21) over the skills set in a row, past Normal Skill6 at a unit with no line or past 30, Skill5 within 15, else by thirds Skill4 / Skill2 / Skill1, every other one circling 3; 3 A1 / Skill3 / circles 3; 4 about the target 6 (`FUN_005df530` at 0x5f7e85), and when that can't set off (0x5f7e8a) the think event is dropped (`FUN_00540e60(2, 0)`) and he keeps 6 off it, 12 at most (`FUN_005de6d0` at 0x5f7ea3), then (0x5f7dc3) wanders 12 (`FUN_005de200`) |
 | HighPriest | 85 | FUN_005e0490 | the Council: state 0 picks Skill2 at the weakest ally (itself too) under 75 % within 50 (FUN_005e0430: <= 0x4b and under its best, which starts at 0x4b), Skill1 at a corner 5 off the target (FUN_00472210, 0x6e337c), S1 within MissS1's Missiles.txt Range - 2 (FUN_0046ace0 +0x96), else circles 3 / approaches 6; state 1 shoots, stands, wanders 12 or walks in |
 | Hydra | 86 [2] | FUN_005e9e60 | past its end frame (AI control +0x14) gone (FUN_005ddfc0); within 25, 60 % Skill1; else stands 10 |
 | FetishBlowgun | 96 | FUN_005e1250 | its group's command (1 A1 at the unit, 14 a walk to it, FUN_00552f60); past aip1 about the target 6; else aip2 % breaks off (state 2: backs off 14, or 20 % circles 4); shoots its second target rand(3) + 3 thinks (none: circles 4), then circles 6 |
 
-Checked: `tools/emu/mon_ais.py` (ACT3_AIS), 5000 runs each, seed 7: `tests/mon_ais3_cases.inc`, `test_monsters`. Their inputs: FUN_005415a0 (next think event), the group leader's mode, FUN_00552f60, Skill1's level (FUN_006442a0), state 0xc, FUN_0064cb30, the zealots' spare (player / pet, act, quest bit), FUN_005dd290 / FUN_00622aa0 (line, mask 4), MissS1's range, Skill6..8, Mephisto's chooser's search; a circle (FUN_005df7d0) says whether it set off.
+Checked: `tools/emu/mon_ais.py` (ACT3_AIS), 5000 runs each, seed 7: `tests/mon_ais3_cases.inc`, `test_monsters`. Mephisto's lines are `mon_ais.py Mephisto 5000 7 --dump`'s (2026-11-13): there his about-walk and keep-walk answer as the scene's moves do, each an ask the test's next act follows (`ThinkIn::otherwise`). Their inputs: FUN_005415a0 (next think event), the group leader's mode, FUN_00552f60, Skill1's level (FUN_006442a0), state 0xc, FUN_0064cb30, the zealots' spare (player / pet, act, quest bit), FUN_005dd290 / FUN_00622aa0 (line, mask 4), MissS1's range, Skill6..8, Mephisto's chooser's search; a circle (FUN_005df7d0) says whether it set off.
 Submerge (srvstfunc 51, FUN_005cc1d0) clears unit flags 0xe; Emerge (52, FUN_005cc220) sets them: d2d `Monster::buried`.
 d2d (`ai.cpp`): a think always has a target; no pending think event is seen; command 14 isn't kept. The breath (95, FUN_005cc240 / FUN_005cc4e0): state 0xc and a flame every calc3 frames for calc2 (the fetish shaman's Inferno: 5 over 15). Each flame lasts calc1 frames, under 1 its Missiles.txt Param2 (row +0x3c) + lvl - 1, clamped 1..255 (FUN_005cc2e0, also DiabLight's via FUN_005cc690; it sets the animation rate to AnimLen (+0x178) << 8 / that, not ported): Fetish Inferno 7 + lvl - 1, Baal Inferno 12 + lvl - 1, where d2d used Range (30, 2048). Re-check: `tools/emu`, `missiles.Game()`, the record at `[[0x744304] + 0xb64] + 144 * 0x1a4`. MonFrenzy (109): a hit puts its state on (FUN_005d8c70: auralen frames, charges up to its level as the aurastats' level: velocity, attack and anim rate, `Monster::anim_pct`). The wisps' search: its room or its near list (FUN_0065a6b0, bugs.md #23). Plain casts run at any mode's action frame (FUN_0056f7f0): scattered bolts (17), missile at target (28), breath (95), Bestow / ZakarumHeal (96), MonTeleport (98, FUN_005ccc80: the free spot nearest the point), the poison nova (99, FUN_005ccd10), Hydra (144: three hydra1, Param1 frames); A wisp's SC fires MissC with its SC element. The wisps' blessing: `Fight::wisp_blessing` into the loot's magic find.
 - **Idle** (MonAI row 1, `{0, 0, FUN_005b0cd0, 0}`: search type 0, no init): the cow, chickens, rats, birds, the window / door / barricade units and the like. The think stands 200 frames (FUN_005de080(0xc8)) when the unit has a room (FUN_00620bb0); nothing else. The driver's first step still runs (stun 3, doors, FUN_005b0ff0's follow of the unit at AI control +0x0c). d2d: `monster_update`'s Idle branch.
@@ -303,7 +303,7 @@ d2d (`ai.cpp`): a think always has a target; no pending think event is seen; com
 - **The maggots and the mummies' heal.** MagottLay (87, FUN_005cb3c0): its MonStats spawn (FUN_0056e620 → FUN_0063ea70: maggotegg) two subtiles toward the target: FUN_00621dc0's 64-way direction folded into 8 (DAT_00745600), DAT_006e3138's ring-2 entry of the step tables DAT_006ea998 (x) / DAT_006ea978 (y), flag 0x4000000. MagottDown (86, FUN_005cb300): calc1 % of its life back (FUN_00483360 is a mul-div), flag 0x40. The egg's hatch (84, FUN_005cafa0; its sequence plays in DT): calc1 of its spawn (maggotbaby), the first on its spot, the rest on rings 1..4 (FUN_005b23c0, 2 × calc1 tries), then it dies. Bestow (96, FUN_005cc840): the one it's at gets lo + rand(hi − lo) % of its life (hi: calc2 within 0..100, lo: calc1 within 0..hi; the caster's seed), kept within 1..max. In d2d the larvae stand at the nearest free spots, a live DT sequence runs its events.
 - **Leap** (srvstfunc 40 FUN_005d9d50 at the sequence's first event, srvdofunc 77 FUN_005da370 after): a monster first hits its target (FUN_005d9c80: its attack damage, FUN_0057d4f0), then lands at twice the target's spot less its own (FUN_0045adf0 / FUN_0045ae20 of each), the free spot by mask 0x3c01 (FUN_0064e7b0); the rows after fly it (FUN_005d9f70) and land it (FUN_005da120); the knockback blast at the landing is a player's only. `ai.cpp`: `Monster::leaping`, the first event row a hit (then flag 0x40), a straight glide over the sequence to the nearest free spot; struck mid-leap it stays put.
 - **Plain casts.** A skill whose Sk mode is a plain SC (the Summoner's) runs FUN_0056f7f0 at the mode's action frame: its do-func, then its srvmissile (+0x46) if it has one. `ai.cpp`: a srvmissile at the target (Fire Ball, Glacial Spike) carrying the skill's element at its level (the missile row names the Skill: FUN_0064b860); a nova (22, FUN_005c9b50 → FUN_0056d400: 64 srvmissilea out to range + LevRange × level + calc1; Frost Nova); a fire wall (24, the Countess's, its maker's SubMissile1).
-- **In d2d.** `ai.cpp think`, the searches in `ai/act2.cpp`: over the monsters within 80 subtiles; Duriel's aura through Aura Enchanted's (`Monster::aura`); a walk at a kin; S3 / S4. A skill act plays its sequence (above); a charge or an SC skill without one stands. Left out: states 0x5a / 0x5b, overlays, regen (stat 0x4a), FUN_005fd470 (usable always, but Diablo's Prison: `fits_on`), Radament's wider reach, a wait counted from the mode's end; one free-spot search, its landing move onto itself a stand. The Vulture's take-off (FUN_005f2eb0: flags 0xe off, its 0x100 / 0x1000 lifted, pattern 5, path mask 0) and landing (FUN_005f2fc0: fails when down already (pattern 1) or no free spot (FUN_00554ea0), else flags 0xe, a 0x100 plus, pattern 1, mask 0x3c01): `Monster::aloft` (untargetable, out of the crowd, flies over anything). A vulture landed by a pillar with its target still and in another room keeps trying "keep 9 off" and stands: checked 2026-10-12, game.exe's toward (0xd) and wall (0xf) pathers on the same grid find no point either (the keep's spot lies past the pillar), so it's game.exe's behaviour too. "In a group" (FUN_0058f0d0) is an owner (AI control +0x28 / +0x2c, FUN_0058f030: a boss's minions, a flagged MonStats party), not a pack: d2d a minion.
+- **In d2d.** `ai.cpp think`, the searches in `ai/act2.cpp`: over the monsters within 80 subtiles; Duriel's aura through Aura Enchanted's (`Monster::aura`); a walk at a kin; S3 / S4. A skill act plays its sequence (above); a charge or an SC skill without one stands. Left out: states 0x5a / 0x5b, overlays, regen (stat 0x4a), FUN_005fd470 (usable always, but Diablo's Prison: `fits_on`), Radament's wider reach, a wait counted from the mode's end; one free-spot search, its landing move onto itself a stand. The Vulture's take-off (FUN_005f2eb0/`ClearCollisionAndResetPath`: flags 0xe off, its 0x100 / 0x1000 lifted via `RemoveCollision`/`FUN_0064cbe0` twice — one call per bit, "Additional think helpers and inits" below — pattern 5, path mask 0, then `RestartAiThink(pGame, pUnit, 0xc)`) and landing (FUN_005f2fc0: fails when down already (pattern 1) or no free spot (FUN_00554ea0), else flags 0xe, a 0x100 plus, pattern 1, mask 0x3c01): `Monster::aloft` (untargetable, out of the crowd, flies over anything). A vulture landed by a pillar with its target still and in another room keeps trying "keep 9 off" and stands: checked 2026-10-12, game.exe's toward (0xd) and wall (0xf) pathers on the same grid find no point either (the keep's spot lies past the pillar), so it's game.exe's behaviour too. "In a group" (FUN_0058f0d0) is an owner (AI control +0x28 / +0x2c, FUN_0058f030: a boss's minions, a flagged MonStats party), not a pack: d2d a minion.
 
 Act 4's MonAIs (levels 103..108, same table). Traced 2026-10-14; all eleven
 thinks proven 2026-10-16: `mon_ais.py` (5000 runs each, `--dump
@@ -371,6 +371,34 @@ words) fills {?, ?, DifficultyLevels MonsterSkillBonus (0 / 3 / 7), the
 difficulty, ?}; Diablo reads +8 (d2d once read it as the players about him,
 set to 1), Baal +0xc.
 
+`tools/emu/ai_boss_player_range.py` checks the same-act distance filter in
+FUN_005e8eb0 and FUN_005fc000 against the d2d chooser's `ai_distance` and
+threshold, on 162 cases around 0x3fc. The fixture uses static paths; null
+units and differing acts are not part of the d2d comparison. From the
+worktree root, with `GAME_EXE` set to stock 1.14d:
+
+```sh
+mkdir -p build/ai-boss-range
+uv run --no-sync --project tools/emu python tools/emu/ai_boss_player_range.py --cpp > build/ai-boss-range/cases.cpp
+c++ -std=c++23 -Icomponents -Icomponents/d2s -Icomponents/txt build/ai-boss-range/cases.cpp -o build/ai-boss-range/cases
+build/ai-boss-range/cases > build/ai-boss-range/cases.txt
+uv run --no-sync --project tools/emu python tools/emu/ai_boss_player_range.py --cases build/ai-boss-range/cases.txt --exe "$GAME_EXE"
+```
+
+`tools/emu/ai_diablo_melee_choice.py` compares the melee branch of
+FUN_005e8810 with d2d's Diablo think over 1,536 cases. Search, state, life,
+resistances and line-of-sight are hooked. It compares the action and seed;
+other chooser branches and action execution are outside the comparison.
+From the worktree root with `GAME_EXE` set to stock 1.14d:
+
+```sh
+mkdir -p build/ai-diablo-melee
+uv run --no-sync --project tools/emu python tools/emu/ai_diablo_melee_choice.py --cpp > build/ai-diablo-melee/cases.cpp
+c++ -std=c++23 -Icomponents -Icomponents/rules -Icomponents/d2s -Icomponents/txt build/ai-diablo-melee/cases.cpp -o build/ai-diablo-melee/cases
+build/ai-diablo-melee/cases > build/ai-diablo-melee/cases.txt
+uv run --no-sync --project tools/emu python tools/emu/ai_diablo_melee_choice.py --cases build/ai-diablo-melee/cases.txt --exe "$GAME_EXE"
+```
+
 His target (FUN_005e8f20, 2026-10-16; lists 2026-10-17): over the unit
 lists at game +0x10f8, the best scored (FUN_005e8530, above 0, the first
 on a tie). Lists 0..7: a player passing FUN_005e8eb0 (same act byte +0x18,
@@ -401,6 +429,38 @@ The levels are each hand's own (FUN_006442a0(unit, skill, 1)), as the
 chooser's casting test (Fire Wall over 3, 0x1b over 7) reads them.
 `rules::diablo_score`, proven on 400 cases (tools/emu/diablo_score.py,
 tests/diablo_score_cases.inc).
+
+`tools/emu/ai_wisp_candidate.py` compares FUN_005f3960 with d2d's candidate
+predicate for nine combinations of base ID and live/death mode. It uses a
+live d2d monster with positive life and synthetic MonStats records; null,
+non-monster and invalid-table cases are not covered. From the worktree root,
+with `GAME_EXE` set to stock 1.14d and `STORM_SRC` to an existing StormLib
+source `src` directory:
+
+```sh
+mkdir -p build/ai-wisp-candidate
+uv run --no-sync --project tools/emu python tools/emu/ai_wisp_candidate.py --cpp > build/ai-wisp-candidate/cases.cpp
+include_flags=()
+for component_dir in components/* components/game/*; do if [ -d "$component_dir" ]; then include_flags+=("-I$component_dir"); fi; done
+c++ -std=c++23 -DSTORMLIB_NO_AUTO_LINK -include cmake/no_near_far.hpp -Icomponents -I"$STORM_SRC" "${include_flags[@]}" build/ai-wisp-candidate/cases.cpp -o build/ai-wisp-candidate/cases
+build/ai-wisp-candidate/cases > build/ai-wisp-candidate/cases.txt
+uv run --no-sync --project tools/emu python tools/emu/ai_wisp_candidate.py --cases build/ai-wisp-candidate/cases.txt --exe "$GAME_EXE"
+```
+
+`tools/emu/ai_mephisto_target_choice.py` compares FUN_005f77c0 with the
+target chosen by d2d's Mephisto think over 4,608 cases. Nearby-unit search
+is hooked; the original selection draws run for real. This includes the
+zero-target result of the original's second search branch, but does not
+check search ordering or the later skill action. From the worktree root with
+`GAME_EXE` set to stock 1.14d:
+
+```sh
+mkdir -p build/ai-mephisto-target
+uv run --no-sync --project tools/emu python tools/emu/ai_mephisto_target_choice.py --cpp > build/ai-mephisto-target/cases.cpp
+c++ -std=c++23 -Icomponents -Icomponents/rules -Icomponents/d2s -Icomponents/txt build/ai-mephisto-target/cases.cpp -o build/ai-mephisto-target/cases
+build/ai-mephisto-target/cases > build/ai-mephisto-target/cases.txt
+uv run --no-sync --project tools/emu python tools/emu/ai_mephisto_target_choice.py --cases build/ai-mephisto-target/cases.txt --exe "$GAME_EXE"
+```
 
 ## The imps' ride and skills (traced 2026-10-24)
 
@@ -475,6 +535,83 @@ Teleport too (MonTeleport for him). imp6..8's Inferno is seq_impinferno
 only a riding imp casts Skill5, and imp6..8's levels have nothing to ride
 (stubs.md). `act5_search.py` checks the claim's mode-1 order and filters
 against game.exe; d2d uses `rules::room_order`.
+
+`tools/emu/ai_imp_ride_init.py` compares the skill-slot choice and updated
+seed of FUN_005e2cd0 with `imp_ride_pick` over 1,024 cases. Skill lookup is
+hooked and the other control word is not compared. From the worktree root,
+with the emulator set up and `GAME_EXE` pointing to stock 1.14d:
+
+```sh
+mkdir -p build/ai-imp-ride
+uv run --no-sync --project tools/emu python tools/emu/ai_imp_ride_init.py --cpp > build/ai-imp-ride/cases.cpp
+c++ -std=c++23 -Icomponents -Icomponents/d2s -Icomponents/txt build/ai-imp-ride/cases.cpp -o build/ai-imp-ride/cases
+build/ai-imp-ride/cases > build/ai-imp-ride/cases.txt
+uv run --no-sync --project tools/emu python tools/emu/ai_imp_ride_init.py --cases build/ai-imp-ride/cases.txt --exe "$GAME_EXE"
+```
+
+`tools/emu/ai_imp_teleport_point.py` compares FUN_005df850's destination and
+updated seed with `Thinker::imp_teleport` over 1,088 cases. It uses a static
+path, and hooks the game and skill-action boundaries; it does not test the
+skill action. From the worktree root, with the same `GAME_EXE`:
+
+```sh
+mkdir -p build/ai-imp-teleport
+uv run --no-sync --project tools/emu python tools/emu/ai_imp_teleport_point.py --cpp > build/ai-imp-teleport/cases.cpp
+c++ -std=c++23 -Icomponents -Icomponents/rules -Icomponents/d2s -Icomponents/txt build/ai-imp-teleport/cases.cpp -o build/ai-imp-teleport/cases
+build/ai-imp-teleport/cases > build/ai-imp-teleport/cases.txt
+uv run --no-sync --project tools/emu python tools/emu/ai_imp_teleport_point.py --cases build/ai-imp-teleport/cases.txt --exe "$GAME_EXE"
+```
+
+The Countess firewall-path helper FUN_005e5b70 is compared with d2d's
+`countess_think` by `tools/emu/ai_countess_firewall.py` on 64 path-index and
+frame combinations. The fixture supplies valid synthetic table entries and
+intercepts the skill action; invalid records and the resulting spell are not
+checked. From the worktree root, with `GAME_EXE` set to stock 1.14d:
+
+```sh
+mkdir -p build/ai-countess-firewall
+uv run --no-sync --project tools/emu python tools/emu/ai_countess_firewall.py --cpp > build/ai-countess-firewall/cases.cpp
+c++ -std=c++23 -Icomponents -Icomponents/d2s -Icomponents/txt build/ai-countess-firewall/cases.cpp -o build/ai-countess-firewall/cases
+build/ai-countess-firewall/cases > build/ai-countess-firewall/cases.txt
+uv run --no-sync --project tools/emu python tools/emu/ai_countess_firewall.py --cases build/ai-countess-firewall/cases.txt --exe "$GAME_EXE"
+```
+
+Her think itself (`FUN_005e5c50`) walks home at three places (`FUN_005dede0`
+at 0x5e5ded, the one after the target's room test, and 0x5e5f51). Each
+returns when the walk set off; when it didn't, the think event is dropped
+(`FUN_00540e60(2, 0)`) and the think goes on down its list: the next room
+test, the 40 from home test, then the firewall and the roll. d2d's
+`countess_think` does that through `ThinkIn::otherwise` (`CountessIn::stuck`).
+`tools/emu/ai_countess_home.py` runs the think on 320 scenes (rooms, at
+home, over 40 off, the walk setting off or not, a firewall or not, melee,
+four seeds; every callee but the roll hooked) and dumps
+`tests/countess_home_cases.inc`, which `test_monster_thinks` checks act and
+seed against:
+
+```sh
+cd tools/emu && uv run python ai_countess_home.py --dump ../../tests/countess_home_cases.inc
+```
+
+Blood Raven's think (`FUN_005e6320`) reads the same answer at five walks:
+home when she or the target is 50 off it (`FUN_005dede0` at 0x5e645b), home
+again while her flag is set and she's over 5 off (0x5e64ac), the walk to a
+spot about the target past 20 off (`FUN_005df680` at 0x5e650c), the circle
+(`FUN_005df7d0(4, 1)` at 0x5e6765) and the running back-off (`FUN_005df140`
+at 0x5e67d0). Each one
+that can't set off drops the think event (`FUN_00540e60(2, 0)`) and the
+think goes on from the next test, the distance halved (12 at least) once
+she has tried to close. Her 5 % walk 12 about the target (0x5e6692) returns
+either way. Her strike is at the second target (`FUN_005ddc30` at 0x5e66ac); with none she
+circles. `tools/emu/mon_ais_pace.py` now answers those walks as the scene's
+moves do and keeps the second target as unit 2; her 120 lines in
+`tests/mon_ais_pace_cases.inc` are
+
+```sh
+cd tools/emu && uv run python mon_ais_pace.py BloodRaven 120 20261102 --dump <dir>
+```
+
+put in place of the old ones (the other thinks' lines are as they were; a
+further 3,000 at seed 99 passed `test_monster_ai` and were not kept).
 
 ## Act 5's monster skills (traced 2026-10-24)
 
@@ -573,13 +710,94 @@ takeoff and landing flags (it flies by row 11, strikes on the next event).
 
 ## Baal — FUN_005fcfe0, his clone FUN_005fd210
 
+`tools/emu/ai_baal_clone_count.py` compares FUN_005fc830 with d2d's live-clone
+gate over 24 cases, including Baal himself and a clone in NU, DT and DD.
+The fixture synchronizes positive life with NU and zero life with DT / DD;
+null candidates and inconsistent life/mode combinations are not checked.
+From the worktree root, with `GAME_EXE` set to stock 1.14d and `STORM_SRC`
+to an existing StormLib source `src` directory:
+
+```sh
+mkdir -p build/ai-baal-clones
+uv run --no-sync --project tools/emu python tools/emu/ai_baal_clone_count.py --cpp > build/ai-baal-clones/cases.cpp
+include_flags=()
+for component_dir in components/* components/game/*; do if [ -d "$component_dir" ]; then include_flags+=("-I$component_dir"); fi; done
+c++ -std=c++23 -DSTORMLIB_NO_AUTO_LINK -include cmake/no_near_far.hpp -Icomponents -I"$STORM_SRC" "${include_flags[@]}" build/ai-baal-clones/cases.cpp -o build/ai-baal-clones/cases
+build/ai-baal-clones/cases > build/ai-baal-clones/cases.txt
+uv run --no-sync --project tools/emu python tools/emu/ai_baal_clone_count.py --cases build/ai-baal-clones/cases.txt --exe "$GAME_EXE"
+```
+
 MonAI 135 `{FUN_005fcfe0, FUN_005fcf30, 1}`, 140 (baalclone) `{FUN_005fd210,
 FUN_005fcf30, 1}`. Proven on game.exe: `tools/emu/mon_ais.py
 BaalCrab,BaalCrabClone --dump tests/mon_ais_baal_cases.inc` (2026-10-24).
 
+`tools/emu/ai_baal_melee_choice.py` compares FUN_005fc1c0's chosen action and
+seed with d2d's Baal think over 2,048 melee cases. Life and target-state
+lookups are hooked; it does not execute the chosen action. From the worktree
+root, with `GAME_EXE` set to stock 1.14d:
+
+```sh
+mkdir -p build/ai-baal-melee
+uv run --no-sync --project tools/emu python tools/emu/ai_baal_melee_choice.py --cpp > build/ai-baal-melee/cases.cpp
+c++ -std=c++23 -Icomponents -Icomponents/rules -Icomponents/d2s -Icomponents/txt build/ai-baal-melee/cases.cpp -o build/ai-baal-melee/cases
+build/ai-baal-melee/cases > build/ai-baal-melee/cases.txt
+uv run --no-sync --project tools/emu python tools/emu/ai_baal_melee_choice.py --cases build/ai-baal-melee/cases.txt --exe "$GAME_EXE"
+```
+
+`tools/emu/ai_baal_blocked_choice.py` compares FUN_005fc300 with the d2d
+blocked-line branch over 1,536 cases. Life and the target's spell predicate
+are hooked; choices 2 and 6 are compared as the same d2d action, and the
+post-action seed is not compared because some d2d actions draw again.
+
+```sh
+mkdir -p build/ai-baal-blocked
+uv run --no-sync --project tools/emu python tools/emu/ai_baal_blocked_choice.py --cpp > build/ai-baal-blocked/cases.cpp
+c++ -std=c++23 -Icomponents -Icomponents/rules -Icomponents/d2s -Icomponents/txt build/ai-baal-blocked/cases.cpp -o build/ai-baal-blocked/cases
+build/ai-baal-blocked/cases > build/ai-baal-blocked/cases.txt
+uv run --no-sync --project tools/emu python tools/emu/ai_baal_blocked_choice.py --cases build/ai-baal-blocked/cases.txt --exe "$GAME_EXE"
+```
+
+`tools/emu/ai_baal_choice_dispatch.py` uses those same cases to check the
+blocked-line route through FUN_005fc630 and FUN_005fc300. Proximity, line,
+life and spell lookups are hooked. Pending actions, no target, melee and the
+clear-line route are outside this dispatcher comparison:
+
+```sh
+uv run --no-sync --project tools/emu python tools/emu/ai_baal_choice_dispatch.py --cases build/ai-baal-blocked/cases.txt --exe "$GAME_EXE"
+```
+
+`tools/emu/ai_baal_hand_predicate.py` checks the FUN_005fc070 and
+FUN_005fc0c0 hand-skill predicates indirectly through the blocked-line
+choice, over 3,840 cases. One hand is populated per case; skill lookup,
+IDs and levels are hooked. It compares action outcomes, with choices 2 and
+6 combined, rather than the predicates' return values.
+
+```sh
+mkdir -p build/ai-baal-hands
+uv run --no-sync --project tools/emu python tools/emu/ai_baal_hand_predicate.py --cpp > build/ai-baal-hands/cases.cpp
+c++ -std=c++23 -Icomponents -Icomponents/rules -Icomponents/d2s -Icomponents/txt build/ai-baal-hands/cases.cpp -o build/ai-baal-hands/cases
+build/ai-baal-hands/cases > build/ai-baal-hands/cases.txt
+uv run --no-sync --project tools/emu python tools/emu/ai_baal_hand_predicate.py --cases build/ai-baal-hands/cases.txt --exe "$GAME_EXE"
+```
+
+`tools/emu/ai_baal_clear_choice.py` checks FUN_005fc450's clear-line branch
+over 1,536 cases, reusing the blocked-line generator. It hooks life, distance,
+and the target's spell predicate, compares choices 2 and 6 as one action,
+and does not compare the seed after the action.
+
+```sh
+mkdir -p build/ai-baal-clear
+uv run --no-sync --project tools/emu python tools/emu/ai_baal_clear_choice.py --cpp > build/ai-baal-clear/cases.cpp
+c++ -std=c++23 -Icomponents -Icomponents/rules -Icomponents/d2s -Icomponents/txt build/ai-baal-clear/cases.cpp -o build/ai-baal-clear/cases
+build/ai-baal-clear/cases > build/ai-baal-clear/cases.txt
+uv run --no-sync --project tools/emu python tools/emu/ai_baal_clear_choice.py --cases build/ai-baal-clear/cases.txt --exe "$GAME_EXE"
+```
+
 - Pick: FUN_005fbdd0 is Diablo's FUN_005e8f20 (filter FUN_005fc000 = same
   act, under 0x3fc), the score FUN_005fbb00 Diablo's with the point bonus at
-  0x4b instead of 0x55.
+  0x4b instead of 0x55 — and, unlike Diablo's own score, counting cold
+  resist whether or not the target is in reach (`tools/emu/ai_baal_score_probe.py`,
+  traced against stock 1.14d; `rules::diablo_score`'s `cold_in_reach`).
 - Kept point: his own spot when he has none (FUN_0058ef40 kind 10).
 - Chooser FUN_005fc630(ECX him, EAX target; game, AI control, score, looked,
   point): AI control +0x14 non-zero is the act. No target: stuck
@@ -623,6 +841,32 @@ maker (ai.hpp do 31). ponytail: the tentacle class is rand(5) on his seed;
 FUN_0054dc40's spot test is the nearest free spot.
 
 ## AncientStatue and the ubers' MonAIs
+
+`tools/emu/ai_korlic_no_skill.py` compares the no-Skill1 branch of
+FUN_005ef010 with d2d's Ancient think over 1,024 cases. Search, distance and
+actions are hooked. Sleeping, missing targets and Skill1 are outside this
+comparison. From the worktree root with `GAME_EXE` set to stock 1.14d:
+
+```sh
+mkdir -p build/ai-korlic
+uv run --no-sync --project tools/emu python tools/emu/ai_korlic_no_skill.py --cpp > build/ai-korlic/cases.cpp
+c++ -std=c++23 -Icomponents -Icomponents/rules -Icomponents/d2s -Icomponents/txt build/ai-korlic/cases.cpp -o build/ai-korlic/cases
+build/ai-korlic/cases > build/ai-korlic/cases.txt
+uv run --no-sync --project tools/emu python tools/emu/ai_korlic_no_skill.py --cases build/ai-korlic/cases.txt --exe "$GAME_EXE"
+```
+
+`tools/emu/ai_madawc_no_skill.py` compares FUN_005eeda0 with d2d's Ancient
+think over 1,152 out-of-reach, no-Skill1 cases. Search, distance and
+successful action boundaries are hooked; the in-reach, Skill1 and failed
+approach branches are not checked.
+
+```sh
+mkdir -p build/ai-madawc
+uv run --no-sync --project tools/emu python tools/emu/ai_madawc_no_skill.py --cpp > build/ai-madawc/cases.cpp
+c++ -std=c++23 -Icomponents -Icomponents/rules -Icomponents/d2s -Icomponents/txt build/ai-madawc/cases.cpp -o build/ai-madawc/cases
+build/ai-madawc/cases > build/ai-madawc/cases.txt
+uv run --no-sync --project tools/emu python tools/emu/ai_madawc_no_skill.py --cases build/ai-madawc/cases.txt --exe "$GAME_EXE"
+```
 
 MonAI rows (0x73ca18 + ai × 16: search type, init, think, other):
 
@@ -901,6 +1145,46 @@ Minions and Leader election:
 - **NpcBarb target setter (`FUN_005edc00`, `AiThink4.cpp`)**: Sets `+0x18 = x` and `+0x1c = y`.
 - **Town NPC check (`FUN_005e7350`, `AI/?`)**: If `FUN_00572dc0() == 0`, waits 0 and returns 1; else returns 0.
 - **Baal quest stage check (`FUN_005fc070`, `AiBaal.cpp`)**: Checks Act 5 quest stages 59, 56, 51, and 27 via `FUN_00643ce0` (`line 0x131`).
+- **The killer getter, `FUN_00553010`/`GetKillerUnit`** (`SUnit.cpp`; `ECX`
+  game, `EDX` unit; halts at line 800 on a null unit): with unit flag
+  `UNITFLAGEX_STORELASTATTACKER` set, `FindUnitFromTable(game,
+  eKillerType, nKillerGUID)` (the stored killer's type and GUID); else
+  null. Three callers: `FUN_005de830` below; `FUN_005fda10`
+  (`AI_Monster_AcquireKillerAsTarget`, lets a monster re-target whoever
+  killed it); `FUN_005544b0` (`SetUninterruptableState`, UNIT: clearing
+  `STATE_uninterruptable` while `STATE_death_delay` is on looks the killer
+  up to route the kill through `SERVER_GetHitCalculation`'s KILL flag
+  rather than a plain `SERVER_KillMonster` when one exists).
+- **The alive-killer filter, `FUN_005de830`/`MONSTERAI_GetAliveKillerUnit`**
+  (`ECX` game, `EDX` unit): `GetKillerUnit` above, then a player killer
+  counts unless its mode is Death/Dead, a monster killer unless Death/Kick
+  and only if `UNITS_CheckIfCanAttackTarget` allows it (masked, not
+  branched: `-(canAttack) & killer`); otherwise null. This is the
+  Overseer's `attacker` input (`act5.cpp:59`, `monsters.hpp:1343`: "the one
+  that last struck at it").
+- **The catapult-gone check, `FUN_005edf70`/`AI_Monster_FindDeadMonsterNearby`**
+  (`ECX` game, `EDX` unit; halts at 0x141b with no room): `MONSTERS_GetUpgradeSkillsAndCount`
+  below gives a signed `{x, y}` offset for the unit's class (negated), then
+  up to three tries shift the unit's room-coordinate rect by that offset
+  (`× try count`) and call `SUNITINACTIVE_CheckDeadMonsterAtCoords(game,
+  room, x, y, classId − 0x13)`; the first hit's nonzero handle is returned,
+  0 after three misses. This is the CatapultSpotter's "catapult gone" test
+  (`act5.hpp:239`, `monsters.hpp:1352`), despite the generic name.
+- **The upgrade anim-flags getter, `FUN_0063ee10`/`MONSTERS_GetUpgradeSkillsAndCount`**
+  (`MonStats.cpp`, `__stdcall`; halts at line 0x2c8/0x2c9 on a non-monster
+  unit or an out-of-range upgrade index): `MONSTERTBLS_GetUpgradeDataByMonStatsId(classId,
+  NULL, &index)` then, for `0 <= index < 4`, writes
+  `gdwMonStatAnimFlagsTable[index].dwFlags` / `.dwValidFlags` to the two
+  out-params. The catapult-gone check above reuses this per-class table as
+  a signed search-direction offset rather than an animation mask. Other
+  callers `FUN_004f01f0`, `FUN_004d1fa0` not traced here.
+- **`RemoveCollision`, `FUN_0064cbe0`** (`Collisn.cpp`, `__stdcall`, room, x,
+  y, a collision-flag mask): `DRLGROOM_FindBetterNearbyRoom(room, x, y)`,
+  then on that room's collision grid (`DRLGROOM_GetCollisionGridFromRoom`,
+  `pMapStart` non-null) clears the mask bits of the one cell `[(y − y0) ×
+  xSize − x0 + x]`; a missing room, grid or map does nothing. See the
+  Vulture's take-off below and `collision.md`'s `FUN_004afce0` (both clear
+  `0x1000` then `0x100` at the unit's own cell).
 
 ## In d2d
 
@@ -920,7 +1204,7 @@ Approximated (`ponytail:` in ai.cpp, fight/, monsters.hpp):
 - Mode 5's candidates are every foe in foes order, not the near rooms' units room by room; its area is the room_areas rect at the unit. List 8 is empty (no good monsters) and kind 1 (a player by id) and 4 aren't set.
 - A monster's missiles, poison and Mana Burn reach only the player's side; monsters block as the player does.
 - Conversion (do 79, FUN_005d0350; its end FUN_005d01a0): an evil monster no one owns that passes FUN_0056e2f0 turns at calc1 % (FUN_005d02b0) for auralen frames: alignment 2 (FUN_005543b0 DL 2) in its caster's list (FUN_005b1900 with the caster's +0xd0), so evil monsters take it as one of the player's pets and it hunts them (mode 5 as a good unit); its target and flag-8 states dropped; one above the caster's level comes down to it with its life in proportion (state 0x6d keeps its own in stats 0xb0 / 0xb1, put back at the end). d2d: `Monster::align` 2, `own_level` / `own_max_life`; the player's side's blows pass over it (FUN_00554200). The level scaling is MulDiv (FUN_00483360, `rules::mul_div`) of the whole life and max life by clvl / mlvl (ECX, EDX, the stack; 0x5d05ed / 0x5d0600), back in 256ths.
-- Movement is floats in cells, blocked as `monster_step` has it, and the target's +0x68 offset is taken as 0.
+- A place is 16.16 subtiles (`Fine`), but movement outside a walk (`monster_step`) steps in cells, blocked as it has it, rounded in; the target's +0x68 offset is taken as 0.
 - A dead pet is skipped (game.exe takes it off the list), and a dead monster leaves list 9.
 - An untraced AI (none in Acts 1 and 2) goes at what it found from the next frame on.
 - A pace (`ThinkIn::pace` → `Monster::move_pct`) adds to the move's speed %; Spider Lay's −100 % leaves it creeping at the 10 % floor, and its slowed state on those about is left out. A foe's life % (`Foe::life_pct`) is the player's only.

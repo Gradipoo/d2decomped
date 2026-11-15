@@ -58,6 +58,7 @@ struct MonType {
     bool can_block = false;                     // MonStats2 mBL
     bool can_walk = false, can_swing = false;   // MonStats2 mWL / mA1 (+0xf0 bits 2 / 4): fPick 3 / 1 (FUN_005a03e0)
     bool can_get_hit = false;                   // MonStats2 mGH (bit 3): its get-hit roll (FUN_0057cb00)
+    bool can_knock_back = false;                // MonStats2 mKB (bit 13): with mGH, a knockback (LAB_005a77d0)
     int height = 0;                             // MonStats2 Height (+0xb): 0 for critters and most NPCs (a warping shrine passes them, FUN_00582750)
     bool al_sel = false, no_sel = false;        // MonStats2 alSel / noSel (flags +4 bits 4 / 5, FUN_004638a0): the cursor outside town
     bool corpse_sel = false;                    // MonStats2 corpseSel (flag 7): Nihlathak's Corpse Explosion can target it (FUN_00645680)
@@ -68,6 +69,7 @@ struct MonType {
     int damage_regen = 0;                       // DamageRegen (+0x1a0): stat 0x4a's 4096ths of max life a frame (FUN_00573cb0)
     bool switch_ai = false;                     // SwitchAI (flags +0xe & 1, FUN_00573040): Confuse / Attract can set its target
     bool interact = false;                      // interact (flag 9, +0xd & 2): the curse thinks don't swing (FUN_00457490)
+    bool no_aura = false;                       // noaura (flag 0x1b, FUN_00651210 at 0x651994): an area walk told to passes it (FUN_0056b7e0, 0x56b979)
     // Percentages of the MonLvl row (1.10+ style), per difficulty.
     struct Diff {
         int min_hp = 0, max_hp = 0, armor_class = 0, exp = 0;

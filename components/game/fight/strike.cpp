@@ -106,6 +106,12 @@ auto Fight::player_fighter(d2d::rules::Fighter* kick ,
         const std::array<int, 4> res{ int(resistances[0]), int(resistances[2]), int(resistances[1]), int(resistances[3]) };
         auto fighter = d2d::rules::make_fighter(game_data->rules, weapon, shield, sum, weapon_sum, actor->character.stats, gains,
                                           int(actor->character.panel.defense), res, boots, throwing);
+        {   // The swing starts by the weapon in hand: slot 4 else slot 5, a weapon, not broken and its requirements met (FUN_0063c9b0 -> FUN_0062a4e0,
+            // the `weapon` chosen above), else nothing.
+            const auto base = weapon ? game_data->rules.item_base.find(weapon->code) : game_data->rules.item_base.end();
+            if (!weapon || base != game_data->rules.item_base.end())
+                fighter.attack_start = d2d::rules::attack_start_frame(actor->character.character_class, weapon ? std::string_view(base->second.wclass) : std::string_view{});
+        }
         {                                                    // poison length reduction: the panel's difficulty penalty, no max stat so at most 75 (FUN_0057be00)
             const int diff = actor->character.header.active_difficulty();
             const std::int64_t penalty = actor->character.header.expansion() ? game_data->resist_penalty[std::size_t(diff)] : std::array<std::int64_t, 3>{ 0, -20, -50 }[std::size_t(diff)];
@@ -233,7 +239,8 @@ auto Fight::update_fighters(std::uint32_t now_ms) -> void {
         for (std::size_t k = 0; k < 2; ++k)
             if (const auto* skill = game_data->skills.get(int(chosen[k])))
                 panel.attack[k] = d2d::rules::attack_line(game_data->skills, *skill, env, skill_level ? skill_level(skill->id) : 1,
-                                                          actor->player_combat, int(actor->psum[kPassiveMasteryMeleeToHit]), panel.blue, panel.red);
+                                                          actor->player_combat, int(actor->psum[kPassiveMasteryMeleeToHit]), panel.blue, panel.red,
+                                                          skill_status(skill->id, now_ms));   // FUN_004d9fc0: 0, 1, 6, 8 draw
     }
 
 auto Fight::calc_env() -> d2d::rules::CalcEnv {
@@ -242,9 +249,9 @@ auto Fight::calc_env() -> d2d::rules::CalcEnv {
     }
 
 auto Fight::friendly_auras(float x, float y) const -> std::vector<AuraOn> { return auras_at(x, y, false); }
-auto Fight::enemy_auras(float x, float y) const -> std::vector<AuraOn> { return auras_at(x, y, true); }
+auto Fight::enemy_auras(const Monster& monster) const -> std::vector<AuraOn> { return auras_at(monster.unit.x, monster.unit.y, true, &monster); }
 
-auto Fight::auras_at(float x, float y, bool enemy) const -> std::vector<AuraOn> {
+auto Fight::auras_at(float x, float y, bool enemy, const Monster* taker) const -> std::vector<AuraOn> {
         using namespace d2d::d2s;
         std::vector<AuraOn> out;
         const auto add = [&](int skill_id, int lvl, d2d::rules::CalcEnv env, float from_x, float from_y) {
@@ -253,6 +260,7 @@ auto Fight::auras_at(float x, float y, bool enemy) const -> std::vector<AuraOn> 
                                     : skill && skill->srvdofunc == ServerDoFunction::kFriendlyAura;
             if (!kind || lvl < 1) return;
             if (std::hypot(from_x - x, from_y - y) * 5 > float(d2d::rules::eval_calc(game_data->skills, skill->aurarange, env, skill->id, lvl))) return;
+            if (enemy && taker && !aura_takes(*skill, *taker, from_x, from_y)) return;
             out.push_back({ skill, lvl, std::move(env) });
         };
         const auto no_skills = [](int) { return 0; };
@@ -501,7 +509,7 @@ auto Fight::land(std::size_t monster_index, const d2d::rules::Blow& blow, bool b
         // over MonsterColdDivisor when it's negative, at least a tick, only
         // ever lengthened. Then rand % 100 < 20 on the monster's seed puts state
         // 107 (shatter) on, else off; never on a deadCol monster (MonStats2 flag 19).
-        // ponytail: the shattered death (state 107's client look) isn't drawn.
+        // A death under it shatters (boss_events, rules::shatter_rows).
         if (const int cold_effect = target.type >= 0 ? game_data->monsters.types[std::size_t(target.type)].diff[std::size_t(target.difficulty)].cold_effect : 0; blow.chill_ticks > 0 && cold_effect != 0) {
             const int divisor = game_data->cold_divisor[std::size_t(target.difficulty)];
             const int ticks = std::max(cold_effect < 0 && divisor != 0 ? blow.chill_ticks / divisor : blow.chill_ticks, 1);
@@ -534,20 +542,20 @@ auto Fight::land(std::size_t monster_index, const d2d::rules::Blow& blow, bool b
         if (hurt(*game_data, target, taken >> 8, now_ms, taken & 255, blow.hit_class, blow.elemental || blow.deadly)) { killed(monster_index, now_ms); return true; }
         // Knockback (result flag 8): a monster with GH and KB modes
         // (MonStats2, FUN_0046c140 bits 3 / 13; else it's a GH) goes into
-        // KB (FUN_005a77d0): path type 8, 5 subtiles on from the attacker,
+        // KB (LAB_005a77d0): path type 8, 5 subtiles on from the attacker,
         // a Sand Leaper (class 0x4e) 10.
-        // It slides there over the KB mode (FUN_005a8630: along the path till
-        // the mode's end), then plays GH (FUN_005a8520; a Sand Leaper thinks 15
-        // frames on, 45 stunned): monster_update.
-        // ponytail: an even slide over KB's length; the path's own pace
-        // (FUN_00554ca0) isn't traced.
+        // It slides there a subtile a frame (knock_slide: FUN_00623f50's KB
+        // velocity 0x1000) till the path's end or the KB mode's (LAB_005a8630),
+        // then plays GH (FUN_005a8520; a Sand Leaper thinks 15 frames on, 45
+        // stunned): monster_update.
         if (blow.knockback) knock_back(target, actor->player.x, actor->player.y, now_ms);
         return true;
     }
 
 auto Fight::knock_back(Monster& target, float from_x, float from_y, std::uint32_t now_ms) -> void {
-        if (game_data->npc_timing(target.npc, "KB").directions <= 0 || game_data->npc_timing(target.npc, "GH").directions <= 0) return;
-        const float reach = game_data->monsters.types[std::size_t(target.type)].base == 0x4e ? 2.f : 1.f;
+        const auto& type_info = game_data->monsters.types[std::size_t(target.type)];
+        if (!type_info.can_get_hit || !type_info.can_knock_back) return;   // LAB_005a77d0: FUN_0046c140 bits 3 and 13
+        const float reach = type_info.base == 0x4e ? 2.f : 1.f;
         const float dx = target.unit.x - from_x, dy = target.unit.y - from_y, distance = std::max(std::hypot(dx, dy), 0.01f);
         const float next_x = target.unit.x + dx / distance * reach, next_y = target.unit.y + dy / distance * reach;
         if (!level->unit_blocked(next_x, next_y, target.unit.shape)) {
@@ -579,11 +587,11 @@ auto Fight::monster_dots(std::uint32_t now_ms, float elapsed) -> void {
 
 auto Fight::strike(std::uint32_t now_ms) -> void {
         if (const auto* skill = game_data->skills.get(actor->swing_skill); skill && missile_skill(*skill)) {   // Magic Arrow: the bow's action frame
-            if (!actor->pstruck && now_ms >= actor->player.mode_ms + std::uint32_t(float(player_anim(actor->pmode).action_ms()) / actor->prate)) { actor->pstruck = true; settle_cast(); do_sounds(now_ms); fire(*skill, now_ms); start_delay(now_ms); }
+            if (!actor->pstruck && now_ms >= actor->player.mode_ms + action_at()) { actor->pstruck = true; settle_cast(); do_sounds(now_ms); fire(*skill, now_ms); start_delay(now_ms); }
             return;
         }
         if (const auto* skill = game_data->skills.get(actor->swing_skill); skill && (skill->srvdofunc == ServerDoFunction::kThrow || skill->srvdofunc == ServerDoFunction::kDoubleThrow)) {   // the throws (TH)
-            if (!actor->pstruck && now_ms >= actor->player.mode_ms + std::uint32_t(float(player_anim(actor->pmode).action_ms()) / actor->prate)) { actor->pstruck = true; do_sounds(now_ms); spot(*skill, now_ms); start_delay(now_ms); }
+            if (!actor->pstruck && now_ms >= actor->player.mode_ms + action_at()) { actor->pstruck = true; do_sounds(now_ms); spot(*skill, now_ms); start_delay(now_ms); }
             return;
         }
         if (!actor->seq.empty()) {
@@ -607,11 +615,30 @@ auto Fight::strike(std::uint32_t now_ms) -> void {
             return;
         }
         if (actor->pstruck || actor->attack_mon < 0
-            || now_ms < actor->player.mode_ms + std::uint32_t(float(player_anim(actor->pmode).action_ms()) / actor->prate)) return;
+            || now_ms < actor->player.mode_ms + action_at()) return;
         actor->pstruck = true;
         do_sounds(now_ms);
+        const int struck = actor->attack_mon;
         hit(now_ms);
         start_delay(now_ms);
+        if (const auto* skill = game_data->skills.get(actor->swing_skill); skill && actor->swing_skill != 0 && skill->srvdofunc == ServerDoFunction::kRepeatedHit) repeat_hit(struck, now_ms);
+    }
+
+auto Fight::repeat_hit(int struck, std::uint32_t now_ms) -> void {
+        if (actor->kicks_left <= 0) return;
+        --actor->kicks_left;
+        actor->attack_mon = struck;
+        other_target();
+        if (actor->attack_mon < 0) { actor->kicks_left = 0; return; }
+        const auto* skill = game_data->skills.get(actor->swing_skill);
+        const auto played = (now_ms - actor->player.mode_ms) / 40;   // game frames into the swing
+        const auto frames_kept = played * std::uint32_t(std::clamp(100 - skill->par[1], 0, 100)) / 100;   // the animation's frames kept
+        set_pmode(swing_mode(), now_ms);
+        const auto& anim = player_anim(actor->pmode);
+        const auto back = anim.frames ? frames_kept * (actor->pmode_until - now_ms) / anim.frames : 0;
+        actor->player.mode_ms -= back;
+        actor->pmode_until -= back;
+        actor->pstruck = false;
     }
 
 auto Fight::hit(std::uint32_t now_ms, float reach ) -> void {
@@ -767,21 +794,26 @@ auto Fight::spot(const d2d::rules::Skill& skill, std::uint32_t now_ms, const Cas
                 // FUN_005c9800: calc1 %, calc2 the least (256ths), the floor
                 // only in an expansion game; FUN_005c96a0 on each unit, its
                 // record through FUN_0057c6c0 with the attacker's pierce.
+                // Its walk (FUN_0056b7e0, the caster in EDX, x = y = 0: the
+                // caster's spot) takes Skills.txt's aurafilter (+0x50, 0x8783):
+                // a monster behind a wall (0x200, mask 4) isn't struck.
                 const int pct = calc(skill, skill.calc[0], lvl), low = calc(skill, skill.calc[1], lvl);
                 const int floor_pct = actor->character.header.expansion() ? game_data->static_field_min[std::size_t(std::clamp(game_difficulty, 0, 2))] : 0;
                 const int ltng_pierce = pierce()[1];
-                within(actor->player.x, actor->player.y, calc(skill, skill.aurarange, lvl), [&](std::size_t monster_index) {
+                const float radius = float(calc(skill, skill.aurarange, lvl));
+                for (std::size_t monster_index = 0; monster_index < monsters.size(); ++monster_index) {
                     const auto& struck = monsters[monster_index];
+                    if (std::hypot(struck.unit.x - caster.x, struck.unit.y - caster.y) * 5 > radius || !filter_takes(skill.aura_filter, struck, caster.x, caster.y)) continue;
                     const int res = target_of(monster_index).res[3];
                     const int fine = d2d::rules::static_field_fine(struck.life_fine(), struck.max_life_fine(), pct, low, floor_pct, res);
-                    if (fine < 0) return;
+                    if (fine < 0) continue;
                     const int got = d2d::rules::resisted_fine(fine, res < 100 ? std::max(res - ltng_pierce, -100) : res);
                     d2d::rules::Blow blow{ .hit = true };
                     blow.damage = got >> 8;
                     blow.frac = got & 255;
                     blow.elemental = got > 0;
                     land(monster_index, blow, true, now_ms, striker_of(caster));
-                });
+                }
                 break;
             }
             case ServerDoFunction::kCorpseExplosion: case ServerDoFunction::kPoisonExplosion: {
@@ -999,7 +1031,7 @@ auto Fight::player_modes(bool held, std::uint32_t now_ms, float elapsed) -> bool
             if (actor->smove.active) skill_step(now_ms, elapsed);
             if (now_ms >= actor->pmode_until) {
                 if (actor->kicks_left > 0 && next_target()) {
-                    --actor->kicks_left;                            // Talon's next kick (FUN_005d5a30), Zeal's next hit (FUN_005dbc60)
+                    --actor->kicks_left;                            // Talon's next kick (FUN_005d5a30); do 13's go on the action frame (repeat_hit)
                     set_pmode(swing_mode(), now_ms);
                     actor->pstruck = false;
                     return false;

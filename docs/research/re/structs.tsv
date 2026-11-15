@@ -102,6 +102,7 @@ missile_request	0x30	u32	level	missile level	docs/research/re/ai-control.md:220
 missile_row	0xdc	u32	delay	launcher retry timing in 256ths	docs/research/re/ai-control.md:220
 minion_node	0x00	u32	unit_id	minion unit ID	docs/research/re/ai-control.md:81
 minion_node	0x04	ptr	next	next minion ID node	docs/research/re/ai-control.md:60
+monster_data	0x00	ptr	monstats_row	cached MonStats row (class * 0x1a8 + table base), 0 out of range	docs/research/re/collision.md:1448
 monster_data	0x28	ptr	ai_control	AI control pointer	docs/research/re/ai-control.md:3
 monster_data	0x30	ptr	state_gate	pointer passed to FUN_00572dc0	docs/research/re/ai-control.md:185
 monstats_spawn	0x56	u16	count	spawn count for normal difficulty	docs/research/re/ai-control.md:37
@@ -111,14 +112,25 @@ monstats_spawn	0x170	u16	skill	first monster skill ID	docs/research/re/ai-contro
 monstats_spawn	0x180	u8	skill_mode	mode for the first monster skill	docs/research/re/ai-control.md:122
 monstats2_txt	0x09	u8	size_y	the collision size FUN_006205a0 returns for a monster unit, sign-extended (the field is a signed char)	tools/emu/units_small.py:938
 objects_txt	0xd4	i32	size_y	the collision size FUN_006205a0 returns for an object unit (the row's own +0xd4, read raw as a 4-byte int)	tools/emu/units_small.py:938
+path	0x00	u16	x_fraction	precise X's low word: X in 16.16 subtiles is x << 16 | x_fraction	docs/research/re/path.md:20
 path	0x02	u16	x	the dynamic path's subtile X (GetXPos, 0x6488c0)	tools/emu/click_move.py:20
+path	0x04	u16	y_fraction	precise Y's low word: Y in 16.16 subtiles is y << 16 | y_fraction	docs/research/re/path.md:20
 path	0x06	u16	y	the dynamic path's subtile Y (GetYPos, 0x648900)	tools/emu/click_move.py:20
 path	0x08	u32	target_x	the dynamic path's ScreenPos.x, GetTargetX/FUN_006489c0 reads it for FUN_00620900	tools/emu/units_small.py:989
 path	0x0c	u32	target_y	the dynamic path's ScreenPos.y, GetTargetY/FUN_006489d0 reads it for FUN_00620900	tools/emu/units_small.py:989
 path	0x1c	ptr	room	the room the unit is in	docs/research/re/missiles.md:33
+path	0x24	u32	point	the path point walked to	docs/research/re/path.md:27
+path	0x28	u32	points	the path point count (77 at most; 0 once a walk is over)	docs/research/re/path.md:27
+path	0x30	ptr	owner	the unit it belongs to (its +0 the unit type)	docs/research/re/path.md:29
+path	0x34	u32	flags	path flags (PATHTYPEFLAGS 0x6eb690 by type, FUN_00648cf0)	docs/research/re/path.md:30
+path	0x3c	u32	type	the path type	docs/research/re/path.md:32
 path	0x50	u32	collide_mask	what it collides with: a player 0x1c09, a monster 0x3c01	docs/research/re/collision.md:51
 path	0x54	u32	collided	this frame's collision bits, masked	docs/research/re/missiles.md:54
+path	0x64	u8	facing	the facing drawn, 64 steps (FUN_00648640 turns it)	docs/research/re/path.md:37
+path	0x65	u8	facing_goal	the facing it turns to (FUN_006485f0)	docs/research/re/path.md:37
+path	0x66	u8	turn_step	the turn's step a frame (DIFFDIRECTIONS 0x6eb548)	docs/research/re/path.md:37
 path	0x7c	u32	velocity	a missile's velocity, 0 standing (FUN_006486c0)	docs/research/re/missiles.md:392
+path	0x9c	u32	point_list	the path points inline, {u16 x, u16 y} each, 78 of them	docs/research/re/path.md:41
 path	0x1d4	u32	step_count	subtiles entered this move (FUN_00648f40)	docs/research/re/missiles.md:402
 path	0x1d8	ptr	step_list	{short x, short y} each, inline (FUN_00648f40)	docs/research/re/missiles.md:402
 room	0x4c	u32	x	the room's first subtile column	docs/research/re/act1-end.md:737
@@ -143,11 +155,38 @@ skill_entry	0x28	u32	level	the stored base level (FUN_006442a0, FUN_00647540)	to
 skill_entry	0x30	u32	quantity	a scroll or tome's count (FUN_00647640: usable above 0)	tools/emu/skill_status.py:119
 skill_entry	0x34	i32	item	the charged item's id, -1 for the character's own skill	tools/emu/skill_status.py:120
 skill_entry	0x38	u32	charges	an item entry's charges (FUN_00647540: usable above 0)	tools/emu/skill_status.py:121
+static_light	0x00	u32	unit_type	unit type or 6 for none	docs/research/re/lighting.md:417
+static_light	0x04	u32	unit_id	unit id	docs/research/re/lighting.md:417
+static_light	0x08	u8	alternate_lookup	select alternate unit lookup when nonzero	docs/research/re/lighting.md:417
+static_light	0x0c	u32	category	light category, 2 for cached shadow	docs/research/re/lighting.md:417
+static_light	0x10	i32	x	light x in eighths of a subtile	docs/research/re/lighting.md:417
+static_light	0x14	i32	y	light y in eighths of a subtile	docs/research/re/lighting.md:417
+static_light	0x18	i32	radius	current radius in eighths of a subtile	docs/research/re/lighting.md:417
+static_light	0x1c	i32	target_radius	desired radius in eighths of a subtile	docs/research/re/lighting.md:417
+static_light	0x20	u32	frozen	nonzero prevents position refresh	docs/research/re/lighting.md:417
+static_light	0x2c	u32	cache_ready	nonzero after cache initialization	docs/research/re/lighting.md:433
+static_light	0x30	ptr	cache	cached shadow buffer	docs/research/re/lighting.md:433
 static_path	0x00	ptr	room	the room the static unit (object, item, warp) is in	tools/emu/units_small.py:989
 static_path	0x04	u32	screen_x	the static unit's screen x FUN_00620900 reads for types 2, 4 and 5	tools/emu/units_small.py:989
 static_path	0x08	u32	screen_y	the static unit's screen y FUN_00620900 reads for types 2, 4 and 5	tools/emu/units_small.py:989
 static_path	0x0c	u32	x	object or item unit's x coordinate	docs/research/re/ai-control.md:27
 static_path	0x10	u32	y	object or item unit's y coordinate	docs/research/re/ai-control.md:27
+storm_event_level	0x00	ptr	buckets	Storm event_level buckets	docs/research/re/source-module.md:66
+storm_event_level	0x04	u32	count	Storm event_level count	docs/research/re/source-module.md:66
+storm_event_level	0x08	u32	state	Storm event_level state	docs/research/re/source-module.md:66
+storm_event_level	0x0c	ptr	previous	Storm event_level previous	docs/research/re/source-module.md:66
+storm_event_node	0x00	u32	tag	Storm event_node tag	docs/research/re/source-module.md:67
+storm_event_node	0x04	u32	window	Storm event_node window	docs/research/re/source-module.md:67
+storm_event_node	0x0c	ptr	level	Storm event_node level	docs/research/re/source-module.md:67
+storm_event_node	0x10	ptr	next	Storm event_node next	docs/research/re/source-module.md:67
+storm_handler	0x0c	ptr	next	Storm handler next	docs/research/re/source-module.md:58
+storm_message	0x00	u32	window	Storm message window	docs/research/re/source-module.md:49
+storm_message	0x04	u32	message	Storm message message	docs/research/re/source-module.md:49
+storm_message	0x08	u32	wparam	Storm message wparam	docs/research/re/source-module.md:49
+storm_message	0x0c	u32	lparam	Storm message lparam	docs/research/re/source-module.md:49
+storm_message	0x10	u32	notification	Storm message notification	docs/research/re/source-module.md:49
+storm_message	0x18	u32	result	Storm message result	docs/research/re/source-module.md:49
+storm_message	0x1c	u32	handled	Storm message handled	docs/research/re/source-module.md:49
 unit	0x00	u32	type	0 player, 1 monster, 2 object, 3 missile, 4 item, 5 warp	components/rules/object_ids.hpp:10
 unit	0x04	u32	class	its row: MonStats, objects.txt, Missiles, ...	tools/emu/life_apply.py:50
 unit	0x0c	u32	id	unit ID used in a minion list	docs/research/re/ai-control.md:81
@@ -165,9 +204,12 @@ unit	0x44	u32	anim_pos	animation position, 256ths of a frame	docs/research/re/un
 unit	0x48	u32	anim_length	animation length	docs/research/re/unit-sounds.md:231
 unit	0x4c	u32	anim_rate	256 = a frame a tick; IAS in it	docs/research/re/unit-sounds.md:45
 unit	0x60	ptr	inventory	inventory (FUN_00647640's equipment gate)	docs/research/re/throw.md:32
+unit	0x6c	u8	state_overlay_byte	the highest-priority active state's own +0x21 byte (FUN_004d97f0)	docs/research/re/collision.md:1537
+unit	0x78	ptr	sound_nodes	head of its own active-sound-node list (FUN_004ca900/004caa10)	docs/research/re/collision.md:1500
 unit	0x7c	u32	sound_time	its last sound	components/game/ai.hpp:187
 unit	0x80	u32	neutral_time	its last Neutral	components/game/ai.hpp:187
 unit	0x84	u32	step_time	its last footstep	components/game/ai.hpp:187
+unit	0x88	u32	ambient_reserved	sign-edge toggle reserving its ambient sounds' group slots (FUN_004cc160)	docs/research/re/collision.md:1501
 unit	0x90	ptr	events	the head of its event list (FUN_005c0c30)	components/game/ai.hpp:510
 unit	0xa0	u32	struck_by	who last struck it (FUN_00621d50 from FUN_0057c6c0)	components/game/ai.hpp:190
 unit	0xa4	ptr	chat_node	current chatter record	docs/research/re/ai-control.md:153

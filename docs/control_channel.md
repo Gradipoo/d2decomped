@@ -41,7 +41,9 @@ name order. A new sub-verb goes in its area's file where its name sorts.
 | `rclick <x> <y> [down\|up]` | `ok`                   | Same with the right button (opens the Horadric Cube item). |
 | `pad [n] axis <stick> <v>` | `ok`                   | Virtual pad n (0..3, default 0): a stick axis (`leftx`, `lefty`, `rightx`, `righty`) at -1..1. |
 | `pad <n> plug [deck]` / `pad <n> unplug` | `ok`     | Plug virtual pad n in (`deck`: with the Steam Deck's own controls' ids, 0x28de / 0x1205) or pull it out (co-op seats). |
-| `debug players`            | `<id>\t<name>\t<x>\t<y>\t<seat>\t<pmode>\t<ghost>` per player, `ok` | The game's players (local co-op): cell, co-op seat (-1: the first player), mode (-1 none), a ghost (1). |
+| `debug chatlog`            | a line per chat line on screen, oldest first, then `ok` | The chat and news lines showing now (a LAN game's chat, joins, leaves, deaths). |
+| `debug view`               | `ok level=<id> monsters=<n> others=<names,> ground=<n> where=<sum> near=<x,y or -> ids=<ids,>` | What this screen was last told: its level, monsters, other players (`-` none), floor items, the monsters' x + y summed (it changes as they move), the nearest monster, the monsters' unit ids (a LAN joiner's View). |
+| `debug players [q]`        | `<id>\t<name>\t<x>\t<y>\t<seat>\t<pmode>\t<ghost>\t<level>[\t<bits>]` per player, `ok` | The game's players (local co-op): cell, co-op seat (-1: the first player), mode (-1 none), a ghost (1), the Levels.txt id they're on (a LAN host: each their own); with `q`, their quest q's 16 bits (the active difficulty). |
 | `debug roster`             | `<seat>\t<stage>\t<pick>\t<entries,>\t<name>` per open roster, `ok` | Each joining pad's roster: stage (0 character, 1 class, 2 name), the line picked, entries (`*` greyed), the name typed. |
 | `pad [n] <button> down\|up` | `ok`                   | Holds a button of virtual pad n (0..3, default 0; plugged in at its first use) down or lets it go (`a`, `b`, `x`, `y`, `dpleft`, `leftshoulder`, `lefttrigger`, ...: SDL's names; a trigger goes all the way); plugged in on first use. Press = down, a frame, up. |
 | `save`                      | `ok` / `err <why>`     | Save the character now (character_store.hpp), as leaving the game does. |
@@ -49,7 +51,7 @@ name order. A new sub-verb goes in its area's file where its name sorts.
 | `npcs`                      | `<name>\t<x>\t<y>\t<menu 0/1>\t<index>\t<cell x>\t<cell y>` per named NPC/object, then `ok` | Feet on screen in game pixels; menu = has an NPC menu; index for `cmd interact`. |
 | `monsters`                  | `<id>\t<x>\t<y>\t<sx>\t<sy>\t<hp>/<max>\t<mode>\t<boss>\t<mods>\tlvl<n>\t<name>\t#<unit>\t<row>` per monster of the current outdoor level, then `ok` | Cells, feet on screen (while there), life, animation mode; champion / unique / superunique / minion (or -), MonUMod ids, level, name, unit id (what `cmd skill` takes), the skill sequence row drawn (`<mode>:<frame>`, `-` none). |
 | `ground`                    | `<code>\t<label>\t<sx>\t<sy>\t#<unit>` per item on the level's ground, then `ok` | Loot: gold is `gld`; feet on screen; unit id (what `cmd pickup` takes). |
-| `menu`                      | `<text>\t<x>\t<y>` per line of the open NPC menu, then `ok` | A point inside each line, header first. |
+| `menu`                      | `<text>\t<x>\t<y>` per line of the open NPC menu, then `ok` | A point inside each line, header first; then the hire list's rows shown (each row's first line). |
 | `debug collision`           | `ok on` / `ok off`     | Toggle the InGame overlay: red dot on every blocked subtile. |
 | `debug automap`             | `ok <cells>`           | Reveal the whole level on the automap; `err rooms not ready` while a preset level's rooms can't be made yet. |
 | `debug statpts <n>` / `debug skillpts <n>` | `ok`    | Set the in-game character's unspent stat / skill points. |
@@ -87,7 +89,7 @@ name order. A new sub-verb goes in its area's file where its name sorts.
 | `debug warp <x> <y>`        | `ok`                   | Put the player at DS1 cell (x, y), or the nearest free spot when that's blocked; past the edge next to another level, the next frame crosses into it. |
 | `debug presets`            | `<i>\t<object id>\t<x>\t<y>\t<hidden>\t<name>` per object / NPC the level placed, `ok` | Hidden (quest-gated) ones too; `i` for `cmd interact`. |
 | `debug itemat <id>`        | `ok <x> <y>` / `err ...` | Carried item `id`'s box middle on screen, the inventory panel open (a click there picks it). |
-| `debug goto <level>`        | `ok <x> <y>` / `err no such level` | Arrive on Levels.txt id `level` at a free cell by its middle (quest tests). |
+| `debug goto <level> [<player>]` | `ok <x> <y>` / `err no such level` / `err no such player` | Arrive on Levels.txt id `level` at a free cell by its middle (quest tests); with a name, that player (a LAN host's joiner goes alone). |
 | `debug warps`               | `<i>\t<x>\t<y>\t<to>` per warp, `ok` | The level's warps (cave mouths, stairs): cell and the Levels.txt Id they lead to. |
 | `debug objects`             | `<i>\t<x>\t<y>\t<shrine\|chest>\t<row\|trap>\t<locked\|->\t<mode>` per object, `ok` | The level's shrines (Shrines.txt row) and chests (trap type 0..8, locked), and their mode now. |
 | `debug portals`             | `<which>\t<level>\t<x>\t<y>` per open portal, `ok` | The player's portals: 0 where it was cast, 1 its twin in camp (cells). |
@@ -171,8 +173,27 @@ The differences are:
 - Reply framing enforced by the pump (auto-appends `\n` if missing).
 - No auto-release ticks (mouse-button state is engine-side when we get there).
 
-## POSIX only
+## Windows
 
-Windows path is a warn-once stub. Call sites stay portable — the header
-compiles everywhere; `listen()` on Windows just prints a warning and
-`pump()` becomes a no-op.
+The same AF_UNIX socket, through Winsock (Windows 10 1803 and later,
+`afunix.h`): the protocol and the pump are the same on every OS. The path is
+a file path (`%TEMP%\d2d.sock`), at most 107 bytes.
+
+Python on Windows has no `socket.AF_UNIX`. `smoke_d2d.py`, `coop_d2d.py`,
+`coop_lobby_d2d.py` and `pad_use_d2d.py` connect through
+`tests/devctl_client.py`, which calls Winsock with `ctypes` there.
+`quests_d2d.py` doesn't yet: it still opens `socket.AF_UNIX` itself, so the
+`quests_act*` tests don't run on Windows.
+`devctl_client.isolated(home)` also gives the user dir and the environment
+for a throwaway run: d2d's user dir on Windows is `Documents\My Games\d2d`
+whatever `HOME` says, so `D2D_USER_DIR` names it on every OS.
+
+To run the headless tests on Windows, d2d needs an OpenAL device even with
+the null backend: put openal-soft's `soft_oal.dll` on `PATH` as
+`OpenAL32.dll`. The OpenAL router looks for drivers only next to the exe, in
+the working directory and in the system directory, not on `PATH`.
+
+## PS Vita and Switch
+
+No channel: neither has Unix sockets, so `listen()` logs that it didn't
+open the path and d2d runs without one (`docs/d2vita.md`, `docs/switch.md`).

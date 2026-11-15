@@ -80,7 +80,7 @@ jobs:
       # BtbN keeps month-end autobuilds indefinitely (dailies are pruned), so
       # pin one of those: an immutable n9.0.x release-branch build.
       FFMPEG_TAG: "autobuild-2026-08-31-13-27"
-      FFMPEG_BUILD: "ffmpeg-n9.0.1-11-ge47273f4d9-win64-lgpl-shared-9.0"
+      FFMPEG_BUILD: "ffmpeg-n9.0.1-11-ge47273f4d9-${{ matrix.arch == 'arm64' && 'winarm64' || 'win64' }}-lgpl-shared-9.0"
     strategy:
       fail-fast: false
       matrix:
@@ -90,8 +90,19 @@ jobs:
             name: Linux (GCC)
           - os: macos-latest
             name: macOS (Clang)
+          # Intel Macs. macOS 15's Homebrew bottles: the .dmg needs 15 or later.
+          - os: macos-15-intel
+            name: macOS Intel (Clang)
+            artifact_suffix: -Intel
           - os: windows-latest
             name: Windows (MSVC)
+            arch: x64
+          # Native ARM64 (docs/design/platform-support.md), not x64 emulated:
+          # "Check the package's architecture" fails a binary of any other kind.
+          - os: windows-11-arm
+            name: Windows ARM64 (MSVC)
+            arch: arm64
+            artifact_suffix: -ARM64
 
     steps:
       - uses: actions/checkout@v5
@@ -136,7 +147,8 @@ jobs:
       # FFmpeg: Linux and macOS build a Bink-only one (apps/d2d/CMakeLists.txt).
       # Windows: prebuilt release binaries rather than compiling anything.
       #   SDL3        - libsdl-org's VC dev zip (ships SDL3Config.cmake)
-      #   OpenAL Soft - kcat's bin zip (headers, OpenAL32.lib, soft_oal.dll)
+      #   OpenAL Soft - kcat's bin zip (headers, OpenAL32.lib, soft_oal.dll);
+      #                 it has no ARM64 build, so arm64 takes vcpkg's
       #   FFmpeg      - BtbN's LGPL shared build (import libs + .pc files),
       #                 a pinned month-end autobuild of the 9.0 release branch
       #   zlib,       - no official MSVC binaries; the runner's preinstalled
@@ -148,7 +160,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ${{ github.workspace }}/deps
-          key: deps-win-sdl3-${{ env.SDL3_VERSION }}-openal-${{ env.OPENAL_VERSION }}-${{ env.FFMPEG_BUILD }}-zlib-stormlib-v2
+          key: deps-win-${{ matrix.arch }}-sdl3-${{ env.SDL3_VERSION }}-openal-${{ env.OPENAL_VERSION }}-${{ env.FFMPEG_BUILD }}-zlib-stormlib-v2
 
       - name: Download prebuilt dependencies (Windows)
         if: runner.os == 'Windows' && steps.cache-deps.outputs.cache-hit != 'true'
@@ -162,9 +174,13 @@ jobs:
             7z x -y "-o$deps" "$env:RUNNER_TEMP\$name.zip" | Out-Null
           }
           Get-Zip "https://github.com/libsdl-org/SDL/releases/download/release-$env:SDL3_VERSION/SDL3-devel-$env:SDL3_VERSION-VC.zip" sdl3
-          Get-Zip "https://github.com/kcat/openal-soft/releases/download/$env:OPENAL_VERSION/openal-soft-$env:OPENAL_VERSION-bin.zip" openal
           Get-Zip "https://github.com/BtbN/FFmpeg-Builds/releases/download/$env:FFMPEG_TAG/$env:FFMPEG_BUILD.zip" ffmpeg
-          & "$env:VCPKG_INSTALLATION_ROOT\vcpkg.exe" install zlib stormlib --triplet x64-windows --x-install-root="$deps\vcpkg"
+          $ports = @("zlib", "stormlib")
+          if ("${{ matrix.arch }}" -eq "arm64") { $ports += "openal-soft" }
+          else { Get-Zip "https://github.com/kcat/openal-soft/releases/download/$env:OPENAL_VERSION/openal-soft-$env:OPENAL_VERSION-bin.zip" openal }
+          # tools/vcpkg-ports: openal-soft 1.25.2 with upstream's fix for MSVC 14.52
+          # (tools/vcpkg-ports/README.md); without it the arm64 build stops in alc.cpp.
+          & "$env:VCPKG_INSTALLATION_ROOT\vcpkg.exe" install @ports --triplet ${{ matrix.arch }}-windows --x-install-root="$deps\vcpkg" --overlay-ports="${{ github.workspace }}\tools\vcpkg-ports"
           Get-ChildItem $deps
 
       # pkg-config for FFmpeg's .pc files (pkgconfiglite is a prebuilt binary).
@@ -175,13 +191,17 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
+          # The image's Strawberry Perl already has a pkg-config on PATH (it
+          # says 0.26) that CMake's FindPkgConfig doesn't take: with the feed
+          # down (504, 2026-11-13) it passed for pkgconfiglite, so it doesn't count.
+          function Test-PkgConfig { (Get-Command pkg-config -ErrorAction SilentlyContinue) -and ((pkg-config --version) -ne '0.26') }
           foreach ($try in 1..3) {
             choco install pkgconfiglite -y --no-progress
-            if (Get-Command pkg-config -ErrorAction SilentlyContinue) { break }
+            if (Test-PkgConfig) { break }
             Write-Host "pkg-config not installed (try $try of 3)"
             Start-Sleep -Seconds (20 * $try)
           }
-          if (-not (Get-Command pkg-config -ErrorAction SilentlyContinue)) { throw "pkg-config is missing: the Chocolatey install failed 3 times" }
+          if (-not (Test-PkgConfig)) { throw "pkg-config is missing: the Chocolatey install failed 3 times" }
           pkg-config --version
 
       - name: Set up Ninja (Windows)
@@ -194,14 +214,16 @@ jobs:
         uses: jurplel/install-qt-action@v4.3.1
         with:
           version: '6.8.*'
-          host: 'windows'
+          host: ${{ matrix.arch == 'arm64' && 'windows_arm64' || 'windows' }}
           target: 'desktop'
-          arch: 'win64_msvc2022_64'
+          arch: ${{ matrix.arch == 'arm64' && 'win64_msvc2022_arm64' || 'win64_msvc2022_64' }}
           cache: true
 
       - name: Set up MSVC environment (Windows)
         if: runner.os == 'Windows'
         uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: ${{ matrix.arch }}
 
       # ccache 4.x handles MSVC too; CMake picks it up via
       # CMAKE_*_COMPILER_LAUNCHER. StormLib and CLI11 (FetchContent) share it.
@@ -236,8 +258,41 @@ jobs:
         uses: actions/cache@v4
         with:
           path: build/ffmpeg-*
-          key: ffmpeg-${{ runner.os }}-${{ steps.ffmpeg-key.outputs.key }}
-          restore-keys: ffmpeg-${{ runner.os }}-
+          key: ffmpeg-${{ runner.os }}-${{ runner.arch }}-${{ steps.ffmpeg-key.outputs.key }}
+          restore-keys: ffmpeg-${{ runner.os }}-${{ runner.arch }}-
+
+      # Sentry Native and Crashpad are built through FetchContent. Keep their
+      # isolated source/build trees so unchanged vendor code needn't compile,
+      # and Ninja's log and deps beside them: without those Ninja takes every
+      # restored object for stale and compiles all ~265 again. The runner
+      # image's version stays out of the key: GitHub rolls a new image out
+      # over days, so two runs get two images and miss each other's cache.
+      # ponytail: an image whose system headers are newer than the cache
+      # rebuilds Sentry every run; delete the sentry-* cache if that shows.
+      - name: Sentry cache key
+        id: sentry-key
+        shell: bash
+        run: |
+          if [[ "${{ runner.os }}" == "Windows" ]]; then
+            compiler_version=$(cl 2>&1 | head -n 1 || true)
+          else
+            compiler_version="$(cc --version | head -n 1) / $(c++ --version | head -n 1)"
+          fi
+          key=$({
+            sed -n -e '/^    set(SENTRY_BACKEND /,/^    set(SENTRY_SCREENSHOT /p' \
+              -e '/^    FetchContent_Declare(/,/^    )/p' apps/d2d/CMakeLists.txt
+            printf '%s\n' "$compiler_version" ninja-state
+          } | git hash-object --stdin)
+          echo "key=${key:0:16}" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Sentry (all platforms)
+        uses: actions/cache@v4
+        with:
+          path: |
+            build/_deps/sentry_native-*
+            build/.ninja_log
+            build/.ninja_deps
+          key: sentry-${{ runner.os }}-${{ runner.arch }}-${{ steps.sentry-key.outputs.key }}
 
       - name: Configure (Linux/macOS)
         if: runner.os != 'Windows'
@@ -259,9 +314,10 @@ jobs:
         run: |
           $deps = "${{ github.workspace }}\deps"
           $sdl = "$deps\SDL3-$env:SDL3_VERSION"
-          $al = "$deps\openal-soft-$env:OPENAL_VERSION-bin"
           $ff = "$deps\$env:FFMPEG_BUILD"
-          $z = "$deps\vcpkg\x64-windows"
+          $z = "$deps\vcpkg\${{ matrix.arch }}-windows"
+          $al_include, $al_library = "$deps\openal-soft-$env:OPENAL_VERSION-bin\include", "$deps\openal-soft-$env:OPENAL_VERSION-bin\libs\Win64\OpenAL32.lib"
+          if ("${{ matrix.arch }}" -eq "arm64") { $al_include, $al_library = "$z\include", "$z\lib\OpenAL32.lib" }
           $env:PKG_CONFIG_PATH = "$ff\lib\pkgconfig"
           # BtbN's .pc files are relocatable (prefix=${pcfiledir}/../..).
           # Embedded (/Z7), not RelWithDebInfo's /Zi: ccache can't cache a
@@ -279,8 +335,8 @@ jobs:
             -DD2D_CHECK_HEADERS=OFF `
             "-DCMAKE_PREFIX_PATH=$sdl\cmake;$z" `
             "-DSDL3_DIR=$sdl\cmake" `
-            "-DOPENAL_INCLUDE_DIR=$al\include" `
-            "-DOPENAL_LIBRARY=$al\libs\Win64\OpenAL32.lib"
+            "-DOPENAL_INCLUDE_DIR=$al_include" `
+            "-DOPENAL_LIBRARY=$al_library"
 
       - name: Build
         # -k 0: keep going past the first failure so one run shows every error.
@@ -300,10 +356,10 @@ jobs:
         run: |
           $deps = "${{ github.workspace }}\deps"
           $dlls = @(
-            "$deps\SDL3-$env:SDL3_VERSION\lib\x64\SDL3.dll",
-            "$deps\openal-soft-$env:OPENAL_VERSION-bin\bin\Win64\soft_oal.dll",
+            "$deps\SDL3-$env:SDL3_VERSION\lib\${{ matrix.arch }}\SDL3.dll",
             "$deps\$env:FFMPEG_BUILD\bin\*.dll",
-            "$deps\vcpkg\x64-windows\bin\*.dll")
+            "$deps\vcpkg\${{ matrix.arch }}-windows\bin\*.dll")   # arm64's OpenAL32.dll too
+          if ("${{ matrix.arch }}" -ne "arm64") { $dlls += "$deps\openal-soft-$env:OPENAL_VERSION-bin\bin\Win64\soft_oal.dll" }
           foreach ($dir in @("build\apps\d2d", "build\apps\launcher", "build\tests")) {
             if (Test-Path $dir) { Copy-Item -Path $dlls -Destination $dir -Force }
           }
@@ -322,6 +378,39 @@ jobs:
       # Chocolatey's.
       - name: Package
         run: cmake --build build --target package
+
+      # The package as a player gets it: dumpbin's machine for every .exe and
+      # .dll in it (8664 x64, AA64 ARM64) and the processor in its name, so
+      # an x64 DLL in the ARM64 zip, or the reverse, fails here. The tests
+      # above ran on the native runner, not under x64 emulation.
+      - name: Check the package's architecture (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $machine, $processor = if ("${{ matrix.arch }}" -eq "arm64") { "AA64", "ARM64" } else { "8664", "AMD64" }
+          $zip = Get-Item build\d2d-*.zip
+          if ($zip.Name -notlike "*-Windows-$processor.zip") { throw "$($zip.Name) isn't named for $processor" }
+          Expand-Archive $zip.FullName "$env:RUNNER_TEMP\package" -Force
+          # Microsoft's own redist for this architecture passes as it is: its
+          # arm64 folder has a vcruntime140_1.dll that isn't AA64 (run
+          # 43476586761), which CMake's InstallRequiredSystemLibraries ships.
+          $arch = "${{ matrix.arch }}"
+          $redist = if ($env:VCToolsRedistDir) { Get-ChildItem (Join-Path $env:VCToolsRedistDir $arch) -Recurse -Filter *.dll } else { @() }
+          $wrong = Get-ChildItem "$env:RUNNER_TEMP\package" -Recurse -Include *.exe, *.dll |
+            Where-Object { -not ((dumpbin /headers $_.FullName) -match "^\s*$machine machine") } |
+            Where-Object {
+              $file = $_
+              $hash = (Get-FileHash $file.FullName).Hash
+              $theirs = $redist | Where-Object { $_.Name -eq $file.Name -and (Get-FileHash $_.FullName).Hash -eq $hash }
+              if ($theirs) {
+                $header = (dumpbin /headers $file.FullName) -match 'machine \(' | Select-Object -First 1
+                Write-Host "$($file.Name): from Microsoft's $arch redist, not $machine`: $header"
+              }
+              -not $theirs
+            }
+          $wrong | ForEach-Object { Write-Host "::error::not $machine`: $($_.FullName)" }
+          if ($wrong) { exit 1 }
+          Write-Host "$($zip.Name): every binary is $machine, or Microsoft's redist as shipped"
 
       - name: Upload Sentry debug information
         if: startsWith(github.ref, 'refs/tags/') && runner.os != 'Windows'
@@ -381,7 +470,7 @@ jobs:
         continue-on-error: ${{ !startsWith(github.ref, 'refs/tags/') }}
         uses: actions/upload-artifact@v4
         with:
-          name: d2d-${{ runner.os }}
+          name: d2d-${{ runner.os }}${{ matrix.artifact_suffix }}
           retention-days: ${{ startsWith(github.ref, 'refs/tags/') && 90 || 14 }}
           path: |
             build/d2d-*.dmg
@@ -445,8 +534,8 @@ jobs:
         uses: actions/cache@v4
         with:
           path: build/ffmpeg-*
-          key: ffmpeg-${{ runner.os }}-${{ steps.ffmpeg-key.outputs.key }}
-          restore-keys: ffmpeg-${{ runner.os }}-
+          key: ffmpeg-${{ runner.os }}-${{ runner.arch }}-${{ steps.ffmpeg-key.outputs.key }}
+          restore-keys: ffmpeg-${{ runner.os }}-${{ runner.arch }}-
 
       # A cache miss leaves an ffmpeg_build target: build it for its headers.
       - name: Configure and generate
@@ -488,7 +577,7 @@ jobs:
             echo "Changed-files mode: $(wc -l < tidy_files.txt) files to tidy"
             cat tidy_files.txt
           fi
-          xargs -P $(nproc) -n 1 clang-tidy -p build --quiet --extra-arg=-Wno-unknown-warning-option < tidy_files.txt
+          xargs -P "$(nproc)" -n 1 clang-tidy -p build --quiet --extra-arg=-Wno-unknown-warning-option < tidy_files.txt
 
   flatpak:
     name: Flatpak (${{ matrix.arch }})
@@ -561,11 +650,122 @@ jobs:
             --org "$SENTRY_ORG" --project "$SENTRY_PROJECT" \
             "$d2d_binary" "$crashpad_handler"
 
+  # d2d alone for D2Vita (docs/d2vita.md): a Win32 Game.exe (MinGW) and a
+  # PS Vita VPK (VitaSDK); a Switch NRO (devkitA64, docs/switch.md); and an
+  # Android APK (docs/android.md). Each built by tools/porter.sh, in its
+  # container; Android on the runner itself, with the SDK, NDK and JDK that
+  # GitHub's image carries (no image: no container).
+  # ponytail: no ccache or FFmpeg cache; add them if these become the slow jobs.
+  ports:
+    name: ${{ matrix.name }}
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    container: ${{ matrix.image }}
+    env:
+      SDL3_VERSION: "3.4.16"     # as the Windows build's
+      OPENAL_VERSION: "1.25.2"
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: win32
+            name: D2Vita (Win32)
+            artifact: d2vita-win32
+            image: ubuntu:26.04
+          - target: vita
+            name: D2Vita (PS Vita)
+            artifact: d2vita-vita
+            # A digest: :latest moves with every VitaSDK package update.
+            image: vitasdk/vitasdk@sha256:f0eeb443be707be534c568d5d23702e14152a8513778cd11d209aa1b42fbd434
+          - target: switch
+            name: Nintendo Switch
+            artifact: switch
+            image: devkitpro/devkita64@sha256:1fc388c3a0d34bd2045a6dadcb1020e069d5f876a187fd705de14b4440c00282
+          - target: android
+            name: Android
+            artifact: android
+    steps:
+      # Before the checkout: without git it downloads a tarball, and
+      # git describe has no tags to stamp the version from.
+      - name: Install dependencies (Win32)
+        if: matrix.target == 'win32'
+        run: |
+          apt-get update -qq
+          apt-get install -y --no-install-recommends ca-certificates cmake ninja-build make gcc libc6-dev \
+            git curl unzip g++-mingw-w64-i686-posix libz-mingw-w64-dev
+
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+          fetch-depth: 0   # every tag, for git describe's version stamp
+
+      # The container's root doesn't own the checkout: git refuses it
+      # (CMake's version stamp would read "unknown").
+      - name: Trust the checkout
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+      - name: Download SDL3 and OpenAL Soft (Win32)
+        if: matrix.target == 'win32'
+        run: |
+          mkdir -p deps
+          curl -fsSL "https://github.com/libsdl-org/SDL/releases/download/release-$SDL3_VERSION/SDL3-devel-$SDL3_VERSION-mingw.tar.gz" | tar -xz -C deps
+          curl -fsSLo deps/openal.zip "https://github.com/kcat/openal-soft/releases/download/$OPENAL_VERSION/openal-soft-$OPENAL_VERSION-bin.zip"
+          unzip -q deps/openal.zip -d deps
+          echo "SDL3_MINGW=$PWD/deps/SDL3-$SDL3_VERSION" >> "$GITHUB_ENV"
+          echo "OPENAL_MINGW=$PWD/deps/openal-soft-$OPENAL_VERSION-bin" >> "$GITHUB_ENV"
+
+      - name: Install dependencies (Android)
+        if: matrix.target == 'android'
+        run: sudo apt-get update -qq && sudo apt-get install -y --no-install-recommends ninja-build
+
+      # main and tags sign with the release key, when the repository has one:
+      # a pull request's APK (and a fork's, which gets no secrets) is signed
+      # with a debug key. The key file stays outside the checkout.
+      - name: Release key (Android)
+        if: matrix.target == 'android' && github.event_name == 'push'
+        env:
+          ANDROID_KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
+        run: |
+          if [ -n "$ANDROID_KEYSTORE_B64" ]; then
+            printf '%s' "$ANDROID_KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/release.p12"
+            echo "ANDROID_KEYSTORE=$RUNNER_TEMP/release.p12" >> "$GITHUB_ENV"
+          else
+            echo "::notice::ANDROID_KEYSTORE_B64 is not configured; the APK is signed with a debug key."
+          fi
+
+      - name: Build
+        env:
+          ANDROID_KEYSTORE_PASSWORD: ${{ matrix.target == 'android' && github.event_name == 'push' && secrets.ANDROID_KEYSTORE_PASSWORD || '' }}
+        run: tools/porter.sh ${{ matrix.target }}
+
+      # Named as the packages are: d2d-0.12.0-switch.zip, no v. Android's is
+      # the APK itself, which a phone installs as it is.
+      - name: Zip
+        run: |
+          name="$PWD/build/d2d-$(git describe --tags --always | sed 's/^v//')-${{ matrix.artifact }}"
+          if [ "${{ matrix.target }}" = android ]; then
+            cp build/ports/android/d2d.apk "$name.apk"
+          else
+            cd build/ports/${{ matrix.target }} && cmake -E tar cf "$name.zip" --format=zip -- *
+          fi
+
+      # Pull requests too, unlike the packages: a few MB, and a pull
+      # request's is the only one to try on a Vita or Switch before the merge.
+      - name: Upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          retention-days: ${{ startsWith(github.ref, 'refs/tags/') && 90 || 14 }}
+          path: build/d2d-*-${{ matrix.artifact }}.*
+          if-no-files-found: error
+
   # The one check the main ruleset requires: green when every job above
   # passed or was skipped for a docs-only change.
   ci-ok:
     name: CI ok
-    needs: [changes, build, tidy, flatpak]
+    needs: [changes, build, tidy, flatpak, ports]
     if: always()
     runs-on: ubuntu-latest
     steps:
@@ -579,6 +779,7 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/')
     needs:
       - build
+      - ports
       - flatpak
       - tidy
     runs-on: ubuntu-latest

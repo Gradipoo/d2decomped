@@ -300,7 +300,7 @@ enum class ServerDoFunction : int {
     kChargeUp = 34,                // FUN_005d3490: Tiger Strike, Cobra Strike, Royal Strike
     kElementalChargeUp = 35,       // FUN_005d35d0: Fists of Fire, Claws of Thunder, Blades of Ice
     kReleaseNova = 36,             // FUN_005d4db0: a nova of the count's missile
-    kReleaseMissileAtUnits = 37,   // FUN_005d4e70 -> FUN_005d4150: a missile at each unit in reach
+    kReleaseMissileAtUnits = 37,   // FUN_005d4e70 -> FUN_005d4150: the count's missile on the 64-point ring
     kReleaseAreaHit = 38,          // FUN_005d3e80: the skill's damage on everything in reach
     kReleaseScatter = 39,          // FUN_005d3f90: missiles at random points in reach
     kReleaseAtTarget = 40,         // FUN_005d5010: the count's missile standing at the target
@@ -389,13 +389,40 @@ enum class ServerDoFunction : int {
     kBaalColdMissiles = 139,       // FUN_005d2940: srvmissilea (a maker) at the target's spot
     kBaalTentacle = 140,           // FUN_005d2c20: 2 + rand(3) + difficulty tentacles about the target
     kBaalCorpseExplode = 141,      // FUN_005d2e80: the corpses about the caster spent (baal_corpse_spent)
-    kReleaseMissileAtUnitsSecondScan = 143,   // FUN_005d4f40 -> FUN_005d4870: 37 through the other scan
+    kReleaseMissileAtUnitsSecondScan = 143,   // FUN_005d4f40 -> FUN_005d4870: the same ring, hops only on missile 0x238
     kHydra = 144,                  // FUN_005ca910
     kDoomKnightMissile = 148,      // FUN_005cdfb0: srvmissilea (+ the knight's variant) at the target
     kVariantMissile = 149,         // FUN_005ce0b0: srvmissilea with the caster's variant 1..4 (necromage1..4)
     kSmite = 150,                  // FUN_005ce9f0
     kDiabLight = 152,              // FUN_005cc690: diablight at the target every calc3 frames while state 0xc's on
 };
+
+// The 64 subtile offsets embedded in FUN_005d4150 and FUN_005d4870 (the same
+// list in both). A release walks it by `step` entries, byte offset under 0x100.
+inline constexpr std::array<std::pair<int, int>, 64> kReleaseRing{{
+    {30, 0}, {29, 2}, {29, 5}, {28, 8}, {27, 11}, {26, 14}, {24, 16}, {23, 19},
+    {21, 21}, {19, 23}, {16, 24}, {14, 26}, {11, 27}, {8, 28}, {5, 29}, {2, 29},
+    {0, 30}, {-2, 29}, {-5, 29}, {-8, 28}, {-11, 27}, {-14, 26}, {-16, 24}, {-19, 23},
+    {-21, 21}, {-23, 19}, {-24, 16}, {-26, 14}, {-27, 11}, {-28, 8}, {-29, 5}, {-29, 2},
+    {-30, 0}, {-29, -2}, {-29, -5}, {-28, -8}, {-27, -11}, {-26, -14}, {-24, -16}, {-23, -19},
+    {-21, -21}, {-19, -23}, {-16, -24}, {-14, -26}, {-11, -27}, {-8, -28}, {-5, -29}, {-2, -29},
+    {0, -30}, {2, -29}, {5, -29}, {8, -28}, {11, -27}, {14, -26}, {16, -24}, {19, -23},
+    {21, -21}, {23, -19}, {24, -16}, {26, -14}, {27, -11}, {28, -8}, {29, -5}, {29, -2},
+}};
+// FUN_004efc20(0x118) is that skill's Param2 (+0x14c). FUN_005d4150 stores it
+// plus 1 on every missile. FUN_005d4870 stores it only when the missile row is 0x238.
+inline constexpr int kReleaseHopSkill = 0x118;
+inline constexpr int kReleaseHopMissile = 0x238;
+inline int release_ring_hops(int param2, int missile_id, bool second_scan) {
+    if (second_scan && missile_id != kReleaseHopMissile) return 0;
+    return param2 + 1;
+}
+// `step` is prgcalc, or aurarange when that is 0. A step under 1 would not advance.
+template <class Visit>
+void visit_release_ring(int step, Visit&& visit) {
+    if (step < 1) step = 1;
+    for (int byte = 0; byte < 0x100; byte += step * 4) visit(kReleaseRing[std::size_t(byte / 4)]);
+}
 
 // ---- skill rows
 
@@ -446,7 +473,9 @@ struct Skill {
     std::string summode;                   // +0xbf the mode its summon comes in
     Calc petmax;                           // +0xc0: how many of the group at once
     int sumumod = 0;                       // +0xe4: the MonUMod its summon gets (FUN_005c4470)
+    bool target_ally = false;             // TargetAlly (flag bit 0x1a, record +7 & 4): FUN_00554d20
     bool target_corpse = false;            // TargetCorpse: raised from a corpse
+    bool target_pet = false;               // TargetPet (flag bit 0x19, record +7 & 2): FUN_005542c0
     std::array<std::string, 5> sumskill;   // +0xc4: the pet's skills
     std::array<Calc, 5> sumsk_calc;        // +0xd0: their levels
     int result_flags = 0;                  // ResultFlags (8: knockback)
@@ -642,8 +671,16 @@ inline int skill_tohit(const SkillTables& skill_tables, const Skill& skill, cons
 //     its elements (FUN_004e89a0), each colouring it (fire 1, lightning 9,
 //     cold / magic 3, poison 2 last), then min >= 1, max >= min + 1; plus
 //     the skill's own MinDam / EMin (with mastery) >> 8.
-//   damage, descdam 5 (FUN_004ead60): the skill's own, coloured by its
-//     EType, poison x its length; SrcDam / 128 of the weapon's on top.
+//   damage, descdam 5 (FUN_004ead60) and 24 (FUN_004eae70, Blade Fury): the
+//     skill's own, coloured by its EType, poison x its length; SrcDam / 128
+//     of the weapon's on top (FUN_004e9660), whose elements and damblue /
+//     damred then colour it.
+//   damage, descdam 9 (FUN_004eb390, Fire Wall): MinDam / MaxDam << HitShift
+//     (no level brackets) plus EMin / EMax with mastery, x 75 >> 8, then
+//     the weapon's share as 5.
+//   damage, descdam 8 (FUN_004eb290, Inferno): EMin / EMax with mastery x
+//     ddam calc1 x 25 / ddam calc2 >> 8, a calc of 0 taken as 1; EType's
+//     colour, no weapon.
 //   attack rating, descatt 1 / 5 (FUN_004e9040): (dex - 7) x 5 + ToHitFactor
 //     + 19, x (1 + (119 + the skill's ToHit) %); descatt 2 (FUN_004e8ec0)
 //     adds the weapon mastery (342) to the %. No floor at 1.
@@ -651,10 +688,14 @@ inline int skill_tohit(const SkillTables& skill_tables, const Skill& skill, cons
 //     damred: FUN_004e86f0, then again after the elements in FUN_004e89a0)
 //     and the attack rating (attblue / attred, FUN_004e9040 / FUN_004e8ec0);
 //     red wins.
-// ponytail: descdam 2..4, 6, 8..24 and descatt 3 / 4 (kicks, throws,
-// dual wield: the second value, FUN_004e93a0) show no line; stat 325, the
-// usability check (FUN_004d9fc0) and barehanded strength % (FUN_004e86f0)
-// are left out.
+//   The panel draws the damage and the attack rating only when the usable
+//     status (FUN_004d9fc0) is 0, 1, 6 or 8. `usable` defaults to 0, so a
+//     caller that omits it still fills the line. The server's status is
+//     FUN_00647960 (Fight::skill_status). FUN_004d9fc0 may turn a 0 into 8
+//     for the client player's own cast delay, and both still draw.
+// ponytail: descdam 2..4, 6, 10..23 and descatt 3 / 4 (kicks, throws,
+// dual wield: the second value, FUN_004e93a0) show no line; stat 325 and
+// barehanded strength % (FUN_004e86f0) are left out.
 // The char panel's state colour bits (States.txt's flags, FUN_00618100:
 // bit n's states listed at data tables +0xcc + 4n, read by FUN_0063a130):
 // armblue 0x13 / armred 0x19, rfblue 0x14 / rfred 0x1a, rcblue 0x15 /
@@ -670,9 +711,11 @@ struct AttackLine {
     int attack_rating = 0, ar_colour = 0;
 };
 inline AttackLine attack_line(const SkillTables& skill_tables, const Skill& skill, const CalcEnv& env, int lvl,
-                              const Fighter& fighter, int mastery_tohit, std::uint8_t blue = 0, std::uint8_t red = 0) {
+                              const Fighter& fighter, int mastery_tohit, std::uint8_t blue = 0, std::uint8_t red = 0,
+                              int usable = 0) {
     AttackLine line;
     line.skill = skill.id;
+    if (usable != 0 && usable != 1 && usable != 6 && usable != 8) return line;   // FUN_004d9fc0
     constexpr int kElemColour[5] = { 1, 9, 3, 2, 3 };    // Fighter::elem order: fire, lightning, cold, poison, magic
     const auto calc_of = [&](const Calc& calc) { return calc.empty() ? 0 : eval_calc(skill_tables, calc, env, skill.id, lvl); };
     const auto weapon = [&](int pct, int flat) {
@@ -687,24 +730,46 @@ inline AttackLine attack_line(const SkillTables& skill_tables, const Skill& skil
         if (line.max > 0) { line.min = std::max(line.min, 1); line.max = std::max(line.max, line.min + 1); }
     };
     const auto state_colour = [&](PanelColour bit, int colour) { return (red & bit) ? 1 : (blue & bit) ? 3 : colour; };
-    const int poison_len = skill.etype == 3 ? std::max(elem_length(skill_tables, skill, env, lvl), 1) : 1;
-    if (skill.descdam == 1 || skill.descdam == 7) {
-        line.damage = true;
-        weapon(calc_of(skill.ddam_calc1), calc_of(skill.ddam_calc2));
+    const int etype_colour = skill.etype >= 0 && skill.etype < 5 ? kElemColour[skill.etype] : 0;   // FUN_004e6fb0
+    // FUN_004e9660: SrcDam / 128 of the weapon's damage joins the line; the
+    // weapon's elements colour it, then damblue / damred (FUN_004e89a0's end).
+    const auto weapon_share = [&] {
+        if (skill.srcdam_raw == 0) return;
+        const int base_min = line.min, base_max = line.max;
+        weapon(0, 0);
+        line.min = base_min + line.min * skill.srcdam_raw / 128; line.max = base_max + line.max * skill.srcdam_raw / 128;
         line.damage_colour = state_colour(kPanelDamage, line.damage_colour);
-    } else if (skill.descdam == 5) {
-        line.damage = true;
-        if (skill.srcdam_raw != 0) {
-            weapon(0, 0);
-            line.min = line.min * skill.srcdam_raw / 128; line.max = line.max * skill.srcdam_raw / 128;
-        }
-        line.damage_colour = skill.etype >= 0 && skill.etype < 5 ? kElemColour[skill.etype] : 0;
-    }
-    if (line.damage) {
+    };
+    const auto own_damage = [&](int poison_len) {
         line.min += skill_phys(skill_tables, skill, env, lvl, false) >> 8;
         line.max += skill_phys(skill_tables, skill, env, lvl, true) >> 8;
         line.min += elem_damage(skill_tables, skill, env, lvl, false, 0, true) * poison_len >> 8;
         line.max += elem_damage(skill_tables, skill, env, lvl, true, 0, true) * poison_len >> 8;
+    };
+    if (skill.descdam == 1 || skill.descdam == 7) {
+        line.damage = true;
+        weapon(calc_of(skill.ddam_calc1), calc_of(skill.ddam_calc2));
+        line.damage_colour = state_colour(kPanelDamage, line.damage_colour);
+        own_damage(1);
+    } else if (skill.descdam == 5 || skill.descdam == 24) {   // FUN_004ead60, FUN_004eae70: the same sum in another order
+        line.damage = true;
+        line.damage_colour = etype_colour;
+        weapon_share();
+        own_damage(skill.etype == 3 ? elem_length(skill_tables, skill, env, lvl) : 1);   // poison x ELen (FUN_00644f20), 0 too
+    } else if (skill.descdam == 9) {                          // FUN_004eb390 (Blaze, Fire Wall, Firestorm)
+        line.damage = true;
+        const int shift = skill.hitshift & 31;
+        line.min = ((skill.mindam << shift) + elem_damage(skill_tables, skill, env, lvl, false, 0, true)) * 75 >> 8;
+        line.max = ((skill.maxdam << shift) + elem_damage(skill_tables, skill, env, lvl, true, 0, true)) * 75 >> 8;
+        line.damage_colour = etype_colour;
+        weapon_share();
+    } else if (skill.descdam == 8) {                          // FUN_004eb290 (Inferno, Arctic Blast, Inferno Sentry)
+        line.damage = true;
+        const int scale = calc_of(skill.ddam_calc1), over = calc_of(skill.ddam_calc2);
+        const int times = scale != 0 ? scale : 1, per = over != 0 ? over : 1;
+        line.min = elem_damage(skill_tables, skill, env, lvl, false, 0, true) * times * 25 / per >> 8;
+        line.max = elem_damage(skill_tables, skill, env, lvl, true, 0, true) * times * 25 / per >> 8;
+        line.damage_colour = etype_colour;
     }
     if (skill.descatt == 1 || skill.descatt == 2 || skill.descatt == 5) {
         const int pct = fighter.ar_pct - (skill.descatt == 2 ? 0 : mastery_tohit) + skill_tohit(skill_tables, skill, env, lvl);

@@ -84,7 +84,26 @@ NSURL* pick_folder() {
     return url;
 }
 
+bool write_data_cfg(const fs::path& dest, const fs::path& cfg_file) {
+    const auto data = find_named(dest, "d2data.mpq");
+    if (!data) return false;
+    std::string patch;
+    if (const auto patch_mpq = find_named(dest, "patch_d2.mpq")) patch = patch_mpq->string();
+    else if (const auto installer = find_named(dest, "LODPatch_114d.exe")) patch = installer->string();
+    if (!d2d::userdir::save_cfg(cfg_file, { { "data", dest.string() }, { "patch", patch } })) {
+        d2d::log::error("Could not write {}", cfg_file.string());
+        return false;
+    }
+    return true;
+}
+
 }  // namespace
+
+bool d2d::ios::adopt_game_data_if_present(const fs::path& dest, const fs::path& cfg_file) {
+    if (!write_data_cfg(dest, cfg_file)) return false;
+    d2d::log::info("Using game data in {} (d2d.cfg updated).", dest.string());
+    return true;
+}
 
 bool d2d::ios::import_game_data(const fs::path& dest, const fs::path& cfg_file) {
     d2d::log::info("Pick the folder that contains d2data.mpq.");
@@ -106,16 +125,8 @@ bool d2d::ios::import_game_data(const fs::path& dest, const fs::path& cfg_file) 
         d2d::log::error("Could not copy the picked folder into {}.", dest.string());
         return false;
     }
-    const auto data = find_named(dest, "d2data.mpq");
-    if (!data) {
+    if (!write_data_cfg(dest, cfg_file)) {
         d2d::log::error("Picked folder has no d2data.mpq. Pick the folder again.");
-        return false;
-    }
-    std::string patch;
-    if (const auto patch_mpq = find_named(dest, "patch_d2.mpq")) patch = patch_mpq->string();
-    else if (const auto installer = find_named(dest, "LODPatch_114d.exe")) patch = installer->string();
-    if (!d2d::userdir::save_cfg(cfg_file, { { "data", dest.string() }, { "patch", patch } })) {
-        d2d::log::error("Could not write {}", cfg_file.string());
         return false;
     }
     d2d::log::info("Imported game data into {}", dest.string());

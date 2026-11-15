@@ -196,19 +196,20 @@ struct NpcMenuState {
     // Index of the selectable line under (mx, my), or -1.
     // ponytail: how the window's own hover finds "cancel" (its line 0x13b
     // high reaches over the list) isn't traced; d2d gives the list box the mouse first.
-    [[nodiscard]] int line_at(int mouse_x, int mouse_y) const {
+    [[nodiscard]] int line_at(int mouse_x, int mouse_y, int pad_y = 0) const {
         if (npc < 0 || mouse_x < x || mouse_x >= x + box_width) return -1;
         if (list && d2d::rules::list_contains(list->box, mouse_x, mouse_y)) return -1;
         int base = y;
         for (std::size_t i = 0; i < lines.size(); ++i) {
             base += lines[i].height;
-            if (!lines[i].header && mouse_y > base - lines[i].height && mouse_y <= base) return int(i);
+            if (!lines[i].header && mouse_y > base - lines[i].height - pad_y && mouse_y <= base + pad_y) return int(i);
         }
         return -1;
     }
 };
 
 void layout_npc_menu(const Scene& scene, NpcMenuState& menu, int screen_x, int screen_y);
+void layout_npc_menu_touch(const Scene& scene, NpcMenuState& menu);
 
 // clvl and the unidentified item count adjust the table like game.exe:
 // Kashya gains "hire" above level 7 (FUN_004b66b0 -> FUN_004b6410
@@ -292,7 +293,7 @@ inline bool speech_line_visible(int baseline, int cell) {
 
 Speech start_speech(const Scene& scene, int npc, std::uint16_t string, std::uint32_t now_ms);
 
-void draw_speech(std::vector<std::uint8_t>& framebuffer, const Scene& scene, const Speech& speech, std::uint32_t now_ms);
+void draw_speech(std::vector<std::uint8_t>& framebuffer, const Scene& scene, const Speech& speech, std::uint32_t now_ms, bool touch_layout = false);
 
 // FUN_004b8100: a black box at draw mode 1 (half transparent), each line's
 // text with its baseline at the box top + the heights so far + its own;

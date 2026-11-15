@@ -99,7 +99,6 @@ Device rows, including a plugged-in iPhone or iPad, stay not tested.
 
 | Check | Result |
 |---|---|
-| Safe area inset on the touch controls | not tested |
 | Stage Manager resizing | not tested |
 | External display | not tested |
 | Pointer hover | not tested |

@@ -2214,10 +2214,13 @@ int main(int argc, char** argv) {
         auto found = d2d::install::resolve_data_dir(data_dir_str, env ? env : "", base ? fs::path(base) : fs::path{},
                                                     fs::current_path(cwd_ec), cfg["data"]);
 #if defined(TARGET_OS_IPHONE) && TARGET_OS_IPHONE
-        // No device scan. The picker copies one chosen folder into the sandbox.
+        // No device scan. Stale d2d.cfg paths miss after reinstall; Documents/gamedata may still be valid.
         if (!found.error.empty()) {
             const auto gamedata = user_dir.parent_path() / "gamedata";
-            if (d2d::ios::import_game_data(gamedata, user_dir / "d2d.cfg")) {
+            if (d2d::ios::adopt_game_data_if_present(gamedata, user_dir / "d2d.cfg")) {
+                d2d::userdir::load_cfg(user_dir / "d2d.cfg", cfg);
+                found = d2d::install::resolve_data_dir({}, {}, {}, {}, cfg["data"]);
+            } else if (d2d::ios::import_game_data(gamedata, user_dir / "d2d.cfg")) {
                 d2d::userdir::load_cfg(user_dir / "d2d.cfg", cfg);
                 found = d2d::install::resolve_data_dir({}, {}, {}, {}, cfg["data"]);
             }

@@ -525,14 +525,14 @@ auto Town::portal_item(std::string_view name, bool charged) const -> int {
             if (candidate && candidate->character.name == name) { owner = &candidate->character; break; }
     if (!owner) return -1;
     using namespace d2d::d2s;
-    int scroll = -1;
+    int portal_scroll = -1;
     for (const auto& item : owner->items) {
         const bool inventory = item.location == item_location::kStored && item.panel == item_panel::kInventory;
         if (inventory && item.code == "tbk" && (!charged || item.quantity > 0)) return item.id;
-        if (scroll < 0 && item.code == "tsc" && (inventory || item.location == item_location::kBelt))
-            scroll = item.id;
+        if (portal_scroll < 0 && item.code == "tsc" && (inventory || item.location == item_location::kBelt))
+            portal_scroll = item.id;
     }
-    return scroll;
+    return portal_scroll;
 }
 
 /**

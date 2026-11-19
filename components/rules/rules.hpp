@@ -289,6 +289,11 @@ struct Store {
     int reduced = 0;                            // the player's item_reducedprices (stat 87), 0..99: off buy, gamble and repair
     // A store opens on its first tab with anything on it.
     void first_tab() { tab = int(std::ranges::find_if(tabs, [](const auto& page) { return !page.empty(); }) - tabs.begin()) % 4; }
+    void assign_stock_ids(int& next_id) {
+        for (auto& page : tabs)
+            for (auto& item : page)
+                if (item.id == -1) item.id = next_id--;
+    }
 };
 
 // What a vendor's fill asks the item maker for (FUN_00576980 -> FUN_00576330):

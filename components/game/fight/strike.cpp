@@ -334,6 +334,15 @@ auto Fight::start_swing(std::uint32_t now_ms, bool shown) -> bool {
         return true;
     }
 
+auto Fight::start_point_swing(std::uint32_t now_ms) -> void {
+        if (!start_swing(now_ms)) return;
+        actor->smove.at_point = true;
+        const auto* skill = game_data->skills.get(actor->swing_skill);
+        // A location Charge keeps running until skill_step reaches the point or a wall.
+        if (actor->smove.active && skill && skill->srvdofunc == ServerDoFunction::kCharge)
+            actor->pmode_until = ~0u;
+    }
+
 auto Fight::start_sequence(std::uint32_t now_ms) -> void {
         actor->seq = {};
         actor->seq_struck = 0;
@@ -647,14 +656,13 @@ auto Fight::strike(std::uint32_t now_ms) -> void {
             }
             return;
         }
-        if (actor->pstruck || actor->attack_mon < 0
-            || now_ms < actor->player.mode_ms + action_at()) return;
+        if (actor->pstruck || now_ms < actor->player.mode_ms + action_at()) return;
         actor->pstruck = true;
         do_sounds(now_ms);
         const int struck = actor->attack_mon;
         hit(now_ms);
         start_delay(now_ms);
-        if (const auto* skill = game_data->skills.get(actor->swing_skill); skill && actor->swing_skill != 0 && skill->srvdofunc == ServerDoFunction::kRepeatedHit) repeat_hit(struck, now_ms);
+        if (const auto* skill = game_data->skills.get(actor->swing_skill); struck >= 0 && skill && actor->swing_skill != 0 && skill->srvdofunc == ServerDoFunction::kRepeatedHit) repeat_hit(struck, now_ms);
     }
 
 auto Fight::repeat_hit(int struck, std::uint32_t now_ms) -> void {
@@ -1119,11 +1127,12 @@ auto Fight::skill_step(std::uint32_t now_ms, float elapsed) -> void {
             actor->smove.target_x = monsters[std::size_t(actor->attack_mon)].unit.x; actor->smove.target_y = monsters[std::size_t(actor->attack_mon)].unit.y;
         }
         const float dx = actor->smove.target_x - actor->player.x, dy = actor->smove.target_y - actor->player.y, distance = std::hypot(dx, dy);
-        const bool whirl = skill && skill->srvdofunc == ServerDoFunction::kWhirlwind;
-        if (distance < 0.05f || (!whirl && !actor->smove.fly && distance <= kMeleeReach)) { if (whirl) actor->pmode_until = now_ms; return; }
+        const bool point_run = skill && (skill->srvdofunc == ServerDoFunction::kWhirlwind
+            || (skill->srvdofunc == ServerDoFunction::kCharge && actor->smove.at_point));
+        if (distance < 0.05f || (!point_run && !actor->smove.fly && distance <= kMeleeReach)) { if (point_run) actor->pmode_until = now_ms; return; }
         actor->player.dir = direction16(dx, dy);
         const float step = std::min(actor->smove.speed * elapsed, distance), next_x = actor->player.x + dx / distance * step, next_y = actor->player.y + dy / distance * step;
-        if (!actor->smove.fly && level->unit_blocked(next_x, next_y)) { if (whirl) actor->pmode_until = now_ms; return; }
+        if (!actor->smove.fly && level->unit_blocked(next_x, next_y)) { if (point_run) actor->pmode_until = now_ms; return; }
         actor->player.x = next_x; actor->player.y = next_y;
     }
 
@@ -1166,10 +1175,13 @@ auto Fight::move_event(const d2d::rules::Skill& skill, std::uint32_t now_ms) -> 
             return;
         }
         // Leap Attack: the first event takes off, the second lands, the third strikes.
-        if (actor->seq_struck == 1 && actor->attack_mon >= 0) {
-            const auto& target = monsters[std::size_t(actor->attack_mon)].unit;
-            const float dx = target.x - actor->player.x, dy = target.y - actor->player.y, distance = std::max(std::hypot(dx, dy), 0.01f);
-            const float land = std::max(distance - kMeleeReach * 0.8f, 0.f);
+        if (actor->seq_struck == 1 && (actor->attack_mon >= 0 || actor->smove.at_point)) {
+            const auto* target = actor->attack_mon >= 0 ? &monsters[std::size_t(actor->attack_mon)].unit : nullptr;
+            const float x = target ? target->x : actor->move_x, y = target ? target->y : actor->move_y;
+            if (!target && level->unit_blocked(x, y)) return;
+            const float dx = x - actor->player.x, dy = y - actor->player.y, distance = std::hypot(dx, dy);
+            const float land = std::max(distance - (target ? kMeleeReach * 0.8f : 0.f), 0.f);
+            if (land == 0.f) return;
             std::uint32_t air = actor->seq_frame_ms;
             for (std::size_t k = seq_at(now_ms) + 1; k < actor->seq.size() && actor->seq[k].event != 1; ++k) air += actor->seq_frame_ms;
             actor->smove = { actor->player.x + dx / distance * land, actor->player.y + dy / distance * land, land / (float(air) / 1000.f), land > 0.f, true };

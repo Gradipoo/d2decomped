@@ -196,6 +196,8 @@ struct View {
     struct NpcKey { int level = 0, hc_idx = -1, object_id = 0; float x = 0, y = 0; int palace = 0, quest = 0; };
     std::vector<NpcKey> npc_keys;
     std::vector<std::pair<int, int>> boost;   // the shrine boost's stats while it lasts
+    struct Effect { int kind = 0, code = 0; std::uint64_t instance = 0; std::uint32_t remaining_ms = 0; bool dismissible = false; };
+    std::vector<Effect> effects;
     int boost_code = 0;                    // ... its Shrines.txt Code (its state: rules::shrine_state)
     int aura = 0;                          // the aura that's on
     int gold_lost = 0;                     // goldlost (175) of the last death: the death screen's line
@@ -433,6 +435,7 @@ struct World {
     Cues  cues{ game_data };                   // world sounds due later
     Loot  loot{ game_data, level, rng, cues };          // on the ground (loot.hpp)
     Fight fight{ game_data, level, rng, loot, cues };   // the fight (fight.hpp)
+    bool dismiss_effects = false;           // d2d optional deviation; host controls it
     bool  autoloot_gold = true;            // d2d: gold walked over goes into the purse (deviations.md #5, --toggle autoloot)
     std::vector<int> not_there;            // levels walked toward that aren't built (logged once)
     struct WirtGold { std::uint32_t next_ms; int left, item_level; };
@@ -503,6 +506,7 @@ struct World {
     // The player's act (0-based): the act of the level they're on.
     [[nodiscard]] int act() const { return level ? d2d::rules::level_ids::act_of(level->id) : 0; }
     int next_item_id = 1;                  // the next item's unit id
+    int next_stock_id = -2;                // stock identities stay negative until bought
     d2d::rules::QuestClock quest_clock;    // the quest timers' clock: a step every 20 frames (FUN_0052d870)
     d2d::rules::DenQuest den;              // this game's Den of Evil
     d2d::rules::AndyQuest andy;            // and Sisters to the Slaughter

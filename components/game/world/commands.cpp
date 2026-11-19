@@ -5,6 +5,7 @@
 #include "ai.hpp"
 #include "character.hpp"
 #include "cues.hpp"
+#include "effect_policy.hpp"
 #include "fight.hpp"
 #include "gamedata.hpp"
 #include "inventory.hpp"
@@ -83,6 +84,7 @@ auto World::deal(const Command& command, std::uint32_t now_ms) -> bool {
             else if (const auto kept = stocks.find({ level->id, trade->npc }); kept != stocks.end()) { actor->store = kept->second; actor->store.mode = 0; actor->store.first_tab(); actor->store.pressed = {}; }
             else actor->store = open_store(*game_data, *level, trade->npc, act(), actor->character.header.active_difficulty(), clvl, actor->character.expansion,
                                     fight.spawning.proxy, fight.spawning.game, &loot.found_uniques);
+            actor->store.assign_stock_ids(next_stock_id);
             actor->store.npc = trade->npc;
             actor->store.header = actor->character.header;
             actor->events.push_back(ev::OpenUI{ ev::OpenUI::trade, trade->npc });
@@ -407,6 +409,30 @@ auto World::deal(const Command& command, std::uint32_t now_ms) -> bool {
  * facing.
  */
 auto World::apply(const Command& command, std::uint32_t now_ms) -> void {
+        if (const auto* dismiss = std::get_if<cmd::DismissEffect>(&command)) {
+            if (!dismiss_effects || !dismiss->instance || fight.dead()) return;
+            bool removed = false;
+            if (dismiss->kind == 0) {
+                const auto found = std::ranges::find(actor->self_states, dismiss->instance, &Fight::SelfState::instance);
+                if (found == actor->self_states.end() || now_ms >= found->until) return;
+                const auto* skill = game_data->skills.get(found->skill);
+                if (!skill || !dismissible_self_effect(skill->name)) return;
+                if (actor->absorb_skill == found->skill) {
+                    actor->absorb_pool = actor->absorb_frac = 0;
+                    actor->absorb_skill = -1;
+                }
+                actor->self_states.erase(found);
+                removed = true;
+            } else if (dismiss->kind == 1 && actor->boost.instance == dismiss->instance && now_ms < actor->boost.until
+                       && dismissible_shrine_effect(shrine_code(actor->boost.shrine), actor->boost.stats)) {
+                if (shrine_code(actor->boost.shrine) == 14)
+                    actor->character.stats.values[d2d::d2s::kStamina] = actor->character.stats.values[d2d::d2s::kMaxStamina];
+                actor->boost = {};
+                removed = true;
+            }
+            if (removed) fight.update_fighters(now_ms);
+            return;
+        }
         if (const auto* say = std::get_if<cmd::Say>(&command)) {   // typed chat: to everyone in the game
             if (!say->text.empty()) announce({ ev::Message::chat, actor->character.name, say->text.substr(0, 255) });
             d2d::log::info("chat: {}: {}", actor->character.name, say->text);
@@ -827,7 +853,8 @@ auto World::apply(const Command& command, std::uint32_t now_ms) -> void {
             if (goes == 0 && use_skill.unit < 0) attack_spot();
         } else if (skill && self_cast(*skill)) {                                            // Holy Shield: where the player stands
             if (fight.cast(use_skill.skill, now_ms)) { actor->player.walking = false; actor->interact_npc = -1; }
-        } else if (skill && skill->srvdofunc == ServerDoFunction::kWhirlwind && monster_index < 0) {                      // Whirlwind to that point (FUN_005d8f50)
+        } else if (skill && moving_skill(*skill) && (use_skill.unit < 0 || (skill->srvdofunc == ServerDoFunction::kWhirlwind && monster_index < 0))) {
+            // A location cast uses the skill's own movement sequence.
             actor->move_x = use_skill.x; actor->move_y = use_skill.y;
             actor->attack_mon = -1;
             actor->attack_skill = use_skill.skill;
@@ -835,9 +862,10 @@ auto World::apply(const Command& command, std::uint32_t now_ms) -> void {
             actor->interact_npc = actor->pick_item = -1;
             actor->player.walking = false;
             actor->player.dir = direction16(actor->move_x - actor->player.x, actor->move_y - actor->player.y);
-            (void)fight.start_swing(now_ms);
+            fight.start_point_swing(now_ms);
         } else if (skill && !live && (fight.missile_skill(*skill) || fight.spot_skill(*skill)) && (in_moor || skill->in_town)) {
             actor->interact_npc = actor->pick_item = -1;                                   // a missile, Teleport, Corpse Explosion at the spot
+            actor->attack_mon = -1;
             if (fight.cast_missile(use_skill.skill, use_skill.x, use_skill.y, now_ms)) actor->player.walking = false;
         } else if (skill && !live && fight.summon_skill(*skill) && in_moor) {        // Raise Skeleton: the corpse there
             actor->interact_npc = actor->pick_item = -1;
@@ -857,6 +885,18 @@ auto World::apply(const Command& command, std::uint32_t now_ms) -> void {
                 actor->interact_npc = actor->pick_item = -1;
                 actor->player.walking = false;
             }
+        } else if (skill && use_skill.unit < 0 && !skill->passive && !skill->target_corpse && !skill->target_ally && !skill->target_pet
+                   && (skill->srvdofunc == ServerDoFunction::kAttack || skill_built(*skill))) {
+            // An explicit location attack, as when the mouse's stand-still key is held.
+            actor->attack_mon = -1;
+            actor->attack_skill = use_skill.skill;
+            actor->attack_charge = entry;
+            actor->interact_npc = actor->pick_item = -1;
+            actor->player.walking = false;
+            actor->player.path.clear();
+            if (use_skill.x != actor->player.x || use_skill.y != actor->player.y)
+                actor->player.dir = direction16(use_skill.x - actor->player.x, use_skill.y - actor->player.y);
+            (void)fight.start_swing(now_ms);
         } else if (live) {                                                   // walk up to it, then attack
             actor->target_x = use_skill.x; actor->target_y = use_skill.y;
             actor->player.walking = true;

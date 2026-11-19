@@ -129,6 +129,8 @@ struct Waypoint { int npc = -1, level = 0; };
 // puts the bytes on a D2GS socket. One bag item into head, neck, torso,
 // feet or gloves, the old piece into the bag when a cell is free.
 struct EquipFromBag { int item = -1; };
+// d2d only. The host validates the player, instance, expiry and policy.
+struct DismissEffect { int kind = 0; std::uint64_t instance = 0; };
 // 0x15: a typed chat line, to everyone in the game (a LAN game's; game.exe's
 // C→S 0x15 carries a whisper's target too).
 struct Say { std::string text; };
@@ -138,7 +140,7 @@ using Command = std::variant<cmd::Move, cmd::UseSkill, cmd::Interact, cmd::Picku
                              cmd::StatPoint, cmd::SkillPoint, cmd::SelectSkill, cmd::UseBelt, cmd::UseItem, cmd::ReadScroll,
                              cmd::ToCursor, cmd::Drop, cmd::ToGrid, cmd::ToBody, cmd::ToBelt, cmd::Socket, cmd::ScrollToBook,
                              cmd::OpenTrade, cmd::OpenHire, cmd::Buy, cmd::Sell, cmd::Repair, cmd::Identify, cmd::IdentifyWith, cmd::Hire, cmd::ResurrectMerc, cmd::CloseTrade, cmd::Respec,
-                             cmd::Run, cmd::Chat, cmd::QuestMessage, cmd::Waypoint, cmd::Caravan, cmd::Imbue, cmd::Transmute, cmd::StashGold, cmd::DropGold, cmd::SwapWeapons, cmd::MercItem, cmd::AutoBelt, cmd::EquipFromBag, cmd::Say>;
+                             cmd::Run, cmd::Chat, cmd::QuestMessage, cmd::Waypoint, cmd::Caravan, cmd::Imbue, cmd::Transmute, cmd::StashGold, cmd::DropGold, cmd::SwapWeapons, cmd::MercItem, cmd::AutoBelt, cmd::EquipFromBag, cmd::DismissEffect, cmd::Say>;
 
 // The wire form of a command (what a transport carries): its id byte —
 // game.exe's packet id where there's one to match — then its fields,
@@ -229,6 +231,7 @@ inline constexpr std::uint8_t kSwapWeapons = 0x60;
 inline constexpr std::uint8_t kMercItem = 0x61;
 inline constexpr std::uint8_t kAutoBelt = 0x63;
 inline constexpr std::uint8_t kEquipFromBag = 0x64;   // d2d only; see cmd::EquipFromBag
+inline constexpr std::uint8_t kDismissEffect = 0x65;   // d2d only
 }  // namespace opcode
 
 // 0x38's first byte: which deal (d2d's numbering; game.exe tells Respec,
@@ -264,6 +267,7 @@ inline std::vector<std::uint8_t> encode(const Command& command) {
         else if constexpr (std::is_same_v<T, cmd::ToBelt>) out.u8(opcode::kToBelt).i32(message.box);
         else if constexpr (std::is_same_v<T, cmd::AutoBelt>) out.u8(opcode::kAutoBelt).i32(message.item);
         else if constexpr (std::is_same_v<T, cmd::EquipFromBag>) out.u8(opcode::kEquipFromBag).i32(message.item);
+        else if constexpr (std::is_same_v<T, cmd::DismissEffect>) out.u8(opcode::kDismissEffect).u8(message.kind).u32(std::uint32_t(message.instance)).u32(std::uint32_t(message.instance >> 32));
         else if constexpr (std::is_same_v<T, cmd::Socket>) out.u8(opcode::kSocket).i32(message.item);
         else if constexpr (std::is_same_v<T, cmd::ScrollToBook>) out.u8(opcode::kScrollToBook).i32(message.book);
         else if constexpr (std::is_same_v<T, cmd::OpenTrade>) out.u8(opcode::kNpcDeal).u8(message.gamble ? npc_deal::kGamble : npc_deal::kTrade).i32(message.npc);
@@ -326,6 +330,7 @@ inline std::optional<Command> decode(std::span<const std::uint8_t> bytes) {
         case opcode::kToBelt: command = cmd::ToBelt{ i32() }; break;
         case opcode::kAutoBelt: command = cmd::AutoBelt{ i32() }; break;
         case opcode::kEquipFromBag: command = cmd::EquipFromBag{ i32() }; break;
+        case opcode::kDismissEffect: { const int kind = byte(); if (kind > 1) return std::nullopt; const auto low = input.get<std::uint32_t>(); const auto high = input.get<std::uint32_t>(); command = cmd::DismissEffect{ kind, std::uint64_t(low) | (std::uint64_t(high) << 32) }; break; }
         case opcode::kDropGold: command = cmd::DropGold{ i32() }; break;
         case opcode::kSocket: command = cmd::Socket{ i32() }; break;
         case opcode::kScrollToBook: command = cmd::ScrollToBook{ i32() }; break;

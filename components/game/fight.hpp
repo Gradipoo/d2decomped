@@ -320,7 +320,9 @@ struct Fight {
         // A trap (do 45) shoots instead: its skill (a monster skill whose
         // missile carries the player's), at its level, `shots` times.
         struct Charge { int skill = 0, level = 0, count = 0; std::uint32_t until = 0; };   // see `charges`
-        struct SelfState { int skill = 0, level = 0; std::uint32_t until = 0; };
+        struct SelfState { int skill = 0, level = 0; std::uint32_t until = 0; std::uint64_t instance = 0; };
+        std::uint64_t effect_serial = 0;
+        std::uint64_t next_effect_instance() { return effect_serial == UINT64_MAX ? 0 : ++effect_serial; }
         struct Pet {
             Monster monster; int skill = 0; int target = -1; int shot_skill = -1, shot_level = 0, shots = 0;
             // Its sumskills d2d uses (FUN_0056deb0 at their sumsk calcs): a
@@ -391,7 +393,7 @@ struct Fight {
         // A skill that moves the player (Whirlwind, Charge, Leap Attack):
         // toward (tx, ty) at `speed` cells/s while `on`; `fly` ignores walls
         // (a leap); whirl_next is Whirlwind's next hit time (FUN_005d9320).
-        struct SkillMove { float target_x = 0, target_y = 0, speed = 0; bool active = false, fly = false; };
+        struct SkillMove { float target_x = 0, target_y = 0, speed = 0; bool active = false, fly = false, at_point = false; };
         SkillMove smove;
         float move_x = 0, move_y = 0;          // where the click sent a moving skill
         std::uint32_t whirl_next = 0;
@@ -468,7 +470,7 @@ struct Fight {
         std::vector<Regen> regen;
         // A shrine's boost (Shrines.txt booster: its stats, FUN_00583b30), one
         // at a time, until when.
-        struct Boost { int shrine = 0; std::vector<std::pair<int, int>> stats; std::uint32_t until = 0; } boost;
+        struct Boost { int shrine = 0; std::vector<std::pair<int, int>> stats; std::uint32_t until = 0; std::uint64_t instance = 0; } boost;
         double merc_heal_rate = 0, merc_heal_acc = 0;  // the merc's healthpot: life per ms, its fraction
         std::uint32_t merc_heal_until = 0;
         double merc_poison_rate = 0, merc_poison_acc = 0;  // the merc's poison (FUN_0057ac50, as the player's): life per ms, its fraction
@@ -666,6 +668,7 @@ struct Fight {
     // calc1 (FUN_005d5970).
     // The host's swing in a joined game (shown) is for show: not asked.
     bool start_swing(std::uint32_t now_ms, bool shown = false);
+    void start_point_swing(std::uint32_t now_ms);
     // Short of mana for a skill (the client's FUN_00647960 reason 1:
     // FUN_00647540's cost, FUN_006440f0's startmana) the class says so: message
     // 0x15 (table 0x711ddc) -> FUN_004cb9c0, the class table's +0xc,

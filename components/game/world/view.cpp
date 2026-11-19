@@ -238,10 +238,17 @@ auto World::saved_corpse() -> const std::vector<d2d::d2s::Item>* {
         static const std::vector<d2d::d2s::Item> no_corpse;
         std::vector<const std::vector<d2d::d2s::Item>*> corpses;
         for (const auto& corpse : actor->corpses) corpses.push_back(&corpse.items);
+        // Without Malah's row we cannot rank repairs, but must preserve a corpse.
+        // Pick the newest nonempty one, matching the normal tie break.
+        const auto fallback = [&]() -> const std::vector<d2d::d2s::Item>* {
+            for (auto it = corpses.rbegin(); it != corpses.rend(); ++it)
+                if (!(*it)->empty()) return *it;
+            return &no_corpse;
+        };
         constexpr int kMalah = 0x201;
-        if (game_data->mon_bin.size() <= std::size_t(kMalah)) return &no_corpse;
+        if (game_data->mon_bin.size() <= std::size_t(kMalah)) return fallback();
         const auto malah = game_data->mon_bin[std::size_t(kMalah)];
-        if (malah >= game_data->mon_npc.size()) return &no_corpse;
+        if (malah >= game_data->mon_npc.size()) return fallback();
         const int kept = d2d::rules::corpse_to_save(game_data->rules, corpses, game_data->mon_npc[malah].id, actor->character.header, reduced_prices());
         return kept < 0 ? &no_corpse : corpses[std::size_t(kept)];
     }

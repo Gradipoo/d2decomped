@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// test-links:
+// test-links: palette
 // test-includes: apps/d2d
 #include "touch_theme.hpp"
+
+#include <palette.hpp>
 
 #include <cassert>
 #include <cstdint>
@@ -14,7 +16,7 @@ int main() {
     assert((stamina_colour(24, 100, false) == std::array<int, 3>{ 255, 0, 0 }));
     assert((stamina_colour(0, 0, false) == std::array<int, 3>{ 255, 0, 0 }));
     assert((stamina_colour(100, 100, true) == std::array<int, 3>{ 0, 0, 255 }));
-    struct Colour { std::uint8_t r, g, b, a; };
+    using Colour = d2d::palette::Rgba;
     const std::array<Colour, 4> palette{{ { 255, 0, 0, 0 }, { 100, 90, 80, 255 },
                                          { 170, 20, 10, 255 }, { 220, 120, 100, 255 } }};
     const std::array<std::uint8_t, 4> indices{ 0, 1, 2, 3 };

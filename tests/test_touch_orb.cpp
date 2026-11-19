@@ -40,8 +40,8 @@ int main() {
                      { liquid, 4, 4 }, 2, { preview, 4, 4 }, 3, { glass, 4, 4 }, colour);
 
     const auto pixel = [&](int x, int y) {
-        const auto at = std::size_t(y * stride + x * 4);
-        return std::array<std::uint8_t, 4>{ framebuffer[at], framebuffer[at + 1], framebuffer[at + 2], framebuffer[at + 3] };
+        const auto pixel_offset = std::size_t(y * stride + x * 4);
+        return std::array<std::uint8_t, 4>{ framebuffer[pixel_offset], framebuffer[pixel_offset + 1], framebuffer[pixel_offset + 2], framebuffer[pixel_offset + 3] };
     };
     assert((pixel(1, 0) == std::array<std::uint8_t, 4>{ 0, 200, 0, 255 })); // transparent fill, glass last
     assert((pixel(2, 0) == std::array<std::uint8_t, 4>{ 20, 20, 20, 20 })); // empty and transparent
@@ -61,12 +61,12 @@ int main() {
                      { solid, 2, 2 }, 2, {}, 0, { clear, 2, 2 }, colour);
     for (int y = 0; y < wide_height; ++y) {
         for (int x = 0; x < wide_width; ++x) {
-            const auto at = std::size_t(y * wide_stride + x * 4);
-            if (x >= 8) assert(wide[at] == 200 && wide[at + 3] == 255);
-            else assert(wide[at] == 77 && wide[at + 3] == 77);
+            const auto pixel_offset = std::size_t(y * wide_stride + x * 4);
+            if (x >= 8) assert(wide[pixel_offset] == 200 && wide[pixel_offset + 3] == 255);
+            else assert(wide[pixel_offset] == 77 && wide[pixel_offset + 3] == 77);
         }
-        for (int at = wide_width * 4; at < wide_stride; ++at)
-            assert(wide[std::size_t(y * wide_stride + at)] == 77);
+        for (int pixel_offset = wide_width * 4; pixel_offset < wide_stride; ++pixel_offset)
+            assert(wide[std::size_t(y * wide_stride + pixel_offset)] == 77);
     }
     return 0;
 }

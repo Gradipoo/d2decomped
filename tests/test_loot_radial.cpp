@@ -12,7 +12,7 @@
 
 int main() try {
     using d2d::client::loot_radial::Model;
-    constexpr float pi = d2d::client::loot_radial::kPi;
+    constexpr float angle_pi = d2d::client::loot_radial::kPi;
     const std::array<int, 10> ids{101, 102, 103, 104, 105, 106, 107, 108, 201, 202};
     Model model(ids);
     assert(model.selected_id() == -1); // no default item highlight
@@ -24,9 +24,9 @@ int main() try {
     assert(model.step(0.0f, 0.0f) == -1);
 
     // Small angular movement around a sector boundary retains the current highlight.
-    assert(model.step(std::cos(-pi / 4.0f), std::sin(-pi / 4.0f)) == -1);
+    assert(model.step(std::cos(-angle_pi / 4.0f), std::sin(-angle_pi / 4.0f)) == -1);
     const int stable_sector = model.selected_sector();
-    assert(model.step(std::cos(-pi / 4.0f + 0.04f), std::sin(-pi / 4.0f + 0.04f)) == -1);
+    assert(model.step(std::cos(-angle_pi / 4.0f + 0.04f), std::sin(-angle_pi / 4.0f + 0.04f)) == -1);
     assert(model.selected_sector() == stable_sector);
     model.cancel();
     assert(model.step(0.8f, 0.0f) == -1);

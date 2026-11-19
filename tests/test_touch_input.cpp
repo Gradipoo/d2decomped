@@ -252,9 +252,9 @@ int main() try {
         int col = -8, row = -8;
         assert(snap_grid_cell(grid, 395.f, 160.f, col, row));
         assert(col == 0 && row >= 0 && row < 4);
-        const auto at = snap_grid_point(grid, col, row);
+        const auto grid_point = snap_grid_point(grid, col, row);
         int col2 = -8, row2 = -8;
-        assert(snap_grid_cell(grid, at.first, at.second, col2, row2) && col2 == col && row2 == row);
+        assert(snap_grid_cell(grid, grid_point.first, grid_point.second, col2, row2) && col2 == col && row2 == row);
         assert(snap_grid_cell(grid, 680.f, 160.f, col, row) && col == grid.cols - grid.item_w);
         assert(!snap_grid_cell(grid, 200.f, 160.f, col, row));
     }
@@ -299,28 +299,28 @@ int main() try {
     assert(tree_preview_chrome_hit(20.f, 560.f, false, true));
     assert(!tree_preview_chrome_hit(400.f, 300.f, true, true));
     input.clear();
-    const float mx = field.move.x + 40.f, my = field.move.y + 40.f;
-    input.event(1, Phase::Down, mx, my, {}, false, false, 3000);
-    input.event(1, Phase::Up, mx, my, {}, false, false, 3050);
+    const float move_x = field.move.x + 40.f, move_y = field.move.y + 40.f;
+    input.event(1, Phase::Down, move_x, move_y, {}, false, false, 3000);
+    input.event(1, Phase::Up, move_x, move_y, {}, false, false, 3050);
     assert(!input.run_toggle);
-    input.event(1, Phase::Down, mx + 2.f, my + 1.f, {}, false, false, 3200);
+    input.event(1, Phase::Down, move_x + 2.f, move_y + 1.f, {}, false, false, 3200);
     assert(input.run_toggle && input.move_held());
     input.clear();
-    input.event(1, Phase::Down, mx, my, {}, false, false, 4000);
-    input.event(1, Phase::Move, mx + 60.f, my, {}, false, false, 4100);
-    input.event(1, Phase::Up, mx + 60.f, my, {}, false, false, 4200);
-    input.event(1, Phase::Down, mx + 60.f, my, {}, false, false, 4300);
+    input.event(1, Phase::Down, move_x, move_y, {}, false, false, 4000);
+    input.event(1, Phase::Move, move_x + 60.f, move_y, {}, false, false, 4100);
+    input.event(1, Phase::Up, move_x + 60.f, move_y, {}, false, false, 4200);
+    input.event(1, Phase::Down, move_x + 60.f, move_y, {}, false, false, 4300);
     assert(!input.run_toggle);
     input.clear();
-    input.event(1, Phase::Down, mx, my, {}, false, false, 6000);
-    input.event(1, Phase::Move, mx + 60.f, my, {}, false, false, 6050);
-    input.event(1, Phase::Up, mx, my, {}, false, false, 6100);
-    input.event(1, Phase::Down, mx, my, {}, false, false, 6200);
+    input.event(1, Phase::Down, move_x, move_y, {}, false, false, 6000);
+    input.event(1, Phase::Move, move_x + 60.f, move_y, {}, false, false, 6050);
+    input.event(1, Phase::Up, move_x, move_y, {}, false, false, 6100);
+    input.event(1, Phase::Down, move_x, move_y, {}, false, false, 6200);
     assert(!input.run_toggle);
     input.clear();
-    input.event(1, Phase::Down, mx, my, {}, false, false, 5000);
-    input.event(1, Phase::Up, mx, my, {}, false, false, 5050);
-    input.event(1, Phase::Down, mx, my, {}, false, false, 5050 + kMoveDoubleTapMs + 40);
+    input.event(1, Phase::Down, move_x, move_y, {}, false, false, 5000);
+    input.event(1, Phase::Up, move_x, move_y, {}, false, false, 5050);
+    input.event(1, Phase::Down, move_x, move_y, {}, false, false, 5050 + kMoveDoubleTapMs + 40);
     assert(!input.run_toggle);
     input.clear();
     input.event(7, Phase::Down, field.attack.x + 8.f, field.attack.y + 8.f, {}, false, true);
@@ -370,8 +370,8 @@ int main() try {
         assert(interrupted.stamina_press.event(-2, Phase::Down, stamina.x + 3.f, stamina.y + 3.f, stamina));
         interrupted.clear(); // Focus loss/panel changes cannot complete a stale tap.
         assert(!interrupted.stamina_press.event(-2, Phase::Up, stamina.x + 3.f, stamina.y + 3.f, stamina));
-        const Box xp{ stamina.x + stamina.width + 4.f, stamina.y, stamina.width, stamina.height };
-        assert(!stamina.contains(xp.x + 2.f, xp.y + 2.f));
+        const Box experience{ stamina.x + stamina.width + 4.f, stamina.y, stamina.width, stamina.height };
+        assert(!stamina.contains(experience.x + 2.f, experience.y + 2.f));
     }
     assert(!swipe_aims(false, true, false));
     assert(swipe_aims(true, true, true));

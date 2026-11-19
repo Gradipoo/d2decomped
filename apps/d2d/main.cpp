@@ -2291,9 +2291,11 @@ int main(int argc, char** argv) {
         if (!found.error.empty()) {
             const auto gamedata = user_dir.parent_path() / "gamedata";
             if (d2d::ios::adopt_game_data_if_present(gamedata, user_dir / "d2d.cfg")) {
+                cfg.erase("patch");
                 d2d::userdir::load_cfg(user_dir / "d2d.cfg", cfg);
                 found = d2d::install::resolve_data_dir({}, {}, {}, {}, cfg["data"]);
             } else if (d2d::ios::import_game_data(gamedata, user_dir / "d2d.cfg")) {
+                cfg.erase("patch");
                 d2d::userdir::load_cfg(user_dir / "d2d.cfg", cfg);
                 found = d2d::install::resolve_data_dir({}, {}, {}, {}, cfg["data"]);
             }
@@ -2312,11 +2314,24 @@ int main(int argc, char** argv) {
     // An explicit patch layer wins over the install's own patch_d2.mpq:
     // $D2_PATCH_INSTALLER (the tests' convention), else `patch =`.
     const char* patch_env = std::getenv("D2_PATCH_INSTALLER");
-    const fs::path patch_layer = patch_env && *patch_env ? fs::path(patch_env) : fs::path(cfg["patch"]);
+    fs::path patch_layer = patch_env && *patch_env ? fs::path(patch_env) : fs::path(cfg["patch"]);
 
     std::vector<std::uint8_t> framebuffer(std::size_t(kScreenWidth) * kScreenHeight * 4, 0);
     for (std::size_t i = 3; i < framebuffer.size(); i += 4) framebuffer[i] = 0xFF;
     auto scene = load_scene(data_dir, patch_layer);   // the menus' part; nullopt if the MPQs won't load
+#if defined(TARGET_OS_IPHONE) && TARGET_OS_IPHONE
+    while (!scene && !headless) {
+        const auto message = std::format("Couldn't load game data from {}. Pick another folder.", data_dir.string());
+        SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "d2d", message.c_str(), nullptr);
+        const auto gamedata = user_dir.parent_path() / "gamedata";
+        if (!d2d::ios::import_game_data(gamedata, user_dir / "d2d.cfg")) break;
+        cfg.erase("patch");
+        d2d::userdir::load_cfg(user_dir / "d2d.cfg", cfg);
+        data_dir = cfg["data"];
+        patch_layer = patch_env && *patch_env ? fs::path(patch_env) : fs::path(cfg["patch"]);
+        scene = load_scene(data_dir, patch_layer);
+    }
+#endif
     // Nothing to run without them: say so (the log has which MPQ and why)
     // rather than go on to a game with no data.
     if (!scene) {

@@ -30,7 +30,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
         get_property(targets DIRECTORY "${directory}" PROPERTY BUILDSYSTEM_TARGETS)
         foreach(target IN LISTS targets)
             get_target_property(target_type ${target} TYPE)
-            if(NOT target_type STREQUAL "INTERFACE_LIBRARY")
+            if(target_type MATCHES "^(EXECUTABLE|STATIC_LIBRARY|SHARED_LIBRARY|MODULE_LIBRARY|OBJECT_LIBRARY)$")
                 target_compile_options(${target} PRIVATE
                     "$<$<COMPILE_LANGUAGE:C,CXX,OBJC,OBJCXX>:-Wno-error>")
             endif()
@@ -63,6 +63,8 @@ if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
             GIT_TAG        ${D2D_OPENAL_SOFT_TAG}
             GIT_SHALLOW    TRUE
         )
+        # Static try-compiles cannot establish whether the SDK has libatomic.
+        set(HAVE_LIBATOMIC FALSE)
         FetchContent_MakeAvailable(openal-soft)
         d2d_ios_allow_vendor_warnings("${openal-soft_BINARY_DIR}")
         set(OPENAL_LIBRARY OpenAL)
@@ -111,7 +113,7 @@ else()
         get_property(targets DIRECTORY "${directory}" PROPERTY BUILDSYSTEM_TARGETS)
         foreach(target IN LISTS targets)
             get_target_property(target_type ${target} TYPE)
-            if(NOT target_type STREQUAL "INTERFACE_LIBRARY")
+            if(target_type MATCHES "^(EXECUTABLE|STATIC_LIBRARY|SHARED_LIBRARY|MODULE_LIBRARY|OBJECT_LIBRARY)$")
                 # Nor the near/far guard: a force-included file of ours is new
                 # in every fresh checkout, so CI's cached vendor objects would
                 # always be older than it and compile again.

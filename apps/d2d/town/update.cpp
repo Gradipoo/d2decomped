@@ -473,6 +473,7 @@ auto Town::update(std::vector<std::uint8_t>& framebuffer, const Mouse& frame_mou
                 else if ((handed_over = lead_leaves()) < 0) {
                     save();
 #if defined(TARGET_OS_IPHONE) && TARGET_OS_IPHONE
+                    game_ended();  // The host loop exits without a screen transition on iOS.
                     quit_app = true;
 #else
                     screen = Screen::CharSelect;

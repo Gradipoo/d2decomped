@@ -114,20 +114,58 @@ bool d2d::ios::import_game_data(const fs::path& dest, const fs::path& cfg_file) 
     }
     const BOOL scoped = [url startAccessingSecurityScopedResource];
     std::error_code error;
-    fs::remove_all(dest, error);
     fs::create_directories(dest.parent_path(), error);
-    NSString* dest_text = [NSString stringWithUTF8String:dest.string().c_str()];
-    NSURL* dest_url = [NSURL fileURLWithPath:dest_text isDirectory:YES];
+    if (error) {
+        if (scoped) [url stopAccessingSecurityScopedResource];
+        d2d::log::error("Could not create the game data directory: {}", error.message());
+        return false;
+    }
+    // Unique siblings avoid deleting a previous interrupted import or backup.
+    const std::string suffix = NSUUID.UUID.UUIDString.UTF8String;
+    const fs::path staging = dest.parent_path() / (dest.filename().string() + ".importing-" + suffix);
+    const fs::path backup = dest.parent_path() / (dest.filename().string() + ".backup-" + suffix);
+    NSString* staging_text = [NSString stringWithUTF8String:staging.string().c_str()];
+    NSURL* staging_url = [NSURL fileURLWithPath:staging_text isDirectory:YES];
     NSError* copy_error = nil;
-    const BOOL copied = [[NSFileManager defaultManager] copyItemAtURL:url toURL:dest_url error:&copy_error];
+    const BOOL copied = [[NSFileManager defaultManager] copyItemAtURL:url toURL:staging_url error:&copy_error];
     if (scoped) [url stopAccessingSecurityScopedResource];
-    if (!copied) {
-        d2d::log::error("Could not copy the picked folder into {}.", dest.string());
+    if (!copied || !find_named(staging, "d2data.mpq")) {
+        fs::remove_all(staging, error);
+        d2d::log::error("Could not copy valid game data from the picked folder.");
+        return false;
+    }
+    const bool had_old_data = fs::exists(dest, error);
+    if (error) {
+        fs::remove_all(staging, error);
+        d2d::log::error("Could not inspect the existing game data directory.");
+        return false;
+    }
+    if (had_old_data) fs::rename(dest, backup, error);
+    if (error) {
+        fs::remove_all(staging, error);
+        d2d::log::error("Could not back up the existing game data.");
+        return false;
+    }
+    fs::rename(staging, dest, error);
+    if (error) {
+        std::error_code cleanup_error;
+        fs::remove_all(staging, cleanup_error);
+        if (had_old_data) fs::rename(backup, dest, cleanup_error);
+        if (cleanup_error) d2d::log::error("Previous game data remains at {}.", backup.string());
+        d2d::log::error("Could not install the copied game data: {}", error.message());
         return false;
     }
     if (!write_data_cfg(dest, cfg_file)) {
-        d2d::log::error("Picked folder has no d2data.mpq. Pick the folder again.");
+        // Keep both copies if rollback fails; never remove the old backup.
+        fs::remove_all(dest, error);
+        if (had_old_data && !error) fs::rename(backup, dest, error);
+        if (error && had_old_data) d2d::log::error("Previous game data remains at {}.", backup.string());
+        d2d::log::error("Could not write {} after importing game data.", cfg_file.string());
         return false;
+    }
+    if (had_old_data) {
+        fs::remove_all(backup, error);
+        if (error) d2d::log::warn("Could not remove game data backup at {}.", backup.string());
     }
     d2d::log::info("Imported game data into {}", dest.string());
     return true;

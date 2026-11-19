@@ -50,6 +50,41 @@
 
 namespace d2d::game {
 
+void load_experience_table(GameData& game_data, const d2d::txt::Table& experience_table) {
+    const auto whole_number = [](std::string_view text) -> std::optional<long long> {
+        if (text.empty()) return std::nullopt;
+        long long value = 0;
+        const auto* const end = text.data() + text.size();
+        const auto parsed = std::from_chars(text.data(), end, value);
+        if (parsed.ec != std::errc{} || parsed.ptr != end) return std::nullopt;
+        return value;
+    };
+    if (experience_table.size() > 0) {
+        for (std::size_t row = 0; row < experience_table.size(); ++row) {
+            if (const auto level_text = experience_table.get(row, "Level"); !level_text.empty() && level_text[0] >= '0' && level_text[0] <= '9') {
+                const auto level_number = whole_number(level_text);
+                const auto amazon = whole_number(experience_table.get(row, "Amazon"));
+                if (!level_number || !amazon || *level_number < 0) continue;
+                const auto level = std::size_t(*level_number);
+                if (level >= game_data.exp_next.size()) game_data.exp_next.resize(level + 1, -1);
+                game_data.exp_next[level] = *amazon;
+                if (level >= game_data.exp_ratio.size()) game_data.exp_ratio.resize(level + 1, -1);
+                if (const auto ratio = whole_number(experience_table.get(row, "ExpRatio")))
+                    game_data.exp_ratio[level] = int(*ratio);
+            } else if (level_text == "MaxLvl") {
+                if (const auto shift = whole_number(experience_table.get(row, "ExpRatio")))
+                    game_data.exp_ratio_shift = int(*shift);
+                if (const auto max_level = whole_number(experience_table.get(row, "Amazon")))
+                    game_data.max_level = int(*max_level);
+            }
+        }
+    }
+    // Missing ratios mean no level penalty; explicit zero remains a zero award.
+    const int identity_ratio = 1 << std::clamp(game_data.exp_ratio_shift, 0, 30);
+    for (auto& ratio : game_data.exp_ratio)
+        if (ratio == -1) ratio = identity_ratio;
+}
+
 namespace {
 
 // Load one DS1 + every DT1 it references (silently skips missing ones —
@@ -907,26 +942,7 @@ void load_tables(GameData& game_data, const d2d::mpq::Stack& mpqs) {
         if (parsed.ec != std::errc{} || parsed.ptr != end) return std::nullopt;
         return value;
     };
-    if (const auto experience_table = txt("experience"); experience_table.size() > 0) {
-        for (std::size_t row = 0; row < experience_table.size(); ++row) {
-            if (const auto level_text = experience_table.get(row, "Level"); !level_text.empty() && level_text[0] >= '0' && level_text[0] <= '9') {
-                const auto level_number = whole_number(level_text);
-                const auto amazon = whole_number(experience_table.get(row, "Amazon"));
-                if (!level_number || !amazon || *level_number < 0) continue;
-                const auto level = std::size_t(*level_number);
-                if (level >= game_data.exp_next.size()) game_data.exp_next.resize(level + 1, -1);
-                game_data.exp_next[level] = *amazon;
-                if (level >= game_data.exp_ratio.size()) game_data.exp_ratio.resize(level + 1, 0);
-                if (const auto ratio = whole_number(experience_table.get(row, "ExpRatio")))
-                    game_data.exp_ratio[level] = int(*ratio);
-            } else if (level_text == "MaxLvl") {
-                if (const auto shift = whole_number(experience_table.get(row, "ExpRatio")))
-                    game_data.exp_ratio_shift = int(*shift);
-                if (const auto max_level = whole_number(experience_table.get(row, "Amazon")))
-                    game_data.max_level = int(*max_level);
-            }
-        }
-    }
+    load_experience_table(game_data, txt("experience"));
     if (const auto pet_table = txt("PetType"); pet_table.size() > 0)
         for (std::size_t row = 0; row < pet_table.size(); ++row) {
             GameData::PetType pet;

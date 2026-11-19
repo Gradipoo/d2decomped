@@ -10,6 +10,8 @@
 #include <filesystem>
 #include <optional>
 
+namespace d2d::txt { class Table; }
+
 namespace d2d::game {
 
 // The MPQs in data_dir (the 1.14d patch: patch_d2.mpq, else the
@@ -24,6 +26,7 @@ std::optional<GameData> load_game_data(const fs::path& data_dir, const fs::path&
 // monsters and skills (after the tables: a save's seed needs them read).
 std::optional<GameData> open_game_data(const fs::path& data_dir, const fs::path& patch_installer, bool tile_pixels = false);
 void load_game_tables(GameData& data, const d2d::mpq::Stack& mpqs);
+void load_experience_table(GameData& data, const d2d::txt::Table& table);
 void load_game_world(GameData& data, d2d::mpq::Stack& mpqs, std::uint32_t map_seed);
 
 // A game on another map seed: act 1 laid out again, the camp rebuilt with

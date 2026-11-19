@@ -8,7 +8,7 @@ controls, not claims that stock game.exe supports touch or these bindings.
 | Game | Source and observed design | Decision here |
 |---|---|---|
 | Diablo II: Resurrected | Blizzard's [console design article](https://news.blizzard.com/en-us/article/23722094/bringing-the-original-diablo-ii-experience-to-console) describes direct skill buttons, an LT bank of six additional skills, a directional targeting cone, and corpse selection appropriate to the ability. It also discusses the difficulty of choosing one drop among many. | Keep direct buttons and LT. Resolve the displayed Attack/Use action once for its press. A held attack does not become pickup when an enemy dies. Corpse abilities seek eligible corpses, not live enemies. |
-| Diablo Immortal | The [original Blizzard announcement](https://investor.activision.com/node/32001/pdf) describes dragging a skill to aim and releasing to use it. Blizzard's [accessibility article](https://news.blizzard.com/en-us/article/23805083/making-a-game-for-everyonediablo-immortals-accessibility-features) documents controller remapping, a free UI cursor, and repositionable mobile skill buttons. | Independent movement and skill fingers; tap or drag/release. Lift on a valid preview casts; OS Cancel or a lift outside the 800x600 band aborts. Keep assignment identities independent of controller positions. The prototype has fixed positions; configurable positions remain outside this change. |
+| Diablo Immortal | The [original Blizzard announcement](https://investor.activision.com/node/32001/pdf) describes dragging a skill to aim and releasing to use it. Blizzard's [accessibility article](https://news.blizzard.com/en-us/article/23805083/making-a-game-for-everyonediablo-immortals-accessibility-features) documents controller remapping, a free UI cursor, and repositionable mobile skill buttons. | Independent movement and skill fingers; tap or drag/release. Lift on a valid preview casts; OS Cancel or a lift outside the logical viewport aborts. Keep assignment identities independent of controller positions. The prototype has fixed positions; configurable positions remain outside this change. |
 | Grim Dawn | First-hand reports on the developer-hosted forum describe enabling extra buttons in [Options > Controller](https://forums.crateentertainment.com/t/on-a-controller-how-do-i-assign-more-skills/114059). The [first-hand skill-panel assignment reports](https://www.reddit.com/r/Grimdawn/comments/1m2mysp/) about its radial are community evidence, not a developer specification of exact current glyphs. | Put a visible Assign action in the skill panel. Show actual configured destinations and their occupants. Do not assume every player uses the default controller layout. |
 | Path of Exile 2 | GGG's [0.2.0 patch notes](https://www.pathofexile.com/forum/view-thread/3740562) document per-skill controller targeting, corpse-targeting fixes, panel improvements, and pickup interaction fixes. | Auras/self-casts, enemy attacks, corpse abilities and ground placement have different targeting policies. A generic nearest-enemy policy must not cause buffs to walk. |
 
@@ -45,61 +45,52 @@ Diablo II 1.14d remains the evidence for original gameplay.
 ## Touch prototype
 
 Enable `--touch-controls` or `touch_controls = 1` in d2d.cfg. Android and iOS
-builds start with it on; `touch_controls = 0` turns it off. This is an SDL
-input prototype, not an Android/iOS packaging or device-support claim. Coordinates
-follow the game's existing logical viewport. Use landscape for this prototype.
+builds default to touch controls; `touch_controls = 0` disables them. This is
+an input prototype, not a device-support or retail gameplay-parity claim.
+Use landscape. Safe-area insets and widescreen viewport width position the
+controls near the usable edges.
 
-- Left movement area, dedicated contextual Interact, attack-only primary button,
-  four skill buttons, and a one-tap I/II page switch. Belt buttons are available
-  on either page.
-- Top chrome is edge-pinned (Inv / Skl / Quest / Bind as a 2x2 flush to the
-  top-left; Done and Map stacked top-right). Letterbox gutters pull chrome
-  toward the physical bezels on wide phones. Field controls sit in the bottom
-  corners; the center stays clear.
-  On the field, compact life/mana bars sit under the 2x2 chip block with a gap
-  of about 0.35 of chip height; belt potions sit in a 2x2 under Map, one column
-  left so they miss the Map chip; a compact
-  quest tracker on the left opens the full log on tap. The classic bottom bar, belt
-  strip and mini menu row are hidden (`--toggle touch_classic_hud=on` brings
-  them back) while a finger or Pencil is the last device. A real key, non-touch
-  mouse, or gamepad hides the Immortal HUD and restores classic or pad input;
-  the next finger brings the HUD back. `--touch-controls` stays on. Map is a dim overlay: field move/skill/belt chrome stays up.
-  Open panels hide the stick, skill rings, I/II and belt grid; Inv / Skl / Quest / Bind
-  stay put and stay tappable.
-  The skill tree, character, inventory, and vendor trade/repair panels use
-  classic placement (`kTreeR`, `kCharPanelX`). Touch no longer splits the
-  vendor to the right or the inventory to the left.
-- Skills opens the original skill panel. Tap a learned skill, then **Assign
-  to touch button**, then a destination. Occupants are visible before replacing
-  them. Done returns to the panel; Back closes it.
-- Per-character `<name>.touchskills` files are separate from `.padskills`;
-  touch positions 1–4 on each page do not borrow controller destinations.
-  Both sidecars preserve ordinary skill IDs and never modify `.d2s` hotkeys.
-- Tap to use the shown target. Drag from an aimed skill to select a direction
-  and range, then lift to cast. Teleport previews the existing engine's room,
-  line and nearest-free-subtile constraints. Corpse skills preview usable
-  corpses and can change their selection by dragging. Auras and self-casts
-  stay on the caster. The active aura is labelled on either page.
-- Interrupt the skill finger (OS Cancel) or lift outside the 800x600 band to
-  cancel. There is no on-screen cancel strip. Panels and focus loss invalidate
-  pending gestures. Only a valid lift commits a cast, including stationary taps,
-  so cancellation spends no mana.
-- Movement and skill fingers have separate ownership. Lifting either does not
-  commit or release the other. Changing page does not release movement or
-  retarget an already-held gesture. Attack pickup needs a fresh press.
-- Tap a usable carried item, sellable bag item, or merchant stock for a
-  confirm sheet (Use / Sell / Buy as they apply). Drag past 14px picks the
-  item up; lift places into the nearest inventory, stash, cube, body, or belt
-  cell, or drops on the world. A leftover mouse packet does not start
-  click-to-walk. Identify: Use then Confirm on the scroll, tap the target item,
-  then Confirm. A miss-tap does not identify. Field belt: first tap opens Use/Fill
-  (Fill when bag potions can AutoBelt); Confirm uses or fills. A second tap on
-  the same slot uses immediately.
+- The lower-right thumb fan contains Attack and four circular skill buttons.
+  Healing and mana each have one potion button with the accessible belt count
+  and potion artwork. Interact sits above them. Belt opens the expanded belt.
+  The movement stick appears only while held; movement and skill fingers have
+  separate ownership.
+- Original angel/demon life and mana artwork sits near the bottom center.
+  XP and stamina sit below the upper-left menu buttons. Tap the stamina bar to
+  toggle Run/Walk; dragging out, cancellation or focus loss cancels that tap.
+  Menu buttons use circular glyphs. Skills and Stats turn the native
+  notification red while points remain; Quest remains red for unread updates.
+  Review the selected quest or spend the points to clear its indication.
+- Inventory, Skills and Quests toggle their panels. Back closes the current
+  panel. Trading hides the corner chips that could otherwise cover vendor
+  tabs. Touch menu, Back and accepted binding actions give selection sounds
+  and visual feedback; mouse and controller paths do not gain these sounds.
+- The binding editor exposes skill/action pages and visible page controls,
+  including carried portal items. Per-character `.touchskills` bindings remain
+  separate from `.padskills` and the original save's hotkeys.
+- Hold an attack or repeatable skill to keep attacking. With no eligible
+  creature, an aimed touch casts along the finger's direction; melee swings
+  in place. Self-centered skills such as Howl cast on the character. Teleport
+  shows its landing ring, and dragging farther aims farther. Resource,
+  cooldown, passive, corpse and destination restrictions still apply.
+  OS cancellation, focus loss, panel interruption or leaving the logical
+  viewport cancels a pending gesture.
+- Multiple nearby drops open a spaced touch list alongside normal ground
+  labels. Holding Get also shows the ground labels. The gamepad chooser is
+  radial: aim with the stick and return to neutral to choose the item.
+- Tap vendor stock or a sellable carried item for Buy/Sell and Cancel.
+  Drag stock into the inventory to buy or a carried item into the vendor
+  stock area to sell. The stock grid uses the same origin for rendering and
+  hit testing, including Misc. Invalid or cancelled drops do nothing.
+- Effects appear on the left. Hold to inspect; double-tap a dismissible effect
+  and confirm to remove it. Dismissal requires the authoritative host's opt-in
+  `--toggle dismiss_effects=on`. Effect instances and durations use d2d LAN
+  protocol 8; stock D2GS hosts cannot receive the dismissal command.
 
-Charged skills granted by items remain a separate design question: an item ID,
-remaining charges and save lifetime must be designed before allowing them into
-these assignment files. No new art, dependency, network service or launcher is
-needed. The new `touch` devctl verb injects ordinary SDL finger events for tests.
+Physical-device thumb comfort, audible feedback, lifecycle handling and live
+LAN negotiation still need manual validation. The new `touch` devctl verb
+injects SDL finger events for integration tests; local socket restrictions
+can prevent those tests from running in a sandbox.
 
 ## Original-game evidence reused
 

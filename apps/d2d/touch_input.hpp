@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Touch adapter in logical 800x600 coordinates. No SDL, game rules or saves.
+// Touch adapter in full-width logical viewport coordinates. No SDL, game rules or saves.
 #pragma once
 
 #include <algorithm>
@@ -21,21 +21,26 @@ struct Box {
     [[nodiscard]] bool contains(float point_x, float point_y) const { return point_x >= x && point_x < x + width && point_y >= y && point_y < y + height; }
 };
 
-// Extra inset within the centre 800x600 touch band (main.cpp from SDL safe area).
+// Insets and width in logical viewport coordinates (main.cpp from SDL safe area).
 struct SafeInset { float left = 0, top = 0, right = 0, bottom = 0; };
 inline SafeInset safe_inset;
+inline float viewport_width = 800.f;
+
+/** Convert at boundaries with the centered legacy 800-wide panels and pointer. */
+[[nodiscard]] inline float legacy_offset() { return float((int(viewport_width) - 800) / 2); }
+[[nodiscard]] inline float to_legacy_x(float viewport_x) { return viewport_x - legacy_offset(); }
+[[nodiscard]] inline float to_viewport_x(float legacy_x) { return legacy_x + legacy_offset(); }
+[[nodiscard]] inline Box translate_legacy_box(Box box) { box.x = to_viewport_x(box.x); return box; }
 
 inline bool g_touch_classic_hud = false;
 
 /** Last physical device that drove this seat. Touch HUD shows only for Touch. */
 enum class LastDevice { Gamepad, MouseKeyboard, Touch };
 
-[[nodiscard]] inline bool touch_interface_visible(bool enabled, LastDevice last) {
-    return enabled && last == LastDevice::Touch;
-}
+[[nodiscard]] inline bool touch_interface_visible(bool enabled, LastDevice last) { return enabled && last == LastDevice::Touch; }
 
 [[nodiscard]] inline bool touch_hud_visible(bool enabled, LastDevice last, bool classic_hud = false) {
-    return touch_interface_visible(enabled, last) && !classic_hud;
+    return enabled && last == LastDevice::Touch && !classic_hud;
 }
 
 [[nodiscard]] inline bool touch_owns_locomotion(LastDevice last, int fingers, bool item_drag) {
@@ -71,8 +76,7 @@ inline constexpr Box kTreeAssign{ 16.f, 545.f, 240.f, 50.f };
 }
 
 /** Two taps of the same control: close in time and in place, not a drag. */
-[[nodiscard]] inline bool deliberate_double_tap(float first_x, float first_y, float second_x, float second_y,
-                                                std::uint32_t first_ms, std::uint32_t second_ms,
+[[nodiscard]] inline bool deliberate_double_tap(float first_x, float first_y, float second_x, float second_y, std::uint32_t first_ms, std::uint32_t second_ms,
                                                 float slop = kMoveTapSlop, std::uint32_t window = kMoveDoubleTapMs) {
     if (second_ms < first_ms || second_ms - first_ms > window) return false;
     return std::hypot(second_x - first_x, second_y - first_y) <= slop;
@@ -81,12 +85,27 @@ inline constexpr Box kMenu{ 0, 0, 48, 48 }, kSkillsBar{ 0, 52, 48, 48 }, kDone{ 
 inline constexpr Box kQuestTrack{ 0, 132, 172, 148 };
 
 struct Layout {
-    Box move, move_visual, attack, page, menu, skills_bar, quest, bind, map, done, interact, quest_track;
+    Box move, move_visual, attack, page, menu, skills_bar, stats, quest, bind, map, done, interact, quest_track;
+    Box healing, mana, belt_more, life_orb, mana_orb;
     std::array<Box, 4> skills{}, belts{};
 };
 
 inline float ui_scale(float value) { return value * kUiScale; }
 inline float bar_gap() { return kBarGapChip * ui_scale(kChipSize); }
+
+/** Rendered stamina half-bar, shared by draw and touch geometry. */
+inline Box stamina_bar_rect(const Layout& chrome) {
+    const float width = std::max(118.f, chrome.bind.x + chrome.bind.width - chrome.menu.x);
+    const float half = std::max(1.f, (width - 4.f) * .5f);
+    const float y = chrome.bind.y + chrome.bind.height + bar_gap();
+    return { chrome.menu.x, y, half, 6.f };
+}
+
+/** Taller hit target extends below the rendered bar, stopping before the quest card. */
+inline Box stamina_bar_box(const Layout& chrome) {
+    const Box bar = stamina_bar_rect(chrome);
+    return { bar.x, bar.y - 4.f, bar.width, 56.f };
+}
 
 /** Top-left for a frame centred in `box` (belt and skill icons). */
 inline std::pair<float, float> centred_blit_origin(Box box, float frame_w, float frame_h) {
@@ -108,9 +127,12 @@ struct ItemSheet {
     int belt_index = -1;
     ItemAction chosen = ItemAction::None;
     Box use{}, sell{}, buy{}, fill{}, confirm{}, cancel{};
+    std::int64_t trade_finger = -1;
+    ItemAction trade_action = ItemAction::None;
+    [[nodiscard]] bool show_confirm() const { return confirm.width > 0.f; }
     [[nodiscard]] bool contains(float x, float y) const {
         return open && (use.contains(x, y) || sell.contains(x, y) || buy.contains(x, y) || fill.contains(x, y)
-                        || confirm.contains(x, y) || cancel.contains(x, y));
+                        || (show_confirm() && confirm.contains(x, y)) || cancel.contains(x, y));
     }
     [[nodiscard]] ItemAction hit(float x, float y) const {
         if (!open) return ItemAction::None;
@@ -118,9 +140,23 @@ struct ItemSheet {
         if (sell.contains(x, y)) return ItemAction::Sell;
         if (buy.contains(x, y)) return ItemAction::Buy;
         if (fill.contains(x, y)) return ItemAction::Fill;
-        if (confirm.contains(x, y)) return ItemAction::Confirm;
+        if (show_confirm() && confirm.contains(x, y)) return ItemAction::Confirm;
         if (cancel.contains(x, y)) return ItemAction::Cancel;
         return ItemAction::None;
+    }
+    // Buy/Sell commit on the release of the same press, inside the action button.
+    bool trade_event(std::int64_t finger, Phase phase, float x, float y, ItemAction& commit) {
+        if (trade_finger == -1) {
+            const auto action = hit(x, y);
+            if (phase != Phase::Down || (action != ItemAction::Buy && action != ItemAction::Sell)) return false;
+            trade_finger = finger;
+            trade_action = action;
+        } else if (finger == trade_finger && (phase == Phase::Up || phase == Phase::Cancel)) {
+            if (phase == Phase::Up && hit(x, y) == trade_action) commit = trade_action;
+            trade_finger = -1;
+            trade_action = ItemAction::None;
+        }
+        return true;
     }
 };
 
@@ -145,10 +181,8 @@ struct SnapGrid {
     const float dx = mouse_x < left ? left - mouse_x : (mouse_x > right ? mouse_x - right : 0.f);
     const float dy = mouse_y < top ? top - mouse_y : (mouse_y > bottom ? mouse_y - bottom : 0.f);
     if (dx > grid.box_w || dy > grid.box_h) return false;
-    const int max_col = std::max(0, grid.cols - std::max(grid.item_w, 1));
-    const int max_row = std::max(0, grid.rows - std::max(grid.item_h, 1));
-    col = std::clamp(col, 0, max_col);
-    row = std::clamp(row, 0, max_row);
+    col = std::clamp(col, 0, std::max(0, grid.cols - std::max(grid.item_w, 1)));
+    row = std::clamp(row, 0, std::max(0, grid.rows - std::max(grid.item_h, 1)));
     return true;
 }
 
@@ -176,8 +210,10 @@ inline ItemSheet make_item_sheet(bool can_use, bool can_sell, bool can_buy, bool
     place(sheet.buy, can_buy);
     place(sheet.fill, can_fill);
     top += 6.f;
-    sheet.confirm = { left, top, 100.f, kHeight };
-    sheet.cancel = { left + 120.f, top, 100.f, kHeight };
+    if (can_use || can_fill) {
+        sheet.confirm = { left, top, 100.f, kHeight };
+        sheet.cancel = { left + 120.f, top, 100.f, kHeight };
+    } else sheet.cancel = { left, top, kWidth, kHeight };
     return sheet;
 }
 
@@ -196,7 +232,7 @@ inline Box anchor_box(float width, float height, bool left, bool top) {
     constexpr float kPad = 6.f;
     Box box{ 0, 0, width, height };
     if (left) box.x = safe_inset.left + kPad;
-    else box.x = 800.f - safe_inset.right - width - kPad;
+    else box.x = viewport_width - safe_inset.right - width - kPad;
     if (top) box.y = safe_inset.top + kPad;
     else box.y = 600.f - safe_inset.bottom - height - kPad;
     return box;
@@ -206,7 +242,7 @@ inline Box placed(Box box) {
     constexpr float kEdge = 24.f;
     if (box.x < kEdge) box.x += safe_inset.left;
     if (box.y < kEdge) box.y += safe_inset.top;
-    if (box.x + box.width > 800.f - kEdge) box.x -= safe_inset.right;
+    if (box.x + box.width > viewport_width - kEdge) box.x -= safe_inset.right;
     if (box.y + box.height > 600.f - kEdge) box.y -= safe_inset.bottom;
     return box;
 }
@@ -214,7 +250,7 @@ inline Box placed(Box box) {
 /** Immortal-style thumb layout with edge anchoring. */
 inline Layout layout_boxes() {
     Layout out;
-    const float belt = ui_scale(kBeltSize), skill = ui_scale(kSkillSize), attack = ui_scale(kAttackSize), page = ui_scale(kPageSize);
+    const float belt = ui_scale(kBeltSize), attack = ui_scale(kAttackSize), page = ui_scale(kPageSize);
     out.move = anchor_box(ui_scale(kMoveHitW), ui_scale(kMoveHitH), true, false);
     out.move_visual = { out.move.x + (out.move.width - ui_scale(kMoveVisualW)) * .5f,
                         out.move.y + (out.move.height - ui_scale(kMoveVisualH)) * .5f,
@@ -226,48 +262,67 @@ inline Layout layout_boxes() {
     const float chip = ui_scale(kChipSize), gap = ui_scale(kChipGap);
     out.menu = anchor_box(chip, chip, true, true);
     out.skills_bar = { out.menu.x + chip + gap, out.menu.y, chip, chip };
+    out.stats = { out.skills_bar.x + chip + gap, out.menu.y, chip, chip };
     out.quest = { out.menu.x, out.menu.y + chip + gap, chip, chip };
     out.bind = { out.skills_bar.x, out.quest.y, chip, chip };
-    out.done = anchor_box(ui_scale(52.f), ui_scale(48.f), false, true);
-    out.map = { out.done.x, out.done.y + ui_scale(56.f), ui_scale(52.f), ui_scale(48.f) };
+    out.done = anchor_box(ui_scale(64.f), ui_scale(64.f), false, true);
+    out.map = { out.done.x + ui_scale(12.f), out.done.y + ui_scale(68.f), ui_scale(52.f), ui_scale(48.f) };
     const float track_y = out.bind.y + out.bind.height + bar_gap() + kBarBlockH;
     out.quest_track = { safe_inset.left + 6.f, track_y, ui_scale(172.f), 88.f };
-    // Quarter arc left and above the attack. Centres stay about a diameter apart.
-    out.skills[0] = { attack_x - ui_scale(103.f), attack_y + ui_scale(7.f), skill, skill };
-    out.skills[1] = { attack_x - ui_scale(186.f), attack_y - ui_scale(64.f), skill, skill };
-    out.skills[2] = { attack_x - ui_scale(104.f), attack_y - ui_scale(134.f), skill, skill };
-    out.skills[3] = { attack_x - ui_scale(24.f), attack_y - ui_scale(174.f), skill, skill };
-    float skill_top = out.skills[0].y;
-    for (const auto& skill_box : out.skills) skill_top = std::min(skill_top, skill_box.y);
-    // 2x2 under Map, shifted one column left so the right pots clear Map.
+    // Large thumb targets fan left and upward from the main attack target.
+    constexpr float skill_hit = 80.f;
+    const float attack_cx = attack_x + attack * .5f, attack_cy = attack_y + attack * .5f;
+    const auto skill_at = [&](float dx, float dy) {
+        return Box{ attack_cx + dx - skill_hit * .5f, attack_cy + dy - skill_hit * .5f, skill_hit, skill_hit };
+    };
+    out.skills[0] = skill_at(-145.f, 20.f);
+    out.skills[1] = skill_at(-155.f, -70.f);
+    out.skills[2] = skill_at(-80.f, -160.f);
+    out.skills[3] = skill_at(15.f, -175.f);
+    out.page = { attack_x + 75.f, attack_y - 54.f, 40.f, 40.f };
     const float pot_gap = ui_scale(kBeltGap);
-    const float grid_w = 2.f * belt + pot_gap, grid_h = 2.f * belt + pot_gap;
-    const float column = belt + pot_gap;
-    float pot_x = out.map.x + out.map.width - grid_w - column;
-    float pot_y0 = out.map.y + out.map.height + pot_gap;
-    const float min_y = safe_inset.top + 6.f;
-    const float max_y = 600.f - safe_inset.bottom - 6.f - grid_h;
-    pot_y0 = std::clamp(pot_y0, min_y, std::max(min_y, max_y));
-    if (pot_y0 + grid_h + 8.f > skill_top)
-        pot_y0 = std::clamp(skill_top - grid_h - 8.f, min_y, std::max(min_y, max_y));
-    pot_x = std::clamp(pot_x, safe_inset.left + 6.f, 800.f - safe_inset.right - grid_w - 6.f);
+    out.belt_more = { out.map.x, out.map.y + out.map.height + pot_gap, belt, belt };
+    const float grid_x = out.belt_more.x - 2.f * (belt + pot_gap);
+    const float grid_y = out.belt_more.y;
     for (int index = 0; index < 4; ++index) {
-        const int col = index % 2, row = index / 2;
-        out.belts[std::size_t(index)] = { pot_x + float(col) * (belt + pot_gap), pot_y0 + float(row) * (belt + pot_gap), belt, belt };
+        out.belts[std::size_t(index)] = { grid_x + float(index % 2) * (belt + pot_gap),
+                                         grid_y + float(index / 2) * (belt + pot_gap), belt, belt };
     }
-    out.interact = { attack_x - ui_scale(268.f), attack_y - ui_scale(48.f), ui_scale(56.f), ui_scale(56.f) };
-    const float move_right = std::min(out.interact.x + out.interact.width + 16.f, out.skills[2].x - 8.f);
-    out.move.width = std::max(out.move.width, move_right - out.move.x);
+    // Potion pair sits left of the lower fan; interaction has extra separation above it.
+    const float potion_x = std::max(safe_inset.left + 12.f, attack_cx - 277.f);
+    out.interact = { potion_x, attack_cy - 216.f, 64.f, 64.f };
+    out.mana = { potion_x, attack_cy - 136.f, 64.f, 64.f };
+    out.healing = { potion_x, attack_cy - 56.f, 64.f, 64.f };
+    const float orb_bottom = 600.f - safe_inset.bottom - 6.f;
+    const float orb_center = viewport_width * .5f;
+    const float mana_x = std::min(orb_center - 13.f, out.healing.x - 90.f);
+    out.life_orb = { mana_x - 110.f, orb_bottom - 100.f, 82.f, 100.f };
+    out.mana_orb = { mana_x, orb_bottom - 100.f, 82.f, 100.f };
+    const float left_controls = std::min({ out.skills[0].x, out.mana.x, out.healing.x });
+    out.move.width = std::max(out.move.width, std::min(left_controls - 8.f, viewport_width * .55f) - out.move.x);
     out.move.height = std::max(out.move.height, 600.f - safe_inset.bottom - out.move.y);
     return out;
 }
 
+struct BindWheelLayout {
+    float center_x, center_y;
+    Box previous, indicator, next;
+};
+
+[[nodiscard]] inline BindWheelLayout bind_wheel_layout(const Layout& chrome) {
+    const float center = to_viewport_x(380.f);
+    const float nav_center = std::min(center, chrome.skills[1].x - 132.f);
+    return { center, 270.f, { nav_center - 124.f, 400.f, 64.f, 64.f },
+             { nav_center - 52.f, 400.f, 104.f, 64.f }, { nav_center + 60.f, 400.f, 64.f, 64.f } };
+}
+
 inline constexpr float kStickOuter = 52.f, kStickInner = 22.f, kSkillRing = 34.f;
 
-/** Inv/Skl/Quest/Bind stay pinned to the top-left, including while panels are open. */
+/** Inv/Skl/Stats/Quest/Bind stay pinned to the top-left, including while panels are open. */
 inline bool chip_hit(float x, float y) {
     const auto chrome = layout_boxes();
-    return chrome.menu.contains(x, y) || chrome.skills_bar.contains(x, y) || chrome.quest.contains(x, y) || chrome.bind.contains(x, y);
+    return chrome.menu.contains(x, y) || chrome.skills_bar.contains(x, y) || chrome.stats.contains(x, y)
+        || chrome.quest.contains(x, y) || chrome.bind.contains(x, y);
 }
 
 /** Drag-aim when the skill is directional, or when the pad has no monster in focus. */
@@ -283,24 +338,90 @@ inline bool chip_hit(float x, float y) {
     return -1;
 }
 
-inline bool chrome_hit(float x, float y, bool interact_chrome = false, bool field_controls = true) {
+inline bool chrome_hit(float x, float y, bool interact_chrome = false, bool field_controls = true, bool belt_expanded = false) {
     const auto chrome = layout_boxes();
     if (chrome.done.contains(x, y) || chrome.map.contains(x, y) || chip_hit(x, y)) return true;
     if (!field_controls) return false;
     if (interact_chrome && chrome.interact.contains(x, y)) return true;
-    if (chrome.page.contains(x, y) || chrome.move.contains(x, y) || chrome.attack.contains(x, y)) return true;
+    if (chrome.page.contains(x, y) || chrome.move.contains(x, y) || chrome.attack.contains(x, y)
+        || chrome.healing.contains(x, y) || chrome.mana.contains(x, y) || chrome.belt_more.contains(x, y)) return true;
     for (const auto& box : chrome.skills)
         if (box.contains(x, y)) return true;
-    for (const auto& box : chrome.belts)
-        if (box.contains(x, y)) return true;
+    if (belt_expanded)
+        for (const auto& box : chrome.belts)
+            if (box.contains(x, y)) return true;
     return false;
 }
 
 struct Target { int skill = -1, unit = -1; float x = 0, y = 0; bool left = false, valid = false; };
 
+/** Build a right-hand cast on the player without an enemy target. */
+[[nodiscard]] inline Target caster_target(int skill, float x, float y) {
+    return { skill, -1, x, y, false, true };
+}
+
+enum class PotionButton { None, Healing, Mana };
+
+/** A potion tap belongs to its starting finger and must stay inside its box. */
+class PotionPress {
+public:
+    PotionButton event(std::int64_t finger, Phase phase, float x, float y, const Layout& layout) {
+        if (phase == Phase::Down && owner_ == -1) {
+            if (layout.healing.contains(x, y)) button_ = PotionButton::Healing;
+            else if (layout.mana.contains(x, y)) button_ = PotionButton::Mana;
+            else return PotionButton::None;
+            owner_ = finger;
+        }
+        if (finger != owner_) return PotionButton::None;
+        const Box box = button_ == PotionButton::Healing ? layout.healing : layout.mana;
+        if (!box.contains(x, y)) inside_ = false;
+        if (phase == Phase::Cancel) { clear(); return PotionButton::None; }
+        if (phase == Phase::Up) {
+            const auto result = inside_ && box.contains(x, y) ? button_ : PotionButton::None;
+            clear();
+            return result;
+        }
+        return PotionButton::None;
+    }
+    [[nodiscard]] bool owns(std::int64_t finger) const { return owner_ != -1 && finger == owner_; }
+    void clear() { owner_ = -1; button_ = PotionButton::None; inside_ = true; }
+private:
+    std::int64_t owner_ = -1;
+    PotionButton button_ = PotionButton::None;
+    bool inside_ = true;
+};
+
+/** A stamina tap belongs to its starting finger and commits only on an in-box release. */
+class StaminaPress {
+public:
+    bool event(std::int64_t finger, Phase phase, float x, float y, const Box& box) {
+        if (phase == Phase::Down && owner_ == -1) {
+            if (!box.contains(x, y)) return false;
+            owner_ = finger;
+        }
+        if (finger != owner_) return false;
+        if (phase == Phase::Cancel) { clear(); return true; }
+        if (phase == Phase::Up) {
+            const bool activate = inside_ && box.contains(x, y);
+            clear();
+            return activate;
+        }
+        if (phase == Phase::Move && !box.contains(x, y)) inside_ = false;
+        return true;
+    }
+    [[nodiscard]] bool owns(std::int64_t finger) const { return owner_ != -1 && owner_ == finger; }
+    void clear() { owner_ = -1; inside_ = true; }
+private:
+    std::int64_t owner_ = -1;
+    bool inside_ = true;
+};
+
 class Input {
 public:
     bool alternate = false, attack_down = false, attack_press = false;
+    bool belt_expanded = false;
+    PotionPress potion_press;
+    StaminaPress stamina_press;
     bool menu = false, done = false, belt_quick = false, run_toggle = false;
     int belt = -1, belt_armed = -1, destination = -1;
     float move_x = 0, move_y = 0;
@@ -310,10 +431,13 @@ public:
     std::vector<Target> casts;
 
     [[nodiscard]] bool move_held() const { return movement_ != -1; }
-    [[nodiscard]] bool owns(std::int64_t finger) const { return finger == movement_ || finger == attack_ || finger == skill_; }
+    [[nodiscard]] bool owns(std::int64_t finger) const { return finger != -1 && (finger == movement_ || finger == attack_ || finger == skill_); }
+    [[nodiscard]] bool owns_attack(std::int64_t finger) const { return attack_ != -1 && attack_ == finger; }
+    [[nodiscard]] bool owns_skill(std::int64_t finger) const { return skill_ != -1 && skill_ == finger; }
 
     /** Drop ownership for a finger that lifted (routes that skip event() must call this). */
     void release_finger(std::int64_t finger) {
+        if (stamina_press.owns(finger)) stamina_press.clear();
         if (finger == movement_) { movement_ = -1; move_x = move_y = 0; }
         if (finger == attack_) { attack_ = -1; attack_down = false; }
         if (finger == skill_) { skill_ = -1; aiming = false; }
@@ -321,14 +445,14 @@ public:
 
     void clear() {
         movement_ = skill_ = attack_ = -1;
+        potion_press.clear(); stamina_press.clear(); belt_expanded = false;
         move_x = move_y = 0;
         aiming = dragged = attack_down = attack_press = false;
         casts.clear();
         belt = belt_armed = destination = -1;
         belt_quick = menu = done = run_toggle = false;
         belt_last_ = -1; belt_ms_ = 0;
-        move_tap_ms_ = 0;
-        move_dragged_ = false;
+        move_tap_ms_ = 0; move_dragged_ = false;
     }
     void frame() { attack_press = menu = done = false; belt = destination = -1; belt_quick = run_toggle = false; casts.clear(); }
 
@@ -348,7 +472,7 @@ public:
                 return;
             }
             if (chrome.menu.contains(x, y)) { menu = true; return; }
-            for (int index = 0; index < 4; ++index)
+            if (belt_expanded) for (int index = 0; index < 4; ++index)
                 if (chrome.belts[std::size_t(index)].contains(x, y)) {
                     const bool quick = belt_last_ == index && now_ms >= belt_ms_ && now_ms - belt_ms_ <= kBeltDoubleTapMs
                         && !item_dragged(belt_x_, belt_y_, x, y);
@@ -357,29 +481,32 @@ public:
                     belt_last_ = index; belt_ms_ = now_ms; belt_x_ = x; belt_y_ = y;
                     return;
                 }
-            if (chrome.move.contains(x, y) && movement_ < 0) {
-                const bool second = now_ms > 0 && move_tap_ms_ > 0
-                    && deliberate_double_tap(move_tap_x_, move_tap_y_, x, y, move_tap_ms_, now_ms);
-                if (second) { run_toggle = true; move_tap_ms_ = 0; }
-                movement_ = finger; move_origin_x_ = x; move_origin_y_ = y; move_down_ms_ = now_ms;
-                move_dragged_ = false;
-            }
-            else if (chrome.attack.contains(x, y) && attack_ < 0) {
-                attack_ = finger; attack_press = attack_down = true;
-                if (skill_ < 0 && (target.valid || target.skill >= 0)) {
-                    stationary = immediate;
-                    skill_ = finger; aiming = true; dragged = false;
-                    origin_x = aim_x = x; origin_y = aim_y = y; preview = target;
-                }
-            }
-            else if (skill_ < 0)
-                for (const auto& box : chrome.skills)
-                    if (box.contains(x, y)) {
+            if (chrome.attack.contains(x, y)) {
+                if (attack_ == -1) {
+                    attack_ = finger; attack_press = attack_down = true;
+                    if (skill_ == -1 && (target.valid || target.skill >= 0)) {
                         stationary = immediate;
                         skill_ = finger; aiming = true; dragged = false;
                         origin_x = aim_x = x; origin_y = aim_y = y; preview = target;
-                        return;
                     }
+                }
+                return;
+            }
+            for (const auto& box : chrome.skills)
+                if (box.contains(x, y)) {
+                    if (skill_ == -1) {
+                        stationary = immediate;
+                        skill_ = finger; aiming = true; dragged = false;
+                        origin_x = aim_x = x; origin_y = aim_y = y; preview = target;
+                    }
+                    return;
+                }
+            if (chrome.move.contains(x, y) && movement_ == -1) {
+                const bool second = now_ms > 0 && move_tap_ms_ > 0
+                    && deliberate_double_tap(move_tap_x_, move_tap_y_, x, y, move_tap_ms_, now_ms);
+                if (second) { run_toggle = true; move_tap_ms_ = 0; }
+                movement_ = finger; move_origin_x_ = x; move_origin_y_ = y; move_down_ms_ = now_ms; move_dragged_ = false;
+            }
         }
         if (finger == movement_) {
             if (phase == Phase::Up) {
@@ -402,7 +529,7 @@ public:
             aim_x = x; aim_y = y;
             dragged = dragged || (!stationary && std::hypot(x - origin_x, y - origin_y) > 10);
             if (phase == Phase::Up) {
-                if (x >= 0 && x < 800 && y >= 0 && y < 600 && preview.valid) casts.push_back(preview);
+                if (x >= 0 && x < viewport_width && y >= 0 && y < 600 && preview.valid) casts.push_back(preview);
                 skill_ = -1; aiming = false;
             }
         }
@@ -410,9 +537,9 @@ public:
 private:
     std::int64_t movement_ = -1, skill_ = -1, attack_ = -1;
     float move_origin_x_ = 0, move_origin_y_ = 0;
-    bool move_dragged_ = false;
     std::uint32_t move_down_ms_ = 0, move_tap_ms_ = 0;
     float move_tap_x_ = 0, move_tap_y_ = 0;
+    bool move_dragged_ = false;
     int belt_last_ = -1;
     std::uint32_t belt_ms_ = 0;
     float belt_x_ = 0, belt_y_ = 0;

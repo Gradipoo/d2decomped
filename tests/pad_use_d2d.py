@@ -20,6 +20,7 @@ seed_ux = "--seed-ux" in sys.argv[2:]
 portal_ux = "--portal-ux" in sys.argv[2:]
 controller_ux = "--controller-ux" in sys.argv[2:]
 touch_ux = "--touch-ux" in sys.argv[2:]
+touch_vendor_ux = "--touch-vendor-ux" in sys.argv[2:]
 corpse_ux = "--corpse-ux" in sys.argv[2:]
 skill_buttons = "--skill-buttons" in sys.argv[2:] or controller_ux or portal_ux
 data = os.environ.get("D2_MPQ_DIR") or os.path.expanduser("~/Workspace/private/diablo2")
@@ -43,8 +44,6 @@ for index, name in enumerate(["Alpha"]):   # expansion softcore, newest first: A
     struct.pack_into("<I", b, 0x30, 1_000_000 - index)   # last played
     with open(os.path.join(saves, name + ".d2s"), "wb") as f:
         f.write(b)
-    stamp = 2_000_000_000 - index * 60     # char select lists newest file time first (FUN_00438ad0)
-    os.utime(os.path.join(saves, name + ".d2s"), (stamp, stamp))
 patch = os.environ.get("D2_PATCH_INSTALLER")
 with open(os.path.join(user, "d2d.cfg"), "w") as f:
     if patch and os.path.exists(patch):
@@ -53,7 +52,7 @@ with open(os.path.join(user, "d2d.cfg"), "w") as f:
         f.write("pad_skill_buttons = 1\n")
     if controller_ux:
         f.write("pad_skill_right = left_shoulder\npad_skill_left = right_shoulder\n")
-    if touch_ux:
+    if touch_ux or touch_vendor_ux:
         f.write("touch_controls = 1\n")
 
 if portal_ux:
@@ -377,9 +376,6 @@ if controller_ux:
     face(float(drop[5]), float(drop[6])); frames(15)
     assert int(state()["items"]) == before, "held Attack turned into pickup after the kill"
     cmd("pad 0 a up"); frames(3)
-    # The hold swings Attack at the air (World's attack at a spot); the World takes no command
-    # till that swing ends, so the fresh press comes after it.
-    until("the held swing over", lambda: state()["pmode"] == "-")
     press("a")
     until("fresh Attack/Use picks up the rune", lambda: int(state()["items"]) == before + 1)
     shrines = [line.split("\t") for line in cmd("debug objects").splitlines() if "\tshrine\t" in line]
@@ -415,21 +411,97 @@ if controller_ux:
     print("ok: panel assignment, remapped glyphs, both banks, B closes panels, stationary held Might, held attack across kill, shrine use, explicit clear")
     sys.exit(0)
 
-if touch_ux:
+if touch_ux or touch_vendor_ux:
     def finger(identity, phase, pixel_x, pixel_y):
         """Inject one logical finger event and advance frames so the normal input path consumes it."""
         cmd(f"touch {identity} {phase} {pixel_x} {pixel_y}"); frames(3)
     def tap(pixel_x, pixel_y):
         """Send a complete tap with a second finger without releasing the movement finger."""
         finger(2, "down", pixel_x, pixel_y); finger(2, "up", pixel_x, pixel_y)
+
+if touch_vendor_ux:
+    def vendor_bag_cap(column):
+        cmd("debug equip cap 12"); frames(4)
+        item = cmd("items").split("[cap ")[1].split(" id=")[1].split()[0]
+        cmd(f"cmd hand {item}"); frames(4)
+        cmd(f"cmd grid {column} 0"); frames(4)
+        return item
+
+    cmd("debug clearinv"); frames(4)
+    cap = vendor_bag_cap(0)
+    akara = next(line.split("\t") for line in cmd("npcs").splitlines() if line.startswith("Akara\t"))
+    cmd(f"debug warp {float(akara[5]) + 1} {akara[6]}"); frames(6)
+    cmd("debug stat 14 100000"); cmd(f"cmd trade {akara[4]}"); frames(8)
+    assert state()["store"] != "-1", cmd("state")
+    for tab in range(4):
+        tap(120 + 80 * tab, 75)
+        assert int(state()["store_tab"]) == tab
+    bag_x, bag_y = map(int, cmd(f"debug itemat {cap}").split()[1:3])
+    before_items, before_gold = int(state()["items"]), int(state()["gold"])
+    buy_x, buy_y, cancel_y = 400, 208, 262
+    stock_x, stock_y = 371, 137  # the rightmost cell of the vendor's 10x10 stock grid
+
+    tap(stock_x, stock_y)
+    assert int(state()["gold"]) == before_gold
+    tap(buy_x, cancel_y)
+    assert int(state()["items"]) == before_items
+    tap(stock_x, stock_y)
+    finger(2, "down", buy_x, buy_y)
+    assert int(state()["gold"]) == before_gold
+    finger(2, "up", buy_x, buy_y)
+    assert int(state()["items"]) == before_items + 1
+    finger(2, "up", buy_x, buy_y)
+    assert int(state()["items"]) == before_items + 1
+
+    finger(2, "down", stock_x, stock_y + 29)
+    finger(2, "move", bag_x, bag_y)
+    finger(2, "up", bag_x, bag_y)
+    assert int(state()["items"]) == before_items + 2
+
+    finger(2, "down", stock_x, stock_y)
+    finger(3, "down", 280, 75); finger(3, "up", 280, 75)
+    finger(2, "up", bag_x, bag_y)
+    assert int(state()["items"]) == before_items + 2, "switching tabs committed a stale drag"
+    tap(360, 75)
+
+    before_sale = int(state()["gold"])
+    finger(2, "down", bag_x, bag_y)
+    finger(2, "move", 200, 175)
+    screenshot("touch-vendor-sell-drop.png")
+    finger(2, "up", 200, 430)
+    assert int(state()["gold"]) == before_sale and int(state()["items"]) == before_items + 2
+    finger(2, "down", bag_x, bag_y)
+    finger(2, "move", 200, 175)
+    finger(2, "cancel", 200, 175)
+    assert int(state()["gold"]) == before_sale and int(state()["items"]) == before_items + 2
+    finger(2, "down", bag_x, bag_y)
+    finger(2, "move", 200, 175)
+    finger(2, "up", 200, 175)
+    assert int(state()["gold"]) > before_sale and int(state()["items"]) == before_items + 1
+    finger(2, "up", 200, 175)
+    assert int(state()["items"]) == before_items + 1
+
+    second_cap = vendor_bag_cap(0)
+    second_x, second_y = map(int, cmd(f"debug itemat {second_cap}").split()[1:3])
+    before_sale = int(state()["gold"])
+    tap(second_x, second_y)
+    tap(buy_x, cancel_y)
+    assert int(state()["gold"]) == before_sale and int(state()["items"]) == before_items + 2
+    tap(second_x, second_y)
+    tap(buy_x, buy_y)
+    assert int(state()["gold"]) > before_sale and int(state()["items"]) == before_items + 1
+    print("ok: touch vendor tabs, one-tap Buy and Sell, Misc drag-buy, vendor drag-sell and cancellation")
+    sys.exit(0)
+
+if touch_ux:
     aimed = 70 if corpse_ux else 54
     cmd("debug stat 12 99"); cmd(f"debug points {aimed} 20")
     cmd("debug stat 9 256000"); cmd("debug stat 8 256000")
     cmd("debug stat 7 256000"); cmd("debug stat 6 256000"); frames(5)
     pixel_x, pixel_y = skill_panel(aimed)
-    tap(pixel_x, pixel_y)   # the tree previews the skill
-    tap(136, 570)           # Assign (touch::kTreeAssign)
-    tap(598, 530)           # onto skill ring 1
+    tap(pixel_x, pixel_y)
+    tap(631, 541)
+    tap(631, 541)
     screenshot("touch-assignment-corpse.png" if corpse_ux else "touch-assignment.png")
     tap(768, 30); tap(768, 30)  # Done, then Back from the tree
     cmd("debug goto 2"); frames(20)
@@ -451,15 +523,12 @@ if touch_ux:
     finger(2, "cancel", 636, 450)
     assert state()["touch_aiming"] == "0" and state()["touch_move"] != "0.000000,0.000000", "cancellation interrupted movement"
     assert state()["mana"] == mana, "cancelled skill spent mana"
-    finger(3, "down", 736, 440); finger(3, "up", 736, 440)
+    finger(3, "down", 746, 466); finger(3, "up", 746, 466)
     assert state()["touch_page"] == "1" and state()["touch_move"] != "0.000000,0.000000", "page switch interrupted movement"
     finger(1, "up", 140, 460)
-    # A pointer that moves, then clicks, is a non-touch mouse: it takes the seat and
-    # the overlay leaves it alone; the next finger brings it back (controller-touch.md).
-    cmd("click 736 440"); frames(4)
-    assert state()["touch_page"] == "1", "a mouse click switched the touch page"
-    finger(3, "down", 736, 440); finger(3, "up", 736, 440)
-    assert state()["touch_page"] == "0", "the next finger did not switch the touch page"
+    # Sidecar-style pointer input can operate the overlay without SDL fingers.
+    cmd("click 746 466"); frames(4)
+    assert state()["touch_page"] == "0", "pointer click did not switch touch page"
     finger(2, "down", 631, 541)
     cmd("key i"); frames(5)
     finger(2, "up", 640, 500)
@@ -471,7 +540,7 @@ if touch_ux:
         finger(2, "move", 640, 500)
     preview = tuple(map(float, state()["touch_point"].split(",")))
     before_cast = players()["Alpha"][:2]
-    finger(2, "up", 640 if not corpse_ux else 631, 500 if not corpse_ux else 541)   # a corpse skill: a tap, no drag
+    finger(2, "up", 640 if not corpse_ux else 590, 500 if not corpse_ux else 520)
     frames(35)
     if corpse_ux:
         assert state()["pets"] != "-", "touch corpse skill did not raise a minion"
@@ -496,52 +565,55 @@ if touch_ux:
         target = carried("cap", 2, 0)
         portal = carried("tbk", 4, 0)
         cmd("debug unid"); frames(4)
-        def sheet(action):
-            """Tap the item sheet's row `action` (0 = its first), then Confirm (touch::make_item_sheet)."""
-            tap(400, 208 + 48 * action); tap(340, 208 + 48 * (action + 1) + 6)
         cmd("key i"); frames(5)
         before = int(state()["unid"])
-        tap(*item_point(identify)); sheet(0)                   # Use, Confirm
+        tap(*item_point(identify))
         assert int(state()["identify"]) >= 0, "touch did not activate the identify tome"
-        tap(*item_point(target)); tap(340, 208)                # the target, then Confirm (make_confirm_sheet)
+        tap(*item_point(target))
         assert int(state()["unid"]) == before - 1, "touch identify target was not applied"
-        tap(*item_point(portal)); sheet(0)
+        tap(*item_point(portal))
         until("touch opened a portal", lambda: any(line.startswith("0\t") for line in cmd("debug portals").splitlines()))
         tap(768, 30)
         cmd("debug goto 1"); frames(20)
         akara = next(line.split("\t") for line in cmd("npcs").splitlines() if line.startswith("Akara\t"))
         cmd(f"debug warp {float(akara[5]) + 1} {akara[6]}"); frames(6)
         cmd("debug stat 14 100000"); cmd(f"cmd trade {akara[4]}"); frames(8)
-        def buy():
-            """Tap the first stock for its sheet, Buy and Confirm; return the bought item's screen point."""
+        for pointer in (False, True):
             before = int(state()["items"])
-            tap(110, 137); sheet(0)
+            tap(110, 137)
             assert int(state()["items"]) == before + 1, "touch stock tap did not buy"
             bought = [line for line in cmd("items").splitlines() if line.startswith("[") and "panel=1 " in line][-1]
-            return item_point(bought.split(" id=")[1].split()[0])
-        pixel_x, pixel_y = buy()
-        before = int(state()["items"])
-        finger(2, "down", pixel_x, pixel_y)
-        assert state()["touch_item_finger"] == "2", "sale test did not capture the finger"
-        held_from = time.time()
-        while time.time() - held_from < .8:
-            frames(3)
-        finger(2, "up", pixel_x, pixel_y)
-        assert int(state()["items"]) == before - 1, "hold did not sell"
+            bought_id = bought.split(" id=")[1].split()[0]
+            pixel_x, pixel_y = item_point(bought_id)
+            if pointer:
+                cmd(f"click {pixel_x} {pixel_y} down"); frames(3)
+            else:
+                finger(2, "down", pixel_x, pixel_y)
+            assert state()["touch_item_finger"] == ("-2" if pointer else "2"), "sale test did not capture the intended pointer"
+            held_from = time.time()
+            while time.time() - held_from < .8:
+                frames(3)
+            if pointer:
+                cmd(f"click {pixel_x} {pixel_y} up"); frames(3)
+            else:
+                finger(2, "up", pixel_x, pixel_y)
+            assert int(state()["items"]) == before, f"hold did not sell with pointer={pointer}"
         # Cancelled item holds must not sell, including after the hold threshold.
-        pixel_x, pixel_y = buy()
+        tap(110, 137)
+        bought = [line for line in cmd("items").splitlines() if line.startswith("[") and "panel=1 " in line][-1]
+        pixel_x, pixel_y = item_point(bought.split(" id=")[1].split()[0])
         before = int(state()["items"])
         finger(2, "down", pixel_x, pixel_y)
         finger(2, "cancel", pixel_x, pixel_y)
         assert state()["touch_item_finger"] == "-1", "cancel kept the item pointer"
         frames(50)
         assert int(state()["items"]) == before, "cancelled touch hold sold an item"
-        finger(2, "down", pixel_x, pixel_y)
-        finger(3, "down", 768, 30); finger(3, "up", 768, 30)   # Done with another finger
-        assert state()["touch_item_finger"] == "-1", "closing the shop kept the item finger"
+        cmd(f"click {pixel_x} {pixel_y} down"); frames(3)
+        tap(768, 30)
+        assert state()["touch_item_finger"] == "-1", "closing the shop kept the item pointer"
         frames(50)
-        finger(2, "up", pixel_x, pixel_y)
-        assert int(state()["items"]) == before, "closing the shop committed a held sale"
+        cmd(f"click {pixel_x} {pixel_y} up"); frames(3)
+        assert int(state()["items"]) == before, "closing the shop committed a pointer sale"
         tap(768, 30)
     print("ok: touch assignment, independent page/movement, aim/cancel, actual cast, tomes and separate buy/sell where applicable")
     sys.exit(0)

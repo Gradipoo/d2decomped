@@ -555,13 +555,6 @@ void draw_level_buttons(std::vector<std::uint8_t>& framebuffer, const Scene& sce
     button(buttons.skills_x, 0xf93, buttons.skills_down && over_skills_button(buttons.skills_x, mouse_x, mouse_y));
 }
 
-std::array<int, 4> grid_rect(const Scene& scene, const Scene::InvLayout& layout, const d2d::d2s::Item& item) {
-    const auto info = scene.rules.item_info.find(item.code);
-    return { layout.grid_x + item.column * layout.box_w, layout.grid_y + item.row * layout.box_h,
-             (info != scene.rules.item_info.end() ? info->second.width : 1) * layout.box_w,
-             (info != scene.rules.item_info.end() ? info->second.height : 1) * layout.box_h };
-}
-
 // The Cube panel's bottom as game.exe anchors it: its art's top-left
 // quarter ends 0xe0 above it (FUN_0048edf0).
 static int cube_bottom(const Scene& scene) {
@@ -1142,6 +1135,7 @@ void quest_log_tab(QuestLog& quest_log, const d2d::rules::QuestBits& quest_bits,
 void quest_log_notify(QuestLog& quest_log, int quest) {
     const auto found = std::ranges::find(kQuestLog, quest, &QuestEntry::quest);
     if (found == kQuestLog.end()) return;
+    quest_log.touch_notice.notify(quest);
     if (!quest_log.open) {
         quest_log.button = quest_log.notified = true;
         quest_log.pending[std::size_t(found->act)] = found->slot;     // FUN_004a2c30
@@ -1212,6 +1206,7 @@ bool draw_quest_log(std::vector<std::uint8_t>& framebuffer, const Scene& scene, 
         draw_hover_text(framebuffer, scene, { { string_id(scene, button == 1 ? 0x1030 : 0xe88), kTxtWhite } }, centre, centre, hover_bottom, hover_bottom);
     }
     if (!sel) return sound;
+    if (!quest_log.replayed) quest_log.touch_notice.review(sel->quest);
     // The name centred at 160, the lines from x 16, wrapped to 270 (FUN_00502970).
     auto line = [&](const std::string& text, int x, int y) { font.draw(framebuffer, kScreenWidth, kScreenHeight, pal, panel_x + x, panel_y + y - font.line_height(), text); };
     const auto name = string_id(scene, std::uint16_t(sel->name));

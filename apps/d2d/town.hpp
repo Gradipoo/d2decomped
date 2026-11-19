@@ -15,6 +15,7 @@
 #include "hireling.hpp"
 #include "hold_confirm.hpp"
 #include "item_use.hpp"
+#include "loot_chooser.hpp"
 #include "netgame.hpp"
 #include "pad_hold.hpp"
 #include "panels.hpp"
@@ -26,8 +27,13 @@
 #include "skillbar.hpp"
 #include "skillpad.hpp"
 #include "store.hpp"
+#include "teleport_aim.hpp"
 #include "tile_blit.hpp"
+#include "touch_effects.hpp"
+#include "touch_feedback.hpp"
+#include "touch_gestures.hpp"
 #include "touch_input.hpp"
+#include "touch_ui_sound.hpp"
 #include "ui.hpp"
 #include "unit_slide.hpp"
 #include "use_item.hpp"
@@ -308,9 +314,10 @@ struct Town {
     // toggle says; `attack` / `attack_down` / `alt` are its buttons, which
     // hit what is in reach. The first player's is set each frame by main,
     // the other co-op players' by coop_pad.
-    struct PadMove { float x = 0, y = 0; bool active = false, attack = false, attack_down = false, alt = false; bool aim = false; float aim_x = 0, aim_y = 0; };
+    struct PadMove { float x = 0, y = 0; bool active = false, attack = false, attack_down = false, alt = false; bool aim = false; float aim_x = 0, aim_y = 0; float aim_magnitude = 0; bool secondary_down = false; };
     struct PadPlayer {
         PadMove move;
+        TeleportAim teleport;
         bool walking = false;                     // last frame's stick walk, to send a fresh walk once
         float face_x = 0.707f, face_y = 0.707f;   // the facing the pad last pointed (world, south at first)
         int target = -1;                          // the monster the held button stays on
@@ -326,6 +333,11 @@ struct Town {
     // The pad's walk and its buttons for the hero at `unit` (`field`: no
     // panel or menu is up), the commands out through `out`.
     void pad_walk(PadPlayer& player_pad, const UnitState& unit, bool dead, bool field, const Send& out);
+    LootChooser loot_chooser;
+    bool open_loot_chooser(const PadPlayer& player_pad, const UnitState& unit, bool for_touch);
+    void commit_loot(int item_id);
+    void loot_pad_event(const pad::Actions& actions);
+    void draw_loot(std::vector<std::uint8_t>& framebuffer);
     struct PadPick { enum Kind { kNone, kMonster, kItem, kThing } kind = kNone; int id = -1; float x = 0, y = 0; };
     PadPick contextual_pick;
     [[nodiscard]] PadPick pad_pick(const PadPlayer& player_pad, const UnitState& unit, bool uses, const pad::Aim& aim = {}, bool monsters = true) const;
@@ -396,6 +408,7 @@ struct Town {
     int lead_leaves();
     int handed_over = -1;                         // the seat a hand-over in the game menu gave seat 0 (main swaps the pads, frees the leaver's)
     int partner_left = -1;                        // the seat whose player Save and Exit logged out (main frees it)
+    bool quit_app = false;                        // iOS: Save and Exit should end the host app, not only the roster
     // A seat's player joins with `character` / leaves (saved).
     void coop_join(int seat, const Character& joining);
     void coop_leave(int seat);
@@ -522,7 +535,6 @@ struct Town {
     // Opt-in skill buttons. The sheet is <name>.padskills beside the .key;
     // an empty key_dir (--no-save) keeps it in memory only.
     bool touch_enabled = false;
-    // Kept with touch off too: pad_playing, pad focus and the pad cue read it.
     touch::LastDevice last_device = touch::LastDevice::MouseKeyboard;
     /** Touch on, last device is a finger/Pencil, and classic PC bottom bar suppressed. */
     [[nodiscard]] bool touch_hides_classic_hud() const;
@@ -532,16 +544,30 @@ struct Town {
     [[nodiscard]] bool touch_compact_field() const;
     void drive_touch_hold(float seconds);
     touch::Input touch_input;
+    touch::HoldGesture touch_get_hold;
+    touch::SkillHold touch_skill_hold;
+    bool touch_stop_chase = false;
+    [[nodiscard]] bool touch_show_loot_labels() const { return touch_get_hold.activated || (loot_chooser.open && loot_chooser.touch); }
     PadPlayer touch_player;
     std::map<std::string, skillpad::Sheet> touch_sheets;
     std::array<touch::Target, 4> touch_previews{};
+    TeleportAim touch_teleport;
+    touch::EffectGesture touch_effect;
+    touch::FeedbackState touch_pulses;
+    std::array<std::int64_t, 17> touch_pulse_fingers{
+        -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1
+    };
+    touch::UiClickThrottle touch_clicks;
+    bool touch_back_requested = false;
     std::int64_t touch_item_finger = -1;
-    int touch_item = -1, touch_stock = -1, touch_fingers = 0;
-    std::uint32_t touch_item_start = 0;
+    std::int64_t touch_cancelled_item_finger = -1;
+    int touch_item = -1, touch_sell_vendor = -1, touch_fingers = 0;
+    StoreSelection touch_stock;
     float touch_item_x = 0, touch_item_y = 0;
     int touch_panel_state = 0;
     bool touch_sold = false;
     bool touch_item_drag = false;
+    bool touch_trade_pending = false;     // wait for the next authoritative view before using another stock index
     int touch_identify_target = -1;
     struct TouchPointer {
         bool active = false, press = false, release = false;
@@ -550,14 +576,12 @@ struct Town {
     TouchPointer touch_pointer;
     touch::ItemSheet touch_sheet;
     hold_confirm::Hold touch_hold;
-    bool touch_hold_edge = false;
     float touch_hold_fraction = 0.f;
     std::string touch_item_hint;
     int touch_selected = skillpad::kEmpty;
     int touch_learn_skill = -1;
     int touch_tree_tap_skill = -1;
     std::uint32_t touch_tree_tap_ms = 0;
-    bool touch_attack_used = false;
     std::int64_t touch_ground_finger = -1;
     float touch_ground_x = 0, touch_ground_y = 0;
     PadPick touch_attack_pick, touch_interact_pick;
@@ -566,25 +590,36 @@ struct Town {
     enum class TouchBindPhase { Off, PickSlot, PickSkill };
     TouchBindPhase touch_bind = TouchBindPhase::Off;
     int touch_bind_slot = -1;
-    int touch_bind_wheel_at = 0;
+    int touch_bind_wheel_at = -1;
     int touch_bind_wheel_page = 0;
-    bool touch_bind_hit = false;
+    bool touch_bind_from_hub = false;
     std::int64_t touch_bind_finger = -1;
-    float touch_bind_origin_x = 0, touch_bind_origin_y = 0;
+    std::vector<int> touch_bind_ids;
+    [[nodiscard]] int touch_bind_skill_count() const;
     void touch_rebuild_bind_wheel();
     void touch_open_bind();
     void touch_close_bind();
-    void touch_apply_bind(int slot, int skill);
+    [[nodiscard]] bool touch_apply_bind(int slot, int skill);
+    void touch_play_ui_click(touch::UiClick action, int destination = 0);
     [[nodiscard]] int touch_bound_skill(int slot) const;
     [[nodiscard]] int touch_store_panel_x() const;
+    [[nodiscard]] const d2d::d2s::Item* touch_bag_item() const;
+    [[nodiscard]] bool touch_can_sell(const d2d::d2s::Item* item) const;
+    [[nodiscard]] touch::Box touch_trade_drop() const;
+    void cancel_touch_item();
+    void close_touch_item();
+    bool touch_trade(touch::ItemAction action);
     bool touch_event(std::int64_t finger, touch::Phase phase, float x, float y);
-    /** Facing plus resolve_skill: swipe-aim when directional or when pad_pick has no monster. */
+    /** Refresh a held preview from its drag and the current eligible targets. */
     void touch_refresh_skill_aim();
+    void drive_touch_skill_hold();
+    void touch_cancel_skill_chase();
+    void touch_stop_skill_chase(bool keep_walk);
     void drive_touch();
     void draw_touch(std::vector<std::uint8_t>& framebuffer);
     void load_touch_sheet(const std::string& name);
-    void save_touch_sheet(const std::string& name) const;
-    [[nodiscard]] touch::Target resolve_skill(PadPlayer& player_pad, int skill, float dx = 0, float dy = 0, bool manual = false, const UnitState* owner = nullptr, std::string_view owner_name = {}) const;
+    [[nodiscard]] bool save_touch_sheet(const std::string& name, const skillpad::Sheet& sheet) const;
+    [[nodiscard]] touch::Target resolve_skill(const PadPlayer& player_pad, int skill, float dx = 0, float dy = 0, bool manual = false, const UnitState* owner = nullptr, std::string_view owner_name = {}, int charged_item = -1, int sticky = -1) const;
     void cast_resolved(PadPlayer& player_pad, const touch::Target& target);
     pad::Actions skill_actions;
     std::map<std::string, skillpad::Sheet> skill_sheets;
@@ -609,7 +644,8 @@ struct Town {
     [[nodiscard]] std::string pick_label(const PadPick& pick) const;
     void apply_skill_pad(PadPlayer& player_pad, const UnitState& unit, bool dead, bool field, std::string_view name, int right_skill,
                          bool expansion, const pad::Actions& actions, const Send& out);
-    [[nodiscard]] int portal_tome(std::string_view name, bool charged = true) const;
+    [[nodiscard]] int portal_item(std::string_view name, bool charged = true) const;
+    [[nodiscard]] std::vector<int> assignable_skills(std::string_view name) const;
     [[nodiscard]] bool skill_known(std::string_view name, int skill) const;
     void drive_wheel(const pad::Actions& actions);
     void drive_strip(const pad::Actions& actions);

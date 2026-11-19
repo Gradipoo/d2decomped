@@ -22,6 +22,7 @@ off with `--toggle name=off[,name=off...]` (apps/d2d/main.cpp `kToggles`):
 `autoparty` (improvement 7), `pad_controls` (improvement 11), `coop_lobby` (improvement 12),
 `splash_centre` (improvement 14), `click_keys` (improvement 15), `unit_slide` (improvement 16),
 `hwcursor` (improvement 19), `touch_classic_hud` (improvement 20).
+`hwcursor` (improvement 19), `touch_classic_hud` (improvement 20), `dismiss_effects` (improvement 21, default off).
 `--toggle scalemode=pixelart|nearest|linear` picks the upscale filter (Additions).
 
 ## Improvements
@@ -49,6 +50,8 @@ off with `--toggle name=off[,name=off...]` (apps/d2d/main.cpp `kToggles`):
 | 19 | The mouse cursor | Hidden OS pointer (USER32 `ShowCursor`; game-imports.tsv has `ShowCursor` and `LoadCursorA`, no `SetCursor` or `CreateCursor`); CURSOR\ohand.dc6 drawn into each frame, so it moves only when a frame is drawn | The same gauntlet frame and palette handed to the OS as a colour cursor (`SDL_CreateColorCursor`), scaled to the window, hot spot where the frame drawing puts it. Only the plain hand: a held item, an identify pick, a pad-moved cursor or a driver without colour cursors draws into the frame, as game.exe. `--toggle hwcursor=off` turns it off | The hand follows the mouse with no frame of lag, even when frames drop | yes: the hand moves ahead of slow frames | hw_cursor.hpp `cursor_image`, window.hpp `show_cursor` |
 
 | 20 | Touch input prototype | No touch adapter | Opt-in `--touch-controls` / `touch_controls = 1`: corner thumb layout, attack-only primary button, contextual Interact, four skills per I/II page, compact life/mana bars top-left on the field; game.exe's bottom bar, belt strip and mini menu row hidden there (`--toggle touch_classic_hud=on` restores them). Map opens full-screen; skill tree pins left on touch. Drag-to-aim, cancel region, `.touchskills` sidecars. Off by default, on by default on Android and iOS | Mobile-style field HUD on the existing 800×600 view | yes, once enabled | touch_input.hpp, town/touch.cpp; docs/design/controller-touch.md |
+
+| 21 | Dismiss selected self effects | Not traced | With `--toggle dismiss_effects=on`, a confirmed dismissal can remove a selected armor, war cry or shrine boost | Let a player end an unwanted beneficial effect | yes, when enabled | world/commands.cpp `DismissEffect` |
 
 ## Approximations
 

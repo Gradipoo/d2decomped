@@ -93,6 +93,16 @@
 #include <utility>
 #include <vector>
 
+#if defined(__APPLE__)
+#include <TargetConditionals.h>
+#endif
+#if defined(TARGET_OS_IPHONE) && TARGET_OS_IPHONE
+#include "ios/import.hpp"
+#include "ios/keyboard.hpp"
+#include "ios/quit.hpp"
+#include <SDL3/SDL_main.h>
+#endif
+
 #if defined(_WIN32) && (defined(_M_IX86) || defined(_M_X64))
 #include <intrin.h>
 #elif defined(__APPLE__)
@@ -392,6 +402,7 @@ static fs::path    g_user_dir;
 static pad::Config g_pad_config;          // d2d.cfg pad_* (gamepad_map.hpp load_config)
 static std::array<int, 6> g_automap_options{ 0, 0, 1, 1, 1, 0 };   // d2d.cfg automap_mode/fade/center/party/names/left (game.exe's registry)
 static bool        g_pad_controls = true;
+static bool        g_dismiss_effects = false; // host permits dismissing eligible effects
 static bool        g_click_keys = true;   // Configure Controls' Attack / Use and Right-hand Skill keys (deviations.md); off: --toggle click_keys=off
 static keys::Clicks g_click_bindings = keys::kNoClicks;   // d2d.cfg click_attack / click_skill
 static bool        g_coop_lobby = true;   // the title's "SINGLE PLAYER / COOP" and character select's co-op lobby; off: --toggle coop_lobby=off // Configure Controls' gamepad page (deviations.md); off: --toggle pad_controls=off
@@ -495,10 +506,9 @@ inline void pace_frame(std::uint64_t frame_start_ns, FrameBudget budget) {
     }
 }
 
-// Map the window safe area into the centre 800-wide touch band (logical px).
-// Widescreen spare columns live outside that band; touch input and draw_touch
-// stay 800-wide, so insets are only within [0, 800].
+// Map window safe area to the full logical viewport used by touch controls.
 void apply_safe_inset(const Window& win) {
+    touch::viewport_width = float(std::max(win.view_w, int(kScreenWidth)));
 #if SDL_VERSION_ATLEAST(3, 4, 0)
     SDL_Rect area{};
     float left = 0, top = 0, right = 0, bottom = 0;
@@ -512,23 +522,12 @@ void apply_safe_inset(const Window& win) {
         touch::safe_inset = {};
         return;
     }
-    const float band_left = (float(win.view_w) - float(kScreenWidth)) / 2.f;
-    const float band_right = band_left + float(kScreenWidth);
-    const float left_from_safe = std::max(0.f, left - band_left);
-    const float right_from_safe = std::max(0.f, band_right - right);
-#if defined(TARGET_OS_IPHONE) && TARGET_OS_IPHONE
-    // The landscape notch sits in the widescreen gutter, outside this band.
-    // A few points of sliver, plus the home indicator. Keep leftover left and right.
-    constexpr float kMaxHorizontal = 20.f;
-    constexpr float kMaxVertical = 36.f;
-#else
-    constexpr float kMaxHorizontal = 48.f;
-    constexpr float kMaxVertical = 48.f;
-#endif
-    auto clamp_h = [kMaxHorizontal](float value) { return std::clamp(value, 0.f, kMaxHorizontal); };
-    auto clamp_v = [kMaxVertical](float value) { return std::clamp(value, 0.f, kMaxVertical); };
-    touch::safe_inset.left = clamp_h(left_from_safe);
-    touch::safe_inset.right = clamp_h(right_from_safe);
+    // Preserve both horizontal insets, including asymmetric cutouts.
+    const float max_horizontal = std::max(0.f, (touch::viewport_width - 400.f) * .5f);
+    const float max_vertical = 200.f;
+    touch::safe_inset.left = std::clamp(left, 0.f, max_horizontal);
+    touch::safe_inset.right = std::clamp(touch::viewport_width - right, 0.f, max_horizontal);
+    auto clamp_v = [max_vertical](float value) { return std::clamp(value, 0.f, max_vertical); };
     touch::safe_inset.top = clamp_v(std::max(0.f, top));
     touch::safe_inset.bottom = clamp_v(std::max(0.f, float(kScreenHeight) - bottom));
 #else
@@ -800,6 +799,12 @@ int run_windowed(std::vector<std::uint8_t>& framebuffer,
     // IMKCFRunLoopWakeUpReliable"). It was left on permanently as a
     // beachball suspect; that beachball was the pan-left float loop.
     bool text_active = false;
+#if defined(TARGET_OS_IPHONE) && TARGET_OS_IPHONE
+    // Enter or a tap outside the name field closes the keyboard and leaves it
+    // closed. CharCreate would otherwise start text input again every frame.
+    bool ios_text_paused = false;
+#endif
+    bool in_background = false;
     Town town(scene ? &*scene : nullptr, character, g_start_cam_x, g_start_cam_y);
     town.set_pad_config(g_pad_config);
     town.touch_enabled = g_touch_controls;
@@ -821,6 +826,7 @@ int run_windowed(std::vector<std::uint8_t>& framebuffer,
     const CharacterStore characters{ save_dir, scene && scene->item_tables ? &*scene->item_tables : nullptr };
     town.world.characters = g_no_save ? nullptr : &characters;
     town.world.autoloot_gold = g_autoloot;
+    town.world.dismiss_effects = g_dismiss_effects;
     if (!g_no_save) {
         town.cfg_file = g_user_dir / "d2d.cfg";
         d2d::userdir::Config cfg;
@@ -892,10 +898,26 @@ int run_windowed(std::vector<std::uint8_t>& framebuffer,
         const std::uint32_t frame_start_ms = std::uint32_t(frame_start_ns / 1'000'000);
         // Toggled inside the `input` timing window, so any IME cost of the
         // switch itself shows up there.
-        if (const bool want = screen == Screen::CharCreate || (screen == Screen::InGame && (town.chat_typing || town.coop_typing() || town.gold_box))
-                               || (screen == Screen::CharSelect && lobby.typing())
-                           || (screen == Screen::TcpIp && tcpip.box_open); want != text_active) {
+#if defined(TARGET_OS_IPHONE) && TARGET_OS_IPHONE
+        if (screen != Screen::CharCreate) ios_text_paused = false;
+        const bool want = (screen == Screen::CharCreate && !ios_text_paused)
+#else
+        const bool want = screen == Screen::CharCreate
+#endif
+                          || (screen == Screen::InGame && (town.chat_typing || town.coop_typing() || town.gold_box))
+                          || (screen == Screen::CharSelect && lobby.typing())
+                          || (screen == Screen::TcpIp && tcpip.box_open);
+        if (want != text_active) {
             if (want) {
+#if defined(TARGET_OS_IPHONE) && TARGET_OS_IPHONE
+                // A 1-point rect at the top of the window. SDL's offset stays zero
+                // (keybottom < rectbottom is false). A null rect keeps iOS from
+                // presenting the keyboard and does not stop updateKeyboard from
+                // assigning UIKit_ComputeViewFrame, which is not the full phone
+                // in landscape. The helper pins the view back and presents the field.
+                const SDL_Rect area{ 0, 0, 1, 1 };
+                SDL_SetTextInputArea(win.window, &area, 0);
+#else
                 // The field being typed in, so Steam's keyboard opens clear of it.
                 const int side = screen == Screen::InGame ? (win.view_w - int(kScreenWidth)) / 2 : 0;
                 const SDL_Rect field = screen == Screen::CharCreate ? SDL_Rect{ 319, rec_top(519, 26), 169, 26 }
@@ -907,9 +929,18 @@ int run_windowed(std::vector<std::uint8_t>& framebuffer,
                 SDL_RenderCoordinatesToWindow(win.renderer, float(field.x + field.w), float(field.y + field.h), &right, &bottom);
                 const SDL_Rect area{ int(left), int(top), int(right - left), int(bottom - top) };
                 SDL_SetTextInputArea(win.window, &area, 0);
+#endif
                 SDL_StartTextInput(win.window);
+#if defined(TARGET_OS_IPHONE) && TARGET_OS_IPHONE
+                d2d::ios::present_text_keyboard();
+#endif
             }
-            else      SDL_StopTextInput(win.window);
+            else {
+                SDL_StopTextInput(win.window);
+#if defined(TARGET_OS_IPHONE) && TARGET_OS_IPHONE
+                d2d::ios::dismiss_text_keyboard();
+#endif
+            }
             text_active = want;
         }
         heartbeat_ms.store(frame_start_ms, std::memory_order_relaxed);
@@ -927,21 +958,66 @@ int run_windowed(std::vector<std::uint8_t>& framebuffer,
         town.touch_input.frame();
         SDL_Event event;
         while (SDL_PollEvent(&event)) {
+            if (event.type == SDL_EVENT_WILL_ENTER_BACKGROUND || event.type == SDL_EVENT_DID_ENTER_BACKGROUND) {
+                town.touch_back_requested = false;
+                if (!in_background) {
+                    in_background = true;
+                    audio.suspend();
+                    d2d::log::info("Background: rendering and audio paused. Leaving mid-game does not create a new save.");
+                }
+                continue;
+            }
+            if (event.type == SDL_EVENT_WILL_ENTER_FOREGROUND || event.type == SDL_EVENT_DID_ENTER_FOREGROUND) {
+                if (in_background) {
+                    in_background = false;
+                    audio.resume();
+                    d2d::log::info("Foreground: rendering and audio resumed.");
+                }
+                continue;
+            }
+            if (in_background) continue;
             // SDL3 doesn't rescale event coords under logical presentation;
             // convert so the mouse lands in 800x600 game pixels.
             SDL_ConvertEventToRenderCoordinates(win.renderer, &event);
             // Widescreen: mouse x counts from the centre 800x600, where the UI is.
-            const float view_off = float(win.view_w - int(kScreenWidth)) / 2;
+            const float view_off = float((win.view_w - int(kScreenWidth)) / 2);
             if (event.type == SDL_EVENT_MOUSE_MOTION) {
                 event.motion.x -= view_off;
                 if (event.motion.xrel != 0 || event.motion.yrel != 0) roster_navigation = false;
             }
             else if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN || event.type == SDL_EVENT_MOUSE_BUTTON_UP) event.button.x -= view_off;
             else if (event.type == SDL_EVENT_MOUSE_WHEEL) event.wheel.mouse_x -= view_off;
+#if defined(TARGET_OS_IPHONE) && TARGET_OS_IPHONE
+            if (text_active && event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat
+                && (event.key.key == SDLK_RETURN || event.key.key == SDLK_KP_ENTER)) {
+                ios_text_paused = true;
+                SDL_StopTextInput(win.window);
+                d2d::ios::dismiss_text_keyboard();
+                text_active = false;
+            }
+            const bool tap_down = (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN && event.button.button == SDL_BUTTON_LEFT)
+                               || event.type == SDL_EVENT_FINGER_DOWN;
+            if (tap_down) {
+                const float tap_x = event.type == SDL_EVENT_FINGER_DOWN ? event.tfinger.x - view_off : event.button.x;
+                const float tap_y = event.type == SDL_EVENT_FINGER_DOWN ? event.tfinger.y : event.button.y;
+                const int name_top = rec_top(519, 26);
+                const bool name_field = screen == Screen::CharCreate && tap_x >= 319 && tap_x < 319 + 169
+                                     && tap_y >= name_top && tap_y < name_top + 26;
+                if (name_field) ios_text_paused = false;
+                else if (text_active) {
+                    ios_text_paused = true;
+                    SDL_StopTextInput(win.window);
+                    d2d::ios::dismiss_text_keyboard();
+                    text_active = false;
+                }
+            }
+#endif
+            if (event.type == SDL_EVENT_WINDOW_FOCUS_LOST || event.type == SDL_EVENT_GAMEPAD_REMOVED) { town.pad.teleport.clear(); town.loot_chooser.clear(); }
             if (town.touch_enabled && screen == Screen::InGame) {
                 if (event.type == SDL_EVENT_WINDOW_FOCUS_LOST) {
-                    town.touch_input.clear(); town.touch_item_finger = -1; town.touch_fingers = 0;
+                    town.touch_input.clear(); town.touch_teleport.clear(); town.pad.teleport.clear(); town.touch_pulses.reset(); town.touch_pulse_fingers.fill(-1); town.touch_item_finger = -1; town.touch_fingers = 0;
                     town.touch_pointer = {}; town.touch_sheet = {}; town.touch_item_drag = false;
+                    town.touch_back_requested = false;
                 }
                 if ((event.type == SDL_EVENT_MOUSE_MOTION && event.motion.which == SDL_TOUCH_MOUSEID) ||
                     ((event.type == SDL_EVENT_MOUSE_BUTTON_DOWN || event.type == SDL_EVENT_MOUSE_BUTTON_UP) && event.button.which == SDL_TOUCH_MOUSEID)) continue;
@@ -954,19 +1030,19 @@ int run_windowed(std::vector<std::uint8_t>& framebuffer,
                     const bool down = event.type == SDL_EVENT_MOUSE_BUTTON_DOWN;
                     if ((down && touch_last) || (!down && (touch_last || pointer_held))) {
                         const auto phase = down ? touch::Phase::Down : touch::Phase::Up;
-                        if (town.touch_event(-2, phase, event.button.x, event.button.y)) continue;
+                        if (town.touch_event(-2, phase, touch::to_viewport_x(event.button.x), event.button.y)) continue;
                     }
                 }
                 if ((touch_last || pointer_held) && event.type == SDL_EVENT_MOUSE_MOTION && (event.motion.state & SDL_BUTTON_LMASK))
-                    if (town.touch_event(-2, touch::Phase::Move, event.motion.x, event.motion.y)) continue;
+                    if (town.touch_event(-2, touch::Phase::Move, touch::to_viewport_x(event.motion.x), event.motion.y)) continue;
                 if (event.type == SDL_EVENT_FINGER_DOWN || event.type == SDL_EVENT_FINGER_UP ||
                     event.type == SDL_EVENT_FINGER_MOTION || event.type == SDL_EVENT_FINGER_CANCELED) {
                     town.last_device = touch::LastDevice::Touch;
                     const auto phase = event.type == SDL_EVENT_FINGER_DOWN ? touch::Phase::Down : event.type == SDL_EVENT_FINGER_UP ? touch::Phase::Up
                                      : event.type == SDL_EVENT_FINGER_MOTION ? touch::Phase::Move : touch::Phase::Cancel;
-                    const float touch_x = event.tfinger.x - view_off, touch_y = event.tfinger.y;
+                    const float touch_x = event.tfinger.x, touch_y = event.tfinger.y;
                     if (town.touch_event(std::int64_t(event.tfinger.fingerID), phase, touch_x, touch_y)) continue;
-                    mouse.x = int(touch_x); mouse.y = int(touch_y);
+                    mouse.x = int(touch::to_legacy_x(touch_x)); mouse.y = int(touch_y);
                     if (phase == touch::Phase::Down) { mouse.down = true; mouse.press_this_frame = true; }
                     if (phase == touch::Phase::Up) { mouse.down = false; mouse.release_this_frame = true; }
                     if (phase == touch::Phase::Cancel) mouse.down = false;
@@ -1011,6 +1087,11 @@ int run_windowed(std::vector<std::uint8_t>& framebuffer,
         // The right button is held while a source holds it: the physical button or a Right-hand Skill key.
         if (mouse.rdown && !(SDL_GetMouseState(nullptr, nullptr) & SDL_BUTTON_RMASK) && !(town.click_keys_on && std::ranges::any_of(town.click_keys[keys::kClickSkill], key_held)))
             mouse.rdown = false;
+        if (in_background) {
+            heartbeat_ms.store(std::uint32_t(SDL_GetTicks()), std::memory_order_relaxed);
+            SDL_Delay(100);
+            continue;
+        }
         // A partner's roster name and the keyboard's Enter (Steam's keyboard
         // on a Deck): their character is made, and the Enter is theirs, not
         // player 1's (character select's Enter plays, the game's opens chat).
@@ -1104,6 +1185,7 @@ int run_windowed(std::vector<std::uint8_t>& framebuffer,
             const pad::Sample first = coop_game ? gamepads.sample(SDL_JoystickID(std::max(seats.pad(ui_seat), 0)))
                                     : lobby_on  ? gamepads.sample(SDL_JoystickID(external_pads.front())) : gamepads.sample();
             if (ui_seat != last_ui_seat) {                       // another pad: what it holds now isn't pressed now
+                town.pad.teleport.clear(); town.loot_chooser.clear();
                 pad_mapper = pad::Mapper{ g_pad_config };
                 (void)pad_mapper.step(first, pad_context, 0);
                 last_ui_seat = ui_seat;
@@ -1130,6 +1212,14 @@ int run_windowed(std::vector<std::uint8_t>& framebuffer,
                                          : town.skill_strip >= 0 ? pad::SkillUi::Strip : pad::SkillUi::None;
             pad::Actions pad_actions = pad_capture ? (void(pad_mapper.step(first, pad_context, pad_dt, skill_ui)), pad::Actions{})
                                                          : pad_mapper.step(first, pad_context, pad_dt, skill_ui);
+            if (town.loot_chooser.open && !town.loot_chooser.touch) {
+                town.loot_pad_event(pad_actions);
+                pad_actions = {};
+            } else if (town.loot_chooser.open && town.loot_chooser.touch &&
+                       (pad_actions.click_press || pad_actions.rclick_press || pad_actions.skill_busy || pad_actions.aim_active)) {
+                town.loot_chooser.clear();
+                pad_actions = {};
+            }
             const int pad_side = (win.view_w - int(kScreenWidth)) / 2;   // widescreen's world beyond the 800x600 UI
             const bool pad_active = pad_actions.move_active || pad_actions.click_press || pad_actions.click_down || pad_actions.rclick_press
                                     || pad_actions.cursor_dx != 0 || pad_actions.cursor_dy != 0 || !pad_actions.keys.empty()
@@ -1140,6 +1230,7 @@ int run_windowed(std::vector<std::uint8_t>& framebuffer,
                 pad_in_use = true;
                 town.last_device = touch::LastDevice::Gamepad;
             }
+            if (!pad_in_use) town.pad.teleport.clear();
             town.skill_actions = pad_actions;
             if (town.drive_skill_ui(pad_actions, mouse.x, mouse.y)) {
                 pad_actions.click_press = false;
@@ -1278,7 +1369,7 @@ int run_windowed(std::vector<std::uint8_t>& framebuffer,
             town.pad.move = screen == Screen::InGame
                 ? Town::PadMove{ pad_actions.move_x, pad_actions.move_y, pad_actions.move_active,
                                 pad_field && pad_actions.click_press, pad_field && pad_actions.click_down, pad_field && pad_actions.rclick_press,
-                                pad_actions.aim_active, pad_actions.aim_x, pad_actions.aim_y }
+                                pad_actions.aim_active, pad_actions.aim_x, pad_actions.aim_y, pad_actions.aim_magnitude, pad_actions.secondary_down }
                 : Town::PadMove{};
             if (town.touch_enabled && town.last_device == touch::LastDevice::Touch && town.pad_field()) town.pad.move = {};
         }
@@ -1289,17 +1380,17 @@ int run_windowed(std::vector<std::uint8_t>& framebuffer,
         // The in-game view widens to the window's aspect (--widescreen); the
         // menus, cinematics and endgame stay 800x600.
         {
-            int want = int(kScreenWidth);
+            int view_width = int(kScreenWidth);
             if (g_widescreen && screen == Screen::InGame) {
                 int pixels_w = 0, pixels_h = 0;
                 SDL_GetWindowSizeInPixels(win.window, &pixels_w, &pixels_h);
-                want = g_forced_view_w > 0 ? g_forced_view_w
+                view_width = g_forced_view_w > 0 ? g_forced_view_w
                      : pixels_h > 0 ? std::clamp(int(kScreenHeight) * pixels_w / pixels_h & ~1, int(kScreenWidth), kMaxViewWidth) : int(kScreenWidth);
             }
-            if (want != win.view_w && win.set_view(want)) {
-                framebuffer.assign(std::size_t(want) * kScreenHeight * 4, 0);
+            if (view_width != win.view_w && win.set_view(view_width)) {
+                framebuffer.assign(std::size_t(view_width) * kScreenHeight * 4, 0);
                 for (std::size_t i = 3; i < framebuffer.size(); i += 4) framebuffer[i] = 0xFF;
-                g_view_width = want;
+                g_view_width = view_width;
             }
             apply_safe_inset(win);
         }
@@ -1748,13 +1839,14 @@ int run_windowed(std::vector<std::uint8_t>& framebuffer,
                 if (const int act = town.view_act(); act != scene->palette_act)
                     load_act_palettes(*scene, scene->mpqs, act);
                 town.update(framebuffer, mouse, keys_this_frame, screen, audio, now_ms, last_ms);
+                if (town.quit_app) quit = true;
                 // A panel key moved the cursor with the view (FUN_00468770's SetCursorPos):
                 // the game's copy, and the OS cursor unless a pad drives it.
                 if (const auto moved = std::exchange(town.cursor_move, std::nullopt)) {
                     mouse.x = moved->first; mouse.y = moved->second;
                     if (!pad_in_use) {
                         float window_x = 0, window_y = 0;
-                        SDL_RenderCoordinatesToWindow(win.renderer, float(mouse.x) + float(win.view_w - int(kScreenWidth)) / 2, float(mouse.y), &window_x, &window_y);
+                        SDL_RenderCoordinatesToWindow(win.renderer, float(mouse.x) + float((win.view_w - int(kScreenWidth)) / 2), float(mouse.y), &window_x, &window_y);
                         SDL_WarpMouseInWindow(win.window, window_x, window_y);
                     }
                 }
@@ -1987,6 +2079,9 @@ int run_windowed(std::vector<std::uint8_t>& framebuffer,
     g_current_phase_ptr = nullptr;
     gamepads.close();   // before SDL goes away, not at scope exit
     SDL_Quit();
+#if defined(TARGET_OS_IPHONE) && TARGET_OS_IPHONE
+    d2d::ios::request_app_termination();
+#endif
     return 0;
 }
 
@@ -2136,7 +2231,7 @@ int main(int argc, char** argv) {
     // d2d's own changes to game.exe (deviations.md), each on by default:
     // --toggle trans_roof=off,... Names in kToggles.
     std::string toggles;
-    app.add_option("--toggle", toggles, "Turn d2d's deviations on/off: name=on|off[,...] (trans_roof, autoloot, autoparty, pad_controls, click_keys, coop_lobby, light_grid, splash_centre, unit_slide, hwcursor, touch_classic_hud); scalemode=pixelart|nearest|linear");
+    app.add_option("--toggle", toggles, "Turn d2d's deviations on/off: name=on|off[,...] (trans_roof, autoloot, autoparty, pad_controls, click_keys, coop_lobby, dismiss_effects, light_grid, splash_centre, unit_slide, hwcursor, touch_classic_hud); scalemode=pixelart|nearest|linear");
     app.add_flag  ("--no-video", no_video, "Skip the startup cinematics");
     int fps_cap = cfg.contains("fps_cap") ? std::atoi(cfg["fps_cap"].c_str()) : 0;
     app.add_option("--fps-cap", fps_cap, "Frames a second at most, 0 = the display's refresh (also `fps_cap =` in d2d.cfg)")
@@ -2189,10 +2284,26 @@ int main(int argc, char** argv) {
 #if defined(__vita__) || defined(__SWITCH__) || defined(__ANDROID__)
         if (cfg["data"].empty()) cfg["data"] = user_dir.string();   // the MPQs' folder there (userdir.hpp)
 #endif
-        const auto found = d2d::install::resolve_data_dir(data_dir_str, env ? env : "", base ? fs::path(base) : fs::path{},
-                                                          fs::current_path(cwd_ec), cfg["data"]);
+        auto found = d2d::install::resolve_data_dir(data_dir_str, env ? env : "", base ? fs::path(base) : fs::path{},
+                                                    fs::current_path(cwd_ec), cfg["data"]);
+#if defined(TARGET_OS_IPHONE) && TARGET_OS_IPHONE
+        // No device scan. Stale d2d.cfg paths miss after reinstall; Documents/gamedata may still be valid.
+        if (!found.error.empty()) {
+            const auto gamedata = user_dir.parent_path() / "gamedata";
+            if (d2d::ios::adopt_game_data_if_present(gamedata, user_dir / "d2d.cfg")) {
+                d2d::userdir::load_cfg(user_dir / "d2d.cfg", cfg);
+                found = d2d::install::resolve_data_dir({}, {}, {}, {}, cfg["data"]);
+            } else if (d2d::ios::import_game_data(gamedata, user_dir / "d2d.cfg")) {
+                d2d::userdir::load_cfg(user_dir / "d2d.cfg", cfg);
+                found = d2d::install::resolve_data_dir({}, {}, {}, {}, cfg["data"]);
+            }
+        }
+#endif
         if (!found.error.empty()) {
             d2d::log::error("{}", found.error);
+#if defined(TARGET_OS_IPHONE) && TARGET_OS_IPHONE
+            d2d::log::error("Pick the folder that contains d2data.mpq again.");
+#endif
             return 1;
         }
         data_dir = found.dir;
@@ -2210,7 +2321,11 @@ int main(int argc, char** argv) {
     // rather than go on to a game with no data.
     if (!scene) {
         const auto message = std::format("Couldn't load the Diablo II game data from\n{}\n\n"
+#if defined(TARGET_OS_IPHONE) && TARGET_OS_IPHONE
+                                         "Pick the folder that contains d2data.mpq again. "
+#else
                                          "Check that its MPQ files are complete, readable copies from Diablo II. "
+#endif
                                          "The log has the details:\n{}",
                                          data_dir.string(), (user_dir / "d2d.log").string());
         if (!headless) SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "d2d", message.c_str(), nullptr);
@@ -2256,12 +2371,17 @@ int main(int argc, char** argv) {
 
     g_start_screen   = start_screen;
     g_video          = !no_video && cfg["video"] != "0";
+#ifdef D2D_NO_VIDEO
+    g_video = false;
+    d2d::log::info("Bink cinematics are not in this build.");
+#endif
     {
         static const std::pair<std::string_view, bool*> kToggles[] = {
             { "trans_roof", &g_roof_cutout },   // the see-through circle in roofs round the player
             { "autoloot", &g_autoloot },        // gold walked over goes into the purse
             { "autoparty", &g_autoparty },      // a joined game: invite the others, accept their invites
             { "pad_controls", &g_pad_controls },   // Configure Controls' gamepad page
+            { "dismiss_effects", &g_dismiss_effects }, // host permits dismissing eligible effects
             { "click_keys", &g_click_keys },       // Attack / Use and Right-hand Skill on more keys (Mouse 3..5)
             { "coop_lobby", &g_coop_lobby },       // SINGLE PLAYER / COOP, partners pick their characters on character select
             { "light_grid", &g_light_grid },       // the light grid over the whole view, not game.exe's 48 x 48
@@ -2285,7 +2405,7 @@ int main(int argc, char** argv) {
             }
             const auto toggle = std::ranges::find(kToggles, name, &std::pair<std::string_view, bool*>::first);
             if (toggle == std::end(kToggles) || (value != "on" && value != "off")) {
-                d2d::log::warn("--toggle: unknown '{}' (known: trans_roof, autoloot, autoparty, pad_controls, click_keys, coop_lobby, light_grid, splash_centre, unit_slide, hwcursor, touch_classic_hud; values on|off; scalemode=pixelart|nearest|linear)", std::string(item));
+                d2d::log::warn("--toggle: unknown '{}' (known: trans_roof, autoloot, autoparty, pad_controls, click_keys, coop_lobby, dismiss_effects, light_grid, splash_centre, unit_slide, hwcursor, touch_classic_hud; values on|off; scalemode=pixelart|nearest|linear)", std::string(item));
                 continue;
             }
             *toggle->second = value == "on";
@@ -2308,14 +2428,23 @@ int main(int argc, char** argv) {
     g_start_hardcore = start_hardcore;
     g_start_classic  = start_classic;
     g_no_save        = no_save;
+#if defined(TARGET_OS_IPHONE) && TARGET_OS_IPHONE
+    if (cfg["touch_controls"] != "0" || touch_flag->count() != 0) g_touch_controls = true;
+    else g_touch_controls = false;
+#else
     if (cfg["touch_controls"] == "1") g_touch_controls = true;
     else if (cfg["touch_controls"] == "0" && touch_flag->count() == 0) g_touch_controls = false;
+#endif
     g_start_cam_x    = start_cam_x;
     g_start_cam_y    = start_cam_y;
     g_scale          = std::clamp(scale, 1, 8);   // cfg value isn't CLI-checked
     g_fps_cap        = std::clamp(fps_cap, 0, 1000);
     g_fullscreen     = cfg["fullscreen"] == "1";
     g_widescreen     = cfg["widescreen"] == "1" || cli_widescreen || view_width > 0;
+#if defined(TARGET_OS_IPHONE) && TARGET_OS_IPHONE
+    g_fullscreen = true;
+    g_widescreen = true;
+#endif
     g_forced_view_w  = std::clamp(view_width, 0, kMaxViewWidth);
     if (cfg.contains("master_volume")) g_master_volume = std::clamp(std::atoi(cfg["master_volume"].c_str()), 0, 100);
     {

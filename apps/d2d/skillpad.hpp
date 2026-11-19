@@ -18,7 +18,7 @@
 namespace d2d::client::skillpad {
 
 /**
- * Recognize the Town Portal skill names that dispatch through a carried portal tome.
+ * Recognize the Town Portal skill names that dispatch through a carried tome or scroll.
  */
 [[nodiscard]] inline bool portal_name(std::string_view name) {
     return name == "Book of Townportal" || name == "Town Portal" || name == "Scroll of Townportal";
@@ -220,16 +220,37 @@ struct WheelPage { int start = 0, shown = 0; };
     return page;
 }
 
-// Touch bind wheel: pick the nearest drawn icon, else the wedge of a drag
-// from the hub. `hit` is false on an empty list or a tap in the hub, so a
-// lift does not write skill 0 (Attack) from a stale highlight.
-struct WheelPick { int index = -1; int page_start = 0; bool hit = false; };
 inline constexpr float kBindWheelRx = 110.f, kBindWheelRy = 90.f, kBindWheelIconR = 28.f, kBindWheelHub = 24.f;
 
+[[nodiscard]] inline int bind_wheel_page_count(int skill_count) {
+    return (skill_count + kWheelShown - 1) / kWheelShown + 1;  // The final page contains the action shortcuts.
+}
+
+[[nodiscard]] inline WheelPage bind_wheel_page(int skill_count, int page) {
+    if (page >= bind_wheel_page_count(skill_count) - 1) return { skill_count, int(kActions.size()) };
+    const int start = page * kWheelShown;
+    return { start, std::min(kWheelShown, skill_count - start) };
+}
+
+// A tap must hit an icon. A drag that began in the hub can also pick a wedge.
+[[nodiscard]] inline int bind_wheel_pick(float dx, float dy, WheelPage page, bool from_hub = false) {
+    int best = -1;
+    float best_d = kBindWheelIconR;
+    for (int slot = 0; slot < page.shown; ++slot) {
+        const float angle = wedge_center(slot, page.shown);
+        const float dist = std::hypot(dx - std::cos(angle) * kBindWheelRx, dy - std::sin(angle) * kBindWheelRy);
+        if (dist < best_d) { best_d = dist; best = slot; }
+    }
+    if (best < 0 && from_hub) best = stable_wedge(dx, dy, page.shown, -1);
+    if (std::hypot(dx, dy) <= kBindWheelHub) return -1;
+    return best < 0 ? -1 : page.start + best;
+}
+
+// Compatibility with the gamepad wheel's sliding page and selection state.
+struct WheelPick { int index = -1; int page_start = 0; bool hit = false; };
 [[nodiscard]] inline WheelPick bind_wheel_pick(float dx, float dy, int count, int highlight, int page_start) {
     const WheelPage page = wheel_page(count, highlight, kWheelShown, page_start);
-    WheelPick pick;
-    pick.page_start = page.start;
+    WheelPick pick{ -1, page.start, false };
     if (count <= 0 || page.shown <= 0) return pick;
     int best = -1;
     float best_d = kBindWheelIconR;
@@ -244,7 +265,6 @@ inline constexpr float kBindWheelRx = 110.f, kBindWheelRy = 90.f, kBindWheelIcon
     pick.index = std::clamp(page.start + best, 0, count - 1);
     return pick;
 }
-
 [[nodiscard]] inline int bind_wheel_skill(std::span<const int> ids, const WheelPick& pick) {
     if (!pick.hit || pick.index < 0 || pick.index >= int(ids.size())) return kEmpty;
     return ids[std::size_t(pick.index)];

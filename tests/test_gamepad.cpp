@@ -29,7 +29,31 @@ int main() try {
         Mapper mapper;
         Sample drift; drift.lx = 0.1f; drift.ly = -0.08f; drift.rx = 0.12f;
         const Actions actions = mapper.step(drift, Context::Game, 0.016f);
-        assert(!actions.move_active && actions.cursor_dx == 0 && actions.cursor_dy == 0);
+        assert(!actions.move_active && !actions.aim_active && actions.aim_magnitude == 0 && actions.cursor_dx == 0 && actions.cursor_dy == 0);
+    }
+    // Aim direction remains unit length while magnitude reports the radial
+    // throw after the configured dead zone (zero at the centre, one at edge).
+    {
+        Mapper mapper;
+        Sample half; half.rx = 0.575f;  // deadzone .15 + half of the remaining .85
+        const Actions half_push = mapper.step(half, Context::Game, 0.016f);
+        Sample full; full.rx = 1.f;
+        const Actions full_push = mapper.step(full, Context::Game, 0.016f);
+        assert(half_push.aim_active && full_push.aim_active);
+        assert(std::abs(half_push.aim_x - full_push.aim_x) < 1e-6f);
+        assert(std::abs(half_push.aim_y - full_push.aim_y) < 1e-6f);
+        assert(std::abs(half_push.aim_x - 1.f) < 1e-6f && std::abs(half_push.aim_y) < 1e-6f);
+        assert(std::abs(half_push.aim_magnitude - 0.5f) < 1e-6f);
+        assert(std::abs(full_push.aim_magnitude - 1.f) < 1e-6f);
+    }
+    // Secondary remains held after its press and clears on release.
+    {
+        Mapper mapper;
+        const auto first = mapper.step(with(Button::East), Context::Game, .016f);
+        const auto held = mapper.step(with(Button::East), Context::Game, .016f);
+        const auto released = mapper.step({}, Context::Game, .016f);
+        assert(first.rclick_press && first.secondary_down);
+        assert(!held.rclick_press && held.secondary_down && !released.secondary_down);
     }
     // The left stick walks in the game, towards its direction, from a light push on.
     {
@@ -117,7 +141,8 @@ int main() try {
         const WorldStep none = world_step(0, 0, 160, 80, 6.f);
         assert(none.x == 0 && none.y == 0);
     }
-    // Soft targeting: the nearest in the facing cone and in reach; the held target sticks.
+    // Soft targeting: acquisition extends beyond the old melee reach, then stops
+    // at the tuned reach; the held target gets its separate hysteresis margin.
     {
         const std::vector<Candidate> things{ { 1, 1.f, 0.f }, { 2, -1.f, 0.f }, { 3, 6.f, 0.f }, { 4, 0.f, 2.f } };
         assert(pick_target(0, 0, 1, 0, things, -1) == 0);       // facing +x: the one ahead, not behind (2) or far (3)
@@ -127,6 +152,26 @@ int main() try {
         assert(pick_target(0, 0, 1, 0, things, 4) == 3);        // sticky 4 (2 tiles off the cone) stays in sticky reach
         assert(pick_target(0, 0, 1, 0, things, 3) == 0);        // sticky 3 is out of sticky reach: back to the nearest
         assert(pick_target(0, 0, 1, 0, {}, -1) == -1);
+
+        const std::vector<Candidate> beyond_old{ { 5, 2.7f, 0.f } };
+        const std::vector<Candidate> beyond_new{ { 6, 2.81f, 0.f } };
+        assert(pick_target(0, 0, 1, 0, beyond_old, -1) == 0);  // old 2.5 acquisition missed this
+        assert(pick_target(0, 0, 1, 0, beyond_new, -1) == -1);
+        const std::vector<Candidate> sticky_in_margin{ { 7, 0.f, 4.2f } };
+        const std::vector<Candidate> sticky_outside{ { 7, 0.f, 4.31f } };
+        assert(pick_target(0, 0, 1, 0, sticky_in_margin, 7) == 0); // held target stays outside cone to 4.3
+        assert(pick_target(0, 0, 1, 0, sticky_outside, 7) == -1);
+
+        const Aim ranged{ kPadRangedAcquireReach, kPadRangedStickyReach, Aim{}.cone_cos };
+        assert(std::abs(ranged.reach - 13.5f) < 1e-6f && std::abs(ranged.sticky_reach - 15.5f) < 1e-6f);
+        const std::vector<Candidate> ranged_new{ { 8, 13.4f, 0.f } };
+        const std::vector<Candidate> ranged_outside{ { 9, 13.6f, 0.f } };
+        assert(pick_target(0, 0, 1, 0, ranged_new, -1, ranged) == 0);
+        assert(pick_target(0, 0, 1, 0, ranged_outside, -1, ranged) == -1);
+        const std::vector<Candidate> ranged_sticky{ { 10, 0.f, 15.4f } };
+        const std::vector<Candidate> ranged_released{ { 10, 0.f, 15.6f } };
+        assert(pick_target(0, 0, 1, 0, ranged_sticky, 10, ranged) == 0);
+        assert(pick_target(0, 0, 1, 0, ranged_released, 10, ranged) == -1);
     }
     // A panel: the d-pad hops the cursor instead of using the belt; the shoulders still open their panels.
     {

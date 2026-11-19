@@ -399,6 +399,7 @@ target_sources(d2d PRIVATE
     town/setup.cpp
     town/skillpad.cpp
     town/touch.cpp
+    town/touch_draw.cpp
     town/update.cpp
     town/use_item.cpp
     town/view.cpp

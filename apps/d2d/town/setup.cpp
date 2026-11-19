@@ -108,6 +108,7 @@ auto Town::take_view(std::span<const std::uint8_t> bytes, const View* local) -> 
         } else {
             store = {};
         }
+        touch_trade_pending = false;
         hire_offers = view.hire_offers;
         if (const auto found = scene->mercs.find(character.header.merc_type); view.merc && found != scene->mercs.end())
             merc_label = merc_name(*scene, found->second, character.header.merc_name);

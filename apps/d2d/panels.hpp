@@ -4,6 +4,7 @@
 
 #include "common.hpp"
 #include "scene.hpp"
+#include "touch_quest_notice.hpp"
 
 #include <ai.hpp>
 #include <automap_cells.hpp>
@@ -219,7 +220,15 @@ void draw_level_buttons(std::vector<std::uint8_t>& framebuffer, const Scene& sce
 // (FUN_004912a0) take one by that flag. Its art: stash_art_spot; its close button and gold:
 // storage_close.hpp.
 // Rect {x, y, w, h} of a stored item in a grid layout.
-std::array<int, 4> grid_rect(const Scene& scene, const Scene::InvLayout& layout, const d2d::d2s::Item& item);
+[[nodiscard]] inline std::array<int, 4> grid_rect(const d2d::rules::Tables& tables, const Scene::InvLayout& layout, const d2d::d2s::Item& item) {
+    const auto [width, height] = d2d::rules::item_size(tables, item.code);
+    return { layout.grid_x + item.column * layout.box_w, layout.grid_y + item.row * layout.box_h,
+             width * layout.box_w, height * layout.box_h };
+}
+
+[[nodiscard]] inline std::array<int, 4> grid_rect(const Scene& scene, const Scene::InvLayout& layout, const d2d::d2s::Item& item) {
+    return grid_rect(scene.rules, layout, item);
+}
 
 // A left-side storage panel: the stash (panel 5) or the cube (panel 4).
 // The Cube's also has its Transmute button (FUN_0048edf0, state 0xe).
@@ -414,6 +423,7 @@ struct QuestLog {
     // log is shut (FUN_004a2cb0): on, held (0x7bf2b0), and its quest waiting
     // for the log to open (0x7bf298 1).
     bool button = false, button_down = false, notified = false;
+    touch::QuestNotice touch_notice;
     d2d::rules::QuestLogStates sent{};       // the log states last told, to spot a new one (S->C 0x5d)
     bool sent_known = false;
 };

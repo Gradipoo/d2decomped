@@ -325,6 +325,9 @@ struct Actions {
     bool  confirm = false, cancel = false;        // the panel list: South, and East or Start
     std::array<bool, 6> slot_down{};               // those slots held
     std::vector<Key> keys;
+    float aim_magnitude = 0;                       // deadzone-normalized 0..1 throw of the aiming stick
+    bool secondary_down = false;
+    int loot_page = 0;
 };
 
 // What the pad is doing with the skill-button screens, on top of Context.
@@ -345,9 +348,14 @@ struct WorldStep { float x = 0, y = 0; };
 // is the nearest one inside `reach` tiles and a cone round the facing, the
 // target already held (`sticky`) staying while it is in `sticky_reach`.
 struct Candidate { int id = -1; float x = 0, y = 0; };
+// Controller target acquisition is input UX tuning, not measured Diablo Immortal data.
+inline constexpr float kPadMeleeAcquireReach = 2.8f;
+inline constexpr float kPadMeleeStickyReach = 4.3f;
+inline constexpr float kPadRangedAcquireReach = 13.5f;
+inline constexpr float kPadRangedStickyReach = 15.5f;
 struct Aim {
-    float reach = 2.5f;               // tiles from the hero
-    float sticky_reach = 4.f;         // a held target is let go beyond this
+    float reach = kPadMeleeAcquireReach;             // tiles from the hero
+    float sticky_reach = kPadMeleeStickyReach;       // hysteresis: a held target stays in range
     float cone_cos = 0.35f;           // cos of the half angle (~70 degrees) either side of the facing
 };
 // Index into `candidates` or -1. `face` is a world direction (need not be unit; zero = any way).
@@ -482,6 +490,8 @@ public:
         out.click_press = out.click_down && !click_prev_ && (!game || hit(Action::Primary));
         out.click_release = !out.click_down && click_prev_;
         click_prev_ = out.click_down;
+        out.loot_page = int(pressed(Button::DpadRight)) - int(pressed(Button::DpadLeft));
+        out.secondary_down = game && down(Action::Secondary);
         out.rclick_press = hit(Action::Secondary) ||
                            (skills && (context == Context::Panel || context == Context::Shop) && hit(Action::Interact));
 
@@ -505,6 +515,7 @@ public:
             const auto [face_x, face_y, tilt_aim] = dead(aim_x, aim_y);
             out.aim_active = context == Context::Game && tilt_aim > 0;
             out.aim_x = face_x; out.aim_y = face_y;
+            out.aim_magnitude = tilt_aim;
 
             if (skills && context == Context::Game && skill_ui == SkillUi::None && hit(Action::GameMenu)) out.panel_strip = true;
             else key(Action::GameMenu, Key::Escape);
@@ -550,6 +561,7 @@ public:
             const auto [face_x, face_y, tilt_aim] = dead(aim_x, aim_y);
             out.aim_active = std::hypot(aim_x, aim_y) > std::max(.30f, config_.deadzone);
             out.aim_x = face_x; out.aim_y = face_y;
+            out.aim_magnitude = tilt_aim;
             out.cursor_dx = 0;
             out.cursor_dy = 0;
             out.wheel_step = int(dpad_on[1]) - int(dpad_on[0]);
@@ -558,6 +570,7 @@ public:
             out.click_press = false;
             out.click_release = false;
             out.rclick_press = false;
+            out.secondary_down = false;
             out.keys.clear();
             out.snap_x = 0;
             out.snap_y = 0;
@@ -578,6 +591,7 @@ public:
             out.click_press = false;
             out.click_release = false;
             out.rclick_press = false;
+            out.secondary_down = false;
             out.snap_x = 0;
             out.snap_y = 0;
             click_prev_ = false;

@@ -75,6 +75,21 @@ auto Town::input(const Mouse& mouse, bool over_ui) const -> std::vector<Command>
             return out;
         }
         if (over_ui) return out;
+        if (touch_enabled && last_device == touch::LastDevice::Touch) {
+            // Touch stick and ground taps own locomotion; a leftover mouse packet must not click-to-walk.
+            if (!(pad_field() && !touch_pointer.active)) return out;
+            const float iso_u = float(mouse.x - int(kScreenWidth) / 2) / (kIsoW / 2);
+            const float iso_v = float(mouse.y - kViewY) / (kIsoH / 2);
+            const float world_x = cam_x + (iso_u + iso_v) / 2, world_y = cam_y + (iso_v - iso_u) / 2;
+            const int hovered_monster_index = hovered_monster();
+            const bool live = hovered_monster_index >= 0 && view.monsters[std::size_t(hovered_monster_index)].alive();
+            if (mouse.rpress_this_frame && skillbar.right == kResurrectSkill) {
+                if (const auto* body = body_near(world_x, world_y, 1.5f)) out.push_back(cmd::UseSkill{ kResurrectSkill, body->x, body->y, body->id });
+            } else if (mouse.rpress_this_frame) {
+                out.push_back(cmd::UseSkill{ skillbar.right, world_x, world_y, live ? view.monsters[std::size_t(hovered_monster_index)].id : -1, false, skillbar.right_item });
+            }
+            return out;
+        }
         // Screen -> world: invert the iso projection around the player,
         // who sits at (kW/2, kViewY).
         const float iso_u = float(mouse.x - int(kScreenWidth) / 2) / (kIsoW / 2);
@@ -267,7 +282,7 @@ auto Town::pad_aim(int skill, bool steering) const -> pad::Aim {
         // Skills.txt's range is none / h2h / range / both; spells (Fire Ball: none) fire a missile.
         const bool ranged = info && (!info->srvmissile.empty() || info->range == "range");
         if (!ranged) return {};
-        return { 12.f, 14.f, steering ? pad::Aim{}.cone_cos : -2.f };   // the stick left alone: any way round
+        return { pad::kPadRangedAcquireReach, pad::kPadRangedStickyReach, steering ? pad::Aim{}.cone_cos : -2.f };   // the stick left alone: any way round
     }
 
 auto Town::pad_pick(const PadPlayer& player_pad, const UnitState& unit, bool uses, const pad::Aim& aim, bool monsters) const -> PadPick {
@@ -311,6 +326,29 @@ auto Town::pad_act(PadPlayer& player_pad, const UnitState& unit, bool dead, bool
             const auto face = move.aim ? pad::world_step(move.aim_x, move.aim_y, kIsoW, kIsoH, 1.f) : pad::world_step(move.x, move.y, kIsoW, kIsoH, 1.f);
             player_pad.face_x = face.x; player_pad.face_y = face.y;
         }
+        auto& teleport = player_pad.teleport;
+        if (&player_pad == &pad && (!field || dead || (touch_enabled && last_device != touch::LastDevice::Gamepad))) teleport.clear();
+        if (&player_pad == &pad && field && !dead && (!touch_enabled || last_device == touch::LastDevice::Gamepad)) {
+            const auto* info = scene ? scene->skills.get(right_skill) : nullptr;
+            if (move.alt && info && info->srvdofunc == d2d::rules::ServerDoFunction::kTeleport && teleport.button < 0) {
+                teleport.button = skillpad::kSlots + 1;
+                teleport.item = right_item;
+                teleport.preview.skill = right_skill;
+            }
+            if (teleport.button == skillpad::kSlots + 1) {
+                if (move.secondary_down) {
+                    teleport.manual = move.aim;
+                    const auto [dx, dy] = teleport_stick_drag(move.aim_x, move.aim_y, move.aim_magnitude);
+                    teleport.dx = dx; teleport.dy = dy;
+                    teleport.preview = resolve_skill(player_pad, teleport.preview.skill, dx, dy, teleport.manual, &unit, focused().character.name, teleport.item);
+                } else {
+                    const auto current = resolve_skill(player_pad, teleport.preview.skill, teleport.dx, teleport.dy, teleport.manual, &unit, focused().character.name, teleport.item);
+                    if (teleport.matches(current)) out(cmd::UseSkill{ current.skill, current.x, current.y, current.unit, false, teleport.item });
+                    teleport.clear();
+                }
+                return;
+            }
+        }
         const bool want = move.attack || move.attack_down || move.alt;
         if (!want || dead || !field) { if (!want) player_pad.target = -1; return; }
         const float hero_x = unit.x, hero_y = unit.y, face_x = player_pad.face_x, face_y = player_pad.face_y;
@@ -334,7 +372,10 @@ auto Town::pad_act(PadPlayer& player_pad, const UnitState& unit, bool dead, bool
                 out(cmd::UseSkill{ skill, hero_x + face_x * 3.f, hero_y + face_y * 3.f, -1, left, item });
             return;
         }
-        if (pick.kind == PadPick::kItem) { out(cmd::Pickup{ pick.id }); return; }
+        if (pick.kind == PadPick::kItem) {
+            if (&player_pad != &pad || !move.attack || !open_loot_chooser(player_pad, unit, false)) out(cmd::Pickup{ pick.id });
+            return;
+        }
         if (pick.kind == PadPick::kThing) { out(cmd::Interact{ pick.id }); return; }
         // Nothing in reach: the left skill swings only with a monster about (in camp A never just walks); the right one always casts (buffs, teleport).
         const bool foe_near = std::ranges::any_of(view.monsters, [&](const auto& foe) { return foe.alive() && !foe.ally_not_interact(*scene, level ? level->id : 0) && std::hypot(foe.unit.x - hero_x, foe.unit.y - hero_y) < 10.f; });
@@ -525,7 +566,7 @@ auto Town::field_play(PadPlayer& player_pad, pad::Mapper& mapper, const World::P
                       const Send& out) -> std::vector<pad::Key> {
         const auto actions = mapper.step(sample, pad::Context::Game, seconds);
         player_pad.move = { actions.move_x, actions.move_y, actions.move_active, actions.click_press, actions.click_down, actions.rclick_press,
-                            actions.aim_active, actions.aim_x, actions.aim_y };
+                            actions.aim_active, actions.aim_x, actions.aim_y, actions.aim_magnitude, actions.secondary_down };
         std::vector<pad::Key> opens;
         for (const pad::Key key : actions.keys)
             switch (key) {
@@ -973,5 +1014,44 @@ auto Town::pad_tab(int step) -> void {
         for (int i = 1; i < 4; ++i)
             if (const int tab = ((store.tab + step * i) % 4 + 4) % 4; !store.tabs[std::size_t(tab)].empty()) { store.tab = tab; return; }
     }
+
+// Freeze eligible IDs and labels at the dedicated pickup action.
+auto Town::open_loot_chooser(const PadPlayer& player_pad, const UnitState& unit, bool for_touch) -> bool {
+    std::vector<LootChoice> choices;
+    for (const auto& item : view.ground) {
+        const std::array<pad::Candidate, 1> candidate{ pad::Candidate{ item.id, item.x, item.y } };
+        if (pad::pick_target(unit.x, unit.y, player_pad.face_x, player_pad.face_y, candidate, -1, pad::Aim{ 3.5f, 3.5f, -.2f }) >= 0)
+            choices.push_back({ item.id, item.label, item.rgb });
+    }
+    if (choices.size() < 2) return false;
+    loot_chooser.start(std::move(choices), for_touch);
+    touch_input.clear();
+    touch_fingers = 0;
+    pad.teleport.clear();
+    return true;
+}
+
+void Town::commit_loot(int item_id) {
+    const auto found = std::ranges::find(view.ground, item_id, &Loot::GroundItem::id);
+    const auto& owner = loot_chooser.touch ? touch_player : pad;
+    const auto& unit = view.player;
+    if (found != view.ground.end() && pad_field() && !view.dead) {
+        const std::array<pad::Candidate, 1> candidate{ pad::Candidate{ found->id, found->x, found->y } };
+        if (pad::pick_target(unit.x, unit.y, owner.face_x, owner.face_y, candidate, -1, pad::Aim{ 3.5f, 3.5f, -.2f }) >= 0)
+            send(cmd::Pickup{ item_id });
+    }
+    loot_chooser.clear();
+}
+
+void Town::loot_pad_event(const pad::Actions& actions) {
+    if (!loot_chooser.open || loot_chooser.touch) return;
+    if (!pad_field() || view.dead || actions.cancel || std::ranges::find(actions.keys, pad::Key::Escape) != actions.keys.end()) {
+        loot_chooser.clear(); return;
+    }
+    if (actions.loot_page) loot_chooser.radial.change_page(actions.loot_page);
+    const float x = actions.aim_x * actions.aim_magnitude, y = actions.aim_y * actions.aim_magnitude;
+    if (!loot_chooser.ready) { if (std::hypot(x, y) <= .3f) loot_chooser.ready = true; return; }
+    if (const int picked = loot_chooser.radial.step(x, y); picked >= 0) commit_loot(picked);
+}
 
 }  // namespace d2d::client

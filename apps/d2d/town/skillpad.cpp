@@ -107,15 +107,19 @@ auto Town::save_skill_sheet(const std::string& name) const -> void {
 }
 
 /**
- * Rebuild radial entries from eligible learned skills or action shortcuts. Keep the highlight in
- * range after the available entries change.
+ * Collect the available skill entries for either binding editor.
  */
-auto Town::rebuild_wheel() -> void {
-    wheel_ids.clear();
-    if (wheel_actions) wheel_ids.assign(skillpad::kActions.begin(), skillpad::kActions.end());
-    else if (scene)
+auto Town::assignable_skills(std::string_view name) const -> std::vector<int> {
+    std::vector<int> ids;
+    if (scene)
         for (const auto& info : scene->skills.rows)
-            if (skillpad::assignable_name(info.name) && skill_known(focused().character.name, info.id)) wheel_ids.push_back(info.id);
+            if (skill_known(name, info.id)) ids.push_back(info.id);
+    return ids;
+}
+
+auto Town::rebuild_wheel() -> void {
+    if (wheel_actions) wheel_ids.assign(skillpad::kActions.begin(), skillpad::kActions.end());
+    else wheel_ids = assignable_skills(focused().character.name);
     if (wheel_at < 0 || wheel_at >= int(wheel_ids.size())) wheel_at = 0;
 }
 
@@ -126,7 +130,7 @@ auto Town::rebuild_wheel() -> void {
 auto Town::present_skill_pad() -> void {
     ensure_skill_sheet(focused().character.name);
     skillbar.panel_shortcuts_open = mini.open && !(left_panel_open() && mini_right());
-    skillbar.portal_available = portal_tome(focused().character.name) >= 0 && level && !d2d::rules::level_ids::is_town(level->id);
+    skillbar.portal_available = portal_item(focused().character.name) >= 0 && level && !d2d::rules::level_ids::is_town(level->id);
     skillbar.mode_on = pad_config.skill_buttons && !game_menu.open && !controls.open
         && (!touch_hides_classic_hud() || skillbar.picking == 3 || skill_strip >= 0);
     skillbar.wheel_on = false;
@@ -366,8 +370,26 @@ auto Town::drive_strip(const pad::Actions& actions) -> void {
 auto Town::apply_skill_pad(PadPlayer& player_pad, const UnitState& unit, bool dead, bool field, std::string_view name, int right_skill,
                            bool expansion, const pad::Actions& actions, const Send& out) -> void {
     ensure_skill_sheet(name);
-    if (!field || dead) return;
+    if (!field || dead || (&player_pad == &pad && touch_enabled && last_device != touch::LastDevice::Gamepad)) {
+        player_pad.teleport.clear();
+        return;
+    }
     const auto& move = player_pad.move;
+    auto& teleport = player_pad.teleport;
+    if (teleport.button >= 0) {
+        const bool down = teleport.button == skillpad::kSlots ? actions.main_skill_down
+            : actions.slot_down[std::size_t(teleport.button)];
+        if (down) {
+            teleport.manual = move.aim;
+            const auto [dx, dy] = teleport_stick_drag(move.aim_x, move.aim_y, move.aim_magnitude);
+            teleport.dx = dx; teleport.dy = dy;
+            teleport.preview = resolve_skill(player_pad, teleport.preview.skill, teleport.dx, teleport.dy, teleport.manual, &unit, name);
+        } else {
+            const auto current = resolve_skill(player_pad, teleport.preview.skill, teleport.dx, teleport.dy, teleport.manual, &unit, name);
+            if (teleport.matches(current)) out(cmd::UseSkill{ current.skill, current.x, current.y, current.unit, current.left, -1 });
+            teleport.clear();
+        }
+    }
     if (move.aim || move.active) {
         const auto face = move.aim ? pad::world_step(move.aim_x, move.aim_y, kIsoW, kIsoH, 1.f) : pad::world_step(move.x, move.y, kIsoW, kIsoH, 1.f);
         player_pad.face_x = face.x;
@@ -376,10 +398,13 @@ auto Town::apply_skill_pad(PadPlayer& player_pad, const UnitState& unit, bool de
     if (actions.swap_tap && expansion) out(cmd::SwapWeapons{});
     const auto interact = [&]() {
         const PadPick pick = pad_pick(player_pad, unit, true, {}, false);
-        if (pick.kind == PadPick::kItem) out(cmd::Pickup{ pick.id });
+        if (pick.kind == PadPick::kItem) {
+            if (&player_pad != &pad || !open_loot_chooser(player_pad, unit, false)) out(cmd::Pickup{ pick.id });
+        }
         else if (pick.kind == PadPick::kThing) out(cmd::Interact{ pick.id });
     };
     if (actions.interact_press) interact();
+    if (loot_chooser.open) return;
     const auto found = skill_sheets.find(sheet_key(std::string(name)));
     const skillpad::Sheet sheet = found == skill_sheets.end() ? skillpad::Sheet{} : found->second;
     const auto fire = [&](int skill, bool press, bool button_down, bool& used) {
@@ -390,7 +415,7 @@ auto Town::apply_skill_pad(PadPlayer& player_pad, const UnitState& unit, bool de
         if (!info || info->passive) return;
         if (skillpad::portal_name(info->name)) {
             if (press && level && !d2d::rules::level_ids::is_town(level->id))
-                if (const int item = portal_tome(name); item >= 0) out(cmd::UseItem{ item });
+                if (const int item = portal_item(name); item >= 0) out(cmd::UseItem{ item });
             return;
         }
         // A hold in town would repeat the "not in town" line every tick.
@@ -460,6 +485,17 @@ auto Town::apply_skill_pad(PadPlayer& player_pad, const UnitState& unit, bool de
                 if (const auto* body = body_near(unit.x, unit.y, 4.f)) out(cmd::UseSkill{ kResurrectSkill, body->x, body->y, body->id });
             return;
         }
+        const auto* info = scene ? scene->skills.get(id) : nullptr;
+        if (&player_pad == &pad && info && info->srvdofunc == d2d::rules::ServerDoFunction::kTeleport) {
+            if (press && teleport.button < 0 && skill_known(name, id)) {
+                teleport.button = button;
+                teleport.manual = move.aim;
+                const auto [dx, dy] = teleport_stick_drag(move.aim_x, move.aim_y, move.aim_magnitude);
+                teleport.dx = dx; teleport.dy = dy;
+                teleport.preview = resolve_skill(player_pad, id, teleport.dx, teleport.dy, teleport.manual, &unit, name);
+            }
+            return;
+        }
         cast(id, press, button_down, used);
     };
     const int trigger_set = player_pad.trigger_hold.set_for(actions.main_skill, actions.main_skill_down, actions.modifier_held);
@@ -479,24 +515,30 @@ auto Town::apply_skill_pad(PadPlayer& player_pad, const UnitState& unit, bool de
 }
 
 /**
- * Find a carried portal tome for the named player, returning its item ID or -1. Require charges
- * only when charged is true; field restrictions are checked by the caller.
+ * Prefer a carried portal tome over a loose scroll. When checking a binding, an empty tome
+ * keeps the skill available in the picker.
  */
-auto Town::portal_tome(std::string_view name, bool charged) const -> int {
+auto Town::portal_item(std::string_view name, bool charged) const -> int {
     const Character* owner = name == character.name ? &character : nullptr;
     if (!owner)
         for (const auto& candidate : world.players)
             if (candidate && candidate->character.name == name) { owner = &candidate->character; break; }
     if (!owner) return -1;
-    for (const auto& item : owner->items)
-        if (item.code == "tbk" && item.location == d2d::d2s::item_location::kStored && item.panel == 1 && (!charged || item.quantity > 0)) return item.id;
-    return -1;
+    using namespace d2d::d2s;
+    int scroll = -1;
+    for (const auto& item : owner->items) {
+        const bool inventory = item.location == item_location::kStored && item.panel == item_panel::kInventory;
+        if (inventory && item.code == "tbk" && (!charged || item.quantity > 0)) return item.id;
+        if (scroll < 0 && item.code == "tsc" && (inventory || item.location == item_location::kBelt))
+            scroll = item.id;
+    }
+    return scroll;
 }
 
 /**
  * Check whether the named character can bind a skill in the modern controller/touch editor. Filter
- * unavailable, passive and excluded inventory-action entries. Portal entries require a carried tome,
- * while ordinary skills require a learned or granted skill level.
+ * unavailable, passive and excluded inventory-action entries. Portal entries require a carried
+ * tome or scroll, while ordinary skills require a learned or granted skill level.
  */
 auto Town::skill_known(std::string_view name, int skill) const -> bool {
     if (!scene || skill < 0 || name.empty()) return false;
@@ -507,7 +549,7 @@ auto Town::skill_known(std::string_view name, int skill) const -> bool {
     if (!who) return false;
     const auto* info = scene->skills.get(skill);
     if (!info || info->passive || !skillpad::assignable_name(info->name)) return false;
-    if (skillpad::portal_name(info->name)) return portal_tome(name, false) >= 0;
+    if (skillpad::portal_name(info->name)) return portal_item(name, false) >= 0;
     return skill_base_level(*scene, *who, skill) > 0 || skill_level(*scene, *who, skill, {}) > 0;
 }
 

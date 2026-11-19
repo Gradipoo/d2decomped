@@ -51,20 +51,18 @@ int main() try {
     page = wheel_page(3, 1, 8, 0);
     assert(page.shown == 3 && page.start == 0);
     using d2d::client::skillpad::bind_wheel_pick;
-    using d2d::client::skillpad::bind_wheel_skill;
+    using d2d::client::skillpad::bind_wheel_page;
     using d2d::client::skillpad::kBindWheelRx;
     using d2d::client::skillpad::kBindWheelRy;
     {
-        const auto hub = bind_wheel_pick(0.f, 0.f, 8, 0, 0);
-        assert(!hub.hit);
-        assert(bind_wheel_skill(std::array{ 0, 6, 7 }, hub) == kEmpty);
-        const auto empty = bind_wheel_pick(kBindWheelRx, 0.f, 0, 0, 0);
-        assert(!empty.hit);
+        const auto full_page = bind_wheel_page(8, 0);
+        assert(bind_wheel_pick(0.f, 0.f, full_page) == -1);
+        assert(bind_wheel_pick(kBindWheelRx, 0.f, {}) == -1);
         const std::array ids{ 0, 6, 7, 8, 9, 54, 36, 42 };
         const float angle = d2d::client::skillpad::wedge_center(5, 8);
-        const auto pick = bind_wheel_pick(std::cos(angle) * kBindWheelRx, std::sin(angle) * kBindWheelRy, int(ids.size()), 0, 0);
-        assert(pick.hit && pick.index == 5);
-        assert(bind_wheel_skill(ids, pick) == 54);
+        const int pick = bind_wheel_pick(std::cos(angle) * kBindWheelRx, std::sin(angle) * kBindWheelRy, full_page);
+        assert(pick == 5 && ids[std::size_t(pick)] == 54);
+        assert(bind_wheel_pick(40.f * std::cos(angle), 40.f * std::sin(angle), full_page, true) == 5);
         assert(ids[0] == 0);
     }
     d2d::client::skillpad::HoldSet held_set;

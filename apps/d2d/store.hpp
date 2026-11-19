@@ -9,7 +9,9 @@
 #include <d2s_items.hpp>
 #include <rules.hpp>
 
+#include <algorithm>
 #include <array>
+#include <cstddef>
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -24,8 +26,51 @@ namespace d2d::client {
 NpcMenuState open_hire_menu(const Scene& scene, int npc, const std::vector<d2d::rules::MercOffer>& offers,
                             std::int64_t gold);
 
+[[nodiscard]] inline Scene::InvLayout store_grid(int panel_x = kCharPanelX) {
+    Scene::InvLayout layout;
+    layout.grid_x = panel_x + (96 - kCharPanelX);
+    layout.grid_y = 123;
+    layout.box_w = layout.box_h = 29;
+    layout.cols = layout.rows = 10;
+    return layout;
+}
+
+[[nodiscard]] inline int store_tab_at(int mouse_x, int mouse_y, int panel_x = kCharPanelX) {
+    if (mouse_x < panel_x || mouse_x >= panel_x + 320 || mouse_y < 60 || mouse_y > 90) return -1;
+    return (mouse_x - panel_x) / 80;
+}
+
+// Keep the stock unit selected by a gesture even if a refresh shifts its vector index.
+struct StoreSelection {
+    int npc = -1, tab = -1, id = -1;
+    bool gamble = false;
+
+    [[nodiscard]] static StoreSelection capture(const Store& store, int index) {
+        return { store.npc, store.tab, store.tabs[std::size_t(store.tab)][std::size_t(index)].id, store.gamble };
+    }
+
+    [[nodiscard]] int index(const Store& store) const {
+        if (npc < 0 || npc != store.npc || tab != store.tab || gamble != store.gamble || id == -1) return -1;
+        const auto& stock = store.tabs[std::size_t(tab)];
+        const auto found = std::ranges::find(stock, id, &d2d::d2s::Item::id);
+        return found == stock.end() ? -1 : int(found - stock.begin());
+    }
+};
+
 // The store item under the cursor (index into the open tab), or -1.
-int store_item_at(const Scene& scene, const Store& store, int mouse_x, int mouse_y, int panel_x = kCharPanelX);
+[[nodiscard]] inline int store_item_at(const d2d::rules::Tables& tables, const Store& store, int mouse_x, int mouse_y, int panel_x = kCharPanelX) {
+    const auto layout = store_grid(panel_x);
+    const auto& stock = store.tabs[std::size_t(store.tab)];
+    for (std::size_t index = 0; index < stock.size(); ++index) {
+        const auto [box_x, box_y, width, height] = grid_rect(tables, layout, stock[index]);
+        if (mouse_x >= box_x && mouse_x < box_x + width && mouse_y >= box_y && mouse_y < box_y + height) return int(index);
+    }
+    return -1;
+}
+
+[[nodiscard]] inline int store_item_at(const Scene& scene, const Store& store, int mouse_x, int mouse_y, int panel_x = kCharPanelX) {
+    return store_item_at(scene.rules, store, mouse_x, mouse_y, panel_x);
+}
 
 std::array<int, 4> store_button_frames(const Store& store);
 

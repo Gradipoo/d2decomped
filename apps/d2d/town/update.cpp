@@ -84,10 +84,14 @@ auto Town::update(std::vector<std::uint8_t>& framebuffer, const Mouse& frame_mou
         if (skillbar.right == kResurrectSkill && !skillbar.usable(kResurrectSkill, false)) skillbar.right = 0;   // co-op over: Attack
         skillbar.drop_gone();                                       // a charged entry used up or taken off
         // A partner's screen with nothing of theirs open goes back to the first player.
-        if (focus_id() != hero.id && focus_keys.empty() && pad_field() && !game_menu.open && !automap.open && !waypoint.open) take_focus(hero.id);
+        if (focus_id() != hero.id && focus_keys.empty() && !touch_back_requested
+            && pad_field() && !game_menu.open && !automap.open && !waypoint.open) take_focus(hero.id);
         auto keys_this_frame = frame_keys;               // and a partner's that took the screen
         keys_this_frame.insert(keys_this_frame.end(), focus_keys.begin(), focus_keys.end());
         focus_keys.clear();
+        const bool touch_back = std::exchange(touch_back_requested, false)
+            && !std::ranges::contains(keys_this_frame, SDLK_ESCAPE);
+        if (touch_back) keys_this_frame.push_back(SDLK_ESCAPE);
         Mouse mouse = frame_mouse;             // the menu / mini-panel take their clicks from the rest
         // The gold box takes the keys and clicks while it's up: digits and
         // Backspace edit the amount (at most the gold it's from), the spinner
@@ -146,7 +150,12 @@ auto Town::update(std::vector<std::uint8_t>& framebuffer, const Mouse& frame_mou
             std::erase_if(keys_this_frame, [](const auto key) { return key != SDLK_ESCAPE; });   // the Enter it closed on hires nothing, opens no chat
         }
         // An NPC's item panel (UI 0xe) takes the clicks and Esc first (town/use_item.cpp).
-        if (!gold_box && !game_menu.open) drive_use_item(mouse, keys_this_frame, audio);
+        if (!gold_box && !game_menu.open) {
+            const bool use_item_was_open = use_item.open();
+            drive_use_item(mouse, keys_this_frame, audio);
+            if (touch_back && use_item_was_open && !use_item.open())
+                touch_play_ui_click(touch::UiClick::Back);
+        }
         // The Party screen's clicks (FUN_0049bb60 / FUN_0049bdd0).
         if (party.open && (net_game || coop_hud_hidden() || (pad_playing && pad_config.skill_buttons)) && !help.open && !controls.open && !game_menu.open) {
             const auto click = party.input(mouse, party_rows(), party_own());
@@ -192,11 +201,15 @@ auto Town::update(std::vector<std::uint8_t>& framebuffer, const Mouse& frame_mou
         }
         // Configure Controls (UI 0xb) takes every key and click while it's up.
         if (controls.open) {
+            const bool editing_before = controls.editing;
             std::vector<std::uint16_t> virtual_keys;
             for (const auto key : keys_this_frame) if (const auto code = virtual_key(key)) virtual_keys.push_back(code);
             const auto result = controls.input(*scene, virtual_keys, mouse, std::exchange(controls_pad_press, pad::Button::Count), frame_ms);
             if (result == ControlsUI::kAccept) accept_controls();
             if (result == ControlsUI::kCancel) open_game_menu();          // FUN_0047e090(0, 1): back to the menu
+            if (touch_back && std::ranges::contains(keys_this_frame, SDLK_ESCAPE)
+                && (result == ControlsUI::kCancel || (editing_before && !controls.editing)))
+                touch_play_ui_click(touch::UiClick::Back);
             keys_this_frame.clear();
             mouse.down = mouse.press_this_frame = mouse.release_this_frame = mouse.rpress_this_frame = mouse.rdown = false;
             mouse.wheel = 0;
@@ -351,11 +364,18 @@ auto Town::update(std::vector<std::uint8_t>& framebuffer, const Mouse& frame_mou
             if (fires(keys::kNamesOnAutomap)) automap_values[5] = !automap_values[5];
             if (fires(keys::kToggleMiniMap)) automap.left = !automap.left;          // "AutoMap Left": the mini map's corner
             // Center Automap (0x468a60) puts the mini map's box back (FUN_00457520); d2d's never moves.
-            if (key == SDLK_ESCAPE && skillbar.picking) { if (skillbar.picking == 3) close_assignment(); else skillbar.picking = 0; continue; }   // the picker first
+            const bool touch_escape = touch_back && key == SDLK_ESCAPE;
+            if (key == SDLK_ESCAPE && skillbar.picking) { // the picker first
+                if (skillbar.picking == 3) close_assignment();
+                else skillbar.picking = 0;
+                if (touch_escape) touch_play_ui_click(touch::UiClick::Back);
+                continue;
+            }
             // Esc (0x4690b0): the NPC's windows first, then the game menu
             // closes, else every Esc-closable panel at once (FUN_00456300;
             // not the automap or the mini-panel), else the menu opens.
             if (key == SDLK_ESCAPE) {
+                const bool menu_was_open = game_menu.open;
                 if (chat_typing) chat_typing.reset();                         // a chat line being typed first
                 else if (touch_bind != TouchBindPhase::Off) { touch_close_bind(); touch_input.clear(); }
                 else if (touch_assign != skillpad::kUnset) { touch_assign = skillpad::kUnset; tree_open = touch_assignment_from_tree; touch_assignment_from_tree = false; touch_input.clear(); }
@@ -372,6 +392,10 @@ auto Town::update(std::vector<std::uint8_t>& framebuffer, const Mouse& frame_mou
                     inv_open = char_open = stash_open = cube_open = tree_open = quest_log.open = hireling.open = party.open = scroll.open = false;
                     cursor_follows = true;
                 } else open_game_menu();
+                if (touch_escape) {
+                    const int destination = menu_was_open != game_menu.open ? (game_menu.open ? 1 : 2) : 0;
+                    touch_play_ui_click(touch::UiClick::Back, destination);
+                }
             }
             if (const int side_after = d2d::rules::panel_view_state(left_side_open(), inv_open || tree_open, false);
                 cursor_follows && side_after != side_before && !covered_before && !view_covered()) {
@@ -446,7 +470,14 @@ auto Town::update(std::vector<std::uint8_t>& framebuffer, const Mouse& frame_mou
             // player alone ends the game, in local co-op the next player leads and it goes on.
             if (action == GameMenu::kExit) {
                 if (const int seat = focus_seat(); seat > 0) { coop_leave(seat); partner_left = seat; }
-                else if ((handed_over = lead_leaves()) < 0) { save(); screen = Screen::CharSelect; }
+                else if ((handed_over = lead_leaves()) < 0) {
+                    save();
+#if defined(TARGET_OS_IPHONE) && TARGET_OS_IPHONE
+                    quit_app = true;
+#else
+                    screen = Screen::CharSelect;
+#endif
+                }
             }
             hud_click = true;
         } else {
@@ -1036,9 +1067,8 @@ auto Town::update(std::vector<std::uint8_t>& framebuffer, const Mouse& frame_mou
                     break;
                 }
             }
-            if (mouse.press_this_frame && mouse.y >= 60 && mouse.y <= 90
-                && mouse.x >= touch_store_panel_x() && mouse.x < touch_store_panel_x() + 320)
-                store.tab = (mouse.x - touch_store_panel_x()) / 80;
+            if (mouse.press_this_frame)
+                if (const int tab = store_tab_at(mouse.x, mouse.y, touch_store_panel_x()); tab >= 0) store.tab = tab;
             // Right-click on stock buys; with Buy or Sell toggled on,
             // a left click buys the stock item / sells your item. Shift +
             // right click on a multibuy item fills (FUN_004b2650: mouse

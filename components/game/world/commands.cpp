@@ -885,7 +885,7 @@ auto World::apply(const Command& command, std::uint32_t now_ms) -> void {
                 actor->interact_npc = actor->pick_item = -1;
                 actor->player.walking = false;
             }
-        } else if (skill && use_skill.unit < 0 && !skill->passive && !skill->target_corpse && !skill->target_ally && !skill->target_pet
+        } else if (skill && use_skill.stand && use_skill.unit < 0 && !skill->passive && !skill->target_corpse && !skill->target_ally && !skill->target_pet
                    && (skill->srvdofunc == ServerDoFunction::kAttack || skill_built(*skill))) {
             // An explicit location attack, as when the mouse's stand-still key is held.
             actor->attack_mon = -1;

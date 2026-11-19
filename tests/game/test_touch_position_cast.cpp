@@ -30,7 +30,7 @@ constexpr int kAttack = 0, kMelee = 1, kMissile = 2, kHowl = 3, kCharge = 4, kLe
 
 void cast(World& world, const touch::Target& target, std::uint32_t now) {
     assert(target.valid);
-    world.apply(cmd::UseSkill{ target.skill, target.x, target.y, target.unit, target.left }, now);
+    world.apply(cmd::UseSkill{ target.skill, target.x, target.y, target.unit, target.left, -1, target.unit < 0 }, now);
 }
 
 } // namespace

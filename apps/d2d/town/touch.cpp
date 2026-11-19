@@ -431,7 +431,7 @@ void Town::cast_resolved(PadPlayer& player_pad, const touch::Target& target) {
     } else {
         const auto cast = centered_skill(*info)
             ? touch::caster_target(target.skill, view.player.x, view.player.y) : target;
-        send(cmd::UseSkill{ cast.skill, cast.x, cast.y, cast.unit, cast.left, -1 });
+        send(cmd::UseSkill{ cast.skill, cast.x, cast.y, cast.unit, cast.left, -1, cast.unit < 0 });
     }
 }
 
